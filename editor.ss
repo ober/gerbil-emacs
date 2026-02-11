@@ -2580,6 +2580,172 @@
                              " occurrences"))))))))
 
 ;;;============================================================================
+;;; Transpose words and lines
+;;;============================================================================
+
+(def (cmd-transpose-words app)
+  "Swap the word before the cursor with the word after."
+  (let* ((ed (current-editor app))
+         (text (editor-get-text ed))
+         (pos (editor-get-current-pos ed))
+         (len (string-length text)))
+    ;; Find end of current word
+    (let find-word2-end ((i pos))
+      (if (and (< i len) (word-char? (string-ref text i)))
+        (find-word2-end (+ i 1))
+        ;; i is end of word2; find start of word2
+        (let find-word2-start ((j (- i 1)))
+          (if (and (>= j 0) (word-char? (string-ref text j)))
+            (find-word2-start (- j 1))
+            ;; j+1 is start of word2
+            (let ((w2-start (+ j 1))
+                  (w2-end i))
+              ;; Find end of word1 (skip non-word chars backward from w2-start)
+              (let find-word1-end ((k (- w2-start 1)))
+                (if (and (>= k 0) (not (word-char? (string-ref text k))))
+                  (find-word1-end (- k 1))
+                  ;; k is last char of word1
+                  (when (>= k 0)
+                    (let find-word1-start ((m k))
+                      (if (and (>= m 0) (word-char? (string-ref text m)))
+                        (find-word1-start (- m 1))
+                        ;; m+1 is start of word1
+                        (let* ((w1-start (+ m 1))
+                               (w1-end (+ k 1))
+                               (word1 (substring text w1-start w1-end))
+                               (word2 (substring text w2-start w2-end))
+                               (between (substring text w1-end w2-start))
+                               (new-text (string-append word2 between word1)))
+                          (send-message ed SCI_BEGINUNDOACTION)
+                          (send-message ed SCI_DELETERANGE w1-start (- w2-end w1-start))
+                          (editor-insert-text ed w1-start new-text)
+                          (editor-goto-pos ed w2-end)
+                          (send-message ed SCI_ENDUNDOACTION))))))))))))))
+
+(def (cmd-transpose-lines app)
+  "Swap the current line with the line above."
+  (let* ((ed (current-editor app))
+         (pos (editor-get-current-pos ed))
+         (cur-line (editor-line-from-position ed pos)))
+    (when (> cur-line 0)
+      (let* ((text (editor-get-text ed))
+             (cur-start (send-message ed SCI_POSITIONFROMLINE cur-line 0))
+             (cur-end (send-message ed SCI_GETLINEENDPOSITION cur-line 0))
+             (prev-start (send-message ed SCI_POSITIONFROMLINE (- cur-line 1) 0))
+             (prev-end (send-message ed SCI_GETLINEENDPOSITION (- cur-line 1) 0))
+             (cur-text (substring text cur-start cur-end))
+             (prev-text (substring text prev-start prev-end)))
+        (send-message ed SCI_BEGINUNDOACTION)
+        ;; Replace current line with previous, and previous with current
+        ;; Do it by replacing from prev-start to cur-end
+        (send-message ed SCI_DELETERANGE prev-start (- cur-end prev-start))
+        (let ((new-text (string-append cur-text "\n" prev-text)))
+          (editor-insert-text ed prev-start new-text))
+        ;; Move cursor to end of what was the current line (now on the line below)
+        (editor-goto-pos ed (+ prev-start (string-length cur-text) 1
+                               (string-length prev-text)))
+        (send-message ed SCI_ENDUNDOACTION)))))
+
+;;;============================================================================
+;;; Just one space, repeat command
+;;;============================================================================
+
+(def (cmd-just-one-space app)
+  "Delete all spaces and tabs around point, leaving just one space."
+  (let* ((ed (current-editor app))
+         (text (editor-get-text ed))
+         (pos (editor-get-current-pos ed))
+         (len (string-length text)))
+    ;; Find extent of whitespace around point
+    (let* ((start (let back ((i (- pos 1)))
+                    (if (and (>= i 0)
+                             (let ((ch (string-ref text i)))
+                               (or (char=? ch #\space) (char=? ch #\tab))))
+                      (back (- i 1))
+                      (+ i 1))))
+           (end (let fwd ((i pos))
+                  (if (and (< i len)
+                           (let ((ch (string-ref text i)))
+                             (or (char=? ch #\space) (char=? ch #\tab))))
+                    (fwd (+ i 1))
+                    i))))
+      (when (> (- end start) 1)
+        (send-message ed SCI_BEGINUNDOACTION)
+        (send-message ed SCI_DELETERANGE start (- end start))
+        (editor-insert-text ed start " ")
+        (editor-goto-pos ed (+ start 1))
+        (send-message ed SCI_ENDUNDOACTION)))))
+
+(def (cmd-repeat app)
+  "Repeat the last command."
+  (let ((last (app-state-last-command app)))
+    (if (and last (not (eq? last 'repeat)))
+      (execute-command! app last)
+      (echo-error! (app-state-echo app) "No command to repeat"))))
+
+;;;============================================================================
+;;; Next/previous error (placeholder — navigate search results)
+;;;============================================================================
+
+(def (cmd-next-error app)
+  "Jump to next error/match position (wraps search forward)."
+  (let* ((ed (current-editor app))
+         (search (app-state-last-search app)))
+    (if (not search)
+      (echo-error! (app-state-echo app) "No previous search")
+      (let* ((pos (editor-get-current-pos ed))
+             (len (editor-get-text-length ed)))
+        ;; Search forward from current position
+        (send-message ed SCI_SETTARGETSTART (+ pos 1) 0)
+        (send-message ed SCI_SETTARGETEND len 0)
+        (send-message ed SCI_SETSEARCHFLAGS 0 0)
+        (let ((found (send-message/string ed SCI_SEARCHINTARGET search)))
+          (if (>= found 0)
+            (begin
+              (editor-goto-pos ed found)
+              (editor-scroll-caret ed))
+            ;; Wrap around
+            (begin
+              (send-message ed SCI_SETTARGETSTART 0 0)
+              (send-message ed SCI_SETTARGETEND pos 0)
+              (let ((found2 (send-message/string ed SCI_SEARCHINTARGET search)))
+                (if (>= found2 0)
+                  (begin
+                    (editor-goto-pos ed found2)
+                    (editor-scroll-caret ed)
+                    (echo-message! (app-state-echo app) "Wrapped"))
+                  (echo-error! (app-state-echo app) "No more matches"))))))))))
+
+(def (cmd-previous-error app)
+  "Jump to previous error/match position (wraps search backward)."
+  (let* ((ed (current-editor app))
+         (search (app-state-last-search app)))
+    (if (not search)
+      (echo-error! (app-state-echo app) "No previous search")
+      (let* ((pos (editor-get-current-pos ed))
+             (len (editor-get-text-length ed)))
+        ;; Search backward: set target from pos-1 back to 0
+        (send-message ed SCI_SETTARGETSTART (max 0 (- pos 1)) 0)
+        (send-message ed SCI_SETTARGETEND 0 0)
+        (send-message ed SCI_SETSEARCHFLAGS 0 0)
+        (let ((found (send-message/string ed SCI_SEARCHINTARGET search)))
+          (if (>= found 0)
+            (begin
+              (editor-goto-pos ed found)
+              (editor-scroll-caret ed))
+            ;; Wrap around from end
+            (begin
+              (send-message ed SCI_SETTARGETSTART len 0)
+              (send-message ed SCI_SETTARGETEND pos 0)
+              (let ((found2 (send-message/string ed SCI_SEARCHINTARGET search)))
+                (if (>= found2 0)
+                  (begin
+                    (editor-goto-pos ed found2)
+                    (editor-scroll-caret ed)
+                    (echo-message! (app-state-echo app) "Wrapped"))
+                  (echo-error! (app-state-echo app) "No more matches"))))))))))
+
+;;;============================================================================
 ;;; Register all commands
 ;;;============================================================================
 
@@ -2742,6 +2908,16 @@
   (register-command! 'goto-char cmd-goto-char)
   ;; Replace string (non-interactive)
   (register-command! 'replace-string cmd-replace-string)
+  ;; Transpose
+  (register-command! 'transpose-words cmd-transpose-words)
+  (register-command! 'transpose-lines cmd-transpose-lines)
+  ;; Just one space
+  (register-command! 'just-one-space cmd-just-one-space)
+  ;; Repeat
+  (register-command! 'repeat cmd-repeat)
+  ;; Next/previous error (search result navigation)
+  (register-command! 'next-error cmd-next-error)
+  (register-command! 'previous-error cmd-previous-error)
   ;; Misc
   (register-command! 'keyboard-quit cmd-keyboard-quit)
   (register-command! 'quit cmd-quit))

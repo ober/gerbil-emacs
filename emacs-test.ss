@@ -509,6 +509,19 @@
       (let ((app (new-app-state #f)))
         (check (hash-table? (app-state-registers app)) => #t)))
 
+    (test-case "new keybindings: transpose, just-one-space, repeat, etc"
+      (setup-default-bindings!)
+      (check (keymap-lookup *global-keymap* "M-t") => 'transpose-words)
+      (check (keymap-lookup *ctrl-x-map* "C-t") => 'transpose-lines)
+      (check (keymap-lookup *ctrl-x-map* "z") => 'repeat)
+      (check (keymap-lookup *global-keymap* "M-SPC") => 'just-one-space)
+      (check (keymap-lookup *meta-g-map* "n") => 'next-error)
+      (check (keymap-lookup *meta-g-map* "p") => 'previous-error))
+
+    (test-case "app-state last-command field"
+      (let ((app (new-app-state #f)))
+        (check (app-state-last-command app) => #f)))
+
     (test-case "repl subprocess lifecycle"
       (let ((rs (repl-start!)))
         ;; Verify state is initialized

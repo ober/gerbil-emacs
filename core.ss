@@ -345,6 +345,25 @@
   ;; Go to char position (M-g c)
   (keymap-bind! *meta-g-map* "c" 'goto-char)
 
+  ;; Transpose words (M-t)
+  (keymap-bind! *global-keymap* "M-t" 'transpose-words)
+
+  ;; Transpose lines (C-x C-t)
+  (keymap-bind! *ctrl-x-map* "C-t" 'transpose-lines)
+
+  ;; Repeat last command (C-x z)
+  (keymap-bind! *ctrl-x-map* "z" 'repeat)
+
+  ;; Just one space (M-SPC)
+  (keymap-bind! *global-keymap* "M-SPC" 'just-one-space)
+
+  ;; Delete indentation (M-^)  -- note: M-^ was sort-lines, use C-c j instead
+  ;; Already have M-j for join-line, keep M-^ for sort-lines
+
+  ;; Goto next/previous error (M-g n / M-g p)
+  (keymap-bind! *meta-g-map* "n" 'next-error)
+  (keymap-bind! *meta-g-map* "p" 'previous-error)
+
   ;; String insert
   (keymap-bind! *ctrl-c-map* "i" 'string-insert-file))
 
@@ -432,6 +451,7 @@
    macro-last    ; list or #f: last recorded macro
    mark-ring     ; list of (buffer-name . position) for mark history
    registers     ; hash-table: char -> string or (buffer-name . position)
+   last-command  ; symbol or #f: name of last executed command
    key-handler)  ; procedure or #f: (lambda (editor) ...) installs key handler on editor
   transparent: #t)
 
@@ -454,6 +474,7 @@
    #f                    ; macro-last
    []                    ; mark-ring
    (make-hash-table)     ; registers
+   #f                    ; last-command
    #f))                  ; key-handler
 
 ;;;============================================================================
@@ -474,7 +495,9 @@
 (def (execute-command! app name)
   (let ((cmd (find-command name)))
     (if cmd
-      (cmd app)
+      (begin
+        (set! (app-state-last-command app) name)
+        (cmd app))
       (echo-error! (app-state-echo app)
                    (string-append (symbol->string name) " is undefined")))))
 
