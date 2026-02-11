@@ -432,7 +432,16 @@
   ;; Other-window commands (C-x 4 prefix)
   (keymap-bind! *ctrl-x-map* "4" *ctrl-x-4-map*)
   (keymap-bind! *ctrl-x-4-map* "b" 'switch-buffer-other-window)
-  (keymap-bind! *ctrl-x-4-map* "f" 'find-file-other-window))
+  (keymap-bind! *ctrl-x-4-map* "f" 'find-file-other-window)
+
+  ;; Text transforms
+  (keymap-bind! *ctrl-c-map* "t" 'tabify)
+  (keymap-bind! *ctrl-c-map* "3" 'rot13-region)
+  (keymap-bind! *ctrl-c-map* "x" 'hexl-mode)
+
+  ;; Count matches, dedup
+  (keymap-bind! *meta-s-map* "c" 'count-matches)
+  (keymap-bind! *ctrl-c-map* "u" 'delete-duplicate-lines))
 
 ;;;============================================================================
 ;;; Echo state

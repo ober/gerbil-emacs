@@ -18,6 +18,7 @@
 (import :std/sugar
         :std/sort
         :std/srfi/13
+        :std/text/base64
         :gerbil-scintilla/constants
         :gerbil-scintilla/scintilla
         :gerbil-scintilla/style
@@ -3570,6 +3571,270 @@
   (echo-message! (app-state-echo app) "C-u prefix not yet supported"))
 
 ;;;============================================================================
+;;; Text transforms: tabify, untabify, base64, rot13
+;;;============================================================================
+
+(def (cmd-tabify app)
+  "Convert spaces to tabs in region or buffer."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app))
+         (buf (current-buffer-from-app app))
+         (mark (buffer-mark buf))
+         (text (editor-get-text ed)))
+    (let-values (((start end)
+                  (if mark
+                    (let ((pos (editor-get-current-pos ed)))
+                      (values (min mark pos) (max mark pos)))
+                    (values 0 (string-length text)))))
+      (let* ((region (substring text start end))
+             ;; Replace runs of 8 spaces with tab (simple approach)
+             (result (let loop ((s region) (acc ""))
+                       (let ((idx (string-contains s "        ")))  ; 8 spaces
+                         (if idx
+                           (loop (substring s (+ idx 8) (string-length s))
+                                 (string-append acc (substring s 0 idx) "\t"))
+                           (string-append acc s))))))
+        (with-undo-action ed
+          (editor-delete-range ed start (- end start))
+          (editor-insert-text ed start result))
+        (when mark (set! (buffer-mark buf) #f))
+        (echo-message! echo "Tabified")))))
+
+(def (cmd-untabify app)
+  "Convert tabs to spaces in region or buffer."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app))
+         (buf (current-buffer-from-app app))
+         (mark (buffer-mark buf))
+         (text (editor-get-text ed)))
+    (let-values (((start end)
+                  (if mark
+                    (let ((pos (editor-get-current-pos ed)))
+                      (values (min mark pos) (max mark pos)))
+                    (values 0 (string-length text)))))
+      (let* ((region (substring text start end))
+             ;; Replace all tabs with 8 spaces
+             (result (let loop ((i 0) (acc '()))
+                       (if (>= i (string-length region))
+                         (apply string-append (reverse acc))
+                         (if (char=? (string-ref region i) #\tab)
+                           (loop (+ i 1) (cons "        " acc))
+                           (loop (+ i 1) (cons (string (string-ref region i)) acc)))))))
+        (with-undo-action ed
+          (editor-delete-range ed start (- end start))
+          (editor-insert-text ed start result))
+        (when mark (set! (buffer-mark buf) #f))
+        (echo-message! echo "Untabified")))))
+
+(def (cmd-base64-encode-region app)
+  "Base64 encode the region."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app))
+         (buf (current-buffer-from-app app))
+         (mark (buffer-mark buf)))
+    (if (not mark)
+      (echo-error! echo "No region (set mark first)")
+      (let* ((pos (editor-get-current-pos ed))
+             (start (min mark pos))
+             (end (max mark pos))
+             (region (substring (editor-get-text ed) start end))
+             (encoded (base64-encode region)))
+        (with-undo-action ed
+          (editor-delete-range ed start (- end start))
+          (editor-insert-text ed start encoded))
+        (set! (buffer-mark buf) #f)
+        (echo-message! echo "Base64 encoded")))))
+
+(def (cmd-base64-decode-region app)
+  "Base64 decode the region."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app))
+         (buf (current-buffer-from-app app))
+         (mark (buffer-mark buf)))
+    (if (not mark)
+      (echo-error! echo "No region (set mark first)")
+      (with-catch
+        (lambda (e)
+          (echo-error! echo "Base64 decode error"))
+        (lambda ()
+          (let* ((pos (editor-get-current-pos ed))
+                 (start (min mark pos))
+                 (end (max mark pos))
+                 (region (substring (editor-get-text ed) start end))
+                 (decoded (base64-decode (string-trim-both region))))
+            (with-undo-action ed
+              (editor-delete-range ed start (- end start))
+              (editor-insert-text ed start decoded))
+            (set! (buffer-mark buf) #f)
+            (echo-message! echo "Base64 decoded")))))))
+
+(def (rot13-char ch)
+  "Apply ROT13 to a character."
+  (cond
+    ((and (char>=? ch #\a) (char<=? ch #\z))
+     (integer->char (+ (char->integer #\a)
+                       (modulo (+ (- (char->integer ch) (char->integer #\a)) 13) 26))))
+    ((and (char>=? ch #\A) (char<=? ch #\Z))
+     (integer->char (+ (char->integer #\A)
+                       (modulo (+ (- (char->integer ch) (char->integer #\A)) 13) 26))))
+    (else ch)))
+
+(def (rot13-string s)
+  "Apply ROT13 to a string."
+  (let* ((len (string-length s))
+         (result (make-string len)))
+    (let loop ((i 0))
+      (when (< i len)
+        (string-set! result i (rot13-char (string-ref s i)))
+        (loop (+ i 1))))
+    result))
+
+(def (cmd-rot13-region app)
+  "ROT13 encode the region or buffer."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app))
+         (buf (current-buffer-from-app app))
+         (mark (buffer-mark buf))
+         (text (editor-get-text ed)))
+    (let-values (((start end)
+                  (if mark
+                    (let ((pos (editor-get-current-pos ed)))
+                      (values (min mark pos) (max mark pos)))
+                    (values 0 (string-length text)))))
+      (let* ((region (substring text start end))
+             (result (rot13-string region)))
+        (with-undo-action ed
+          (editor-delete-range ed start (- end start))
+          (editor-insert-text ed start result))
+        (when mark (set! (buffer-mark buf) #f))
+        (echo-message! echo "ROT13 applied")))))
+
+;;;============================================================================
+;;; Hex dump display
+;;;============================================================================
+
+(def (cmd-hexl-mode app)
+  "Display buffer contents as hex dump in *Hex* buffer."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app))
+         (fr (app-state-frame app))
+         (text (editor-get-text ed))
+         (bytes (string->bytes text))
+         (len (u8vector-length bytes))
+         (lines '()))
+    ;; Format hex dump, 16 bytes per line
+    (let loop ((offset 0))
+      (when (< offset len)
+        (let* ((end (min (+ offset 16) len))
+               (hex-parts '())
+               (ascii-parts '()))
+          ;; Hex portion
+          (let hex-loop ((i offset))
+            (when (< i end)
+              (let* ((b (u8vector-ref bytes i))
+                     (h (number->string b 16)))
+                (set! hex-parts
+                  (cons (if (< b 16) (string-append "0" h) h)
+                        hex-parts)))
+              (hex-loop (+ i 1))))
+          ;; ASCII portion
+          (let ascii-loop ((i offset))
+            (when (< i end)
+              (let ((b (u8vector-ref bytes i)))
+                (set! ascii-parts
+                  (cons (if (and (>= b 32) (<= b 126))
+                          (string (integer->char b))
+                          ".")
+                        ascii-parts)))
+              (ascii-loop (+ i 1))))
+          ;; Format offset
+          (let* ((off-str (number->string offset 16))
+                 (off-padded (string-append
+                               (make-string (max 0 (- 8 (string-length off-str))) #\0)
+                               off-str))
+                 (hex-str (string-join (reverse hex-parts) " "))
+                 ;; Pad hex to consistent width (47 chars for 16 bytes)
+                 (hex-padded (string-append hex-str
+                               (make-string (max 0 (- 47 (string-length hex-str))) #\space)))
+                 (ascii-str (apply string-append (reverse ascii-parts))))
+            (set! lines
+              (cons (string-append off-padded "  " hex-padded "  |" ascii-str "|")
+                    lines))))
+        (loop (+ offset 16))))
+    ;; Display in *Hex* buffer
+    (let* ((result (string-join (reverse lines) "\n"))
+           (full-text (string-append "Hex Dump (" (number->string len) " bytes):\n\n"
+                                     result "\n"))
+           (buf (or (buffer-by-name "*Hex*")
+                    (buffer-create! "*Hex*" ed #f))))
+      (buffer-attach! ed buf)
+      (set! (edit-window-buffer (current-window fr)) buf)
+      (editor-set-text ed full-text)
+      (editor-set-save-point ed)
+      (editor-goto-pos ed 0)
+      (echo-message! echo "*Hex*"))))
+
+;;;============================================================================
+;;; Count matches, delete duplicate lines
+;;;============================================================================
+
+(def (cmd-count-matches app)
+  "Count occurrences of a pattern in the buffer."
+  (let* ((echo (app-state-echo app))
+         (fr (app-state-frame app))
+         (row (- (frame-height fr) 1))
+         (width (frame-width fr))
+         (pattern (echo-read-string echo "Count matches for: " row width)))
+    (if (not pattern)
+      (echo-message! echo "Cancelled")
+      (let* ((ed (current-editor app))
+             (text (editor-get-text ed))
+             (plen (string-length pattern))
+             (count
+               (if (= plen 0) 0
+                 (let loop ((pos 0) (n 0))
+                   (let ((idx (string-contains text pattern pos)))
+                     (if idx
+                       (loop (+ idx plen) (+ n 1))
+                       n))))))
+        (echo-message! echo
+          (string-append (number->string count) " occurrence"
+                         (if (= count 1) "" "s")
+                         " of \"" pattern "\""))))))
+
+(def (cmd-delete-duplicate-lines app)
+  "Remove duplicate lines from region or buffer."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app))
+         (buf (current-buffer-from-app app))
+         (mark (buffer-mark buf))
+         (text (editor-get-text ed)))
+    (let-values (((start end)
+                  (if mark
+                    (let ((pos (editor-get-current-pos ed)))
+                      (values (min mark pos) (max mark pos)))
+                    (values 0 (string-length text)))))
+      (let* ((region (substring text start end))
+             (lines (string-split region #\newline))
+             ;; Remove duplicates while preserving order
+             (seen (make-hash-table))
+             (unique
+               (filter (lambda (line)
+                         (if (hash-get seen line)
+                           #f
+                           (begin (hash-put! seen line #t) #t)))
+                       lines))
+             (removed (- (length lines) (length unique)))
+             (result (string-join unique "\n")))
+        (with-undo-action ed
+          (editor-delete-range ed start (- end start))
+          (editor-insert-text ed start result))
+        (when mark (set! (buffer-mark buf) #f))
+        (echo-message! echo
+          (string-append "Removed " (number->string removed) " duplicate line"
+                         (if (= removed 1) "" "s")))))))
+
+;;;============================================================================
 ;;; Register all commands
 ;;;============================================================================
 
@@ -3793,6 +4058,17 @@
   (register-command! 'find-file-other-window cmd-find-file-other-window)
   ;; Universal argument (stub)
   (register-command! 'universal-argument cmd-universal-argument)
+  ;; Text transforms
+  (register-command! 'tabify cmd-tabify)
+  (register-command! 'untabify cmd-untabify)
+  (register-command! 'base64-encode-region cmd-base64-encode-region)
+  (register-command! 'base64-decode-region cmd-base64-decode-region)
+  (register-command! 'rot13-region cmd-rot13-region)
+  ;; Hex dump
+  (register-command! 'hexl-mode cmd-hexl-mode)
+  ;; Count/dedup
+  (register-command! 'count-matches cmd-count-matches)
+  (register-command! 'delete-duplicate-lines cmd-delete-duplicate-lines)
   ;; Misc
   (register-command! 'keyboard-quit cmd-keyboard-quit)
   (register-command! 'quit cmd-quit))

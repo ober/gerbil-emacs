@@ -593,6 +593,38 @@
       (check (keymap-lookup *ctrl-x-4-map* "b") => 'switch-buffer-other-window)
       (check (keymap-lookup *ctrl-x-4-map* "f") => 'find-file-other-window))
 
+    (test-case "rot13 helper (inline)"
+      ;; Reimplementation for testing (same logic as editor.ss rot13-string)
+      (let* ((rot13-char
+               (lambda (ch)
+                 (cond
+                   ((and (char>=? ch #\a) (char<=? ch #\z))
+                    (integer->char (+ (char->integer #\a)
+                                      (modulo (+ (- (char->integer ch) (char->integer #\a)) 13) 26))))
+                   ((and (char>=? ch #\A) (char<=? ch #\Z))
+                    (integer->char (+ (char->integer #\A)
+                                      (modulo (+ (- (char->integer ch) (char->integer #\A)) 13) 26))))
+                   (else ch))))
+             (rot13-string
+               (lambda (s)
+                 (let* ((len (string-length s))
+                        (result (make-string len)))
+                   (let loop ((i 0))
+                     (when (< i len)
+                       (string-set! result i (rot13-char (string-ref s i)))
+                       (loop (+ i 1))))
+                   result))))
+        (check (rot13-string "Hello") => "Uryyb")
+        (check (rot13-string "Uryyb") => "Hello")
+        (check (rot13-string "123") => "123")))
+
+    (test-case "new keybindings: tabify, rot13, hex, count, dedup"
+      (check (keymap-lookup *ctrl-c-map* "t") => 'tabify)
+      (check (keymap-lookup *ctrl-c-map* "3") => 'rot13-region)
+      (check (keymap-lookup *ctrl-c-map* "x") => 'hexl-mode)
+      (check (keymap-lookup *meta-s-map* "c") => 'count-matches)
+      (check (keymap-lookup *ctrl-c-map* "u") => 'delete-duplicate-lines))
+
     ))
 
 ;; Run tests when executed directly
