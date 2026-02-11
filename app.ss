@@ -318,6 +318,12 @@
       (set! (app-state-key-state app) new-state)
       (case action
         ((command)
+         ;; Record macro step (skip macro control commands themselves)
+         (when (and (app-state-macro-recording app)
+                    (not (memq data '(start-kbd-macro end-kbd-macro call-last-kbd-macro))))
+           (set! (app-state-macro-recording app)
+             (cons (cons 'command data)
+                   (app-state-macro-recording app))))
          (execute-command! app data))
         ((prefix)
          ;; Show prefix in echo area
@@ -331,6 +337,11 @@
            (echo-message! (app-state-echo app)
                           (string-append prefix-str "-"))))
         ((self-insert)
+         ;; Record macro step
+         (when (app-state-macro-recording app)
+           (set! (app-state-macro-recording app)
+             (cons (cons 'self-insert data)
+                   (app-state-macro-recording app))))
          (cmd-self-insert! app data))
         ((undefined)
          (echo-error! (app-state-echo app)

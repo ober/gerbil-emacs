@@ -278,7 +278,7 @@
 
     (test-case "eshell keybinding"
       (setup-default-bindings!)
-      (check (keymap-lookup *ctrl-x-map* "e") => 'eshell))
+      (check (keymap-lookup *ctrl-c-map* "e") => 'eshell))
 
     (test-case "shell-buffer? predicate"
       (let ((buf (make-buffer "*test*" #f #f #f #f #f)))
@@ -450,6 +450,21 @@
       (check (keymap-lookup *ctrl-x-map* "i") => 'insert-file)
       (check (keymap-lookup *global-keymap* "M-/") => 'dabbrev-expand)
       (check (keymap-lookup *ctrl-x-map* "=") => 'what-cursor-position))
+
+    (test-case "macro and mark ring keybindings"
+      (setup-default-bindings!)
+      ;; Keyboard macros
+      (check (keymap-lookup *ctrl-x-map* "(") => 'start-kbd-macro)
+      (check (keymap-lookup *ctrl-x-map* ")") => 'end-kbd-macro)
+      (check (keymap-lookup *ctrl-x-map* "e") => 'call-last-kbd-macro)
+      ;; Mark ring
+      (check (keymap-lookup *ctrl-c-map* "SPC") => 'pop-mark))
+
+    (test-case "app-state macro and mark-ring fields"
+      (let ((app (new-app-state #f)))
+        (check (app-state-macro-recording app) => #f)
+        (check (app-state-macro-last app) => #f)
+        (check (app-state-mark-ring app) => [])))
 
     (test-case "shell-quote helper"
       ;; Inline shell-quote for testing

@@ -239,6 +239,9 @@
   (let* ((ed (current-editor app))
          (pos (editor-get-current-pos ed))
          (buf (current-buffer-from-app app)))
+    ;; Push old mark to mark ring before overwriting
+    (when (buffer-mark buf)
+      (push-mark-ring! app buf (buffer-mark buf)))
     (set! (buffer-mark buf) pos)
     (echo-message! (app-state-echo app) "Mark set")))
 
@@ -297,7 +300,10 @@
                   (editor-goto-pos ed 0))))
             ;; Apply syntax highlighting for Gerbil files
             (when (gerbil-file-extension? filename)
-              (setup-gerbil-highlighting! ed))
+              (setup-gerbil-highlighting! ed)
+              ;; Enable line numbers for code files
+              (send-message ed SCI_SETMARGINTYPEN 0 SC_MARGIN_NUMBER)
+              (send-message ed SCI_SETMARGINWIDTHN 0 4))
             (echo-message! echo (string-append "Opened: " filename))))))))
 
 (def (cmd-save-buffer app)
@@ -1347,7 +1353,9 @@
                           (editor-goto-pos ed 0)))
                       ;; Apply syntax highlighting for Gerbil files
                       (when (gerbil-file-extension? full-path)
-                        (setup-gerbil-highlighting! ed))
+                        (setup-gerbil-highlighting! ed)
+                        (send-message ed SCI_SETMARGINTYPEN 0 SC_MARGIN_NUMBER)
+                        (send-message ed SCI_SETMARGINWIDTHN 0 4))
                       (echo-message! (app-state-echo app)
                                      (string-append "Opened: " full-path)))))))))))))
 
@@ -2261,6 +2269,93 @@
                          " col " (number->string col)))))))
 
 ;;;============================================================================
+;;; Keyboard macros
+;;;============================================================================
+
+(def (cmd-start-kbd-macro app)
+  "Start recording a keyboard macro."
+  (if (app-state-macro-recording app)
+    (echo-error! (app-state-echo app) "Already recording")
+    (begin
+      (set! (app-state-macro-recording app) [])
+      (echo-message! (app-state-echo app) "Defining kbd macro..."))))
+
+(def (cmd-end-kbd-macro app)
+  "Stop recording and save the keyboard macro."
+  (if (not (app-state-macro-recording app))
+    (echo-error! (app-state-echo app) "Not recording")
+    (begin
+      (set! (app-state-macro-last app)
+        (reverse (app-state-macro-recording app)))
+      (set! (app-state-macro-recording app) #f)
+      (echo-message! (app-state-echo app)
+        (string-append "Macro defined ("
+                       (number->string (length (app-state-macro-last app)))
+                       " steps)")))))
+
+(def (cmd-call-last-kbd-macro app)
+  "Execute the last recorded keyboard macro."
+  (let ((macro (app-state-macro-last app)))
+    (if (or (not macro) (null? macro))
+      (echo-error! (app-state-echo app) "No macro defined")
+      (begin
+        (for-each
+          (lambda (step)
+            (let ((action (car step))
+                  (data (cdr step)))
+              (case action
+                ((command) (execute-command! app data))
+                ((self-insert) (cmd-self-insert! app data)))))
+          macro)
+        (echo-message! (app-state-echo app) "Macro executed")))))
+
+(def (macro-record-step! app action data)
+  "If macro recording, record a step."
+  (when (app-state-macro-recording app)
+    (let ((step (cons action data)))
+      (set! (app-state-macro-recording app)
+        (cons step (app-state-macro-recording app))))))
+
+;;;============================================================================
+;;; Mark ring
+;;;============================================================================
+
+(def max-mark-ring-size 16)
+
+(def (push-mark-ring! app buf pos)
+  "Push a mark position onto the mark ring."
+  (let* ((entry (cons (buffer-name buf) pos))
+         (ring (app-state-mark-ring app))
+         (new-ring (cons entry
+                     (if (>= (length ring) max-mark-ring-size)
+                       (let trim ((r ring) (n (- max-mark-ring-size 1)))
+                         (if (or (null? r) (= n 0)) '()
+                           (cons (car r) (trim (cdr r) (- n 1)))))
+                       ring))))
+    (set! (app-state-mark-ring app) new-ring)))
+
+(def (cmd-pop-mark app)
+  "Pop the mark ring and jump to the previous mark position."
+  (let ((ring (app-state-mark-ring app)))
+    (if (null? ring)
+      (echo-error! (app-state-echo app) "Mark ring empty")
+      (let* ((entry (car ring))
+             (buf-name (car entry))
+             (pos (cdr entry))
+             (buf (buffer-by-name buf-name))
+             (fr (app-state-frame app)))
+        (set! (app-state-mark-ring app) (cdr ring))
+        (if buf
+          (let ((ed (current-editor app)))
+            (buffer-attach! ed buf)
+            (set! (edit-window-buffer (current-window fr)) buf)
+            (editor-goto-pos ed pos)
+            (editor-scroll-caret ed)
+            (echo-message! (app-state-echo app) "Mark popped"))
+          (echo-error! (app-state-echo app)
+            (string-append "Buffer gone: " buf-name)))))))
+
+;;;============================================================================
 ;;; Register all commands
 ;;;============================================================================
 
@@ -2406,6 +2501,12 @@
   (register-command! 'dabbrev-expand cmd-dabbrev-expand)
   ;; What cursor position
   (register-command! 'what-cursor-position cmd-what-cursor-position)
+  ;; Keyboard macros
+  (register-command! 'start-kbd-macro cmd-start-kbd-macro)
+  (register-command! 'end-kbd-macro cmd-end-kbd-macro)
+  (register-command! 'call-last-kbd-macro cmd-call-last-kbd-macro)
+  ;; Mark ring
+  (register-command! 'pop-mark cmd-pop-mark)
   ;; Misc
   (register-command! 'keyboard-quit cmd-keyboard-quit)
   (register-command! 'quit cmd-quit))

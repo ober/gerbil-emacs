@@ -216,8 +216,8 @@
   ;; Tab
   (keymap-bind! *global-keymap* "TAB" 'indent-or-complete)
 
-  ;; Eshell
-  (keymap-bind! *ctrl-x-map* "e"   'eshell)
+  ;; Eshell (C-c e, since C-x e is call-last-kbd-macro)
+  (keymap-bind! *ctrl-c-map* "e"   'eshell)
 
   ;; Shell
   (keymap-bind! *ctrl-x-map* "s"   'shell)
@@ -322,6 +322,14 @@
   ;; What cursor position
   (keymap-bind! *ctrl-x-map* "=" 'what-cursor-position)
 
+  ;; Keyboard macros
+  (keymap-bind! *ctrl-x-map* "(" 'start-kbd-macro)
+  (keymap-bind! *ctrl-x-map* ")" 'end-kbd-macro)
+  (keymap-bind! *ctrl-x-map* "e" 'call-last-kbd-macro)
+
+  ;; Mark ring
+  (keymap-bind! *ctrl-c-map* "SPC" 'pop-mark)
+
   ;; String insert
   (keymap-bind! *ctrl-c-map* "i" 'string-insert-file))
 
@@ -405,6 +413,9 @@
    bookmarks     ; hash-table: name -> (buffer-name . position)
    rect-kill     ; list of strings (rectangle kill ring)
    dabbrev-state ; list or #f: (prefix matches-remaining last-pos last-len)
+   macro-recording ; list or #f: list of (action . data) being recorded
+   macro-last    ; list or #f: last recorded macro
+   mark-ring     ; list of (buffer-name . position) for mark history
    key-handler)  ; procedure or #f: (lambda (editor) ...) installs key handler on editor
   transparent: #t)
 
@@ -423,6 +434,9 @@
    (make-hash-table)     ; bookmarks
    []                    ; rect-kill
    #f                    ; dabbrev-state
+   #f                    ; macro-recording
+   #f                    ; macro-last
+   []                    ; mark-ring
    #f))                  ; key-handler
 
 ;;;============================================================================
