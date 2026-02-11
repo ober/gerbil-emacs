@@ -218,7 +218,8 @@
    key-state     ; key-state struct
    running       ; boolean
    last-search   ; string or #f
-   kill-ring)    ; list of killed text strings
+   kill-ring     ; list of killed text strings
+   key-handler)  ; procedure or #f: (lambda (editor) ...) installs key handler on editor
   transparent: #t)
 
 (def (new-app-state frame)
@@ -228,7 +229,8 @@
    (make-initial-key-state)
    #t     ; running
    #f     ; last-search
-   []))   ; kill-ring
+   []     ; kill-ring
+   #f))   ; key-handler
 
 ;;;============================================================================
 ;;; Command registry

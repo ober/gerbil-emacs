@@ -277,7 +277,10 @@
 ;;;============================================================================
 
 (def (cmd-split-window app)
-  (qt-frame-split! (app-state-frame app)))
+  (let ((new-ed (qt-frame-split! (app-state-frame app))))
+    ;; Install key handler on the new editor
+    (when (app-state-key-handler app)
+      ((app-state-key-handler app) new-ed))))
 
 (def (cmd-other-window app)
   (qt-frame-other-window! (app-state-frame app)))

@@ -63,43 +63,52 @@
                                           (qt-current-buffer fr)) #f)
         (qt-plain-text-edit-set-cursor-position! ed 0))
 
-      ;; Key handler — intercept ALL keys for Emacs bindings
-      (qt-on-key-press! win
-        (lambda ()
-          (let ((code (qt-last-key-code))
-                (mods (qt-last-key-modifiers))
-                (text (qt-last-key-text)))
-            (let-values (((action data new-state)
-                          (qt-key-state-feed! (app-state-key-state app)
-                                              code mods text)))
-              (set! (app-state-key-state app) new-state)
-              (case action
-                ((command)
-                 ;; Clear echo on command
-                 (when (and (echo-state-message (app-state-echo app))
-                            (null? (key-state-prefix-keys new-state)))
-                   (echo-clear! (app-state-echo app)))
-                 (execute-command! app data))
-                ((self-insert)
-                 (qt-plain-text-edit-insert-text!
-                   (qt-current-editor (app-state-frame app)) data))
-                ((prefix)
-                 (let ((prefix-str
-                        (let loop ((keys (key-state-prefix-keys new-state))
-                                   (acc ""))
-                          (if (null? keys) acc
-                            (loop (cdr keys)
-                                  (if (string=? acc "")
-                                    (car keys)
-                                    (string-append acc " " (car keys))))))))
-                   (echo-message! (app-state-echo app)
-                                  (string-append prefix-str "-"))))
-                ((undefined)
-                 (echo-error! (app-state-echo app)
-                              (string-append data " is undefined"))))
-              ;; Update modeline and echo after each key
-              (qt-modeline-update! app)
-              (qt-echo-draw! (app-state-echo app) echo-label)))))
+      ;; Key handler — define once, install on each editor
+      ;; Uses consuming variant so QPlainTextEdit doesn't process keys itself.
+      (let ((key-handler
+             (lambda ()
+               (let ((code (qt-last-key-code))
+                     (mods (qt-last-key-modifiers))
+                     (text (qt-last-key-text)))
+                 (let-values (((action data new-state)
+                               (qt-key-state-feed! (app-state-key-state app)
+                                                   code mods text)))
+                   (set! (app-state-key-state app) new-state)
+                   (case action
+                     ((command)
+                      ;; Clear echo on command
+                      (when (and (echo-state-message (app-state-echo app))
+                                 (null? (key-state-prefix-keys new-state)))
+                        (echo-clear! (app-state-echo app)))
+                      (execute-command! app data))
+                     ((self-insert)
+                      (qt-plain-text-edit-insert-text!
+                        (qt-current-editor (app-state-frame app)) data))
+                     ((prefix)
+                      (let ((prefix-str
+                             (let loop ((keys (key-state-prefix-keys new-state))
+                                        (acc ""))
+                               (if (null? keys) acc
+                                 (loop (cdr keys)
+                                       (if (string=? acc "")
+                                         (car keys)
+                                         (string-append acc " " (car keys))))))))
+                        (echo-message! (app-state-echo app)
+                                       (string-append prefix-str "-"))))
+                     ((undefined)
+                      (echo-error! (app-state-echo app)
+                                   (string-append data " is undefined"))))
+                   ;; Update modeline and echo after each key
+                   (qt-modeline-update! app)
+                   (qt-echo-draw! (app-state-echo app) echo-label))))))
+
+        ;; Install on the initial editor (consuming — editor doesn't see keys)
+        (qt-on-key-press-consuming! (qt-current-editor fr) key-handler)
+
+        ;; Store installer so split-window can install on new editors
+        (set! (app-state-key-handler app)
+              (lambda (editor)
+                (qt-on-key-press-consuming! editor key-handler))))
 
       ;; Open files from command line
       (for-each (lambda (file) (qt-open-file! app file)) args)
@@ -109,6 +118,9 @@
       (qt-main-window-set-title! win "gerbil-emacs")
       (qt-widget-resize! win 800 600)
       (qt-widget-show! win)
+
+      ;; Initial modeline update (before any key press)
+      (qt-modeline-update! app)
 
       ;; Enter Qt event loop
       (qt-app-exec! qt-app))))
