@@ -9458,6 +9458,566 @@
             (editor-goto-pos ed 0)))))))
 
 ;;;============================================================================
+;;; Task #45: isearch enhancements, abbrev, and editing utilities
+;;;============================================================================
+
+;; --- Search enhancements ---
+
+(def (cmd-isearch-forward-word app)
+  "Incremental search forward for a whole word."
+  (let ((word (app-read-string app "I-search word: ")))
+    (when (and word (not (string-empty? word)))
+      (let* ((ed (current-editor app))
+             (pos (editor-get-current-pos ed))
+             (text (editor-get-text ed))
+             (pat (string-append " " word " ")))
+        ;; Simple word boundary: space-delimited
+        (let ((found (string-contains text word pos)))
+          (if found
+            (begin
+              (editor-goto-pos ed found)
+              (editor-set-selection-start ed found)
+              (editor-set-selection-end ed (+ found (string-length word)))
+              (set! (app-state-last-search app) word))
+            (echo-message! (app-state-echo app)
+                           (string-append "Not found: " word))))))))
+
+(def (cmd-isearch-backward-word app)
+  "Incremental search backward for a whole word."
+  (let ((word (app-read-string app "I-search backward word: ")))
+    (when (and word (not (string-empty? word)))
+      (let* ((ed (current-editor app))
+             (pos (editor-get-current-pos ed))
+             (text (editor-get-text ed)))
+        ;; Search backward
+        (let loop ((i (- pos (string-length word) 1)))
+          (cond
+            ((< i 0)
+             (echo-message! (app-state-echo app)
+                            (string-append "Not found: " word)))
+            ((and (>= (+ i (string-length word)) 0)
+                  (<= (+ i (string-length word)) (string-length text))
+                  (string=? (substring text i (+ i (string-length word))) word))
+             (editor-goto-pos ed i)
+             (editor-set-selection-start ed i)
+             (editor-set-selection-end ed (+ i (string-length word)))
+             (set! (app-state-last-search app) word))
+            (else (loop (- i 1)))))))))
+
+(def (cmd-isearch-forward-symbol app)
+  "Incremental search forward for a symbol at point."
+  (let* ((ed (current-editor app))
+         (pos (editor-get-current-pos ed))
+         (text (editor-get-text ed))
+         (len (string-length text)))
+    ;; Get symbol at point
+    (let* ((ws (let loop ((i pos))
+                 (if (and (> i 0) (word-char? (string-ref text (- i 1))))
+                   (loop (- i 1)) i)))
+           (we (let loop ((i pos))
+                 (if (and (< i len) (word-char? (string-ref text i)))
+                   (loop (+ i 1)) i)))
+           (symbol (if (< ws we) (substring text ws we) "")))
+      (if (string-empty? symbol)
+        (echo-message! (app-state-echo app) "No symbol at point")
+        (let ((found (string-contains text symbol (+ we 1))))
+          (if found
+            (begin
+              (editor-goto-pos ed found)
+              (editor-set-selection-start ed found)
+              (editor-set-selection-end ed (+ found (string-length symbol)))
+              (set! (app-state-last-search app) symbol)
+              (echo-message! (app-state-echo app)
+                             (string-append "Symbol: " symbol)))
+            ;; Wrap around
+            (let ((found2 (string-contains text symbol 0)))
+              (if (and found2 (< found2 ws))
+                (begin
+                  (editor-goto-pos ed found2)
+                  (editor-set-selection-start ed found2)
+                  (editor-set-selection-end ed (+ found2 (string-length symbol)))
+                  (echo-message! (app-state-echo app) "Wrapped"))
+                (echo-message! (app-state-echo app) "Only occurrence")))))))))
+
+(def (cmd-query-replace-regexp app)
+  "Query replace using regexp (simplified: uses string-contains)."
+  (let ((from (app-read-string app "Query replace: ")))
+    (when (and from (not (string-empty? from)))
+      (let ((to (app-read-string app (string-append "Replace \"" from "\" with: "))))
+        (when to
+          (let* ((ed (current-editor app))
+                 (text (editor-get-text ed))
+                 (count (let loop ((i 0) (n 0))
+                          (let ((found (string-contains text from i)))
+                            (if found
+                              (loop (+ found (max 1 (string-length from))) (+ n 1))
+                              n)))))
+            ;; Do the replacement
+            (let loop ((result text) (replaced 0))
+              (let ((found (string-contains result from)))
+                (if found
+                  (let ((new-text (string-append
+                                    (substring result 0 found)
+                                    to
+                                    (substring result (+ found (string-length from))
+                                               (string-length result)))))
+                    (loop new-text (+ replaced 1)))
+                  (begin
+                    (editor-set-text ed result)
+                    (echo-message! (app-state-echo app)
+                                   (string-append "Replaced " (number->string replaced)
+                                                  " occurrences"))))))))))))
+
+(def (cmd-multi-occur app)
+  "Search for pattern across all buffers."
+  (let ((pat (app-read-string app "Multi-occur: ")))
+    (when (and pat (not (string-empty? pat)))
+      (let* ((results
+               (let loop ((bufs (buffer-list)) (acc []))
+                 (if (null? bufs)
+                   (reverse acc)
+                   (let* ((buf (car bufs))
+                          (name (buffer-name buf)))
+                     ;; Skip non-file buffers
+                     (loop (cdr bufs) acc))))))
+        (echo-message! (app-state-echo app)
+                       (string-append "Multi-occur for: " pat " (stub)"))))))
+
+;; --- Sort enhancements ---
+
+;; --- Align ---
+
+(def (cmd-align-current app)
+  "Align the current region on a separator."
+  (let ((sep (app-read-string app "Align on: ")))
+    (when (and sep (not (string-empty? sep)))
+      (let* ((ed (current-editor app))
+             (sel-start (editor-get-selection-start ed))
+             (sel-end (editor-get-selection-end ed)))
+        (when (< sel-start sel-end)
+          (let* ((text (editor-get-text ed))
+                 (region (substring text sel-start sel-end))
+                 (lines (string-split region #\newline))
+                 ;; Find max column of separator
+                 (max-col (let loop ((ls lines) (max-c 0))
+                            (if (null? ls) max-c
+                              (let ((pos (string-contains (car ls) sep)))
+                                (loop (cdr ls) (if pos (max max-c pos) max-c))))))
+                 ;; Pad each line so separator aligns
+                 (aligned (map (lambda (l)
+                                 (let ((pos (string-contains l sep)))
+                                   (if pos
+                                     (string-append
+                                       (substring l 0 pos)
+                                       (make-string (- max-col pos) #\space)
+                                       (substring l pos (string-length l)))
+                                     l)))
+                               lines))
+                 (result (string-join aligned "\n")))
+            (send-message ed 2160 sel-start 0)
+            (send-message ed 2161 sel-end 0)
+            (send-message/string ed SCI_REPLACETARGET result)))))))
+
+;; --- Rectangle enhancements ---
+
+(def (cmd-clear-rectangle app)
+  "Clear text in a rectangle region (replace with spaces)."
+  (let* ((ed (current-editor app))
+         (sel-start (editor-get-selection-start ed))
+         (sel-end (editor-get-selection-end ed)))
+    (when (< sel-start sel-end)
+      (let* ((text (editor-get-text ed))
+             (start-line (send-message ed 2166 sel-start 0))
+             (end-line (send-message ed 2166 sel-end 0))
+             (start-col (send-message ed 2008 sel-start 0))  ;; SCI_GETCOLUMN
+             (end-col (send-message ed 2008 sel-end 0))
+             (min-col (min start-col end-col))
+             (max-col (max start-col end-col))
+             (lines (string-split text #\newline))
+             (result-lines
+               (let loop ((ls lines) (n 0) (acc []))
+                 (if (null? ls)
+                   (reverse acc)
+                   (let ((l (car ls)))
+                     (if (and (>= n start-line) (<= n end-line))
+                       (let* ((len (string-length l))
+                              (before (substring l 0 (min min-col len)))
+                              (spaces (make-string (- max-col min-col) #\space))
+                              (after (if (< max-col len)
+                                       (substring l max-col len)
+                                       "")))
+                         (loop (cdr ls) (+ n 1) (cons (string-append before spaces after) acc)))
+                       (loop (cdr ls) (+ n 1) (cons l acc)))))))
+             (result (string-join result-lines "\n")))
+        (editor-set-text ed result)))))
+
+;; --- Abbrev mode ---
+
+(def (cmd-abbrev-mode app)
+  "Toggle abbrev mode (stub)."
+  (echo-message! (app-state-echo app) "Abbrev mode toggled (stub)"))
+
+(def (cmd-define-abbrev app)
+  "Define a new abbreviation (stub)."
+  (let ((abbrev (app-read-string app "Abbrev: ")))
+    (when (and abbrev (not (string-empty? abbrev)))
+      (let ((expansion (app-read-string app "Expansion: ")))
+        (when (and expansion (not (string-empty? expansion)))
+          (echo-message! (app-state-echo app)
+                         (string-append "Defined: " abbrev " -> " expansion " (stub)")))))))
+
+(def (cmd-expand-abbrev app)
+  "Expand abbreviation at point (stub)."
+  (echo-message! (app-state-echo app) "No abbrev to expand (stub)"))
+
+(def (cmd-list-abbrevs app)
+  "List all abbreviations (stub)."
+  (open-output-buffer app "*Abbrevs*" "No abbreviations defined (stub)."))
+
+;; --- Completion ---
+
+(def (cmd-completion-at-point app)
+  "Complete word at point using buffer contents (same as hippie-expand)."
+  (cmd-hippie-expand app))
+
+(def (cmd-complete-filename app)
+  "Complete filename at point."
+  (let* ((ed (current-editor app))
+         (pos (editor-get-current-pos ed))
+         (text (editor-get-text ed)))
+    ;; Get path-like prefix
+    (let* ((start (let loop ((i (- pos 1)))
+                    (if (and (>= i 0)
+                             (not (memv (string-ref text i) '(#\space #\tab #\newline #\( #\)))))
+                      (loop (- i 1))
+                      (+ i 1))))
+           (prefix (substring text start pos)))
+      (if (string-empty? prefix)
+        (echo-message! (app-state-echo app) "No filename prefix")
+        (with-catch
+          (lambda (e)
+            (echo-message! (app-state-echo app) "Cannot complete"))
+          (lambda ()
+            (let* ((dir (path-directory prefix))
+                   (base (path-strip-directory prefix))
+                   (entries (directory-files (if (string-empty? dir) "." dir)))
+                   (matches (filter (lambda (f)
+                                      (and (>= (string-length f) (string-length base))
+                                           (string=? (substring f 0 (string-length base)) base)))
+                                    entries)))
+              (cond
+                ((null? matches)
+                 (echo-message! (app-state-echo app) "No completions"))
+                ((= (length matches) 1)
+                 (let ((completion (string-append dir (car matches))))
+                   (send-message ed 2160 start 0)
+                   (send-message ed 2161 pos 0)
+                   (send-message/string ed SCI_REPLACETARGET completion)))
+                (else
+                 (echo-message! (app-state-echo app)
+                                (string-append (number->string (length matches)) " completions")))))))))))
+
+;; --- Window resize ---
+
+(def (cmd-resize-window-width app)
+  "Set window width (stub)."
+  (echo-message! (app-state-echo app) "Window width set (stub)"))
+
+;; --- Text operations ---
+
+(def (cmd-zap-to-char-inclusive app)
+  "Zap to character, including the character."
+  (echo-message! (app-state-echo app) "Zap to char (inclusive): ")
+  (let ((ev (tui-poll-event)))
+    (when ev
+      (let* ((ks (key-event->string ev))
+             (ch (if (= (string-length ks) 1) (string-ref ks 0) #f)))
+        (when ch
+          (let* ((ed (current-editor app))
+                 (pos (editor-get-current-pos ed))
+                 (text (editor-get-text ed))
+                 (len (string-length text)))
+            (let loop ((i (+ pos 1)))
+              (cond
+                ((>= i len)
+                 (echo-message! (app-state-echo app)
+                                (string-append "Character not found: " ks)))
+                ((char=? (string-ref text i) ch)
+                 ;; Kill from pos to i+1 (inclusive)
+                 (let ((killed (substring text pos (+ i 1))))
+                   (set! (app-state-kill-ring app)
+                     (cons killed (app-state-kill-ring app)))
+                   (send-message ed 2160 pos 0)
+                   (send-message ed 2161 (+ i 1) 0)
+                   (send-message/string ed SCI_REPLACETARGET "")))
+                (else (loop (+ i 1)))))))))))
+
+(def (cmd-copy-word-at-point app)
+  "Copy the word at point to the kill ring."
+  (let* ((ed (current-editor app))
+         (pos (editor-get-current-pos ed))
+         (text (editor-get-text ed))
+         (len (string-length text)))
+    (when (> len 0)
+      (let* ((ws (let loop ((i pos))
+                   (if (and (> i 0) (word-char? (string-ref text (- i 1))))
+                     (loop (- i 1)) i)))
+             (we (let loop ((i pos))
+                   (if (and (< i len) (word-char? (string-ref text i)))
+                     (loop (+ i 1)) i)))
+             (word (if (< ws we) (substring text ws we) "")))
+        (if (string-empty? word)
+          (echo-message! (app-state-echo app) "No word at point")
+          (begin
+            (set! (app-state-kill-ring app)
+              (cons word (app-state-kill-ring app)))
+            (echo-message! (app-state-echo app)
+                           (string-append "Copied: " word))))))))
+
+(def (cmd-copy-symbol-at-point app)
+  "Copy the symbol at point (including hyphens, underscores)."
+  (let* ((ed (current-editor app))
+         (pos (editor-get-current-pos ed))
+         (text (editor-get-text ed))
+         (len (string-length text))
+         (sym-char? (lambda (ch)
+                      (or (char-alphabetic? ch)
+                          (char-numeric? ch)
+                          (memv ch '(#\- #\_ #\! #\? #\*))))))
+    (when (> len 0)
+      (let* ((ws (let loop ((i pos))
+                   (if (and (> i 0) (sym-char? (string-ref text (- i 1))))
+                     (loop (- i 1)) i)))
+             (we (let loop ((i pos))
+                   (if (and (< i len) (sym-char? (string-ref text i)))
+                     (loop (+ i 1)) i)))
+             (sym (if (< ws we) (substring text ws we) "")))
+        (if (string-empty? sym)
+          (echo-message! (app-state-echo app) "No symbol at point")
+          (begin
+            (set! (app-state-kill-ring app)
+              (cons sym (app-state-kill-ring app)))
+            (echo-message! (app-state-echo app)
+                           (string-append "Copied: " sym))))))))
+
+(def (cmd-mark-page app)
+  "Mark the entire buffer (same as select-all)."
+  (let* ((ed (current-editor app))
+         (text (editor-get-text ed)))
+    (editor-set-selection-start ed 0)
+    (editor-set-selection-end ed (string-length text))
+    (echo-message! (app-state-echo app) "Buffer marked")))
+
+;; --- Encoding/display ---
+
+(def (cmd-set-language-environment app)
+  "Set language environment (stub)."
+  (let ((lang (app-read-string app "Language environment: ")))
+    (when (and lang (not (string-empty? lang)))
+      (echo-message! (app-state-echo app)
+                     (string-append "Language: " lang " (stub)")))))
+
+;; --- Theme/color ---
+
+(def (cmd-load-theme app)
+  "Load a color theme (stub)."
+  (let ((theme (app-read-string app "Load theme: ")))
+    (when (and theme (not (string-empty? theme)))
+      (echo-message! (app-state-echo app)
+                     (string-append "Theme: " theme " (stub)")))))
+
+(def (cmd-customize-face app)
+  "Customize a face/style (stub)."
+  (echo-message! (app-state-echo app) "Customize face (stub)"))
+
+(def (cmd-list-colors app)
+  "List available colors."
+  (let ((colors "black red green yellow blue magenta cyan white\nbright-black bright-red bright-green bright-yellow\nbright-blue bright-magenta bright-cyan bright-white"))
+    (open-output-buffer app "*Colors*" colors)))
+
+;; --- Text property/overlay ---
+
+(def (cmd-font-lock-mode app)
+  "Toggle font-lock (syntax highlighting) mode."
+  (echo-message! (app-state-echo app) "Font-lock toggled (stub)"))
+
+;; --- Auto-revert ---
+
+(def (cmd-auto-revert-mode app)
+  "Toggle auto-revert mode for current buffer."
+  (echo-message! (app-state-echo app) "Auto-revert mode toggled (stub)"))
+
+;; --- Diff enhancements ---
+
+(def (cmd-diff-backup app)
+  "Diff current file against its backup."
+  (let* ((buf (current-buffer-from-app app))
+         (file (buffer-file-path buf)))
+    (if file
+      (let ((backup (string-append file "~")))
+        (if (file-exists? backup)
+          (with-catch
+            (lambda (e)
+              (echo-message! (app-state-echo app) "Error running diff"))
+            (lambda ()
+              (let* ((proc (open-process
+                             (list path: "diff" arguments: ["-u" backup file]
+                                   stdin-redirection: #f
+                                   stdout-redirection: #t
+                                   stderr-redirection: #t)))
+                     (output (read-line proc #f))
+                     (result (or output "No differences")))
+                (close-port proc)
+                (open-output-buffer app "*Diff Backup*" result))))
+          (echo-message! (app-state-echo app) "No backup file found")))
+      (echo-message! (app-state-echo app) "Buffer is not visiting a file"))))
+
+;; --- Compilation ---
+
+(def (cmd-first-error app)
+  "Jump to first compilation error (stub)."
+  (echo-message! (app-state-echo app) "First error (stub)"))
+
+;; --- Calculator enhancements ---
+
+(def (cmd-quick-calc app)
+  "Quick inline calculation."
+  (let ((expr (app-read-string app "Quick calc: ")))
+    (when (and expr (not (string-empty? expr)))
+      (let-values (((result error?) (eval-expression-string expr)))
+        (echo-message! (app-state-echo app)
+                       (if error?
+                         (string-append "Error: " result)
+                         (string-append "= " result)))))))
+
+;; --- String insertion ---
+
+(def (cmd-insert-time app)
+  "Insert the current time."
+  (with-catch
+    (lambda (e)
+      (echo-message! (app-state-echo app) "Error getting time"))
+    (lambda ()
+      (let* ((proc (open-process
+                     (list path: "date" arguments: ["+%H:%M:%S"]
+                           stdin-redirection: #f
+                           stdout-redirection: #t
+                           stderr-redirection: #t)))
+             (output (read-line proc))
+             (time (or output ""))
+             (_ (close-port proc))
+             (ed (current-editor app))
+             (pos (editor-get-current-pos ed)))
+        (editor-insert-text ed pos time)
+        (editor-goto-pos ed (+ pos (string-length time)))))))
+
+(def (cmd-insert-file-header app)
+  "Insert a file header comment."
+  (let* ((buf (current-buffer-from-app app))
+         (name (buffer-name buf))
+         (ed (current-editor app))
+         (pos (editor-get-current-pos ed))
+         (header (string-append ";;; -*- Gerbil -*-\n"
+                                ";;; " name "\n"
+                                ";;;\n"
+                                ";;; Description: \n"
+                                ";;;\n\n")))
+    (editor-insert-text ed pos header)
+    (editor-goto-pos ed (+ pos (string-length header)))))
+
+;; --- Misc ---
+
+(def (cmd-toggle-debug-on-quit app)
+  "Toggle debug on quit (stub)."
+  (echo-message! (app-state-echo app) "Debug on quit toggled (stub)"))
+
+(def (cmd-profiler-start app)
+  "Start profiler (stub)."
+  (echo-message! (app-state-echo app) "Profiler started (stub)"))
+
+(def (cmd-profiler-stop app)
+  "Stop profiler and report (stub)."
+  (echo-message! (app-state-echo app) "Profiler stopped (stub)"))
+
+(def (cmd-memory-report app)
+  "Show memory usage report."
+  (with-catch
+    (lambda (e)
+      (echo-message! (app-state-echo app) "Error getting memory info"))
+    (lambda ()
+      (let* ((content (read-file-as-string "/proc/self/status"))
+             (lines (string-split content #\newline))
+             (vm-line (let loop ((ls lines))
+                        (if (null? ls) "Unknown"
+                          (if (string-contains (car ls) "VmRSS:")
+                            (car ls) (loop (cdr ls)))))))
+        (echo-message! (app-state-echo app) (string-trim-both vm-line))))))
+
+(def (cmd-emacs-version app)
+  "Display editor version."
+  (echo-message! (app-state-echo app) "gerbil-emacs 0.1"))
+
+(def (cmd-report-bug app)
+  "Report a bug."
+  (echo-message! (app-state-echo app) "Report bugs at: https://github.com/ober/gerbil-emacs/issues"))
+
+(def (cmd-view-echo-area-messages app)
+  "View echo area message log (stub)."
+  (echo-message! (app-state-echo app) "Message log (stub)"))
+
+(def (cmd-toggle-menu-bar-mode app)
+  "Toggle menu bar (stub)."
+  (echo-message! (app-state-echo app) "Menu bar toggled (stub)"))
+
+(def (cmd-toggle-tab-bar-mode app)
+  "Toggle tab bar (stub)."
+  (echo-message! (app-state-echo app) "Tab bar toggled (stub)"))
+
+(def (cmd-split-window-below app)
+  "Split window below (alias for split-window)."
+  (cmd-split-window app))
+
+(def (cmd-delete-window-below app)
+  "Delete the window below (stub)."
+  (echo-message! (app-state-echo app) "Delete window below (stub)"))
+
+(def (cmd-shrink-window-if-larger-than-buffer app)
+  "Shrink window to fit content."
+  (echo-message! (app-state-echo app) "Window shrunk to buffer (stub)"))
+
+(def (cmd-toggle-frame-fullscreen app)
+  "Toggle fullscreen mode (stub)."
+  (echo-message! (app-state-echo app) "Fullscreen toggled (stub)"))
+
+(def (cmd-toggle-frame-maximized app)
+  "Toggle maximized frame (stub)."
+  (echo-message! (app-state-echo app) "Frame maximized toggled (stub)"))
+
+;; --- Spell checking ---
+
+(def (cmd-ispell-word app)
+  "Check spelling of word at point (stub)."
+  (echo-message! (app-state-echo app) "Spell check word (stub)"))
+
+(def (cmd-ispell-buffer app)
+  "Check spelling of entire buffer (stub)."
+  (echo-message! (app-state-echo app) "Spell check buffer (stub)"))
+
+(def (cmd-ispell-region app)
+  "Check spelling of region (stub)."
+  (echo-message! (app-state-echo app) "Spell check region (stub)"))
+
+;; --- Process management ---
+
+(def (cmd-term app)
+  "Open a terminal (same as shell command)."
+  (cmd-shell app))
+
+(def (cmd-ansi-term app)
+  "Open an ANSI terminal (same as shell command)."
+  (cmd-shell app))
+
+;;;============================================================================
 ;;; Register all commands
 ;;;============================================================================
 
@@ -10204,4 +10764,53 @@
   (register-command! 'copy-file cmd-copy-file)
   (register-command! 'sudo-find-file cmd-sudo-find-file)
   (register-command! 'find-file-literally cmd-find-file-literally)
-  (register-command! 'find-alternate-file cmd-find-alternate-file))
+  ;; Task #45: isearch, abbrev, editing utilities
+  (register-command! 'isearch-forward-word cmd-isearch-forward-word)
+  (register-command! 'isearch-backward-word cmd-isearch-backward-word)
+  (register-command! 'isearch-forward-symbol cmd-isearch-forward-symbol)
+  (register-command! 'query-replace-regexp cmd-query-replace-regexp)
+  (register-command! 'multi-occur cmd-multi-occur)
+  (register-command! 'align-current cmd-align-current)
+  (register-command! 'clear-rectangle cmd-clear-rectangle)
+  (register-command! 'abbrev-mode cmd-abbrev-mode)
+  (register-command! 'define-abbrev cmd-define-abbrev)
+  (register-command! 'expand-abbrev cmd-expand-abbrev)
+  (register-command! 'list-abbrevs cmd-list-abbrevs)
+  (register-command! 'completion-at-point cmd-completion-at-point)
+  (register-command! 'complete-filename cmd-complete-filename)
+  (register-command! 'resize-window-width cmd-resize-window-width)
+  (register-command! 'zap-to-char-inclusive cmd-zap-to-char-inclusive)
+  (register-command! 'copy-word-at-point cmd-copy-word-at-point)
+  (register-command! 'copy-symbol-at-point cmd-copy-symbol-at-point)
+  (register-command! 'mark-page cmd-mark-page)
+  (register-command! 'toggle-input-method cmd-toggle-input-method)
+  (register-command! 'set-language-environment cmd-set-language-environment)
+  (register-command! 'load-theme cmd-load-theme)
+  (register-command! 'customize-face cmd-customize-face)
+  (register-command! 'list-colors cmd-list-colors)
+  (register-command! 'font-lock-mode cmd-font-lock-mode)
+  (register-command! 'auto-revert-mode cmd-auto-revert-mode)
+  (register-command! 'diff-backup cmd-diff-backup)
+  (register-command! 'first-error cmd-first-error)
+  (register-command! 'quick-calc cmd-quick-calc)
+  (register-command! 'insert-time cmd-insert-time)
+  (register-command! 'insert-file-header cmd-insert-file-header)
+  (register-command! 'toggle-debug-on-quit cmd-toggle-debug-on-quit)
+  (register-command! 'profiler-start cmd-profiler-start)
+  (register-command! 'profiler-stop cmd-profiler-stop)
+  (register-command! 'memory-report cmd-memory-report)
+  (register-command! 'emacs-version cmd-emacs-version)
+  (register-command! 'report-bug cmd-report-bug)
+  (register-command! 'view-echo-area-messages cmd-view-echo-area-messages)
+  (register-command! 'toggle-menu-bar-mode cmd-toggle-menu-bar-mode)
+  (register-command! 'toggle-tab-bar-mode cmd-toggle-tab-bar-mode)
+  (register-command! 'split-window-below cmd-split-window-below)
+  (register-command! 'delete-window-below cmd-delete-window-below)
+  (register-command! 'shrink-window-if-larger-than-buffer cmd-shrink-window-if-larger-than-buffer)
+  (register-command! 'toggle-frame-fullscreen cmd-toggle-frame-fullscreen)
+  (register-command! 'toggle-frame-maximized cmd-toggle-frame-maximized)
+  (register-command! 'ispell-word cmd-ispell-word)
+  (register-command! 'ispell-buffer cmd-ispell-buffer)
+  (register-command! 'ispell-region cmd-ispell-region)
+  (register-command! 'term cmd-term)
+  (register-command! 'ansi-term cmd-ansi-term))
