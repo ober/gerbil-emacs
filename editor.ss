@@ -20,6 +20,7 @@
         :gerbil-scintilla/style
         :gerbil-scintilla/tui
         :gerbil-emacs/core
+        :gerbil-emacs/repl
         :gerbil-emacs/keymap
         :gerbil-emacs/buffer
         :gerbil-emacs/window
@@ -41,10 +42,19 @@
 ;;;============================================================================
 
 (def (cmd-self-insert! app ch)
-  ;; Suppress self-insert in dired buffers
-  (unless (dired-buffer? (current-buffer-from-app app))
-    (let ((ed (current-editor app)))
-      (editor-send-key ed ch))))
+  (let ((buf (current-buffer-from-app app)))
+    (cond
+      ;; Suppress self-insert in dired buffers
+      ((dired-buffer? buf) (void))
+      ;; In REPL buffers, only allow typing after the prompt
+      ((repl-buffer? buf)
+       (let* ((ed (current-editor app))
+              (pos (editor-get-current-pos ed))
+              (rs (hash-get *repl-state* buf)))
+         (when (and rs (>= pos (repl-state-prompt-pos rs)))
+           (editor-send-key ed ch))))
+      (else
+       (editor-send-key (current-editor app) ch)))))
 
 ;;;============================================================================
 ;;; Navigation commands
@@ -97,12 +107,22 @@
   (editor-send-key (current-editor app) SCK_DELETE))
 
 (def (cmd-backward-delete-char app)
-  (editor-send-key (current-editor app) SCK_BACK))
+  (let ((buf (current-buffer-from-app app)))
+    (if (repl-buffer? buf)
+      ;; In REPL buffers, don't delete past the prompt
+      (let* ((ed (current-editor app))
+             (pos (editor-get-current-pos ed))
+             (rs (hash-get *repl-state* buf)))
+        (when (and rs (> pos (repl-state-prompt-pos rs)))
+          (editor-send-key ed SCK_BACK)))
+      (editor-send-key (current-editor app) SCK_BACK))))
 
 (def (cmd-newline app)
-  (if (dired-buffer? (current-buffer-from-app app))
-    (cmd-dired-find-file app)
-    (editor-send-key (current-editor app) SCK_RETURN)))
+  (let ((buf (current-buffer-from-app app)))
+    (cond
+      ((dired-buffer? buf) (cmd-dired-find-file app))
+      ((repl-buffer? buf)  (cmd-repl-send app))
+      (else (editor-send-key (current-editor app) SCK_RETURN)))))
 
 (def (cmd-open-line app)
   (let* ((ed (current-editor app))
@@ -278,6 +298,11 @@
                       (set! (edit-window-buffer (current-window fr)) other))))
                 ;; Clean up dired entries if applicable
                 (hash-remove! *dired-entries* buf)
+                ;; Clean up REPL state if applicable
+                (let ((rs (hash-get *repl-state* buf)))
+                  (when rs
+                    (repl-stop! rs)
+                    (hash-remove! *repl-state* buf)))
                 (buffer-kill! ed buf)
                 (echo-message! echo (string-append "Killed " target-name)))))
           (echo-error! echo (string-append "No buffer: " target-name)))))))
@@ -464,6 +489,74 @@
                                      (string-append "Opened: " full-path)))))))))))))
 
 ;;;============================================================================
+;;; REPL commands
+;;;============================================================================
+
+(def repl-buffer-name "*REPL*")
+
+(def (cmd-repl app)
+  "Open or switch to the *REPL* buffer."
+  (let ((existing (buffer-by-name repl-buffer-name)))
+    (if existing
+      ;; Switch to existing REPL buffer
+      (let* ((fr (app-state-frame app))
+             (ed (current-editor app)))
+        (buffer-attach! ed existing)
+        (set! (edit-window-buffer (current-window fr)) existing)
+        (echo-message! (app-state-echo app) repl-buffer-name))
+      ;; Create new REPL buffer
+      (let* ((fr (app-state-frame app))
+             (ed (current-editor app))
+             (buf (buffer-create! repl-buffer-name ed #f)))
+        ;; Mark as REPL buffer
+        (set! (buffer-lexer-lang buf) 'repl)
+        ;; Attach buffer to editor
+        (buffer-attach! ed buf)
+        (set! (edit-window-buffer (current-window fr)) buf)
+        ;; Spawn gxi subprocess
+        (let ((rs (repl-start!)))
+          (hash-put! *repl-state* buf rs)
+          ;; Insert initial prompt
+          (editor-set-text ed repl-prompt)
+          (let ((len (editor-get-text-length ed)))
+            (set! (repl-state-prompt-pos rs) len)
+            (editor-goto-pos ed len)))
+        (echo-message! (app-state-echo app) "REPL started")))))
+
+(def (cmd-repl-send app)
+  "Send the current input line to the gxi subprocess."
+  (let* ((buf (current-buffer-from-app app))
+         (rs (hash-get *repl-state* buf)))
+    (when rs
+      (let* ((ed (current-editor app))
+             (prompt-pos (repl-state-prompt-pos rs))
+             (all-text (editor-get-text ed))
+             (end-pos (string-length all-text))
+             ;; Extract user input after the prompt
+             (input (if (> end-pos prompt-pos)
+                      (substring all-text prompt-pos end-pos)
+                      "")))
+        ;; Append newline to the buffer
+        (editor-append-text ed "\n")
+        ;; Send to gxi
+        (repl-send! rs input)
+        ;; Update prompt-pos to after the newline (output will appear here)
+        (set! (repl-state-prompt-pos rs) (editor-get-text-length ed))))))
+
+(def (cmd-eval-expression app)
+  "Prompt for an expression in the echo area, eval it in-process."
+  (let* ((echo (app-state-echo app))
+         (fr (app-state-frame app))
+         (row (- (frame-height fr) 1))
+         (width (frame-width fr))
+         (input (echo-read-string echo "Eval: " row width)))
+    (when (and input (> (string-length input) 0))
+      (let-values (((result error?) (eval-expression-string input)))
+        (if error?
+          (echo-error! echo result)
+          (echo-message! echo result))))))
+
+;;;============================================================================
 ;;; Register all commands
 ;;;============================================================================
 
@@ -511,6 +604,9 @@
   ;; Search
   (register-command! 'search-forward cmd-search-forward)
   (register-command! 'search-backward cmd-search-backward)
+  ;; REPL
+  (register-command! 'repl cmd-repl)
+  (register-command! 'eval-expression cmd-eval-expression)
   ;; Misc
   (register-command! 'keyboard-quit cmd-keyboard-quit)
   (register-command! 'quit cmd-quit))

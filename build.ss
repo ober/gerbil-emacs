@@ -47,6 +47,7 @@
 (defbuild-script
   `(;; Shared core (no backend dependencies)
     "core"
+    "repl"
     ;; TUI backend
     "keymap"
     "buffer"

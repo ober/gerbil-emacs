@@ -8,6 +8,8 @@
         :gerbil-scintilla/scintilla
         :gerbil-scintilla/style
         :gerbil-scintilla/tui
+        :gerbil-emacs/core
+        :gerbil-emacs/repl
         :gerbil-emacs/keymap
         :gerbil-emacs/buffer
         :gerbil-emacs/window
@@ -70,6 +72,41 @@
           (editor-goto-pos ed 0))))))
 
 ;;;============================================================================
+;;; REPL output polling
+;;;============================================================================
+
+(def (find-window-for-buffer fr buf)
+  "Find the first window displaying a given buffer, or #f."
+  (let loop ((wins (frame-windows fr)))
+    (cond
+      ((null? wins) #f)
+      ((eq? (edit-window-buffer (car wins)) buf) (car wins))
+      (else (loop (cdr wins))))))
+
+(def (poll-repl-output! app)
+  "Check all REPL buffers for new output from gxi and insert it."
+  (for-each
+    (lambda (buf)
+      (when (repl-buffer? buf)
+        (let ((rs (hash-get *repl-state* buf)))
+          (when rs
+            (let ((output (repl-read-available rs)))
+              (when output
+                (let ((win (find-window-for-buffer (app-state-frame app) buf)))
+                  (when win
+                    (let ((ed (edit-window-editor win)))
+                      ;; Insert output + new prompt at end
+                      (editor-append-text ed output)
+                      (editor-append-text ed repl-prompt)
+                      ;; Update prompt-pos to after the new prompt
+                      (set! (repl-state-prompt-pos rs)
+                        (editor-get-text-length ed))
+                      ;; Move cursor to end and scroll
+                      (editor-goto-pos ed (editor-get-text-length ed))
+                      (editor-scroll-caret ed))))))))))
+    (buffer-list)))
+
+;;;============================================================================
 ;;; Event loop
 ;;;============================================================================
 
@@ -81,6 +118,9 @@
       (for-each (lambda (win)
                   (editor-poll-notifications (edit-window-editor win)))
                 (frame-windows (app-state-frame app)))
+
+      ;; Poll REPL subprocess output
+      (poll-repl-output! app)
 
       ;; Draw modelines, dividers, and echo area FIRST into the termbox buffer.
       ;; This must happen before editor-refresh because Scintilla's

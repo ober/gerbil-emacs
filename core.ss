@@ -49,7 +49,12 @@
   *dired-entries*
   dired-buffer?
   strip-trailing-slash
-  dired-format-listing)
+  dired-format-listing
+
+  ;; REPL shared logic
+  repl-buffer?
+  *repl-state*
+  eval-expression-string)
 
 (import :std/sugar
         :std/sort
@@ -153,7 +158,11 @@
   (keymap-bind! *ctrl-x-map* "o"   'other-window)
   (keymap-bind! *ctrl-x-map* "0"   'delete-window)
   (keymap-bind! *ctrl-x-map* "1"   'delete-other-windows)
-  (keymap-bind! *ctrl-x-map* "3"   'split-window-right))
+  (keymap-bind! *ctrl-x-map* "3"   'split-window-right)
+
+  ;; REPL
+  (keymap-bind! *global-keymap* "M-:" 'eval-expression)
+  (keymap-bind! *ctrl-x-map* "r"   'repl))
 
 ;;;============================================================================
 ;;; Echo state
@@ -374,3 +383,26 @@
                            (string-append dir "/" name)))
                        ordered))))
     (values text paths)))
+
+;;;============================================================================
+;;; REPL shared logic
+;;;============================================================================
+
+(def (repl-buffer? buf)
+  "Check if this buffer is a REPL buffer."
+  (eq? (buffer-lexer-lang buf) 'repl))
+
+;; Maps REPL buffers to their repl-state structs
+(def *repl-state* (make-hash-table))
+
+(def (eval-expression-string str)
+  "In-process eval: read+eval an expression string, capture output.
+   Returns (values result-string error?)."
+  (with-catch
+    (lambda (e)
+      (values (with-output-to-string (lambda () (display-exception e))) #t))
+    (lambda ()
+      (let* ((expr (with-input-from-string str read))
+             (result (eval expr))
+             (output (with-output-to-string (lambda () (write result)))))
+        (values output #f)))))

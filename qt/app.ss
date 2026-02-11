@@ -6,6 +6,7 @@
 (import :std/sugar
         :gerbil-qt/qt
         :gerbil-emacs/core
+        :gerbil-emacs/repl
         :gerbil-emacs/qt/keymap
         :gerbil-emacs/qt/buffer
         :gerbil-emacs/qt/window
@@ -87,12 +88,20 @@
                         (echo-clear! (app-state-echo app)))
                       (execute-command! app data))
                      ((self-insert)
-                      ;; Suppress self-insert in dired buffers
-                      (unless (eq? (buffer-lexer-lang
-                                     (qt-current-buffer (app-state-frame app)))
-                                   'dired)
-                        (qt-plain-text-edit-insert-text!
-                          (qt-current-editor (app-state-frame app)) data)))
+                      (let ((cur-buf (qt-current-buffer (app-state-frame app))))
+                        (cond
+                          ;; Suppress in dired buffers
+                          ((dired-buffer? cur-buf) (void))
+                          ;; In REPL buffers, only allow after the prompt
+                          ((repl-buffer? cur-buf)
+                           (let* ((ed (qt-current-editor (app-state-frame app)))
+                                  (pos (qt-plain-text-edit-cursor-position ed))
+                                  (rs (hash-get *repl-state* cur-buf)))
+                             (when (and rs (>= pos (repl-state-prompt-pos rs)))
+                               (qt-plain-text-edit-insert-text! ed data))))
+                          (else
+                           (qt-plain-text-edit-insert-text!
+                             (qt-current-editor (app-state-frame app)) data)))))
                      ((prefix)
                       (let ((prefix-str
                              (let loop ((keys (key-state-prefix-keys new-state))
@@ -118,6 +127,36 @@
         (set! (app-state-key-handler app)
               (lambda (editor)
                 (qt-on-key-press-consuming! editor key-handler))))
+
+      ;; REPL output polling timer
+      (let ((repl-timer (qt-timer-create)))
+        (qt-on-timeout! repl-timer
+          (lambda ()
+            (for-each
+              (lambda (buf)
+                (when (repl-buffer? buf)
+                  (let ((rs (hash-get *repl-state* buf)))
+                    (when rs
+                      (let ((output (repl-read-available rs)))
+                        (when output
+                          ;; Find a window showing this buffer
+                          (let loop ((wins (qt-frame-windows fr)))
+                            (when (pair? wins)
+                              (if (eq? (qt-edit-window-buffer (car wins)) buf)
+                                (let ((ed (qt-edit-window-editor (car wins))))
+                                  ;; Insert output + new prompt
+                                  (qt-plain-text-edit-append! ed output)
+                                  (qt-plain-text-edit-append! ed repl-prompt)
+                                  ;; Update prompt-pos
+                                  (set! (repl-state-prompt-pos rs)
+                                    (qt-plain-text-edit-text-length ed))
+                                  ;; Move cursor to end
+                                  (qt-plain-text-edit-set-cursor-position!
+                                    ed (qt-plain-text-edit-text-length ed))
+                                  (qt-plain-text-edit-ensure-cursor-visible! ed))
+                                (loop (cdr wins)))))))))))
+              (buffer-list))))
+        (qt-timer-start! repl-timer 50))
 
       ;; Open files from command line
       (for-each (lambda (file) (qt-open-file! app file)) args)

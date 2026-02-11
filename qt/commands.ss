@@ -9,6 +9,7 @@
 (import :std/sugar
         :gerbil-qt/qt
         :gerbil-emacs/core
+        :gerbil-emacs/repl
         :gerbil-emacs/qt/buffer
         :gerbil-emacs/qt/window
         :gerbil-emacs/qt/echo)
@@ -99,15 +100,27 @@
     (qt-plain-text-edit-remove-selected-text! ed)))
 
 (def (cmd-backward-delete-char app)
-  (let ((ed (current-qt-editor app)))
-    (qt-plain-text-edit-move-cursor! ed QT_CURSOR_PREVIOUS_CHAR
-                                     mode: QT_KEEP_ANCHOR)
-    (qt-plain-text-edit-remove-selected-text! ed)))
+  (let ((buf (current-qt-buffer app)))
+    (if (repl-buffer? buf)
+      ;; In REPL buffers, don't delete past the prompt
+      (let* ((ed (current-qt-editor app))
+             (pos (qt-plain-text-edit-cursor-position ed))
+             (rs (hash-get *repl-state* buf)))
+        (when (and rs (> pos (repl-state-prompt-pos rs)))
+          (qt-plain-text-edit-move-cursor! ed QT_CURSOR_PREVIOUS_CHAR
+                                           mode: QT_KEEP_ANCHOR)
+          (qt-plain-text-edit-remove-selected-text! ed)))
+      (let ((ed (current-qt-editor app)))
+        (qt-plain-text-edit-move-cursor! ed QT_CURSOR_PREVIOUS_CHAR
+                                         mode: QT_KEEP_ANCHOR)
+        (qt-plain-text-edit-remove-selected-text! ed)))))
 
 (def (cmd-newline app)
-  (if (dired-buffer? (current-qt-buffer app))
-    (cmd-dired-find-file app)
-    (qt-plain-text-edit-insert-text! (current-qt-editor app) "\n")))
+  (let ((buf (current-qt-buffer app)))
+    (cond
+      ((dired-buffer? buf) (cmd-dired-find-file app))
+      ((repl-buffer? buf)  (cmd-repl-send app))
+      (else (qt-plain-text-edit-insert-text! (current-qt-editor app) "\n")))))
 
 (def (cmd-open-line app)
   (let ((ed (current-qt-editor app)))
@@ -277,6 +290,11 @@
                           other))))
               ;; Clean up dired entries if applicable
               (hash-remove! *dired-entries* buf)
+              ;; Clean up REPL state if applicable
+              (let ((rs (hash-get *repl-state* buf)))
+                (when rs
+                  (repl-stop! rs)
+                  (hash-remove! *repl-state* buf)))
               (qt-buffer-kill! buf)
               (echo-message! echo (string-append "Killed " target-name))))
           (echo-error! echo (string-append "No buffer: " target-name)))))))
@@ -441,6 +459,72 @@
                                                     full-path)))))))))))))
 
 ;;;============================================================================
+;;; REPL commands
+;;;============================================================================
+
+(def repl-buffer-name "*REPL*")
+
+(def (cmd-repl app)
+  "Open or switch to the *REPL* buffer."
+  (let ((existing (buffer-by-name repl-buffer-name)))
+    (if existing
+      ;; Switch to existing REPL buffer
+      (let* ((fr (app-state-frame app))
+             (ed (current-qt-editor app)))
+        (qt-buffer-attach! ed existing)
+        (set! (qt-edit-window-buffer (qt-current-window fr)) existing)
+        (echo-message! (app-state-echo app) repl-buffer-name))
+      ;; Create new REPL buffer
+      (let* ((fr (app-state-frame app))
+             (ed (current-qt-editor app))
+             (buf (qt-buffer-create! repl-buffer-name ed #f)))
+        ;; Mark as REPL buffer
+        (set! (buffer-lexer-lang buf) 'repl)
+        ;; Attach buffer to editor
+        (qt-buffer-attach! ed buf)
+        (set! (qt-edit-window-buffer (qt-current-window fr)) buf)
+        ;; Spawn gxi subprocess
+        (let ((rs (repl-start!)))
+          (hash-put! *repl-state* buf rs)
+          ;; Insert initial prompt
+          (qt-plain-text-edit-set-text! ed repl-prompt)
+          (let ((len (qt-plain-text-edit-text-length ed)))
+            (set! (repl-state-prompt-pos rs) len)
+            (qt-plain-text-edit-set-cursor-position! ed len)))
+        (echo-message! (app-state-echo app) "REPL started")))))
+
+(def (cmd-repl-send app)
+  "Send the current input line to the gxi subprocess."
+  (let* ((buf (current-qt-buffer app))
+         (rs (hash-get *repl-state* buf)))
+    (when rs
+      (let* ((ed (current-qt-editor app))
+             (prompt-pos (repl-state-prompt-pos rs))
+             (all-text (qt-plain-text-edit-text ed))
+             (end-pos (string-length all-text))
+             ;; Extract user input after the prompt
+             (input (if (> end-pos prompt-pos)
+                      (substring all-text prompt-pos end-pos)
+                      "")))
+        ;; Append newline to the buffer
+        (qt-plain-text-edit-append! ed "")  ; append inserts a block break (newline)
+        ;; Send to gxi
+        (repl-send! rs input)
+        ;; Update prompt-pos to after the newline
+        (set! (repl-state-prompt-pos rs)
+          (qt-plain-text-edit-text-length ed))))))
+
+(def (cmd-eval-expression app)
+  "Prompt for an expression, eval it in-process."
+  (let* ((echo (app-state-echo app))
+         (input (qt-echo-read-string app "Eval: ")))
+    (when (and input (> (string-length input) 0))
+      (let-values (((result error?) (eval-expression-string input)))
+        (if error?
+          (echo-error! echo result)
+          (echo-message! echo result))))))
+
+;;;============================================================================
 ;;; Register all commands
 ;;;============================================================================
 
@@ -487,6 +571,9 @@
   ;; Search
   (register-command! 'search-forward cmd-search-forward)
   (register-command! 'search-backward cmd-search-backward)
+  ;; REPL
+  (register-command! 'repl cmd-repl)
+  (register-command! 'eval-expression cmd-eval-expression)
   ;; Misc
   (register-command! 'keyboard-quit cmd-keyboard-quit)
   (register-command! 'quit cmd-quit))

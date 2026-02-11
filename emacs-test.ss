@@ -6,6 +6,7 @@
 (import :std/test
         :gerbil-scintilla/tui
         :gerbil-emacs/core
+        :gerbil-emacs/repl
         :gerbil-emacs/keymap
         :gerbil-emacs/buffer
         :gerbil-emacs/echo)
@@ -164,7 +165,53 @@
       (check (hash-table? (keymap-lookup *global-keymap* "C-x")) => #t)
       ;; C-x C-s
       (check (keymap-lookup *ctrl-x-map* "C-s") => 'save-buffer)
-      (check (keymap-lookup *ctrl-x-map* "C-c") => 'quit))
+      (check (keymap-lookup *ctrl-x-map* "C-c") => 'quit)
+      ;; REPL bindings
+      (check (keymap-lookup *global-keymap* "M-:") => 'eval-expression)
+      (check (keymap-lookup *ctrl-x-map* "r") => 'repl))
+
+    (test-case "eval-expression-string: simple expression"
+      (let-values (((result error?) (eval-expression-string "(+ 1 2)")))
+        (check result => "3")
+        (check error? => #f)))
+
+    (test-case "eval-expression-string: error handling"
+      (let-values (((result error?) (eval-expression-string "(/ 1 0)")))
+        (check error? => #t)
+        (check (string? result) => #t)))
+
+    (test-case "eval-expression-string: output capture"
+      ;; eval should capture the return value, not stdout
+      (let-values (((result error?) (eval-expression-string "42")))
+        (check result => "42")
+        (check error? => #f)))
+
+    (test-case "repl-buffer? predicate"
+      (let ((buf (make-buffer "*test*" #f #f #f #f #f)))
+        (check (repl-buffer? buf) => #f)
+        (set! (buffer-lexer-lang buf) 'repl)
+        (check (repl-buffer? buf) => #t)
+        (set! (buffer-lexer-lang buf) 'dired)
+        (check (repl-buffer? buf) => #f)))
+
+    (test-case "repl subprocess lifecycle"
+      (let ((rs (repl-start!)))
+        ;; Verify state is initialized
+        (check (repl-state? rs) => #t)
+        (check (repl-state-history rs) => [])
+        (check (repl-state-prompt-pos rs) => 0)
+        ;; Send expression and wait for output
+        (repl-send! rs "(+ 1 2)")
+        (check (equal? (car (repl-state-history rs)) "(+ 1 2)") => #t)
+        ;; Wait for gxi to process
+        (thread-sleep! 1.0)
+        ;; Read available output
+        (let ((output (repl-read-available rs)))
+          (check (string? output) => #t)
+          ;; string-contains returns index (integer) or #f
+          (check (not (not (string-contains output "3"))) => #t))
+        ;; Clean shutdown
+        (repl-stop! rs)))
 
     ))
 
