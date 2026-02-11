@@ -305,7 +305,25 @@
 
   ;; Downcase/upcase region
   (keymap-bind! *ctrl-x-map* "C-l" 'downcase-region)
-  (keymap-bind! *ctrl-x-map* "C-u" 'upcase-region))
+  (keymap-bind! *ctrl-x-map* "C-u" 'upcase-region)
+
+  ;; Shell command
+  (keymap-bind! *global-keymap* "M-!" 'shell-command)
+
+  ;; Fill paragraph
+  (keymap-bind! *global-keymap* "M-q" 'fill-paragraph)
+
+  ;; Insert file
+  (keymap-bind! *ctrl-x-map* "i" 'insert-file)
+
+  ;; Dynamic abbreviation
+  (keymap-bind! *global-keymap* "M-/" 'dabbrev-expand)
+
+  ;; What cursor position
+  (keymap-bind! *ctrl-x-map* "=" 'what-cursor-position)
+
+  ;; String insert
+  (keymap-bind! *ctrl-c-map* "i" 'string-insert-file))
 
 ;;;============================================================================
 ;;; Echo state
@@ -386,6 +404,7 @@
    last-compile  ; string or #f: last compile command
    bookmarks     ; hash-table: name -> (buffer-name . position)
    rect-kill     ; list of strings (rectangle kill ring)
+   dabbrev-state ; list or #f: (prefix matches-remaining last-pos last-len)
    key-handler)  ; procedure or #f: (lambda (editor) ...) installs key handler on editor
   transparent: #t)
 
@@ -403,6 +422,7 @@
    #f                    ; last-compile
    (make-hash-table)     ; bookmarks
    []                    ; rect-kill
+   #f                    ; dabbrev-state
    #f))                  ; key-handler
 
 ;;;============================================================================

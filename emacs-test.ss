@@ -443,6 +443,29 @@
       (check (keymap-lookup *ctrl-x-map* "C-l") => 'downcase-region)
       (check (keymap-lookup *ctrl-x-map* "C-u") => 'upcase-region))
 
+    (test-case "more keybindings: shell-cmd, fill, dabbrev, etc"
+      (setup-default-bindings!)
+      (check (keymap-lookup *global-keymap* "M-!") => 'shell-command)
+      (check (keymap-lookup *global-keymap* "M-q") => 'fill-paragraph)
+      (check (keymap-lookup *ctrl-x-map* "i") => 'insert-file)
+      (check (keymap-lookup *global-keymap* "M-/") => 'dabbrev-expand)
+      (check (keymap-lookup *ctrl-x-map* "=") => 'what-cursor-position))
+
+    (test-case "shell-quote helper"
+      ;; Inline shell-quote for testing
+      (let ((sq (lambda (s)
+                  (string-append "'"
+                    (let loop ((i 0) (acc ""))
+                      (if (>= i (string-length s)) acc
+                        (let ((ch (string-ref s i)))
+                          (if (char=? ch #\')
+                            (loop (+ i 1) (string-append acc "'\"'\"'"))
+                            (loop (+ i 1) (string-append acc (string ch)))))))
+                    "'"))))
+        (check (not (not (string-contains (sq "hello") "hello"))) => #t)
+        (check (string-ref (sq "hello") 0) => #\')
+        (check (string-ref (sq "it's") 0) => #\')))
+
     (test-case "eval-expression-string"
       ;; Test in-process eval
       (let-values (((result error?) (eval-expression-string "(+ 1 2)")))

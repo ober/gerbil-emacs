@@ -1944,6 +1944,323 @@
         (echo-message! echo "Region upcased")))))
 
 ;;;============================================================================
+;;; Shell command (M-!)
+;;;============================================================================
+
+(def (cmd-shell-command app)
+  "Run a shell command and display output."
+  (let* ((echo (app-state-echo app))
+         (fr (app-state-frame app))
+         (row (- (frame-height fr) 1))
+         (width (frame-width fr))
+         (cmd (echo-read-string echo "Shell command: " row width)))
+    (when (and cmd (> (string-length cmd) 0))
+      (let* ((ed (current-editor app))
+             (output (with-catch
+                       (lambda (e)
+                         (string-append "Error: "
+                           (with-output-to-string
+                             (lambda () (display-exception e)))))
+                       (lambda ()
+                         (let ((proc (open-process
+                                       (list path: "/bin/sh"
+                                             arguments: (list "-c" cmd)
+                                             stdin-redirection: #f
+                                             stdout-redirection: #t
+                                             stderr-redirection: #t
+                                             pseudo-terminal: #f))))
+                           (let ((result (read-line proc #f)))
+                             (process-status proc)
+                             (or result "")))))))
+        ;; If short output (1 line), show in echo area
+        (if (not (string-contains output "\n"))
+          (echo-message! echo output)
+          ;; Multi-line: show in *Shell Output* buffer
+          (let ((buf (or (buffer-by-name "*Shell Output*")
+                         (buffer-create! "*Shell Output*" ed #f))))
+            (buffer-attach! ed buf)
+            (set! (edit-window-buffer (current-window fr)) buf)
+            (editor-set-text ed output)
+            (editor-set-save-point ed)
+            (editor-goto-pos ed 0)
+            (echo-message! echo "Shell command done")))))))
+
+;;;============================================================================
+;;; Fill paragraph (M-q) — word wrap at fill-column (80)
+;;;============================================================================
+
+(def fill-column 80)
+
+(def (cmd-fill-paragraph app)
+  "Fill (word-wrap) the current paragraph at fill-column."
+  (let* ((ed (current-editor app))
+         (pos (editor-get-current-pos ed))
+         (text (editor-get-text ed))
+         (len (string-length text)))
+    ;; Find paragraph boundaries (blank lines or start/end of buffer)
+    (let* ((para-start
+             (let loop ((i (- pos 1)))
+               (cond
+                 ((< i 0) 0)
+                 ((and (char=? (string-ref text i) #\newline)
+                       (or (= i 0)
+                           (and (> i 0) (char=? (string-ref text (- i 1)) #\newline))))
+                  (+ i 1))
+                 (else (loop (- i 1))))))
+           (para-end
+             (let loop ((i pos))
+               (cond
+                 ((>= i len) len)
+                 ((and (char=? (string-ref text i) #\newline)
+                       (< (+ i 1) len)
+                       (char=? (string-ref text (+ i 1)) #\newline))
+                  i)
+                 (else (loop (+ i 1))))))
+           (para-text (substring text para-start para-end))
+           ;; Collapse whitespace and split into words
+           (words (let split ((s para-text) (acc '()))
+                    (let ((trimmed (string-trim s)))
+                      (if (string=? trimmed "")
+                        (reverse acc)
+                        ;; Find next word boundary
+                        (let find-end ((i 0))
+                          (cond
+                            ((>= i (string-length trimmed))
+                             (reverse (cons trimmed acc)))
+                            ((or (char=? (string-ref trimmed i) #\space)
+                                 (char=? (string-ref trimmed i) #\newline)
+                                 (char=? (string-ref trimmed i) #\tab))
+                             (split (substring trimmed i (string-length trimmed))
+                                    (cons (substring trimmed 0 i) acc)))
+                            (else (find-end (+ i 1)))))))))
+           ;; Rebuild with word wrap
+           (filled (let loop ((ws words) (line "") (lines '()))
+                     (if (null? ws)
+                       (string-join (reverse (if (string=? line "") lines
+                                                (cons line lines)))
+                                   "\n")
+                       (let* ((word (car ws))
+                              (new-line (if (string=? line "")
+                                          word
+                                          (string-append line " " word))))
+                         (if (> (string-length new-line) fill-column)
+                           ;; Wrap
+                           (if (string=? line "")
+                             ;; Single word longer than fill-column
+                             (loop (cdr ws) "" (cons word lines))
+                             (loop ws "" (cons line lines)))
+                           (loop (cdr ws) new-line lines)))))))
+      ;; Replace paragraph text
+      (with-undo-action ed
+        (editor-delete-range ed para-start (- para-end para-start))
+        (editor-insert-text ed para-start filled))
+      (echo-message! (app-state-echo app) "Paragraph filled"))))
+
+;;;============================================================================
+;;; Grep (M-x grep)
+;;;============================================================================
+
+(def (cmd-grep app)
+  "Search for a pattern in files using grep, show results."
+  (let* ((echo (app-state-echo app))
+         (fr (app-state-frame app))
+         (row (- (frame-height fr) 1))
+         (width (frame-width fr))
+         (pattern (echo-read-string echo "Grep: " row width)))
+    (when (and pattern (> (string-length pattern) 0))
+      (let* ((dir (echo-read-string echo "In directory: " row width))
+             (search-dir (if (or (not dir) (string=? dir "")) "." dir)))
+        (echo-message! echo (string-append "Searching..."))
+        (frame-refresh! fr)
+        (let* ((ed (current-editor app))
+               (cmd (string-append "grep -rn --include='*.ss' --include='*.scm' "
+                                   "-- " (shell-quote pattern) " "
+                                   (shell-quote search-dir) " 2>&1 || true"))
+               (output (with-catch
+                         (lambda (e) "Error running grep")
+                         (lambda ()
+                           (let ((proc (open-process
+                                         (list path: "/bin/sh"
+                                               arguments: (list "-c" cmd)
+                                               stdin-redirection: #f
+                                               stdout-redirection: #t
+                                               stderr-redirection: #t
+                                               pseudo-terminal: #f))))
+                             (let ((result (read-line proc #f)))
+                               (process-status proc)
+                               (or result ""))))))
+               (text (string-append "-*- Grep -*-\n"
+                                    "Pattern: " pattern "\n"
+                                    "Directory: " search-dir "\n"
+                                    (make-string 60 #\-) "\n\n"
+                                    output "\n"))
+               (buf (or (buffer-by-name "*Grep*")
+                        (buffer-create! "*Grep*" ed #f))))
+          (buffer-attach! ed buf)
+          (set! (edit-window-buffer (current-window fr)) buf)
+          (editor-set-text ed text)
+          (editor-set-save-point ed)
+          (editor-goto-pos ed 0)
+          (echo-message! echo "Grep done"))))))
+
+(def (shell-quote s)
+  "Quote a string for safe shell use."
+  (string-append "'" (let loop ((i 0) (acc ""))
+                       (if (>= i (string-length s))
+                         acc
+                         (let ((ch (string-ref s i)))
+                           (if (char=? ch #\')
+                             (loop (+ i 1) (string-append acc "'\"'\"'"))
+                             (loop (+ i 1) (string-append acc (string ch)))))))
+                 "'"))
+
+;;;============================================================================
+;;; Insert file (C-x i)
+;;;============================================================================
+
+(def (cmd-insert-file app)
+  "Insert contents of a file at point."
+  (let* ((echo (app-state-echo app))
+         (fr (app-state-frame app))
+         (row (- (frame-height fr) 1))
+         (width (frame-width fr))
+         (filename (echo-read-string echo "Insert file: " row width)))
+    (when (and filename (> (string-length filename) 0))
+      (if (file-exists? filename)
+        (let* ((text (read-file-as-string filename))
+               (ed (current-editor app))
+               (pos (editor-get-current-pos ed)))
+          (when text
+            (editor-insert-text ed pos text)
+            (echo-message! echo (string-append "Inserted " filename))))
+        (echo-error! echo (string-append "File not found: " filename))))))
+
+;;;============================================================================
+;;; Dynamic abbreviation (M-/)
+;;;============================================================================
+
+(def (collect-dabbrev-matches text prefix pos)
+  "Collect all words in text matching prefix, ordered by distance from pos."
+  (let* ((plen (string-length prefix))
+         (tlen (string-length text))
+         (matches '()))
+    ;; Scan the entire text for words matching the prefix
+    (let loop ((i 0))
+      (when (< i tlen)
+        ;; Find start of word
+        (if (or (char-alphabetic? (string-ref text i))
+                (char=? (string-ref text i) #\_)
+                (char=? (string-ref text i) #\-))
+          (let find-end ((j (+ i 1)))
+            (if (or (>= j tlen)
+                    (not (or (char-alphabetic? (string-ref text j))
+                             (char-numeric? (string-ref text j))
+                             (char=? (string-ref text j) #\_)
+                             (char=? (string-ref text j) #\-)
+                             (char=? (string-ref text j) #\?)
+                             (char=? (string-ref text j) #\!))))
+              (let ((word (substring text i j)))
+                (when (and (> (string-length word) plen)
+                           (string=? (substring word 0 plen) prefix)
+                           (not (= i (- pos plen))))  ; Skip the prefix itself
+                  (set! matches (cons (cons (abs (- i pos)) word) matches)))
+                (loop j))
+              (find-end (+ j 1))))
+          (loop (+ i 1)))))
+    ;; Sort by distance from cursor, remove duplicates
+    (let* ((sorted (sort matches (lambda (a b) (< (car a) (car b)))))
+           (words (map cdr sorted)))
+      ;; Remove duplicates keeping order
+      (let dedup ((ws words) (seen '()) (acc '()))
+        (if (null? ws) (reverse acc)
+          (if (member (car ws) seen)
+            (dedup (cdr ws) seen acc)
+            (dedup (cdr ws) (cons (car ws) seen) (cons (car ws) acc))))))))
+
+(def (cmd-dabbrev-expand app)
+  "Expand word before point using other words in buffer."
+  (let* ((ed (current-editor app))
+         (pos (editor-get-current-pos ed))
+         (text (editor-get-text ed))
+         (echo (app-state-echo app))
+         (state (app-state-dabbrev-state app)))
+    (if (and state (pair? state))
+      ;; Continue cycling through matches
+      (let* ((prefix (car state))
+             (remaining (cadr state))
+             (last-pos (caddr state))
+             (last-len (cadddr state)))
+        (if (null? remaining)
+          (begin
+            (set! (app-state-dabbrev-state app) #f)
+            (echo-message! echo "No more expansions"))
+          (let* ((next (car remaining))
+                 (expand-len (- (string-length next) (string-length prefix))))
+            ;; Delete previous expansion
+            (editor-delete-range ed (+ last-pos (string-length prefix))
+                                (- last-len (string-length prefix)))
+            ;; Insert new expansion
+            (editor-insert-text ed (+ last-pos (string-length prefix))
+                                (substring next (string-length prefix)
+                                           (string-length next)))
+            (editor-goto-pos ed (+ last-pos (string-length next)))
+            (set! (app-state-dabbrev-state app)
+              (list prefix (cdr remaining) last-pos (string-length next))))))
+      ;; First expansion: find prefix before cursor
+      (let find-prefix ((i (- pos 1)) (count 0))
+        (if (or (< i 0)
+                (not (or (char-alphabetic? (string-ref text i))
+                         (char-numeric? (string-ref text i))
+                         (char=? (string-ref text i) #\_)
+                         (char=? (string-ref text i) #\-)
+                         (char=? (string-ref text i) #\?)
+                         (char=? (string-ref text i) #\!))))
+          ;; Found prefix start
+          (let* ((prefix-start (+ i 1))
+                 (prefix (substring text prefix-start pos)))
+            (if (= (string-length prefix) 0)
+              (echo-message! echo "No prefix to expand")
+              (let ((matches (collect-dabbrev-matches text prefix pos)))
+                (if (null? matches)
+                  (echo-message! echo "No expansion found")
+                  (let* ((first-match (car matches))
+                         (expand-text (substring first-match (string-length prefix)
+                                                 (string-length first-match))))
+                    (editor-insert-text ed pos expand-text)
+                    (editor-goto-pos ed (+ pos (string-length expand-text)))
+                    (set! (app-state-dabbrev-state app)
+                      (list prefix (cdr matches) prefix-start
+                            (string-length first-match))))))))
+          (find-prefix (- i 1) (+ count 1)))))))
+
+;;;============================================================================
+;;; What cursor position (C-x =)
+;;;============================================================================
+
+(def (cmd-what-cursor-position app)
+  "Display character information at point."
+  (let* ((ed (current-editor app))
+         (pos (editor-get-current-pos ed))
+         (text (editor-get-text ed))
+         (len (string-length text)))
+    (if (>= pos len)
+      (echo-message! (app-state-echo app) "End of buffer")
+      (let* ((ch (string-ref text pos))
+             (code (char->integer ch))
+             (line (+ 1 (editor-line-from-position ed pos)))
+             (col (+ 1 (editor-get-column ed pos)))
+             (pct (if (= len 0) 0 (quotient (* pos 100) len))))
+        (echo-message! (app-state-echo app)
+          (string-append "Char: " (string ch)
+                         " (" (number->string code) ", #x"
+                         (number->string code 16) ")"
+                         "  point=" (number->string pos)
+                         " of " (number->string len)
+                         " (" (number->string pct) "%)"
+                         "  line " (number->string line)
+                         " col " (number->string col)))))))
+
+;;;============================================================================
 ;;; Register all commands
 ;;;============================================================================
 
@@ -2076,6 +2393,19 @@
   ;; Case region
   (register-command! 'downcase-region cmd-downcase-region)
   (register-command! 'upcase-region cmd-upcase-region)
+  ;; Shell command
+  (register-command! 'shell-command cmd-shell-command)
+  ;; Fill paragraph
+  (register-command! 'fill-paragraph cmd-fill-paragraph)
+  ;; Grep
+  (register-command! 'grep cmd-grep)
+  ;; Insert file
+  (register-command! 'insert-file cmd-insert-file)
+  (register-command! 'string-insert-file cmd-insert-file)  ; alias
+  ;; Dabbrev
+  (register-command! 'dabbrev-expand cmd-dabbrev-expand)
+  ;; What cursor position
+  (register-command! 'what-cursor-position cmd-what-cursor-position)
   ;; Misc
   (register-command! 'keyboard-quit cmd-keyboard-quit)
   (register-command! 'quit cmd-quit))
