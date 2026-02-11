@@ -46,7 +46,12 @@
            ;; Create app state
            (app (new-app-state fr)))
 
-      ;; Layout: splitter takes most space, echo-label at bottom
+      ;; Echo label: ensure visible with minimum height and distinct style
+      (qt-widget-set-minimum-height! echo-label 20)
+      (qt-widget-set-style-sheet! echo-label
+        "color: #d8d8d8; background: #282828; font-family: monospace; font-size: 10pt; padding: 2px 4px;")
+
+      ;; Layout: splitter takes remaining space, echo-label fixed at bottom
       (qt-layout-add-widget! layout splitter)
       (qt-layout-add-widget! layout echo-label)
       (qt-layout-set-margins! layout 0 0 0 0)
@@ -82,8 +87,12 @@
                         (echo-clear! (app-state-echo app)))
                       (execute-command! app data))
                      ((self-insert)
-                      (qt-plain-text-edit-insert-text!
-                        (qt-current-editor (app-state-frame app)) data))
+                      ;; Suppress self-insert in dired buffers
+                      (unless (eq? (buffer-lexer-lang
+                                     (qt-current-buffer (app-state-frame app)))
+                                   'dired)
+                        (qt-plain-text-edit-insert-text!
+                          (qt-current-editor (app-state-frame app)) data)))
                      ((prefix)
                       (let ((prefix-str
                              (let loop ((keys (key-state-prefix-keys new-state))
@@ -130,16 +139,21 @@
 ;;;============================================================================
 
 (def (qt-open-file! app filename)
-  "Open a file in a new buffer."
-  (let* ((name (path-strip-directory filename))
-         (fr (app-state-frame app))
-         (ed (qt-current-editor fr))
-         (buf (qt-buffer-create! name ed filename)))
-    (qt-buffer-attach! ed buf)
-    (set! (qt-edit-window-buffer (qt-current-window fr)) buf)
-    (when (file-exists? filename)
-      (let ((text (read-file-as-string filename)))
-        (when text
-          (qt-plain-text-edit-set-text! ed text)
-          (qt-text-document-set-modified! (buffer-doc-pointer buf) #f)
-          (qt-plain-text-edit-set-cursor-position! ed 0))))))
+  "Open a file or directory in a new buffer."
+  (if (and (file-exists? filename)
+           (eq? 'directory (file-info-type (file-info filename))))
+    ;; Open as dired
+    (dired-open-directory! app filename)
+    ;; Open as regular file
+    (let* ((name (path-strip-directory filename))
+           (fr (app-state-frame app))
+           (ed (qt-current-editor fr))
+           (buf (qt-buffer-create! name ed filename)))
+      (qt-buffer-attach! ed buf)
+      (set! (qt-edit-window-buffer (qt-current-window fr)) buf)
+      (when (file-exists? filename)
+        (let ((text (read-file-as-string filename)))
+          (when text
+            (qt-plain-text-edit-set-text! ed text)
+            (qt-text-document-set-modified! (buffer-doc-pointer buf) #f)
+            (qt-plain-text-edit-set-cursor-position! ed 0)))))))

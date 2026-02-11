@@ -3,9 +3,13 @@
 ;;;
 ;;; All Emacs commands reimplemented using Qt QPlainTextEdit APIs.
 
-(export qt-register-all-commands!)
+(export qt-register-all-commands!
+        dired-buffer?
+        dired-open-directory!)
 
 (import :std/sugar
+        :std/sort
+        :std/srfi/13
         :gerbil-qt/qt
         :gerbil-emacs/core
         :gerbil-emacs/qt/buffer
@@ -104,7 +108,9 @@
     (qt-plain-text-edit-remove-selected-text! ed)))
 
 (def (cmd-newline app)
-  (qt-plain-text-edit-insert-text! (current-qt-editor app) "\n"))
+  (if (dired-buffer? (current-qt-buffer app))
+    (cmd-dired-find-file app)
+    (qt-plain-text-edit-insert-text! (current-qt-editor app) "\n")))
 
 (def (cmd-open-line app)
   (let ((ed (current-qt-editor app)))
@@ -190,21 +196,25 @@
          (filename (qt-echo-read-string app "Find file: ")))
     (when filename
       (when (> (string-length filename) 0)
-        (let* ((name (path-strip-directory filename))
-               (fr (app-state-frame app))
-               (ed (current-qt-editor app))
-               (buf (qt-buffer-create! name ed filename)))
-          ;; Switch to new buffer
-          (qt-buffer-attach! ed buf)
-          (set! (qt-edit-window-buffer (qt-current-window fr)) buf)
-          ;; Load file if it exists
-          (when (file-exists? filename)
-            (let ((text (read-file-as-string filename)))
-              (when text
-                (qt-plain-text-edit-set-text! ed text)
-                (qt-text-document-set-modified! (buffer-doc-pointer buf) #f)
-                (qt-plain-text-edit-set-cursor-position! ed 0))))
-          (echo-message! echo (string-append "Opened: " filename)))))))
+        ;; Check if it's a directory
+        (if (and (file-exists? filename)
+                 (eq? 'directory (file-info-type (file-info filename))))
+          ;; Open as dired
+          (dired-open-directory! app filename)
+          ;; Open as regular file
+          (let* ((name (path-strip-directory filename))
+                 (fr (app-state-frame app))
+                 (ed (current-qt-editor app))
+                 (buf (qt-buffer-create! name ed filename)))
+            (qt-buffer-attach! ed buf)
+            (set! (qt-edit-window-buffer (qt-current-window fr)) buf)
+            (when (file-exists? filename)
+              (let ((text (read-file-as-string filename)))
+                (when text
+                  (qt-plain-text-edit-set-text! ed text)
+                  (qt-text-document-set-modified! (buffer-doc-pointer buf) #f)
+                  (qt-plain-text-edit-set-cursor-position! ed 0))))
+            (echo-message! echo (string-append "Opened: " filename))))))))
 
 (def (cmd-save-buffer app)
   (let* ((ed (current-qt-editor app))
@@ -268,6 +278,8 @@
                     (qt-buffer-attach! ed other)
                     (set! (qt-edit-window-buffer (qt-current-window fr))
                           other))))
+              ;; Clean up dired entries if applicable
+              (hash-remove! *dired-entries* buf)
               (qt-buffer-kill! buf)
               (echo-message! echo (string-append "Killed " target-name))))
           (echo-error! echo (string-append "No buffer: " target-name)))))))
@@ -356,6 +368,173 @@
   ;; Quit the Qt event loop
   (let ((fr (app-state-frame app)))
     (qt-widget-close! (qt-frame-main-win fr))))
+
+;;;============================================================================
+;;; Dired (directory listing) support
+;;;============================================================================
+
+;; Maps dired buffers to their entries vectors (index → full-path)
+(def *dired-entries* (make-hash-table))
+
+(def (dired-buffer? buf)
+  "Check if this buffer is a dired (directory listing) buffer."
+  (eq? (buffer-lexer-lang buf) 'dired))
+
+(def (strip-trailing-slash path)
+  (if (and (> (string-length path) 1)
+           (char=? (string-ref path (- (string-length path) 1)) #\/))
+    (substring path 0 (- (string-length path) 1))
+    path))
+
+(def (mode->permission-string mode)
+  "Convert file permission bits to rwxrwxrwx string."
+  (let ((p (bitwise-and mode #o777)))
+    (string
+      (if (not (zero? (bitwise-and p #o400))) #\r #\-)
+      (if (not (zero? (bitwise-and p #o200))) #\w #\-)
+      (if (not (zero? (bitwise-and p #o100))) #\x #\-)
+      (if (not (zero? (bitwise-and p #o040))) #\r #\-)
+      (if (not (zero? (bitwise-and p #o020))) #\w #\-)
+      (if (not (zero? (bitwise-and p #o010))) #\x #\-)
+      (if (not (zero? (bitwise-and p #o004))) #\r #\-)
+      (if (not (zero? (bitwise-and p #o002))) #\w #\-)
+      (if (not (zero? (bitwise-and p #o001))) #\x #\-))))
+
+(def (format-size size)
+  "Right-align size in 8-char field."
+  (let ((s (number->string size)))
+    (string-append (make-string (max 0 (- 8 (string-length s))) #\space) s)))
+
+(def (dired-format-entry dir name)
+  "Format one dired line for a file/directory entry."
+  (let ((full (if (string=? name "..")
+                (strip-trailing-slash (path-directory dir))
+                (string-append dir "/" name))))
+    (with-catch
+      (lambda (e)
+        (string-append "  ?????????? " (make-string 8 #\?) " " name))
+      (lambda ()
+        (let* ((info (file-info full))
+               (type (file-info-type info))
+               (mode (file-info-mode info))
+               (size (file-info-size info))
+               (type-char (case type
+                            ((directory) #\d)
+                            ((symbolic-link) #\l)
+                            (else #\-)))
+               (perms (mode->permission-string mode))
+               (display-name (if (eq? type 'directory)
+                               (string-append name "/")
+                               name)))
+          (string-append "  " (string type-char) perms " "
+                         (format-size size) " " display-name))))))
+
+(def (dired-format-listing dir)
+  "Format a directory listing.
+   Returns (values text entries-vector).
+   entries-vector maps index i to the full path of entry at line (i + 3)."
+  (let* ((raw-entries (directory-files
+                        (list path: dir ignore-hidden: 'dot-and-dot-dot)))
+         (entries (sort raw-entries string<?))
+         ;; Separate directories and files, dirs first
+         (dirs (filter (lambda (name)
+                         (with-catch
+                           (lambda (e) #f)
+                           (lambda ()
+                             (eq? 'directory
+                                  (file-info-type
+                                   (file-info (string-append dir "/" name)))))))
+                       entries))
+         (files (filter (lambda (name)
+                          (with-catch
+                            (lambda (e) #t)
+                            (lambda ()
+                              (not (eq? 'directory
+                                        (file-info-type
+                                         (file-info (string-append dir "/" name))))))))
+                        entries))
+         ;; ".." first, then dirs, then files
+         (ordered (append '("..") dirs files))
+         ;; Format lines
+         (header (string-append "  " dir ":"))
+         (total-line (string-append "  " (number->string (length entries))
+                                    " entries"))
+         (entry-lines (map (lambda (name) (dired-format-entry dir name))
+                           ordered))
+         (all-lines (append (list header total-line "") entry-lines))
+         (text (string-join all-lines "\n"))
+         ;; Build entries vector: index i → full path
+         (paths (list->vector
+                  (map (lambda (name)
+                         (if (string=? name "..")
+                           (strip-trailing-slash (path-directory dir))
+                           (string-append dir "/" name)))
+                       ordered))))
+    (values text paths)))
+
+(def (dired-open-directory! app dir-path)
+  "Open a directory listing in a new dired buffer."
+  (let* ((dir (strip-trailing-slash dir-path))
+         (name (string-append dir "/"))
+         (fr (app-state-frame app))
+         (ed (current-qt-editor app))
+         (buf (qt-buffer-create! name ed dir)))
+    ;; Mark as dired buffer
+    (set! (buffer-lexer-lang buf) 'dired)
+    ;; Attach buffer to editor
+    (qt-buffer-attach! ed buf)
+    (set! (qt-edit-window-buffer (qt-current-window fr)) buf)
+    ;; Generate and set listing
+    (let-values (((text entries) (dired-format-listing dir)))
+      (qt-plain-text-edit-set-text! ed text)
+      (qt-text-document-set-modified! (buffer-doc-pointer buf) #f)
+      ;; Position cursor at first entry (line 3, after header + count + blank)
+      (qt-plain-text-edit-move-cursor! ed QT_CURSOR_START)
+      (qt-plain-text-edit-move-cursor! ed QT_CURSOR_DOWN)
+      (qt-plain-text-edit-move-cursor! ed QT_CURSOR_DOWN)
+      (qt-plain-text-edit-move-cursor! ed QT_CURSOR_DOWN)
+      (qt-plain-text-edit-move-cursor! ed QT_CURSOR_START_OF_BLOCK)
+      ;; Store entries for navigation
+      (hash-put! *dired-entries* buf entries))
+    (echo-message! (app-state-echo app) (string-append "Directory: " dir))))
+
+(def (cmd-dired-find-file app)
+  "In a dired buffer, open the file or directory under cursor."
+  (let* ((buf (current-qt-buffer app))
+         (ed (current-qt-editor app))
+         (line (qt-plain-text-edit-cursor-line ed))
+         (entries (hash-get *dired-entries* buf)))
+    (when entries
+      (let ((idx (- line 3)))
+        (if (or (< idx 0) (>= idx (vector-length entries)))
+          (echo-message! (app-state-echo app) "No file on this line")
+          (let ((full-path (vector-ref entries idx)))
+            (with-catch
+              (lambda (e)
+                (echo-error! (app-state-echo app)
+                             (string-append "Error: "
+                               (with-output-to-string
+                                 (lambda () (display-exception e))))))
+              (lambda ()
+                (let ((info (file-info full-path)))
+                  (if (eq? 'directory (file-info-type info))
+                    (dired-open-directory! app full-path)
+                    ;; Open as regular file
+                    (let* ((fname (path-strip-directory full-path))
+                           (fr (app-state-frame app))
+                           (new-buf (qt-buffer-create! fname ed full-path)))
+                      (qt-buffer-attach! ed new-buf)
+                      (set! (qt-edit-window-buffer (qt-current-window fr))
+                            new-buf)
+                      (let ((text (read-file-as-string full-path)))
+                        (when text
+                          (qt-plain-text-edit-set-text! ed text)
+                          (qt-text-document-set-modified!
+                            (buffer-doc-pointer new-buf) #f)
+                          (qt-plain-text-edit-set-cursor-position! ed 0)))
+                      (echo-message! (app-state-echo app)
+                                     (string-append "Opened: "
+                                                    full-path)))))))))))))
 
 ;;;============================================================================
 ;;; Register all commands

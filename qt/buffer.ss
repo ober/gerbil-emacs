@@ -17,8 +17,8 @@
 ;;;============================================================================
 
 (def (qt-buffer-create! name editor (file-path #f))
-  "Create buffer with a new QTextDocument."
-  (let* ((doc (qt-text-document-create))
+  "Create buffer with a new QTextDocument (using QPlainTextDocumentLayout)."
+  (let* ((doc (qt-plain-text-document-create))
          (buf (make-buffer name file-path doc #f #f #f)))
     (buffer-list-add! buf)
     buf))

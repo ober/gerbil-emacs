@@ -23,6 +23,7 @@ PREFIX ?= $(HOME)/.local
 install: build
 	mkdir -p $(PREFIX)/bin
 	cp .gerbil/bin/gerbil-emacs $(PREFIX)/bin/gerbil-emacs
+	cp .gerbil/bin/gerbil-emacs-qt $(PREFIX)/bin/gerbil-emacs-qt
 
 install-qt: build
 	mkdir -p $(PREFIX)/bin

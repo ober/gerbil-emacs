@@ -119,10 +119,14 @@
       ((symbol? binding)
        (values 'command binding (make-initial-key-state)))
       ;; No binding, top level, printable char -> self-insert
+      ;; Space comes as key=0x20, ch=0 so check for it explicitly
       ((and (null? (key-state-prefix-keys state))
-            (> (tui-event-ch ev) 31)
+            (or (> (tui-event-ch ev) 31)
+                (= (tui-event-key ev) #x20))
             (zero? (bitwise-and (tui-event-mod ev) TB_MOD_ALT)))
-       (values 'self-insert (tui-event-ch ev) (make-initial-key-state)))
+       (values 'self-insert
+               (if (> (tui-event-ch ev) 31) (tui-event-ch ev) 32)
+               (make-initial-key-state)))
       ;; No binding -> undefined
       (else
        (values 'undefined key-str (make-initial-key-state))))))
