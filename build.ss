@@ -50,6 +50,8 @@
     "repl"
     ;; Syntax highlighting (depends on gerbil-scintilla/lexer)
     "highlight"
+    ;; Eshell (built-in Gerbil shell)
+    "eshell"
     ;; TUI backend
     "keymap"
     "buffer"

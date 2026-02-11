@@ -24,6 +24,7 @@
         :gerbil-scintilla/tui
         :gerbil-emacs/core
         :gerbil-emacs/repl
+        :gerbil-emacs/eshell
         :gerbil-emacs/keymap
         :gerbil-emacs/buffer
         :gerbil-emacs/window
@@ -57,6 +58,9 @@
               (rs (hash-get *repl-state* buf)))
          (when (and rs (>= pos (repl-state-prompt-pos rs)))
            (editor-send-key ed ch))))
+      ;; Eshell: allow typing after the last prompt
+      ((eshell-buffer? buf)
+       (editor-send-key (current-editor app) ch))
       (else
        (editor-send-key (current-editor app) ch)))))
 
@@ -124,8 +128,9 @@
 (def (cmd-newline app)
   (let ((buf (current-buffer-from-app app)))
     (cond
-      ((dired-buffer? buf) (cmd-dired-find-file app))
-      ((repl-buffer? buf)  (cmd-repl-send app))
+      ((dired-buffer? buf)  (cmd-dired-find-file app))
+      ((repl-buffer? buf)   (cmd-repl-send app))
+      ((eshell-buffer? buf) (cmd-eshell-send app))
       (else (editor-send-key (current-editor app) SCK_RETURN)))))
 
 (def (cmd-open-line app)
@@ -310,6 +315,8 @@
                   (when rs
                     (repl-stop! rs)
                     (hash-remove! *repl-state* buf)))
+                ;; Clean up eshell state if applicable
+                (hash-remove! *eshell-state* buf)
                 (buffer-kill! ed buf)
                 (echo-message! echo (string-append "Killed " target-name)))))
           (echo-error! echo (string-append "No buffer: " target-name)))))))
@@ -417,6 +424,87 @@
                                         (+ found (string-length query))))
                 (echo-error! echo
                              (string-append "Not found: " query))))))))))
+
+;;;============================================================================
+;;; Eshell commands
+;;;============================================================================
+
+(def eshell-buffer-name "*eshell*")
+
+(def (cmd-eshell app)
+  "Open or switch to the *eshell* buffer."
+  (let ((existing (buffer-by-name eshell-buffer-name)))
+    (if existing
+      ;; Switch to existing eshell buffer
+      (let* ((fr (app-state-frame app))
+             (ed (current-editor app)))
+        (buffer-attach! ed existing)
+        (set! (edit-window-buffer (current-window fr)) existing)
+        (echo-message! (app-state-echo app) eshell-buffer-name))
+      ;; Create new eshell buffer
+      (let* ((fr (app-state-frame app))
+             (ed (current-editor app))
+             (buf (buffer-create! eshell-buffer-name ed #f)))
+        ;; Mark as eshell buffer
+        (set! (buffer-lexer-lang buf) 'eshell)
+        ;; Attach buffer to editor
+        (buffer-attach! ed buf)
+        (set! (edit-window-buffer (current-window fr)) buf)
+        ;; Store eshell state (just current directory for now)
+        (hash-put! *eshell-state* buf (current-directory))
+        ;; Insert welcome message and prompt
+        (let ((welcome (string-append "Gerbil Eshell\n"
+                                       "Type commands, Gerbil expressions, or 'exit' to close.\n\n"
+                                       eshell-prompt)))
+          (editor-set-text ed welcome)
+          (let ((len (editor-get-text-length ed)))
+            (editor-goto-pos ed len)))
+        (echo-message! (app-state-echo app) "Eshell started")))))
+
+(def (cmd-eshell-send app)
+  "Process eshell input."
+  (let* ((buf (current-buffer-from-app app))
+         (cwd (hash-get *eshell-state* buf)))
+    (when cwd
+      (let* ((ed (current-editor app))
+             (all-text (editor-get-text ed))
+             ;; Find the last prompt position
+             (prompt-pos (eshell-find-last-prompt all-text))
+             (end-pos (string-length all-text))
+             (input (if (and prompt-pos (> end-pos (+ prompt-pos (string-length eshell-prompt))))
+                      (substring all-text (+ prompt-pos (string-length eshell-prompt)) end-pos)
+                      "")))
+        ;; Append newline
+        (editor-append-text ed "\n")
+        ;; Process the input
+        (let-values (((output new-cwd) (eshell-process-input input cwd)))
+          ;; Update cwd
+          (hash-put! *eshell-state* buf new-cwd)
+          (cond
+            ((eq? output 'clear)
+             ;; Clear buffer, re-insert prompt
+             (editor-set-text ed eshell-prompt)
+             (editor-goto-pos ed (editor-get-text-length ed)))
+            ((eq? output 'exit)
+             ;; Kill eshell buffer
+             (cmd-kill-buffer-cmd app))
+            (else
+             ;; Insert output + new prompt
+             (when (and (string? output) (> (string-length output) 0))
+               (editor-append-text ed output))
+             (editor-append-text ed eshell-prompt)
+             (editor-goto-pos ed (editor-get-text-length ed))
+             (editor-scroll-caret ed))))))))
+
+(def (eshell-find-last-prompt text)
+  "Find the position of the last eshell prompt in text."
+  (let ((prompt eshell-prompt)
+        (prompt-len (string-length eshell-prompt)))
+    (let loop ((pos (- (string-length text) prompt-len)))
+      (cond
+        ((< pos 0) #f)
+        ((string=? (substring text pos (+ pos prompt-len)) prompt) pos)
+        (else (loop (- pos 1)))))))
 
 ;;;============================================================================
 ;;; Goto line
@@ -887,6 +975,8 @@
   ;; REPL
   (register-command! 'repl cmd-repl)
   (register-command! 'eval-expression cmd-eval-expression)
+  ;; Eshell
+  (register-command! 'eshell cmd-eshell)
   ;; Goto line
   (register-command! 'goto-line cmd-goto-line)
   ;; M-x

@@ -7,6 +7,7 @@
         :gerbil-scintilla/tui
         :gerbil-emacs/core
         :gerbil-emacs/repl
+        :gerbil-emacs/eshell
         :gerbil-emacs/keymap
         :gerbil-emacs/buffer
         :gerbil-emacs/echo)
@@ -220,6 +221,63 @@
         (check (repl-buffer? buf) => #t)
         (set! (buffer-lexer-lang buf) 'dired)
         (check (repl-buffer? buf) => #f)))
+
+    (test-case "eshell-buffer? predicate"
+      (let ((buf (make-buffer "*test*" #f #f #f #f #f)))
+        (check (eshell-buffer? buf) => #f)
+        (set! (buffer-lexer-lang buf) 'eshell)
+        (check (eshell-buffer? buf) => #t)))
+
+    (test-case "eshell: pwd"
+      (let-values (((output cwd) (eshell-process-input "pwd" "/tmp")))
+        (check output => "/tmp\n")
+        (check cwd => "/tmp")))
+
+    (test-case "eshell: cd"
+      (let-values (((output cwd) (eshell-process-input "cd /tmp" "/home")))
+        (check output => "")
+        (check cwd => "/tmp"))
+      ;; cd to non-existent directory
+      (let-values (((output cwd) (eshell-process-input "cd /nonexistent999" "/tmp")))
+        (check (string-contains output "no such") => 4)
+        (check cwd => "/tmp")))
+
+    (test-case "eshell: echo"
+      (let-values (((output cwd) (eshell-process-input "echo hello world" "/tmp")))
+        (check output => "hello world\n")))
+
+    (test-case "eshell: eval expression"
+      (let-values (((output cwd) (eshell-process-input "(+ 1 2)" "/tmp")))
+        (check output => "3\n")))
+
+    (test-case "eshell: which"
+      (let-values (((output cwd) (eshell-process-input "which ls" "/tmp")))
+        ;; Should find ls somewhere (string-contains returns index or #f)
+        (check (not (not (string-contains output "ls"))) => #t)))
+
+    (test-case "eshell: ls"
+      ;; ls on /tmp should work
+      (let-values (((output cwd) (eshell-process-input "ls /tmp" "/tmp")))
+        (check (string? output) => #t)))
+
+    (test-case "eshell: external command"
+      (let-values (((output cwd) (eshell-process-input "echo external-test" "/tmp")))
+        (check output => "external-test\n")))
+
+    (test-case "eshell: empty input"
+      (let-values (((output cwd) (eshell-process-input "" "/tmp")))
+        (check output => "")
+        (check cwd => "/tmp")))
+
+    (test-case "eshell: clear and exit"
+      (let-values (((output cwd) (eshell-process-input "clear" "/tmp")))
+        (check output => 'clear))
+      (let-values (((output cwd) (eshell-process-input "exit" "/tmp")))
+        (check output => 'exit)))
+
+    (test-case "eshell keybinding"
+      (setup-default-bindings!)
+      (check (keymap-lookup *ctrl-x-map* "e") => 'eshell))
 
     (test-case "repl subprocess lifecycle"
       (let ((rs (repl-start!)))

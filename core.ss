@@ -195,7 +195,10 @@
   (keymap-bind! *global-keymap* "M-%" 'query-replace)
 
   ;; Tab
-  (keymap-bind! *global-keymap* "TAB" 'indent-or-complete))
+  (keymap-bind! *global-keymap* "TAB" 'indent-or-complete)
+
+  ;; Eshell
+  (keymap-bind! *ctrl-x-map* "e"   'eshell))
 
 ;;;============================================================================
 ;;; Echo state
