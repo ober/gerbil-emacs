@@ -52,6 +52,8 @@
     "highlight"
     ;; Eshell (built-in Gerbil shell)
     "eshell"
+    ;; Shell (external $SHELL subprocess)
+    "shell"
     ;; TUI backend
     "keymap"
     "buffer"

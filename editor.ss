@@ -25,6 +25,7 @@
         :gerbil-emacs/core
         :gerbil-emacs/repl
         :gerbil-emacs/eshell
+        :gerbil-emacs/shell
         :gerbil-emacs/keymap
         :gerbil-emacs/buffer
         :gerbil-emacs/window
@@ -61,6 +62,13 @@
       ;; Eshell: allow typing after the last prompt
       ((eshell-buffer? buf)
        (editor-send-key (current-editor app) ch))
+      ;; Shell: allow typing after the prompt position
+      ((shell-buffer? buf)
+       (let* ((ed (current-editor app))
+              (pos (editor-get-current-pos ed))
+              (ss (hash-get *shell-state* buf)))
+         (when (and ss (>= pos (shell-state-prompt-pos ss)))
+           (editor-send-key ed ch))))
       (else
        (editor-send-key (current-editor app) ch)))))
 
@@ -131,6 +139,7 @@
       ((dired-buffer? buf)  (cmd-dired-find-file app))
       ((repl-buffer? buf)   (cmd-repl-send app))
       ((eshell-buffer? buf) (cmd-eshell-send app))
+      ((shell-buffer? buf)  (cmd-shell-send app))
       (else (editor-send-key (current-editor app) SCK_RETURN)))))
 
 (def (cmd-open-line app)
@@ -317,6 +326,11 @@
                     (hash-remove! *repl-state* buf)))
                 ;; Clean up eshell state if applicable
                 (hash-remove! *eshell-state* buf)
+                ;; Clean up shell state if applicable
+                (let ((ss (hash-get *shell-state* buf)))
+                  (when ss
+                    (shell-stop! ss)
+                    (hash-remove! *shell-state* buf)))
                 (buffer-kill! ed buf)
                 (echo-message! echo (string-append "Killed " target-name)))))
           (echo-error! echo (string-append "No buffer: " target-name)))))))
@@ -505,6 +519,58 @@
         ((< pos 0) #f)
         ((string=? (substring text pos (+ pos prompt-len)) prompt) pos)
         (else (loop (- pos 1)))))))
+
+;;;============================================================================
+;;; Shell commands
+;;;============================================================================
+
+(def shell-buffer-name "*shell*")
+
+(def (cmd-shell app)
+  "Open or switch to the *shell* buffer."
+  (let ((existing (buffer-by-name shell-buffer-name)))
+    (if existing
+      ;; Switch to existing shell buffer
+      (let* ((fr (app-state-frame app))
+             (ed (current-editor app)))
+        (buffer-attach! ed existing)
+        (set! (edit-window-buffer (current-window fr)) existing)
+        (echo-message! (app-state-echo app) shell-buffer-name))
+      ;; Create new shell buffer
+      (let* ((fr (app-state-frame app))
+             (ed (current-editor app))
+             (buf (buffer-create! shell-buffer-name ed #f)))
+        ;; Mark as shell buffer
+        (set! (buffer-lexer-lang buf) 'shell)
+        ;; Attach buffer to editor
+        (buffer-attach! ed buf)
+        (set! (edit-window-buffer (current-window fr)) buf)
+        ;; Spawn shell subprocess
+        (let ((ss (shell-start!)))
+          (hash-put! *shell-state* buf ss)
+          ;; Start with empty buffer; shell output will appear via polling
+          (editor-set-text ed "")
+          (set! (shell-state-prompt-pos ss) 0))
+        (echo-message! (app-state-echo app) "Shell started")))))
+
+(def (cmd-shell-send app)
+  "Send the current input line to the shell subprocess."
+  (let* ((buf (current-buffer-from-app app))
+         (ss (hash-get *shell-state* buf)))
+    (when ss
+      (let* ((ed (current-editor app))
+             (prompt-pos (shell-state-prompt-pos ss))
+             (all-text (editor-get-text ed))
+             (end-pos (string-length all-text))
+             (input (if (> end-pos prompt-pos)
+                      (substring all-text prompt-pos end-pos)
+                      "")))
+        ;; Append newline to buffer
+        (editor-append-text ed "\n")
+        ;; Send to shell
+        (shell-send! ss input)
+        ;; Update prompt-pos to after the newline
+        (set! (shell-state-prompt-pos ss) (editor-get-text-length ed))))))
 
 ;;;============================================================================
 ;;; Goto line
@@ -977,6 +1043,8 @@
   (register-command! 'eval-expression cmd-eval-expression)
   ;; Eshell
   (register-command! 'eshell cmd-eshell)
+  ;; Shell
+  (register-command! 'shell cmd-shell)
   ;; Goto line
   (register-command! 'goto-line cmd-goto-line)
   ;; M-x

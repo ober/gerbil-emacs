@@ -10,6 +10,7 @@
         :gerbil-scintilla/tui
         :gerbil-emacs/core
         :gerbil-emacs/repl
+        :gerbil-emacs/shell
         :gerbil-emacs/keymap
         :gerbil-emacs/buffer
         :gerbil-emacs/window
@@ -111,6 +112,32 @@
     (buffer-list)))
 
 ;;;============================================================================
+;;; Shell output polling
+;;;============================================================================
+
+(def (poll-shell-output! app)
+  "Check all shell buffers for new output from $SHELL and insert it."
+  (for-each
+    (lambda (buf)
+      (when (shell-buffer? buf)
+        (let ((ss (hash-get *shell-state* buf)))
+          (when ss
+            (let ((output (shell-read-available ss)))
+              (when output
+                (let ((win (find-window-for-buffer (app-state-frame app) buf)))
+                  (when win
+                    (let ((ed (edit-window-editor win)))
+                      ;; Insert output at end
+                      (editor-append-text ed output)
+                      ;; Update prompt-pos to after output
+                      (set! (shell-state-prompt-pos ss)
+                        (editor-get-text-length ed))
+                      ;; Move cursor to end and scroll
+                      (editor-goto-pos ed (editor-get-text-length ed))
+                      (editor-scroll-caret ed))))))))))
+    (buffer-list)))
+
+;;;============================================================================
 ;;; Event loop
 ;;;============================================================================
 
@@ -125,6 +152,9 @@
 
       ;; Poll REPL subprocess output
       (poll-repl-output! app)
+
+      ;; Poll shell subprocess output
+      (poll-shell-output! app)
 
       ;; Draw modelines, dividers, and echo area FIRST into the termbox buffer.
       ;; This must happen before editor-refresh because Scintilla's

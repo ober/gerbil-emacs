@@ -198,7 +198,10 @@
   (keymap-bind! *global-keymap* "TAB" 'indent-or-complete)
 
   ;; Eshell
-  (keymap-bind! *ctrl-x-map* "e"   'eshell))
+  (keymap-bind! *ctrl-x-map* "e"   'eshell)
+
+  ;; Shell
+  (keymap-bind! *ctrl-x-map* "s"   'shell))
 
 ;;;============================================================================
 ;;; Echo state

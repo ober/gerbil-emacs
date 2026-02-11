@@ -8,6 +8,7 @@
         :gerbil-emacs/core
         :gerbil-emacs/repl
         :gerbil-emacs/eshell
+        :gerbil-emacs/shell
         :gerbil-emacs/keymap
         :gerbil-emacs/buffer
         :gerbil-emacs/echo)
@@ -278,6 +279,42 @@
     (test-case "eshell keybinding"
       (setup-default-bindings!)
       (check (keymap-lookup *ctrl-x-map* "e") => 'eshell))
+
+    (test-case "shell-buffer? predicate"
+      (let ((buf (make-buffer "*test*" #f #f #f #f #f)))
+        (check (shell-buffer? buf) => #f)
+        (set! (buffer-lexer-lang buf) 'shell)
+        (check (shell-buffer? buf) => #t)))
+
+    (test-case "strip-ansi-codes"
+      ;; Regular text passes through
+      (check (strip-ansi-codes "hello") => "hello")
+      ;; CSI color codes stripped
+      (let ((esc (string (integer->char 27))))
+        (check (strip-ansi-codes (string-append esc "[32mgreen" esc "[0m"))
+               => "green")
+        ;; CSI with multiple params
+        (check (strip-ansi-codes (string-append esc "[1;34mbold-blue" esc "[0m"))
+               => "bold-blue")))
+
+    (test-case "shell subprocess lifecycle"
+      (let ((ss (shell-start!)))
+        ;; Verify state
+        (check (shell-state? ss) => #t)
+        (check (shell-state-prompt-pos ss) => 0)
+        ;; Send a simple command
+        (shell-send! ss "echo test123")
+        ;; Wait for output
+        (thread-sleep! 1.0)
+        (let ((output (shell-read-available ss)))
+          (check (string? output) => #t)
+          (check (not (not (string-contains output "test123"))) => #t))
+        ;; Clean shutdown
+        (shell-stop! ss)))
+
+    (test-case "shell keybinding"
+      (setup-default-bindings!)
+      (check (keymap-lookup *ctrl-x-map* "s") => 'shell))
 
     (test-case "repl subprocess lifecycle"
       (let ((rs (repl-start!)))
