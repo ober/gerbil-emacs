@@ -7,6 +7,8 @@
         :gerbil-qt/qt
         :gerbil-emacs/core
         :gerbil-emacs/repl
+        :gerbil-emacs/eshell
+        :gerbil-emacs/shell
         :gerbil-emacs/qt/keymap
         :gerbil-emacs/qt/buffer
         :gerbil-emacs/qt/window
@@ -99,6 +101,17 @@
                                   (rs (hash-get *repl-state* cur-buf)))
                              (when (and rs (>= pos (repl-state-prompt-pos rs)))
                                (qt-plain-text-edit-insert-text! ed data))))
+                          ;; Eshell: always allow typing
+                          ((eshell-buffer? cur-buf)
+                           (qt-plain-text-edit-insert-text!
+                             (qt-current-editor (app-state-frame app)) data))
+                          ;; Shell: only after prompt-pos
+                          ((shell-buffer? cur-buf)
+                           (let* ((ed (qt-current-editor (app-state-frame app)))
+                                  (pos (qt-plain-text-edit-cursor-position ed))
+                                  (ss (hash-get *shell-state* cur-buf)))
+                             (when (and ss (>= pos (shell-state-prompt-pos ss)))
+                               (qt-plain-text-edit-insert-text! ed data))))
                           (else
                            (qt-plain-text-edit-insert-text!
                              (qt-current-editor (app-state-frame app)) data)))))
@@ -152,6 +165,25 @@
                                   (set! (repl-state-prompt-pos rs)
                                     (string-length (qt-plain-text-edit-text ed)))
                                   ;; Move cursor to end so user types at the prompt
+                                  (qt-plain-text-edit-move-cursor! ed QT_CURSOR_END)
+                                  (qt-plain-text-edit-ensure-cursor-visible! ed))
+                                (loop (cdr wins)))))))))))
+              (buffer-list))
+            ;; Also poll shell buffers
+            (for-each
+              (lambda (buf)
+                (when (shell-buffer? buf)
+                  (let ((ss (hash-get *shell-state* buf)))
+                    (when ss
+                      (let ((output (shell-read-available ss)))
+                        (when output
+                          (let loop ((wins (qt-frame-windows fr)))
+                            (when (pair? wins)
+                              (if (eq? (qt-edit-window-buffer (car wins)) buf)
+                                (let ((ed (qt-edit-window-editor (car wins))))
+                                  (qt-plain-text-edit-append! ed output)
+                                  (set! (shell-state-prompt-pos ss)
+                                    (string-length (qt-plain-text-edit-text ed)))
                                   (qt-plain-text-edit-move-cursor! ed QT_CURSOR_END)
                                   (qt-plain-text-edit-ensure-cursor-visible! ed))
                                 (loop (cdr wins)))))))))))

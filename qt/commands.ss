@@ -7,9 +7,13 @@
         dired-open-directory!)
 
 (import :std/sugar
+        :std/sort
+        :std/srfi/13
         :gerbil-qt/qt
         :gerbil-emacs/core
         :gerbil-emacs/repl
+        :gerbil-emacs/eshell
+        :gerbil-emacs/shell
         :gerbil-emacs/qt/buffer
         :gerbil-emacs/qt/window
         :gerbil-emacs/qt/echo)
@@ -120,8 +124,10 @@
 (def (cmd-newline app)
   (let ((buf (current-qt-buffer app)))
     (cond
-      ((dired-buffer? buf) (cmd-dired-find-file app))
-      ((repl-buffer? buf)  (cmd-repl-send app))
+      ((dired-buffer? buf)  (cmd-dired-find-file app))
+      ((repl-buffer? buf)   (cmd-repl-send app))
+      ((eshell-buffer? buf) (cmd-eshell-send app))
+      ((shell-buffer? buf)  (cmd-shell-send app))
       (else (qt-plain-text-edit-insert-text! (current-qt-editor app) "\n")))))
 
 (def (cmd-open-line app)
@@ -135,6 +141,10 @@
     (if (qt-plain-text-edit-can-undo? ed)
       (qt-plain-text-edit-undo! ed)
       (echo-message! (app-state-echo app) "No further undo information"))))
+
+(def (cmd-redo app)
+  (let ((ed (current-qt-editor app)))
+    (qt-plain-text-edit-redo! ed)))
 
 ;;;============================================================================
 ;;; Kill / Yank
@@ -297,6 +307,13 @@
                 (when rs
                   (repl-stop! rs)
                   (hash-remove! *repl-state* buf)))
+              ;; Clean up eshell state if applicable
+              (hash-remove! *eshell-state* buf)
+              ;; Clean up shell state if applicable
+              (let ((ss (hash-get *shell-state* buf)))
+                (when ss
+                  (shell-stop! ss)
+                  (hash-remove! *shell-state* buf)))
               (qt-buffer-kill! buf)
               (echo-message! echo (string-append "Killed " target-name))))
           (echo-error! echo (string-append "No buffer: " target-name)))))))
@@ -377,6 +394,551 @@
               (qt-plain-text-edit-ensure-cursor-visible! ed)
               (echo-error! echo
                            (string-append "Not found: " query)))))))))
+
+;;;============================================================================
+;;; Write file (save as)
+;;;============================================================================
+
+(def (cmd-write-file app)
+  (let* ((echo (app-state-echo app))
+         (filename (qt-echo-read-string app "Write file: ")))
+    (when (and filename (> (string-length filename) 0))
+      (let* ((buf (current-qt-buffer app))
+             (ed (current-qt-editor app))
+             (text (qt-plain-text-edit-text ed)))
+        (set! (buffer-file-path buf) filename)
+        (set! (buffer-name buf) (path-strip-directory filename))
+        (write-string-to-file filename text)
+        (qt-text-document-set-modified! (buffer-doc-pointer buf) #f)
+        (echo-message! echo (string-append "Wrote " filename))))))
+
+;;;============================================================================
+;;; Revert buffer
+;;;============================================================================
+
+(def (cmd-revert-buffer app)
+  (let* ((buf (current-qt-buffer app))
+         (path (buffer-file-path buf))
+         (echo (app-state-echo app)))
+    (if (and path (file-exists? path))
+      (let* ((ed (current-qt-editor app))
+             (text (read-file-as-string path)))
+        (when text
+          (qt-plain-text-edit-set-text! ed text)
+          (qt-text-document-set-modified! (buffer-doc-pointer buf) #f)
+          (qt-plain-text-edit-set-cursor-position! ed 0)
+          (echo-message! echo (string-append "Reverted " path))))
+      (echo-error! echo "Buffer is not visiting a file"))))
+
+;;;============================================================================
+;;; Select all
+;;;============================================================================
+
+(def (cmd-select-all app)
+  (qt-plain-text-edit-select-all! (current-qt-editor app))
+  (echo-message! (app-state-echo app) "Mark set (whole buffer)"))
+
+;;;============================================================================
+;;; Goto line
+;;;============================================================================
+
+(def (cmd-goto-line app)
+  (let* ((echo (app-state-echo app))
+         (input (qt-echo-read-string app "Goto line: ")))
+    (when (and input (> (string-length input) 0))
+      (let ((line-num (string->number input)))
+        (if (and line-num (> line-num 0))
+          (let* ((ed (current-qt-editor app))
+                 (text (qt-plain-text-edit-text ed))
+                 ;; Find position of the Nth newline
+                 (target-line (- line-num 1))
+                 (pos (let loop ((i 0) (line 0))
+                        (cond
+                          ((= line target-line) i)
+                          ((>= i (string-length text)) i)
+                          ((char=? (string-ref text i) #\newline)
+                           (loop (+ i 1) (+ line 1)))
+                          (else (loop (+ i 1) line))))))
+            (qt-plain-text-edit-set-cursor-position! ed pos)
+            (qt-plain-text-edit-ensure-cursor-visible! ed)
+            (echo-message! echo (string-append "Line " input)))
+          (echo-error! echo "Invalid line number"))))))
+
+;;;============================================================================
+;;; M-x (execute extended command)
+;;;============================================================================
+
+(def (cmd-execute-extended-command app)
+  (let* ((echo (app-state-echo app))
+         (input (qt-echo-read-string app "M-x ")))
+    (when (and input (> (string-length input) 0))
+      (execute-command! app (string->symbol input)))))
+
+;;;============================================================================
+;;; Help commands
+;;;============================================================================
+
+(def (cmd-list-bindings app)
+  "Display all keybindings in a *Help* buffer."
+  (let* ((fr (app-state-frame app))
+         (ed (current-qt-editor app))
+         (lines '()))
+    (for-each
+      (lambda (entry)
+        (let ((key (car entry))
+              (val (cdr entry)))
+          (cond
+            ((symbol? val)
+             (set! lines (cons (string-append "  " key "\t" (symbol->string val))
+                               lines)))
+            ((hash-table? val)
+             (for-each
+               (lambda (sub-entry)
+                 (let ((sub-key (car sub-entry))
+                       (sub-val (cdr sub-entry)))
+                   (when (symbol? sub-val)
+                     (set! lines
+                       (cons (string-append "  " key " " sub-key "\t"
+                                            (symbol->string sub-val))
+                             lines)))))
+               (keymap-entries val))))))
+      (keymap-entries *global-keymap*))
+    (let* ((sorted (sort lines string<?))
+           (text (string-append "Key Bindings:\n\n"
+                                (string-join sorted "\n")
+                                "\n")))
+      (let ((buf (or (buffer-by-name "*Help*")
+                     (qt-buffer-create! "*Help*" ed #f))))
+        (qt-buffer-attach! ed buf)
+        (set! (qt-edit-window-buffer (qt-current-window fr)) buf)
+        (qt-plain-text-edit-set-text! ed text)
+        (qt-text-document-set-modified! (buffer-doc-pointer buf) #f)
+        (qt-plain-text-edit-set-cursor-position! ed 0)
+        (echo-message! (app-state-echo app) "*Help*")))))
+
+;;;============================================================================
+;;; Buffer list
+;;;============================================================================
+
+(def (cmd-list-buffers app)
+  (let* ((fr (app-state-frame app))
+         (ed (current-qt-editor app))
+         (bufs (buffer-list))
+         (header "  Buffer\t\tFile\n  ------\t\t----\n")
+         (lines (map (lambda (buf)
+                       (let ((name (buffer-name buf))
+                             (path (or (buffer-file-path buf) "")))
+                         (string-append "  " name "\t\t" path)))
+                     bufs))
+         (text (string-append header (string-join lines "\n") "\n")))
+    (let ((buf (or (buffer-by-name "*Buffer List*")
+                   (qt-buffer-create! "*Buffer List*" ed #f))))
+      (qt-buffer-attach! ed buf)
+      (set! (qt-edit-window-buffer (qt-current-window fr)) buf)
+      (qt-plain-text-edit-set-text! ed text)
+      (qt-text-document-set-modified! (buffer-doc-pointer buf) #f)
+      (qt-plain-text-edit-set-cursor-position! ed 0)
+      (echo-message! (app-state-echo app) "*Buffer List*"))))
+
+;;;============================================================================
+;;; Comment toggle (Scheme: ;; prefix)
+;;;============================================================================
+
+(def (qt-replace-line! ed line-num new-line-text)
+  "Replace a line by index in a Qt editor. Reconstructs the full text."
+  (let* ((text (qt-plain-text-edit-text ed))
+         (lines (string-split text #\newline))
+         (new-lines (let loop ((ls lines) (i 0) (acc []))
+                      (if (null? ls)
+                        (reverse acc)
+                        (if (= i line-num)
+                          (loop (cdr ls) (+ i 1) (cons new-line-text acc))
+                          (loop (cdr ls) (+ i 1) (cons (car ls) acc))))))
+         (new-text (string-join new-lines "\n"))
+         (pos (qt-plain-text-edit-cursor-position ed)))
+    (qt-plain-text-edit-set-text! ed new-text)
+    (qt-plain-text-edit-set-cursor-position! ed (min pos (string-length new-text)))))
+
+(def (cmd-toggle-comment app)
+  (let* ((ed (current-qt-editor app))
+         (text (qt-plain-text-edit-text ed))
+         (line (qt-plain-text-edit-cursor-line ed))
+         (lines (string-split text #\newline))
+         (line-text (if (< line (length lines))
+                      (list-ref lines line)
+                      ""))
+         (trimmed (string-trim line-text)))
+    (cond
+      ((and (>= (string-length trimmed) 3)
+            (string=? (substring trimmed 0 3) ";; "))
+       (let ((new-line (let ((cp (string-contains line-text ";; ")))
+                         (if cp
+                           (string-append (substring line-text 0 cp)
+                                          (substring line-text (+ cp 3)
+                                                     (string-length line-text)))
+                           line-text))))
+         (qt-replace-line! ed line new-line)))
+      ((and (>= (string-length trimmed) 2)
+            (string=? (substring trimmed 0 2) ";;"))
+       (let ((new-line (let ((cp (string-contains line-text ";;")))
+                         (if cp
+                           (string-append (substring line-text 0 cp)
+                                          (substring line-text (+ cp 2)
+                                                     (string-length line-text)))
+                           line-text))))
+         (qt-replace-line! ed line new-line)))
+      (else
+       (qt-replace-line! ed line (string-append ";; " line-text))))))
+
+;;;============================================================================
+;;; Transpose chars
+;;;============================================================================
+
+(def (cmd-transpose-chars app)
+  (let* ((ed (current-qt-editor app))
+         (pos (qt-plain-text-edit-cursor-position ed))
+         (text (qt-plain-text-edit-text ed)))
+    (when (>= pos 2)
+      (let* ((c1 (string-ref text (- pos 2)))
+             (c2 (string-ref text (- pos 1)))
+             (new-text (string-append
+                         (substring text 0 (- pos 2))
+                         (string c2 c1)
+                         (substring text pos (string-length text)))))
+        (qt-plain-text-edit-set-text! ed new-text)
+        (qt-plain-text-edit-set-cursor-position! ed pos)))))
+
+;;;============================================================================
+;;; Word case commands
+;;;============================================================================
+
+(def (qt-word-at-point ed)
+  "Get word boundaries at cursor in Qt editor."
+  (let* ((pos (qt-plain-text-edit-cursor-position ed))
+         (text (qt-plain-text-edit-text ed))
+         (len (string-length text)))
+    (let skip ((i pos))
+      (if (>= i len)
+        (values #f #f)
+        (let ((ch (string-ref text i)))
+          (if (or (char-alphabetic? ch) (char-numeric? ch)
+                  (char=? ch #\_) (char=? ch #\-))
+            (let find-end ((j (+ i 1)))
+              (if (>= j len)
+                (values i j)
+                (let ((c (string-ref text j)))
+                  (if (or (char-alphabetic? c) (char-numeric? c)
+                          (char=? c #\_) (char=? c #\-))
+                    (find-end (+ j 1))
+                    (values i j)))))
+            (skip (+ i 1))))))))
+
+(def (cmd-upcase-word app)
+  (let ((ed (current-qt-editor app)))
+    (let-values (((start end) (qt-word-at-point ed)))
+      (when start
+        (let* ((text (qt-plain-text-edit-text ed))
+               (word (substring text start end))
+               (new-text (string-append
+                           (substring text 0 start)
+                           (string-upcase word)
+                           (substring text end (string-length text)))))
+          (qt-plain-text-edit-set-text! ed new-text)
+          (qt-plain-text-edit-set-cursor-position! ed end))))))
+
+(def (cmd-downcase-word app)
+  (let ((ed (current-qt-editor app)))
+    (let-values (((start end) (qt-word-at-point ed)))
+      (when start
+        (let* ((text (qt-plain-text-edit-text ed))
+               (word (substring text start end))
+               (new-text (string-append
+                           (substring text 0 start)
+                           (string-downcase word)
+                           (substring text end (string-length text)))))
+          (qt-plain-text-edit-set-text! ed new-text)
+          (qt-plain-text-edit-set-cursor-position! ed end))))))
+
+(def (cmd-capitalize-word app)
+  (let ((ed (current-qt-editor app)))
+    (let-values (((start end) (qt-word-at-point ed)))
+      (when (and start (< start end))
+        (let* ((text (qt-plain-text-edit-text ed))
+               (word (substring text start end))
+               (cap (string-append
+                      (string-upcase (substring word 0 1))
+                      (string-downcase (substring word 1 (string-length word)))))
+               (new-text (string-append
+                           (substring text 0 start)
+                           cap
+                           (substring text end (string-length text)))))
+          (qt-plain-text-edit-set-text! ed new-text)
+          (qt-plain-text-edit-set-cursor-position! ed end))))))
+
+;;;============================================================================
+;;; Kill word
+;;;============================================================================
+
+(def (cmd-kill-word app)
+  (let ((ed (current-qt-editor app)))
+    (let-values (((start end) (qt-word-at-point ed)))
+      (when start
+        (let* ((pos (qt-plain-text-edit-cursor-position ed))
+               (kill-start (min pos start))
+               (text (qt-plain-text-edit-text ed))
+               (killed (substring text kill-start end))
+               (new-text (string-append
+                           (substring text 0 kill-start)
+                           (substring text end (string-length text)))))
+          (set! (app-state-kill-ring app)
+                (cons killed (app-state-kill-ring app)))
+          (qt-plain-text-edit-set-text! ed new-text)
+          (qt-plain-text-edit-set-cursor-position! ed kill-start))))))
+
+;;;============================================================================
+;;; What line
+;;;============================================================================
+
+(def (cmd-what-line app)
+  (let* ((ed (current-qt-editor app))
+         (line (+ 1 (qt-plain-text-edit-cursor-line ed)))
+         (total (qt-plain-text-edit-line-count ed)))
+    (echo-message! (app-state-echo app)
+      (string-append "Line " (number->string line)
+                     " of " (number->string total)))))
+
+;;;============================================================================
+;;; Duplicate line
+;;;============================================================================
+
+(def (cmd-duplicate-line app)
+  (let* ((ed (current-qt-editor app))
+         (text (qt-plain-text-edit-text ed))
+         (line (qt-plain-text-edit-cursor-line ed))
+         (lines (string-split text #\newline))
+         (line-text (if (< line (length lines))
+                      (list-ref lines line)
+                      "")))
+    ;; Insert duplicate after current line
+    (let* ((new-lines (let loop ((ls lines) (i 0) (acc []))
+                        (if (null? ls)
+                          (reverse acc)
+                          (if (= i line)
+                            (loop (cdr ls) (+ i 1) (cons (car ls) (cons (car ls) acc)))
+                            (loop (cdr ls) (+ i 1) (cons (car ls) acc))))))
+           (new-text (string-join new-lines "\n")))
+      (qt-plain-text-edit-set-text! ed new-text)
+      ;; Position cursor on the duplicated line by computing position
+      (let ((pos (let loop ((i 0) (ln 0))
+                   (cond
+                     ((= ln (+ line 1)) i)
+                     ((>= i (string-length new-text)) i)
+                     ((char=? (string-ref new-text i) #\newline)
+                      (loop (+ i 1) (+ ln 1)))
+                     (else (loop (+ i 1) ln))))))
+        (qt-plain-text-edit-set-cursor-position! ed pos)))))
+
+;;;============================================================================
+;;; Beginning/end of defun
+;;;============================================================================
+
+(def (cmd-beginning-of-defun app)
+  (let* ((ed (current-qt-editor app))
+         (pos (qt-plain-text-edit-cursor-position ed))
+         (text (qt-plain-text-edit-text ed)))
+    (let loop ((i (- pos 1)))
+      (cond
+        ((< i 0)
+         (qt-plain-text-edit-set-cursor-position! ed 0)
+         (echo-message! (app-state-echo app) "Beginning of buffer"))
+        ((and (char=? (string-ref text i) #\()
+              (or (= i 0) (char=? (string-ref text (- i 1)) #\newline)))
+         (qt-plain-text-edit-set-cursor-position! ed i)
+         (qt-plain-text-edit-ensure-cursor-visible! ed))
+        (else (loop (- i 1)))))))
+
+(def (cmd-end-of-defun app)
+  (let* ((ed (current-qt-editor app))
+         (pos (qt-plain-text-edit-cursor-position ed))
+         (text (qt-plain-text-edit-text ed))
+         (len (string-length text)))
+    (let find-start ((i pos))
+      (cond
+        ((>= i len)
+         (qt-plain-text-edit-set-cursor-position! ed len)
+         (echo-message! (app-state-echo app) "End of buffer"))
+        ((and (char=? (string-ref text i) #\()
+              (or (= i 0) (char=? (string-ref text (- i 1)) #\newline)))
+         (let match ((j (+ i 1)) (depth 1))
+           (cond
+             ((>= j len)
+              (qt-plain-text-edit-set-cursor-position! ed len))
+             ((= depth 0)
+              (qt-plain-text-edit-set-cursor-position! ed j)
+              (qt-plain-text-edit-ensure-cursor-visible! ed))
+             ((char=? (string-ref text j) #\() (match (+ j 1) (+ depth 1)))
+             ((char=? (string-ref text j) #\)) (match (+ j 1) (- depth 1)))
+             (else (match (+ j 1) depth)))))
+        (else (find-start (+ i 1)))))))
+
+;;;============================================================================
+;;; Tab / indent
+;;;============================================================================
+
+(def (cmd-indent-or-complete app)
+  (let ((buf (current-qt-buffer app)))
+    (cond
+      ((dired-buffer? buf) (void))
+      ((repl-buffer? buf)
+       (let* ((ed (current-qt-editor app))
+              (pos (qt-plain-text-edit-cursor-position ed))
+              (rs (hash-get *repl-state* buf)))
+         (when (and rs (>= pos (repl-state-prompt-pos rs)))
+           (qt-plain-text-edit-insert-text! ed "  "))))
+      (else
+       (qt-plain-text-edit-insert-text! (current-qt-editor app) "  ")))))
+
+;;;============================================================================
+;;; Query replace
+;;;============================================================================
+
+(def (string-replace-all str from to)
+  "Replace all occurrences of 'from' with 'to' in 'str'."
+  (let ((from-len (string-length from))
+        (to-len (string-length to))
+        (str-len (string-length str)))
+    (if (= from-len 0) str
+      (let ((out (open-output-string)))
+        (let loop ((i 0))
+          (if (> (+ i from-len) str-len)
+            (begin (display (substring str i str-len) out)
+                   (get-output-string out))
+            (if (string=? (substring str i (+ i from-len)) from)
+              (begin (display to out)
+                     (loop (+ i from-len)))
+              (begin (write-char (string-ref str i) out)
+                     (loop (+ i 1))))))))))
+
+(def (cmd-query-replace app)
+  (let* ((echo (app-state-echo app))
+         (from-str (qt-echo-read-string app "Query replace: ")))
+    (when (and from-str (> (string-length from-str) 0))
+      (let ((to-str (qt-echo-read-string app
+                      (string-append "Replace \"" from-str "\" with: "))))
+        (when to-str
+          ;; Simple replace-all for Qt (no interactive y/n since we lack peek-event)
+          (let* ((ed (current-qt-editor app))
+                 (text (qt-plain-text-edit-text ed))
+                 (new-text (string-replace-all text from-str to-str))
+                 (pos (qt-plain-text-edit-cursor-position ed)))
+            (qt-plain-text-edit-set-text! ed new-text)
+            (qt-plain-text-edit-set-cursor-position! ed (min pos (string-length new-text)))
+            (echo-message! echo "Replaced all occurrences")))))))
+
+;;;============================================================================
+;;; Eshell commands
+;;;============================================================================
+
+(def eshell-buffer-name "*eshell*")
+
+(def (cmd-eshell app)
+  "Open or switch to the *eshell* buffer."
+  (let ((existing (buffer-by-name eshell-buffer-name)))
+    (if existing
+      (let* ((fr (app-state-frame app))
+             (ed (current-qt-editor app)))
+        (qt-buffer-attach! ed existing)
+        (set! (qt-edit-window-buffer (qt-current-window fr)) existing)
+        (echo-message! (app-state-echo app) eshell-buffer-name))
+      (let* ((fr (app-state-frame app))
+             (ed (current-qt-editor app))
+             (buf (qt-buffer-create! eshell-buffer-name ed #f)))
+        (set! (buffer-lexer-lang buf) 'eshell)
+        (qt-buffer-attach! ed buf)
+        (set! (qt-edit-window-buffer (qt-current-window fr)) buf)
+        (hash-put! *eshell-state* buf (current-directory))
+        (let ((welcome (string-append "Gerbil Eshell\n"
+                                       "Type commands, Gerbil expressions, or 'exit' to close.\n\n"
+                                       eshell-prompt)))
+          (qt-plain-text-edit-set-text! ed welcome)
+          (qt-plain-text-edit-move-cursor! ed QT_CURSOR_END))
+        (echo-message! (app-state-echo app) "Eshell started")))))
+
+(def (cmd-eshell-send app)
+  "Process eshell input in Qt backend."
+  (let* ((buf (current-qt-buffer app))
+         (cwd (hash-get *eshell-state* buf)))
+    (when cwd
+      (let* ((ed (current-qt-editor app))
+             (all-text (qt-plain-text-edit-text ed))
+             ;; Find the last prompt
+             (prompt-pos (let loop ((pos (- (string-length all-text) (string-length eshell-prompt))))
+                           (cond
+                             ((< pos 0) #f)
+                             ((string=? (substring all-text pos (+ pos (string-length eshell-prompt))) eshell-prompt) pos)
+                             (else (loop (- pos 1))))))
+             (end-pos (string-length all-text))
+             (input (if (and prompt-pos (> end-pos (+ prompt-pos (string-length eshell-prompt))))
+                      (substring all-text (+ prompt-pos (string-length eshell-prompt)) end-pos)
+                      "")))
+        (qt-plain-text-edit-append! ed "")
+        (let-values (((output new-cwd) (eshell-process-input input cwd)))
+          (hash-put! *eshell-state* buf new-cwd)
+          (cond
+            ((eq? output 'clear)
+             (qt-plain-text-edit-set-text! ed eshell-prompt)
+             (qt-plain-text-edit-move-cursor! ed QT_CURSOR_END))
+            ((eq? output 'exit)
+             (cmd-kill-buffer-cmd app))
+            (else
+             (when (and (string? output) (> (string-length output) 0))
+               (qt-plain-text-edit-append! ed output))
+             (qt-plain-text-edit-append! ed eshell-prompt)
+             (qt-plain-text-edit-move-cursor! ed QT_CURSOR_END))))))))
+
+;;;============================================================================
+;;; Shell commands
+;;;============================================================================
+
+(def shell-buffer-name "*shell*")
+
+(def (cmd-shell app)
+  "Open or switch to the *shell* buffer."
+  (let ((existing (buffer-by-name shell-buffer-name)))
+    (if existing
+      (let* ((fr (app-state-frame app))
+             (ed (current-qt-editor app)))
+        (qt-buffer-attach! ed existing)
+        (set! (qt-edit-window-buffer (qt-current-window fr)) existing)
+        (echo-message! (app-state-echo app) shell-buffer-name))
+      (let* ((fr (app-state-frame app))
+             (ed (current-qt-editor app))
+             (buf (qt-buffer-create! shell-buffer-name ed #f)))
+        (set! (buffer-lexer-lang buf) 'shell)
+        (qt-buffer-attach! ed buf)
+        (set! (qt-edit-window-buffer (qt-current-window fr)) buf)
+        (let ((ss (shell-start!)))
+          (hash-put! *shell-state* buf ss)
+          (qt-plain-text-edit-set-text! ed "")
+          (set! (shell-state-prompt-pos ss) 0))
+        (echo-message! (app-state-echo app) "Shell started")))))
+
+(def (cmd-shell-send app)
+  "Send the current input line to the shell subprocess."
+  (let* ((buf (current-qt-buffer app))
+         (ss (hash-get *shell-state* buf)))
+    (when ss
+      (let* ((ed (current-qt-editor app))
+             (prompt-pos (shell-state-prompt-pos ss))
+             (all-text (qt-plain-text-edit-text ed))
+             (end-pos (string-length all-text))
+             (input (if (> end-pos prompt-pos)
+                      (substring all-text prompt-pos end-pos)
+                      "")))
+        (qt-plain-text-edit-append! ed "")
+        (shell-send! ss input)
+        (set! (shell-state-prompt-pos ss)
+          (string-length (qt-plain-text-edit-text ed)))))))
 
 ;;;============================================================================
 ;;; Misc commands
@@ -552,6 +1114,7 @@
   (register-command! 'newline cmd-newline)
   (register-command! 'open-line cmd-open-line)
   (register-command! 'undo cmd-undo)
+  (register-command! 'redo cmd-redo)
   ;; Kill/Yank
   (register-command! 'kill-line cmd-kill-line)
   (register-command! 'yank cmd-yank)
@@ -562,9 +1125,12 @@
   ;; File
   (register-command! 'find-file cmd-find-file)
   (register-command! 'save-buffer cmd-save-buffer)
+  (register-command! 'write-file cmd-write-file)
+  (register-command! 'revert-buffer cmd-revert-buffer)
   ;; Buffer
   (register-command! 'switch-buffer cmd-switch-buffer)
   (register-command! 'kill-buffer-cmd cmd-kill-buffer-cmd)
+  (register-command! 'list-buffers cmd-list-buffers)
   ;; Window
   (register-command! 'split-window cmd-split-window)
   (register-command! 'split-window-right cmd-split-window-right)
@@ -574,9 +1140,40 @@
   ;; Search
   (register-command! 'search-forward cmd-search-forward)
   (register-command! 'search-backward cmd-search-backward)
+  (register-command! 'query-replace cmd-query-replace)
   ;; REPL
   (register-command! 'repl cmd-repl)
   (register-command! 'eval-expression cmd-eval-expression)
+  ;; Eshell
+  (register-command! 'eshell cmd-eshell)
+  ;; Shell
+  (register-command! 'shell cmd-shell)
+  ;; Goto line / M-x
+  (register-command! 'goto-line cmd-goto-line)
+  (register-command! 'execute-extended-command cmd-execute-extended-command)
+  ;; Help
+  (register-command! 'list-bindings cmd-list-bindings)
+  ;; Select all
+  (register-command! 'select-all cmd-select-all)
+  ;; Duplicate line
+  (register-command! 'duplicate-line cmd-duplicate-line)
+  ;; Comment toggle
+  (register-command! 'toggle-comment cmd-toggle-comment)
+  ;; Transpose
+  (register-command! 'transpose-chars cmd-transpose-chars)
+  ;; Word case
+  (register-command! 'upcase-word cmd-upcase-word)
+  (register-command! 'downcase-word cmd-downcase-word)
+  (register-command! 'capitalize-word cmd-capitalize-word)
+  ;; Kill word
+  (register-command! 'kill-word cmd-kill-word)
+  ;; What line
+  (register-command! 'what-line cmd-what-line)
+  ;; Defun navigation
+  (register-command! 'beginning-of-defun cmd-beginning-of-defun)
+  (register-command! 'end-of-defun cmd-end-of-defun)
+  ;; Tab/indent
+  (register-command! 'indent-or-complete cmd-indent-or-complete)
   ;; Misc
   (register-command! 'keyboard-quit cmd-keyboard-quit)
   (register-command! 'quit cmd-quit))
