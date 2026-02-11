@@ -364,6 +364,20 @@
   (keymap-bind! *meta-g-map* "n" 'next-error)
   (keymap-bind! *meta-g-map* "p" 'previous-error)
 
+  ;; Kill whole line
+  (keymap-bind! *ctrl-c-map* "k" 'kill-whole-line)
+
+  ;; Move line up/down (Alt+arrows)
+  (keymap-bind! *global-keymap* "M-<up>" 'move-line-up)
+  (keymap-bind! *global-keymap* "M-<down>" 'move-line-down)
+
+  ;; Pipe buffer to shell
+  (keymap-bind! *ctrl-c-map* "!" 'pipe-buffer)
+
+  ;; Narrow to region / widen
+  (keymap-bind! *ctrl-c-map* "n" 'narrow-to-region)
+  (keymap-bind! *ctrl-c-map* "w" 'widen)
+
   ;; String insert
   (keymap-bind! *ctrl-c-map* "i" 'string-insert-file))
 

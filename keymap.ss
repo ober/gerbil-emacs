@@ -89,7 +89,7 @@
         ;; Space (0x20)
         ((= key #x20) (if alt? "M-SPC" "SPC"))
         ;; DEL / Backspace (0x7F)
-        ((= key #x7F) "DEL")
+        ((= key #x7F) (if alt? "M-DEL" "DEL"))
         ;; Alt + printable character
         ((and alt? (> ch 31))
          (string-append "M-" (string (integer->char ch))))

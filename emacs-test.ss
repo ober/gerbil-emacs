@@ -522,6 +522,15 @@
       (let ((app (new-app-state #f)))
         (check (app-state-last-command app) => #f)))
 
+    (test-case "new keybindings: kill-whole-line, move-line, narrow, etc"
+      (setup-default-bindings!)
+      (check (keymap-lookup *ctrl-c-map* "k") => 'kill-whole-line)
+      (check (keymap-lookup *global-keymap* "M-<up>") => 'move-line-up)
+      (check (keymap-lookup *global-keymap* "M-<down>") => 'move-line-down)
+      (check (keymap-lookup *ctrl-c-map* "!") => 'pipe-buffer)
+      (check (keymap-lookup *ctrl-c-map* "n") => 'narrow-to-region)
+      (check (keymap-lookup *ctrl-c-map* "w") => 'widen))
+
     (test-case "repl subprocess lifecycle"
       (let ((rs (repl-start!)))
         ;; Verify state is initialized

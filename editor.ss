@@ -2746,6 +2746,132 @@
                   (echo-error! (app-state-echo app) "No more matches"))))))))))
 
 ;;;============================================================================
+;;; Kill whole line, move line up/down
+;;;============================================================================
+
+(def (cmd-kill-whole-line app)
+  "Kill the entire current line including the newline."
+  (let* ((ed (current-editor app))
+         (pos (editor-get-current-pos ed))
+         (line (editor-line-from-position ed pos))
+         (line-start (send-message ed SCI_POSITIONFROMLINE line 0))
+         (next-line-start (send-message ed SCI_POSITIONFROMLINE (+ line 1) 0))
+         (text (editor-get-text ed))
+         (len (string-length text)))
+    ;; If last line (no next line), delete to end including preceding newline
+    (if (= next-line-start 0)
+      (let* ((del-start (if (and (> line-start 0)
+                                 (char=? (string-ref text (- line-start 1)) #\newline))
+                          (- line-start 1) line-start))
+             (killed (substring text del-start len)))
+        (set! (app-state-kill-ring app)
+          (cons killed (app-state-kill-ring app)))
+        (send-message ed SCI_DELETERANGE del-start (- len del-start)))
+      ;; Normal case: delete from line-start to next-line-start
+      (let ((killed (substring text line-start next-line-start)))
+        (set! (app-state-kill-ring app)
+          (cons killed (app-state-kill-ring app)))
+        (send-message ed SCI_DELETERANGE line-start (- next-line-start line-start))))))
+
+(def (cmd-move-line-up app)
+  "Move the current line up one position."
+  (let* ((ed (current-editor app))
+         (pos (editor-get-current-pos ed))
+         (cur-line (editor-line-from-position ed pos)))
+    (when (> cur-line 0)
+      (let* ((text (editor-get-text ed))
+             (cur-start (send-message ed SCI_POSITIONFROMLINE cur-line 0))
+             (cur-end (send-message ed SCI_GETLINEENDPOSITION cur-line 0))
+             (prev-start (send-message ed SCI_POSITIONFROMLINE (- cur-line 1) 0))
+             (prev-end (send-message ed SCI_GETLINEENDPOSITION (- cur-line 1) 0))
+             (cur-text (substring text cur-start cur-end))
+             (prev-text (substring text prev-start prev-end))
+             (col (- pos cur-start)))
+        (send-message ed SCI_BEGINUNDOACTION)
+        (send-message ed SCI_DELETERANGE prev-start (- cur-end prev-start))
+        (editor-insert-text ed prev-start (string-append cur-text "\n" prev-text))
+        ;; Put cursor on same column in moved line
+        (editor-goto-pos ed (+ prev-start (min col (string-length cur-text))))
+        (send-message ed SCI_ENDUNDOACTION)))))
+
+(def (cmd-move-line-down app)
+  "Move the current line down one position."
+  (let* ((ed (current-editor app))
+         (pos (editor-get-current-pos ed))
+         (cur-line (editor-line-from-position ed pos))
+         (line-count (editor-get-line-count ed)))
+    (when (< cur-line (- line-count 1))
+      (let* ((text (editor-get-text ed))
+             (cur-start (send-message ed SCI_POSITIONFROMLINE cur-line 0))
+             (cur-end (send-message ed SCI_GETLINEENDPOSITION cur-line 0))
+             (next-start (send-message ed SCI_POSITIONFROMLINE (+ cur-line 1) 0))
+             (next-end (send-message ed SCI_GETLINEENDPOSITION (+ cur-line 1) 0))
+             (cur-text (substring text cur-start cur-end))
+             (next-text (substring text next-start next-end))
+             (col (- pos cur-start)))
+        (send-message ed SCI_BEGINUNDOACTION)
+        (send-message ed SCI_DELETERANGE cur-start (- next-end cur-start))
+        (editor-insert-text ed cur-start (string-append next-text "\n" cur-text))
+        ;; Put cursor on same column in moved line (now on line below)
+        (let ((new-line-start (+ cur-start (string-length next-text) 1)))
+          (editor-goto-pos ed (+ new-line-start (min col (string-length cur-text)))))
+        (send-message ed SCI_ENDUNDOACTION)))))
+
+;;;============================================================================
+;;; Pipe buffer to shell, narrow/widen
+;;;============================================================================
+
+(def (cmd-pipe-buffer app)
+  "Pipe buffer contents to a shell command and show output."
+  (let* ((echo (app-state-echo app))
+         (fr (app-state-frame app))
+         (row (- (frame-height fr) 1))
+         (width (frame-width fr))
+         (cmd (echo-read-string echo "Pipe buffer to: " row width)))
+    (when (and cmd (> (string-length cmd) 0))
+      (let* ((ed (current-editor app))
+             (text (editor-get-text ed)))
+        (with-catch
+          (lambda (e)
+            (echo-error! echo (string-append "Error: "
+                                (with-output-to-string
+                                  (lambda () (display-exception e))))))
+          (lambda ()
+            (let* ((proc (open-process
+                           (list path: "/bin/sh"
+                                 arguments: (list "-c" cmd)
+                                 stdin-redirection: #t
+                                 stdout-redirection: #t
+                                 stderr-redirection: #t)))
+                   (_ (begin (display text proc)
+                             (close-output-port proc)))
+                   (output (read-line proc #f))
+                   (status (process-status proc)))
+              ;; Show output in a new buffer
+              (if (and output (> (string-length output) 0))
+                (let* ((buf-name "*Shell Output*")
+                       (existing (buffer-by-name buf-name)))
+                  (when existing
+                    (buffer-list-remove! existing))
+                  (let ((buf (buffer-create! buf-name ed #f)))
+                    (buffer-attach! ed buf)
+                    (set! (edit-window-buffer (current-window fr)) buf)
+                    (editor-set-text ed output)
+                    (editor-goto-pos ed 0)
+                    (echo-message! echo
+                      (string-append "Pipe complete (exit " (number->string status) ")"))))
+                (echo-message! echo
+                  (string-append "No output (exit " (number->string status) ")"))))))))))
+
+(def (cmd-narrow-to-region app)
+  "Narrow not supported — Scintilla line hiding APIs not available."
+  (echo-error! (app-state-echo app) "Narrow not supported in this build"))
+
+(def (cmd-widen app)
+  "Widen not supported — Scintilla line hiding APIs not available."
+  (echo-error! (app-state-echo app) "Widen not supported in this build"))
+
+;;;============================================================================
 ;;; Register all commands
 ;;;============================================================================
 
@@ -2918,6 +3044,16 @@
   ;; Next/previous error (search result navigation)
   (register-command! 'next-error cmd-next-error)
   (register-command! 'previous-error cmd-previous-error)
+  ;; Kill whole line
+  (register-command! 'kill-whole-line cmd-kill-whole-line)
+  ;; Move line up/down
+  (register-command! 'move-line-up cmd-move-line-up)
+  (register-command! 'move-line-down cmd-move-line-down)
+  ;; Pipe buffer
+  (register-command! 'pipe-buffer cmd-pipe-buffer)
+  ;; Narrow/widen
+  (register-command! 'narrow-to-region cmd-narrow-to-region)
+  (register-command! 'widen cmd-widen)
   ;; Misc
   (register-command! 'keyboard-quit cmd-keyboard-quit)
   (register-command! 'quit cmd-quit))
