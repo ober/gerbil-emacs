@@ -201,7 +201,47 @@
   (keymap-bind! *ctrl-x-map* "e"   'eshell)
 
   ;; Shell
-  (keymap-bind! *ctrl-x-map* "s"   'shell))
+  (keymap-bind! *ctrl-x-map* "s"   'shell)
+
+  ;; Redo
+  (keymap-bind! *global-keymap* "M-_" 'redo)
+
+  ;; Toggle line numbers
+  (keymap-bind! *ctrl-x-map* "l"   'toggle-line-numbers)
+
+  ;; Toggle word wrap
+  (keymap-bind! *ctrl-x-map* "w"   'toggle-word-wrap)
+
+  ;; Toggle whitespace
+  (keymap-bind! *ctrl-x-map* "t"   'toggle-whitespace)
+
+  ;; Zoom
+  (keymap-bind! *global-keymap* "C-=" 'zoom-in)
+  (keymap-bind! *global-keymap* "C--" 'zoom-out)
+  (keymap-bind! *ctrl-x-map* "C-0" 'zoom-reset)
+
+  ;; Select all
+  (keymap-bind! *ctrl-x-map* "h"   'select-all)
+
+  ;; Duplicate line
+  (keymap-bind! *ctrl-x-map* "d"   'duplicate-line)
+
+  ;; Comment toggle
+  (keymap-bind! *global-keymap* "M-;" 'toggle-comment)
+
+  ;; Transpose chars
+  (keymap-bind! *global-keymap* "C-t" 'transpose-chars)
+
+  ;; Upcase / downcase word
+  (keymap-bind! *global-keymap* "M-u" 'upcase-word)
+  (keymap-bind! *global-keymap* "M-l" 'downcase-word)
+  (keymap-bind! *global-keymap* "M-c" 'capitalize-word)
+
+  ;; Kill word
+  (keymap-bind! *global-keymap* "M-d" 'kill-word)
+
+  ;; What line
+  (keymap-bind! *meta-g-map* "l"   'what-line))
 
 ;;;============================================================================
 ;;; Echo state

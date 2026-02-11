@@ -153,6 +153,12 @@
       (editor-undo ed)
       (echo-message! (app-state-echo app) "No further undo information"))))
 
+(def (cmd-redo app)
+  (let ((ed (current-editor app)))
+    (if (editor-can-redo? ed)
+      (editor-redo ed)
+      (echo-message! (app-state-echo app) "No further redo information"))))
+
 ;;;============================================================================
 ;;; Kill / Yank
 ;;;============================================================================
@@ -843,6 +849,255 @@
          (editor-insert-text ed pos "  "))))))
 
 ;;;============================================================================
+;;; Toggle line numbers
+;;;============================================================================
+
+(def (cmd-toggle-line-numbers app)
+  "Toggle line number margin on/off."
+  (let ((ed (current-editor app)))
+    (let ((cur-width (send-message ed SCI_GETMARGINWIDTHN 0 0)))
+      (if (> cur-width 0)
+        (begin
+          (send-message ed SCI_SETMARGINWIDTHN 0 0)
+          (echo-message! (app-state-echo app) "Line numbers off"))
+        (begin
+          ;; Set margin 0 to line numbers type
+          (send-message ed SCI_SETMARGINTYPEN 0 SC_MARGIN_NUMBER)
+          ;; Width of ~4 chars for line numbers
+          (send-message ed SCI_SETMARGINWIDTHN 0 4)
+          (echo-message! (app-state-echo app) "Line numbers on"))))))
+
+;;;============================================================================
+;;; Toggle word wrap
+;;;============================================================================
+
+(def (cmd-toggle-word-wrap app)
+  "Toggle word wrap on/off."
+  (let ((ed (current-editor app)))
+    (let ((cur (editor-get-wrap-mode ed)))
+      (if (= cur SC_WRAP_NONE)
+        (begin
+          (editor-set-wrap-mode ed SC_WRAP_WORD)
+          (echo-message! (app-state-echo app) "Word wrap on"))
+        (begin
+          (editor-set-wrap-mode ed SC_WRAP_NONE)
+          (echo-message! (app-state-echo app) "Word wrap off"))))))
+
+;;;============================================================================
+;;; Toggle whitespace visibility
+;;;============================================================================
+
+(def (cmd-toggle-whitespace app)
+  "Toggle whitespace visibility."
+  (let ((ed (current-editor app)))
+    (let ((cur (editor-get-view-whitespace ed)))
+      (if (= cur SCWS_INVISIBLE)
+        (begin
+          (editor-set-view-whitespace ed SCWS_VISIBLEALWAYS)
+          (echo-message! (app-state-echo app) "Whitespace visible"))
+        (begin
+          (editor-set-view-whitespace ed SCWS_INVISIBLE)
+          (echo-message! (app-state-echo app) "Whitespace hidden"))))))
+
+;;;============================================================================
+;;; Zoom
+;;;============================================================================
+
+(def (cmd-zoom-in app)
+  (let ((ed (current-editor app)))
+    (editor-zoom-in ed)
+    (echo-message! (app-state-echo app)
+                   (string-append "Zoom: " (number->string (editor-get-zoom ed))))))
+
+(def (cmd-zoom-out app)
+  (let ((ed (current-editor app)))
+    (editor-zoom-out ed)
+    (echo-message! (app-state-echo app)
+                   (string-append "Zoom: " (number->string (editor-get-zoom ed))))))
+
+(def (cmd-zoom-reset app)
+  (let ((ed (current-editor app)))
+    (editor-set-zoom ed 0)
+    (echo-message! (app-state-echo app) "Zoom reset")))
+
+;;;============================================================================
+;;; Select all
+;;;============================================================================
+
+(def (cmd-select-all app)
+  (let ((ed (current-editor app)))
+    (editor-select-all ed)
+    (echo-message! (app-state-echo app) "Mark set (whole buffer)")))
+
+;;;============================================================================
+;;; Duplicate line
+;;;============================================================================
+
+(def (cmd-duplicate-line app)
+  "Duplicate the current line."
+  (let* ((ed (current-editor app))
+         (pos (editor-get-current-pos ed))
+         (line (editor-line-from-position ed pos))
+         (line-start (editor-position-from-line ed line))
+         (line-end (editor-get-line-end-position ed line))
+         (line-text (editor-get-line ed line)))
+    ;; Insert a copy after the current line
+    (editor-goto-pos ed line-end)
+    (editor-insert-text ed line-end (string-append "\n" (string-trim-right line-text #\newline)))))
+
+;;;============================================================================
+;;; Comment toggle (Scheme: ;; prefix)
+;;;============================================================================
+
+(def (cmd-toggle-comment app)
+  "Toggle ;; comment on the current line."
+  (let* ((ed (current-editor app))
+         (pos (editor-get-current-pos ed))
+         (line (editor-line-from-position ed pos))
+         (line-start (editor-position-from-line ed line))
+         (line-end (editor-get-line-end-position ed line))
+         (line-text (editor-get-line ed line))
+         (trimmed (string-trim line-text)))
+    (cond
+      ;; Line starts with ";; " — remove it
+      ((and (>= (string-length trimmed) 3)
+            (string=? (substring trimmed 0 3) ";; "))
+       ;; Find position of ";; " in the original line
+       (let ((comment-pos (string-contains line-text ";; ")))
+         (when comment-pos
+           (editor-delete-range ed (+ line-start comment-pos) 3))))
+      ;; Line starts with ";;" — remove it
+      ((and (>= (string-length trimmed) 2)
+            (string=? (substring trimmed 0 2) ";;"))
+       (let ((comment-pos (string-contains line-text ";;")))
+         (when comment-pos
+           (editor-delete-range ed (+ line-start comment-pos) 2))))
+      ;; Add ";; " at start of line
+      (else
+       (editor-insert-text ed line-start ";; ")))))
+
+;;;============================================================================
+;;; Transpose chars (C-t)
+;;;============================================================================
+
+(def (cmd-transpose-chars app)
+  "Swap the two characters before point."
+  (let* ((ed (current-editor app))
+         (pos (editor-get-current-pos ed)))
+    (when (>= pos 2)
+      (let* ((text (editor-get-text ed))
+             (c1 (string-ref text (- pos 2)))
+             (c2 (string-ref text (- pos 1))))
+        (with-undo-action ed
+          (editor-delete-range ed (- pos 2) 2)
+          (editor-insert-text ed (- pos 2)
+            (string c2 c1)))
+        (editor-goto-pos ed pos)))))
+
+;;;============================================================================
+;;; Word case commands
+;;;============================================================================
+
+(def (word-char? ch)
+  (or (char-alphabetic? ch) (char-numeric? ch) (char=? ch #\_) (char=? ch #\-)))
+
+(def (word-at-point ed)
+  "Get the word boundaries at/after current position.
+   Returns (values start end) or (values #f #f) if no word."
+  (let* ((pos (editor-get-current-pos ed))
+         (text (editor-get-text ed))
+         (len (string-length text)))
+    ;; Skip non-word chars
+    (let skip ((i pos))
+      (if (>= i len)
+        (values #f #f)
+        (let ((ch (string-ref text i)))
+          (if (word-char? ch)
+            ;; Found start of word, find end
+            (let find-end ((j (+ i 1)))
+              (if (>= j len)
+                (values i j)
+                (if (word-char? (string-ref text j))
+                  (find-end (+ j 1))
+                  (values i j))))
+            (skip (+ i 1))))))))
+
+(def (cmd-upcase-word app)
+  "Convert the next word to uppercase."
+  (let ((ed (current-editor app)))
+    (let-values (((start end) (word-at-point ed)))
+      (when start
+        (let* ((text (editor-get-text ed))
+               (word (substring text start end))
+               (upper (string-upcase word)))
+          (with-undo-action ed
+            (editor-delete-range ed start (- end start))
+            (editor-insert-text ed start upper))
+          (editor-goto-pos ed end))))))
+
+(def (cmd-downcase-word app)
+  "Convert the next word to lowercase."
+  (let ((ed (current-editor app)))
+    (let-values (((start end) (word-at-point ed)))
+      (when start
+        (let* ((text (editor-get-text ed))
+               (word (substring text start end))
+               (lower (string-downcase word)))
+          (with-undo-action ed
+            (editor-delete-range ed start (- end start))
+            (editor-insert-text ed start lower))
+          (editor-goto-pos ed end))))))
+
+(def (cmd-capitalize-word app)
+  "Capitalize the next word."
+  (let ((ed (current-editor app)))
+    (let-values (((start end) (word-at-point ed)))
+      (when (and start (< start end))
+        (let* ((text (editor-get-text ed))
+               (word (substring text start end))
+               (cap (string-append
+                      (string-upcase (substring word 0 1))
+                      (string-downcase (substring word 1 (string-length word))))))
+          (with-undo-action ed
+            (editor-delete-range ed start (- end start))
+            (editor-insert-text ed start cap))
+          (editor-goto-pos ed end))))))
+
+;;;============================================================================
+;;; Kill word (M-d)
+;;;============================================================================
+
+(def (cmd-kill-word app)
+  "Kill from point to end of word."
+  (let ((ed (current-editor app)))
+    (let-values (((start end) (word-at-point ed)))
+      (when start
+        (let* ((pos (editor-get-current-pos ed))
+               (kill-start (min pos start))
+               (text (editor-get-text ed))
+               (killed (substring text kill-start end)))
+          ;; Add to kill ring
+          (set! (app-state-kill-ring app)
+                (cons killed (app-state-kill-ring app)))
+          (editor-delete-range ed kill-start (- end kill-start)))))))
+
+;;;============================================================================
+;;; What line (M-g l)
+;;;============================================================================
+
+(def (cmd-what-line app)
+  "Display current line number in echo area."
+  (let* ((ed (current-editor app))
+         (pos (editor-get-current-pos ed))
+         (line (+ 1 (editor-line-from-position ed pos)))
+         (col (+ 1 (editor-get-column ed pos)))
+         (total (editor-get-line-count ed)))
+    (echo-message! (app-state-echo app)
+      (string-append "Line " (number->string line)
+                     " of " (number->string total)
+                     ", Column " (number->string col)))))
+
+;;;============================================================================
 ;;; Misc commands
 ;;;============================================================================
 
@@ -1059,6 +1314,32 @@
   (register-command! 'query-replace cmd-query-replace)
   ;; Tab/indent
   (register-command! 'indent-or-complete cmd-indent-or-complete)
+  ;; Redo
+  (register-command! 'redo cmd-redo)
+  ;; Toggles
+  (register-command! 'toggle-line-numbers cmd-toggle-line-numbers)
+  (register-command! 'toggle-word-wrap cmd-toggle-word-wrap)
+  (register-command! 'toggle-whitespace cmd-toggle-whitespace)
+  ;; Zoom
+  (register-command! 'zoom-in cmd-zoom-in)
+  (register-command! 'zoom-out cmd-zoom-out)
+  (register-command! 'zoom-reset cmd-zoom-reset)
+  ;; Select all
+  (register-command! 'select-all cmd-select-all)
+  ;; Duplicate line
+  (register-command! 'duplicate-line cmd-duplicate-line)
+  ;; Comment toggle
+  (register-command! 'toggle-comment cmd-toggle-comment)
+  ;; Transpose
+  (register-command! 'transpose-chars cmd-transpose-chars)
+  ;; Word case
+  (register-command! 'upcase-word cmd-upcase-word)
+  (register-command! 'downcase-word cmd-downcase-word)
+  (register-command! 'capitalize-word cmd-capitalize-word)
+  ;; Kill word
+  (register-command! 'kill-word cmd-kill-word)
+  ;; What line
+  (register-command! 'what-line cmd-what-line)
   ;; Misc
   (register-command! 'keyboard-quit cmd-keyboard-quit)
   (register-command! 'quit cmd-quit))

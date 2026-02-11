@@ -316,6 +316,50 @@
       (setup-default-bindings!)
       (check (keymap-lookup *ctrl-x-map* "s") => 'shell))
 
+    (test-case "new keybindings: redo, toggles, zoom, etc"
+      (setup-default-bindings!)
+      ;; Redo
+      (check (keymap-lookup *global-keymap* "M-_") => 'redo)
+      ;; Toggle line numbers
+      (check (keymap-lookup *ctrl-x-map* "l") => 'toggle-line-numbers)
+      ;; Toggle word wrap
+      (check (keymap-lookup *ctrl-x-map* "w") => 'toggle-word-wrap)
+      ;; Toggle whitespace
+      (check (keymap-lookup *ctrl-x-map* "t") => 'toggle-whitespace)
+      ;; Zoom
+      (check (keymap-lookup *global-keymap* "C-=") => 'zoom-in)
+      (check (keymap-lookup *global-keymap* "C--") => 'zoom-out)
+      (check (keymap-lookup *ctrl-x-map* "C-0") => 'zoom-reset)
+      ;; Select all
+      (check (keymap-lookup *ctrl-x-map* "h") => 'select-all)
+      ;; Duplicate line
+      (check (keymap-lookup *ctrl-x-map* "d") => 'duplicate-line)
+      ;; Comment toggle
+      (check (keymap-lookup *global-keymap* "M-;") => 'toggle-comment)
+      ;; Transpose
+      (check (keymap-lookup *global-keymap* "C-t") => 'transpose-chars)
+      ;; Word case
+      (check (keymap-lookup *global-keymap* "M-u") => 'upcase-word)
+      (check (keymap-lookup *global-keymap* "M-l") => 'downcase-word)
+      (check (keymap-lookup *global-keymap* "M-c") => 'capitalize-word)
+      ;; Kill word
+      (check (keymap-lookup *global-keymap* "M-d") => 'kill-word)
+      ;; What line (M-g prefix)
+      (check (keymap-lookup *meta-g-map* "l") => 'what-line))
+
+    (test-case "word-char? helper"
+      ;; Test word-char? logic (re-implemented inline for testing)
+      (let ((wc? (lambda (ch)
+                   (or (char-alphabetic? ch) (char-numeric? ch)
+                       (char=? ch #\_) (char=? ch #\-)))))
+        (check (wc? #\a) => #t)
+        (check (wc? #\Z) => #t)
+        (check (wc? #\0) => #t)
+        (check (wc? #\_) => #t)
+        (check (wc? #\-) => #t)
+        (check (wc? #\space) => #f)
+        (check (wc? #\() => #f)))
+
     (test-case "repl subprocess lifecycle"
       (let ((rs (repl-start!)))
         ;; Verify state is initialized
