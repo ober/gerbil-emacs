@@ -704,14 +704,49 @@
   ;; Goto percent (M-g %)
   (keymap-bind! *meta-g-map* "%" 'goto-percent)
 
-  ;; All other new commands accessible via M-x:
-  ;; indent-region, unindent-region, copy-region-as-kill,
-  ;; append-to-buffer, toggle-show-trailing-whitespace,
-  ;; mark-whole-buffer, cycle-spacing, delete-horizontal-space-forward,
-  ;; toggle-debug-mode, insert-comment-separator, toggle-global-hl-line,
-  ;; insert-shebang, toggle-auto-indent, what-mode, show-buffer-size,
-  ;; insert-newline-below, insert-newline-above, duplicate-region,
-  ;; sort-lines-reverse, uniquify-lines, show-line-endings
+  ;; Paragraph navigation (M-{ / M-})
+  (keymap-bind! *global-keymap* "M-{" 'backward-paragraph)
+  (keymap-bind! *global-keymap* "M-}" 'forward-paragraph)
+
+  ;; Sentence navigation (M-a / M-e)
+  (keymap-bind! *global-keymap* "M-a" 'backward-sentence)
+  (keymap-bind! *global-keymap* "M-e" 'forward-sentence)
+
+  ;; Back to indentation (M-m)
+  (keymap-bind! *global-keymap* "M-m" 'back-to-indentation)
+
+  ;; Join lines (M-^)
+  (keymap-bind! *global-keymap* "M-^" 'delete-indentation)
+
+  ;; Hippie expand (M-/)
+  (keymap-bind! *global-keymap* "M-/" 'hippie-expand)
+
+  ;; Next/previous buffer (C-x right / C-x left)
+  (keymap-bind! *ctrl-x-map* "RIGHT" 'next-buffer)
+  (keymap-bind! *ctrl-x-map* "LEFT" 'previous-buffer)
+
+  ;; Dired (C-x d)
+  (keymap-bind! *ctrl-x-map* "d" 'dired)
+
+  ;; Imenu (M-g i)
+  (keymap-bind! *meta-g-map* "i" 'imenu)
+
+  ;; What cursor position (C-x =)
+  (keymap-bind! *ctrl-x-map* "=" 'what-cursor-position)
+
+  ;; Insert register (C-x r i)
+  (keymap-bind! *ctrl-x-r-map* "i" 'insert-register)
+
+  ;; Toggle fold (M-g F — uppercase to avoid conflict with forward-sexp)
+  (keymap-bind! *meta-g-map* "F" 'toggle-fold)
+
+  ;; Help describe key briefly (C-h c — already have C-h k)
+  (keymap-bind! *help-map* "c" 'describe-key-briefly)
+  (keymap-bind! *help-map* "d" 'describe-function)
+  (keymap-bind! *help-map* "v" 'describe-variable)
+  (keymap-bind! *help-map* "i" 'info)
+
+  ;; All other new commands accessible via M-x
   )
 
 ;;;============================================================================

@@ -332,8 +332,8 @@
       (check (keymap-lookup *ctrl-x-map* "C-0") => 'zoom-reset)
       ;; Select all
       (check (keymap-lookup *ctrl-x-map* "h") => 'select-all)
-      ;; Duplicate line
-      (check (keymap-lookup *ctrl-x-map* "d") => 'duplicate-line)
+      ;; Dired (was duplicate-line, now dired per standard Emacs)
+      (check (keymap-lookup *ctrl-x-map* "d") => 'dired)
       ;; Comment toggle
       (check (keymap-lookup *global-keymap* "M-;") => 'toggle-comment)
       ;; Transpose
@@ -351,8 +351,8 @@
       (setup-default-bindings!)
       (check (keymap-lookup *ctrl-x-map* "C-w") => 'write-file)
       (check (keymap-lookup *ctrl-x-map* "C-r") => 'revert-buffer)
-      (check (keymap-lookup *global-keymap* "M-a") => 'beginning-of-defun)
-      (check (keymap-lookup *global-keymap* "M-e") => 'end-of-defun))
+      (check (keymap-lookup *global-keymap* "M-a") => 'backward-sentence)
+      (check (keymap-lookup *global-keymap* "M-e") => 'forward-sentence))
 
     (test-case "auto-pair-char helper"
       ;; Import via editor.ss is not possible without TUI, so test inline
@@ -448,7 +448,7 @@
       (check (keymap-lookup *global-keymap* "M-!") => 'shell-command)
       (check (keymap-lookup *global-keymap* "M-q") => 'fill-paragraph)
       (check (keymap-lookup *ctrl-x-map* "i") => 'insert-file)
-      (check (keymap-lookup *global-keymap* "M-/") => 'dabbrev-expand)
+      (check (keymap-lookup *global-keymap* "M-/") => 'hippie-expand)
       (check (keymap-lookup *ctrl-x-map* "=") => 'what-cursor-position))
 
     (test-case "macro and mark ring keybindings"

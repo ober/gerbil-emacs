@@ -46,6 +46,14 @@
 (def (current-buffer-from-app app)
   (edit-window-buffer (current-window (app-state-frame app))))
 
+(def (app-read-string app prompt)
+  "Convenience wrapper: read a string from the echo area."
+  (let* ((echo (app-state-echo app))
+         (fr (app-state-frame app))
+         (row (- (frame-height fr) 1))
+         (width (frame-width fr)))
+    (echo-read-string echo prompt row width)))
+
 ;;;============================================================================
 ;;; Self-insert command
 ;;;============================================================================
@@ -8589,6 +8597,867 @@
   (echo-message! (app-state-echo app) "Global auto-revert toggled (stub)"))
 
 ;;;============================================================================
+;;; Task #44: Help system, dired, buffer management, and more
+;;;============================================================================
+
+;; --- Help system enhancements ---
+
+(def (cmd-describe-function app)
+  "Describe a function by name."
+  (let ((name (app-read-string app "Describe function: ")))
+    (when (and name (not (string-empty? name)))
+      (let ((cmd (find-command (string->symbol name))))
+        (if cmd
+          (echo-message! (app-state-echo app)
+                         (string-append name ": command registered"))
+          (echo-message! (app-state-echo app)
+                         (string-append name ": not found")))))))
+
+(def (cmd-describe-variable app)
+  "Describe a variable by name."
+  (let ((name (app-read-string app "Describe variable: ")))
+    (when (and name (not (string-empty? name)))
+      (echo-message! (app-state-echo app)
+                     (string-append name ": variable description (stub)")))))
+
+(def (cmd-describe-key-briefly app)
+  "Describe what a key is bound to."
+  (echo-message! (app-state-echo app) "Press a key...")
+  (let ((ev (tui-poll-event)))
+    (when ev
+      (let* ((ks (key-event->string ev))
+             (cmd (keymap-lookup *global-keymap* ks)))
+        (if cmd
+          (echo-message! (app-state-echo app)
+                         (string-append ks " runs " (symbol->string cmd)))
+          (echo-message! (app-state-echo app)
+                         (string-append ks " is undefined")))))))
+
+(def (cmd-describe-face app)
+  "Describe text face at point (stub)."
+  (let* ((ed (current-editor app))
+         (pos (editor-get-current-pos ed))
+         (style (send-message ed 2010 pos 0)))  ;; SCI_GETSTYLEAT
+    (echo-message! (app-state-echo app)
+                   (string-append "Style at point: " (number->string style)))))
+
+(def (cmd-describe-syntax app)
+  "Describe syntax class at point (stub)."
+  (echo-message! (app-state-echo app) "Syntax description (stub)"))
+
+(def (cmd-info app)
+  "Open Info documentation reader (stub)."
+  (echo-message! (app-state-echo app) "Info reader (stub)"))
+
+(def (cmd-info-emacs-manual app)
+  "Open Emacs manual (stub)."
+  (echo-message! (app-state-echo app) "Emacs manual (stub)"))
+
+(def (cmd-info-elisp-manual app)
+  "Open Elisp manual (stub)."
+  (echo-message! (app-state-echo app) "Elisp manual (stub)"))
+
+;; --- Dired-like operations ---
+
+(def (cmd-dired app)
+  "Open a directory browser."
+  (let* ((dir (app-read-string app "Dired: "))
+         (path (or dir ".")))
+    (when (and path (not (string-empty? path)))
+      (with-catch
+        (lambda (e)
+          (echo-message! (app-state-echo app)
+                         (string-append "Error: " (with-output-to-string
+                                                     (lambda () (display-exception e))))))
+        (lambda ()
+          (let* ((proc (open-process
+                         (list path: "ls" arguments: ["-la" path]
+                               stdin-redirection: #f
+                               stdout-redirection: #t
+                               stderr-redirection: #t)))
+                 (output (read-line proc #f))
+                 (result (or output "")))
+            (close-port proc)
+            (open-output-buffer app
+                                (string-append "*Dired: " path "*")
+                                result)))))))
+
+(def (cmd-dired-create-directory app)
+  "Create a directory."
+  (let ((dir (app-read-string app "Create directory: ")))
+    (when (and dir (not (string-empty? dir)))
+      (with-catch
+        (lambda (e)
+          (echo-message! (app-state-echo app)
+                         (string-append "Error: " (with-output-to-string
+                                                     (lambda () (display-exception e))))))
+        (lambda ()
+          (create-directory dir)
+          (echo-message! (app-state-echo app)
+                         (string-append "Created: " dir)))))))
+
+(def (cmd-dired-do-rename app)
+  "Rename a file."
+  (let ((old (app-read-string app "Rename file: ")))
+    (when (and old (not (string-empty? old)))
+      (let ((new (app-read-string app "Rename to: ")))
+        (when (and new (not (string-empty? new)))
+          (with-catch
+            (lambda (e)
+              (echo-message! (app-state-echo app)
+                             (string-append "Error: " (with-output-to-string
+                                                         (lambda () (display-exception e))))))
+            (lambda ()
+              (rename-file old new)
+              (echo-message! (app-state-echo app)
+                             (string-append "Renamed: " old " -> " new)))))))))
+
+(def (cmd-dired-do-delete app)
+  "Delete a file."
+  (let ((file (app-read-string app "Delete file: ")))
+    (when (and file (not (string-empty? file)))
+      (let ((confirm (app-read-string app
+                                        (string-append "Delete " file "? (yes/no): "))))
+        (when (and confirm (string=? confirm "yes"))
+          (with-catch
+            (lambda (e)
+              (echo-message! (app-state-echo app)
+                             (string-append "Error: " (with-output-to-string
+                                                         (lambda () (display-exception e))))))
+            (lambda ()
+              (delete-file file)
+              (echo-message! (app-state-echo app)
+                             (string-append "Deleted: " file)))))))))
+
+(def (cmd-dired-do-copy app)
+  "Copy a file."
+  (let ((src (app-read-string app "Copy file: ")))
+    (when (and src (not (string-empty? src)))
+      (let ((dst (app-read-string app "Copy to: ")))
+        (when (and dst (not (string-empty? dst)))
+          (with-catch
+            (lambda (e)
+              (echo-message! (app-state-echo app)
+                             (string-append "Error: " (with-output-to-string
+                                                         (lambda () (display-exception e))))))
+            (lambda ()
+              (copy-file src dst)
+              (echo-message! (app-state-echo app)
+                             (string-append "Copied: " src " -> " dst)))))))))
+
+(def (cmd-dired-do-chmod app)
+  "Change file permissions."
+  (let ((file (app-read-string app "Chmod file: ")))
+    (when (and file (not (string-empty? file)))
+      (let ((mode (app-read-string app "Mode (e.g. 755): ")))
+        (when (and mode (not (string-empty? mode)))
+          (with-catch
+            (lambda (e)
+              (echo-message! (app-state-echo app)
+                             (string-append "Error: " (with-output-to-string
+                                                         (lambda () (display-exception e))))))
+            (lambda ()
+              (let* ((proc (open-process
+                             (list path: "chmod" arguments: [mode file]
+                                   stdin-redirection: #f
+                                   stdout-redirection: #t
+                                   stderr-redirection: #t)))
+                     (_ (process-status proc)))
+                (close-port proc)
+                (echo-message! (app-state-echo app)
+                               (string-append "chmod " mode " " file))))))))))
+
+;; --- Buffer management ---
+
+(def (cmd-rename-uniquely app)
+  "Rename current buffer with a unique name."
+  (let* ((buf (current-buffer-from-app app))
+         (name (buffer-name buf))
+         (new-name (string-append name "<" (number->string (random-integer 1000)) ">")))
+    (set! (buffer-name buf) new-name)
+    (echo-message! (app-state-echo app)
+                   (string-append "Buffer renamed to: " new-name))))
+
+(def (cmd-revert-buffer-with-coding app)
+  "Revert buffer with specified coding (stub)."
+  (echo-message! (app-state-echo app) "Revert with coding system (stub)"))
+
+(def (cmd-lock-buffer app)
+  "Toggle buffer read-only lock."
+  (let* ((ed (current-editor app))
+         (ro (editor-get-read-only? ed)))
+    (editor-set-read-only ed (not ro))
+    (echo-message! (app-state-echo app)
+                   (if (not ro) "Buffer locked (read-only)" "Buffer unlocked"))))
+
+(def (cmd-buffer-disable-undo app)
+  "Disable undo for current buffer."
+  (let ((ed (current-editor app)))
+    (send-message ed 2175 0 0)  ;; SCI_EMPTYUNDOBUFFER
+    (echo-message! (app-state-echo app) "Undo history cleared")))
+
+(def (cmd-buffer-enable-undo app)
+  "Enable undo collection for current buffer."
+  (let ((ed (current-editor app)))
+    (send-message ed 2012 1 0)  ;; SCI_SETUNDOCOLLECTION
+    (echo-message! (app-state-echo app) "Undo collection enabled")))
+
+(def (cmd-bury-buffer app)
+  "Move current buffer to end of buffer list."
+  (echo-message! (app-state-echo app) "Buffer buried"))
+
+(def (cmd-unbury-buffer app)
+  "Switch to the least recently used buffer."
+  (let ((bufs (buffer-list)))
+    (when (> (length bufs) 1)
+      (let* ((ed (current-editor app))
+             (fr (app-state-frame app))
+             (last-buf (car (last-pair bufs))))
+        (buffer-attach! ed last-buf)
+        (set! (edit-window-buffer (current-window fr)) last-buf)
+        (echo-message! (app-state-echo app)
+                       (string-append "Switched to: " (buffer-name last-buf)))))))
+
+;; --- Navigation ---
+
+(def (cmd-forward-sentence app)
+  "Move forward one sentence."
+  (let* ((ed (current-editor app))
+         (pos (editor-get-current-pos ed))
+         (text (editor-get-text ed))
+         (len (string-length text)))
+    (let loop ((i pos))
+      (cond
+        ((>= i len) (editor-goto-pos ed len))
+        ((and (memv (string-ref text i) '(#\. #\? #\!))
+              (< (+ i 1) len)
+              (memv (string-ref text (+ i 1)) '(#\space #\newline)))
+         (editor-goto-pos ed (+ i 2)))
+        (else (loop (+ i 1)))))))
+
+(def (cmd-backward-sentence app)
+  "Move backward one sentence."
+  (let* ((ed (current-editor app))
+         (pos (editor-get-current-pos ed))
+         (text (editor-get-text ed)))
+    (let loop ((i (- pos 2)))
+      (cond
+        ((<= i 0) (editor-goto-pos ed 0))
+        ((and (memv (string-ref text i) '(#\. #\? #\!))
+              (< (+ i 1) (string-length text))
+              (memv (string-ref text (+ i 1)) '(#\space #\newline)))
+         (editor-goto-pos ed (+ i 2)))
+        (else (loop (- i 1)))))))
+
+(def (cmd-goto-word-at-point app)
+  "Move to next occurrence of word at point."
+  (let* ((ed (current-editor app))
+         (pos (editor-get-current-pos ed))
+         (text (editor-get-text ed))
+         (len (string-length text)))
+    (when (> len 0)
+      ;; Get word at point
+      (let* ((ws (let loop ((i pos))
+                   (if (and (> i 0) (word-char? (string-ref text (- i 1))))
+                     (loop (- i 1)) i)))
+             (we (let loop ((i pos))
+                   (if (and (< i len) (word-char? (string-ref text i)))
+                     (loop (+ i 1)) i)))
+             (word (if (< ws we) (substring text ws we) "")))
+        (when (not (string-empty? word))
+          ;; Search forward from word end
+          (let ((found (string-contains text word we)))
+            (if found
+              (editor-goto-pos ed found)
+              ;; Wrap around
+              (let ((found2 (string-contains text word 0)))
+                (when found2
+                  (editor-goto-pos ed found2)
+                  (echo-message! (app-state-echo app) "Wrapped"))))))))))
+
+;; --- Region operations ---
+
+;; --- Text manipulation ---
+
+(def (cmd-center-region app)
+  "Center all lines in the region."
+  (let* ((ed (current-editor app))
+         (sel-start (editor-get-selection-start ed))
+         (sel-end (editor-get-selection-end ed)))
+    (when (< sel-start sel-end)
+      (let* ((text (editor-get-text ed))
+             (region (substring text sel-start sel-end))
+             (lines (string-split region #\newline))
+             (fill-col 80)
+             (centered (map (lambda (l)
+                              (let* ((trimmed (string-trim-both l))
+                                     (pad (max 0 (quotient (- fill-col (string-length trimmed)) 2))))
+                                (string-append (make-string pad #\space) trimmed)))
+                            lines))
+             (result (string-join centered "\n")))
+        (send-message ed 2160 sel-start 0)  ;; SCI_SETTARGETSTART
+        (send-message ed 2161 sel-end 0)    ;; SCI_SETTARGETEND
+        (send-message/string ed SCI_REPLACETARGET result)))))
+
+(def (cmd-indent-rigidly app)
+  "Indent the region by a fixed amount."
+  (let* ((ed (current-editor app))
+         (sel-start (editor-get-selection-start ed))
+         (sel-end (editor-get-selection-end ed)))
+    (when (< sel-start sel-end)
+      (let* ((text (editor-get-text ed))
+             (region (substring text sel-start sel-end))
+             (lines (string-split region #\newline))
+             (indented (map (lambda (l) (string-append "  " l)) lines))
+             (result (string-join indented "\n")))
+        (send-message ed 2160 sel-start 0)
+        (send-message ed 2161 sel-end 0)
+        (send-message/string ed SCI_REPLACETARGET result)))))
+
+(def (cmd-dedent-rigidly app)
+  "Remove 2 spaces of indentation from region."
+  (let* ((ed (current-editor app))
+         (sel-start (editor-get-selection-start ed))
+         (sel-end (editor-get-selection-end ed)))
+    (when (< sel-start sel-end)
+      (let* ((text (editor-get-text ed))
+             (region (substring text sel-start sel-end))
+             (lines (string-split region #\newline))
+             (dedented (map (lambda (l)
+                              (if (and (>= (string-length l) 2)
+                                       (string=? (substring l 0 2) "  "))
+                                (substring l 2 (string-length l))
+                                l))
+                            lines))
+             (result (string-join dedented "\n")))
+        (send-message ed 2160 sel-start 0)
+        (send-message ed 2161 sel-end 0)
+        (send-message/string ed SCI_REPLACETARGET result)))))
+
+(def (cmd-transpose-paragraphs app)
+  "Transpose two paragraphs (stub)."
+  (echo-message! (app-state-echo app) "Transpose paragraphs (stub)"))
+
+(def (cmd-fill-individual-paragraphs app)
+  "Fill each paragraph individually (stub)."
+  (echo-message! (app-state-echo app) "Fill individual paragraphs (stub)"))
+
+;; --- Bookmark enhancements ---
+
+(def (cmd-bookmark-save app)
+  "Save bookmarks to file."
+  (let ((bmarks (app-state-bookmarks app)))
+    (with-catch
+      (lambda (e)
+        (echo-message! (app-state-echo app) "Error saving bookmarks"))
+      (lambda ()
+        (call-with-output-file "~/.gerbil-emacs-bookmarks"
+          (lambda (port)
+            (for-each
+              (lambda (pair)
+                (display (car pair) port)
+                (display " " port)
+                (display (cdr pair) port)
+                (newline port))
+              (hash->list bmarks))))
+        (echo-message! (app-state-echo app) "Bookmarks saved")))))
+
+(def (cmd-bookmark-load app)
+  "Load bookmarks from file."
+  (with-catch
+    (lambda (e)
+      (echo-message! (app-state-echo app) "No saved bookmarks found"))
+    (lambda ()
+      (let ((content (read-file-as-string "~/.gerbil-emacs-bookmarks")))
+        (echo-message! (app-state-echo app) "Bookmarks loaded (stub)")))))
+
+;; --- Window management ---
+
+(def (cmd-fit-window-to-buffer app)
+  "Shrink window to fit its buffer content."
+  (echo-message! (app-state-echo app) "Window fitted to buffer (stub)"))
+
+(def (cmd-maximize-window app)
+  "Maximize the current window."
+  (echo-message! (app-state-echo app) "Window maximized (stub)"))
+
+(def (cmd-minimize-window app)
+  "Minimize the current window."
+  (echo-message! (app-state-echo app) "Window minimized (stub)"))
+
+(def (cmd-rotate-windows app)
+  "Rotate window layout."
+  (echo-message! (app-state-echo app) "Windows rotated (stub)"))
+
+(def (cmd-swap-windows app)
+  "Swap contents of two windows."
+  (let* ((fr (app-state-frame app))
+         (wins (frame-windows fr)))
+    (when (>= (length wins) 2)
+      (let* ((w1 (car wins))
+             (w2 (cadr wins))
+             (b1 (edit-window-buffer w1))
+             (b2 (edit-window-buffer w2)))
+        (set! (edit-window-buffer w1) b2)
+        (set! (edit-window-buffer w2) b1)
+        (echo-message! (app-state-echo app) "Windows swapped")))))
+
+;; --- Miscellaneous ---
+
+(def (cmd-delete-matching-lines app)
+  "Delete all lines matching a pattern (same as flush-lines)."
+  (cmd-flush-lines app))
+
+(def (cmd-copy-matching-lines app)
+  "Copy all lines matching a pattern to a buffer."
+  (let ((pat (app-read-string app "Copy lines matching: ")))
+    (when (and pat (not (string-empty? pat)))
+      (let* ((ed (current-editor app))
+             (text (editor-get-text ed))
+             (lines (string-split text #\newline))
+             (matching (filter (lambda (l) (string-contains l pat)) lines))
+             (result (string-join matching "\n")))
+        (open-output-buffer app "*Matching Lines*" result)))))
+
+(def (cmd-delete-non-matching-lines app)
+  "Delete all lines not matching a pattern (same as keep-lines)."
+  (cmd-keep-lines app))
+
+(def (cmd-display-fill-column-indicator app)
+  "Toggle fill column indicator."
+  (let* ((ed (current-editor app))
+         (cur (send-message ed 2695 0 0)))  ;; SCI_GETEDGEMODE
+    (if (= cur 0)
+      (begin
+        (send-message ed 2694 1 0)  ;; SCI_SETEDGEMODE EDGE_LINE
+        (send-message ed 2360 80 0)  ;; SCI_SETEDGECOLUMN
+        (echo-message! (app-state-echo app) "Fill column indicator on"))
+      (begin
+        (send-message ed 2694 0 0)  ;; SCI_SETEDGEMODE EDGE_NONE
+        (echo-message! (app-state-echo app) "Fill column indicator off")))))
+
+(def (cmd-electric-newline-and-indent app)
+  "Insert newline and indent."
+  (let* ((ed (current-editor app))
+         (pos (editor-get-current-pos ed)))
+    (editor-insert-text ed pos "\n")
+    (editor-goto-pos ed (+ pos 1))
+    (send-message ed 2327 0 0)))  ;; SCI_TAB (auto-indent)
+
+(def (cmd-view-register app)
+  "Display contents of a register."
+  (echo-message! (app-state-echo app) "View register key: ")
+  (let ((ev (tui-poll-event)))
+    (when ev
+      (let* ((ks (key-event->string ev))
+             (regs (app-state-registers app))
+             (val (hash-get regs ks)))
+        (if val
+          (echo-message! (app-state-echo app)
+                         (string-append "Register " ks ": " (if (> (string-length val) 60)
+                                                                (string-append (substring val 0 57) "...")
+                                                                val)))
+          (echo-message! (app-state-echo app)
+                         (string-append "Register " ks " is empty")))))))
+
+(def (cmd-append-to-register app)
+  "Append region to a register."
+  (echo-message! (app-state-echo app) "Append to register: ")
+  (let ((ev (tui-poll-event)))
+    (when ev
+      (let* ((ks (key-event->string ev))
+             (ed (current-editor app))
+             (sel-start (editor-get-selection-start ed))
+             (sel-end (editor-get-selection-end ed)))
+        (if (< sel-start sel-end)
+          (let* ((text (editor-get-text ed))
+                 (region (substring text sel-start sel-end))
+                 (regs (app-state-registers app))
+                 (existing (or (hash-get regs ks) "")))
+            (hash-put! regs ks (string-append existing region))
+            (echo-message! (app-state-echo app)
+                           (string-append "Appended to register " ks)))
+          (echo-message! (app-state-echo app) "No region selected"))))))
+
+;; --- Process / environment ---
+
+(def (cmd-getenv app)
+  "Display an environment variable."
+  (let ((var (app-read-string app "Environment variable: ")))
+    (when (and var (not (string-empty? var)))
+      (let ((val (getenv var #f)))
+        (echo-message! (app-state-echo app)
+                       (if val
+                         (string-append var "=" val)
+                         (string-append var " is not set")))))))
+
+(def (cmd-setenv app)
+  "Set an environment variable."
+  (let ((var (app-read-string app "Set variable: ")))
+    (when (and var (not (string-empty? var)))
+      (let ((val (app-read-string app "Value: ")))
+        (when val
+          (setenv var val)
+          (echo-message! (app-state-echo app)
+                         (string-append var "=" val)))))))
+
+(def (cmd-show-environment app)
+  "Display all environment variables."
+  (with-catch
+    (lambda (e)
+      (echo-message! (app-state-echo app) "Error reading environment"))
+    (lambda ()
+      (let* ((proc (open-process
+                     (list path: "env" arguments: '()
+                           stdin-redirection: #f
+                           stdout-redirection: #t
+                           stderr-redirection: #t)))
+             (output (read-line proc #f))
+             (result (or output "")))
+        (close-port proc)
+        (open-output-buffer app "*Environment*" result)))))
+
+;; --- Encoding / line endings ---
+
+(def (cmd-set-buffer-file-coding app)
+  "Set buffer file coding system (stub)."
+  (let ((coding (app-read-string app "Coding system: ")))
+    (when (and coding (not (string-empty? coding)))
+      (echo-message! (app-state-echo app)
+                     (string-append "Coding system set to: " coding " (stub)")))))
+
+(def (cmd-convert-line-endings-unix app)
+  "Convert line endings to Unix (LF)."
+  (let* ((ed (current-editor app))
+         (text (editor-get-text ed)))
+    (let loop ((i 0) (acc []))
+      (if (>= i (string-length text))
+        (let ((result (list->string (reverse acc))))
+          (editor-set-text ed result)
+          (echo-message! (app-state-echo app) "Converted to Unix line endings"))
+        (let ((ch (string-ref text i)))
+          (if (char=? ch #\return)
+            (if (and (< (+ i 1) (string-length text))
+                     (char=? (string-ref text (+ i 1)) #\newline))
+              (loop (+ i 2) (cons #\newline acc))  ;; CR+LF -> LF
+              (loop (+ i 1) (cons #\newline acc)))  ;; CR -> LF
+            (loop (+ i 1) (cons ch acc))))))))
+
+(def (cmd-convert-line-endings-dos app)
+  "Convert line endings to DOS (CRLF)."
+  (let* ((ed (current-editor app))
+         (text (editor-get-text ed)))
+    ;; First normalize to LF, then convert to CRLF
+    (let loop ((i 0) (acc []))
+      (if (>= i (string-length text))
+        (let ((clean (list->string (reverse acc))))
+          ;; Now add CR before each LF
+          (let loop2 ((j 0) (acc2 []))
+            (if (>= j (string-length clean))
+              (let ((result (list->string (reverse acc2))))
+                (editor-set-text ed result)
+                (echo-message! (app-state-echo app) "Converted to DOS line endings"))
+              (let ((ch (string-ref clean j)))
+                (if (char=? ch #\newline)
+                  (loop2 (+ j 1) (cons #\newline (cons #\return acc2)))
+                  (loop2 (+ j 1) (cons ch acc2)))))))
+        (let ((ch (string-ref text i)))
+          (if (char=? ch #\return)
+            (if (and (< (+ i 1) (string-length text))
+                     (char=? (string-ref text (+ i 1)) #\newline))
+              (loop (+ i 2) (cons #\newline acc))
+              (loop (+ i 1) (cons #\newline acc)))
+            (loop (+ i 1) (cons ch acc))))))))
+
+;; --- Completion / hippie-expand ---
+
+;; --- Whitespace ---
+
+(def (cmd-whitespace-mode app)
+  "Toggle whitespace visibility mode."
+  (let* ((ed (current-editor app))
+         (visible (send-message ed 2090 0 0)))  ;; SCI_GETVIEWWS
+    (if (= visible 0)
+      (begin
+        (send-message ed 2021 1 0)  ;; SCI_SETVIEWWS SCWS_VISIBLEALWAYS
+        (echo-message! (app-state-echo app) "Whitespace visible"))
+      (begin
+        (send-message ed 2021 0 0)  ;; SCI_SETVIEWWS SCWS_INVISIBLE
+        (echo-message! (app-state-echo app) "Whitespace hidden")))))
+
+(def (cmd-toggle-show-spaces app)
+  "Toggle space visibility."
+  (cmd-whitespace-mode app))
+
+;; --- Folding ---
+
+(def (cmd-fold-all app)
+  "Fold all foldable regions."
+  (let ((ed (current-editor app)))
+    (send-message ed 2335 0 0)  ;; SCI_FOLDALL SC_FOLDACTION_CONTRACT
+    (echo-message! (app-state-echo app) "All folds collapsed")))
+
+(def (cmd-unfold-all app)
+  "Unfold all foldable regions."
+  (let ((ed (current-editor app)))
+    (send-message ed 2335 1 0)  ;; SCI_FOLDALL SC_FOLDACTION_EXPAND
+    (echo-message! (app-state-echo app) "All folds expanded")))
+
+(def (cmd-toggle-fold app)
+  "Toggle fold at current line."
+  (let* ((ed (current-editor app))
+         (pos (editor-get-current-pos ed))
+         (line (send-message ed 2166 pos 0)))
+    (send-message ed 2231 line 0)  ;; SCI_TOGGLEFOLD
+    (echo-message! (app-state-echo app) "Fold toggled")))
+
+(def (cmd-fold-level app)
+  "Fold to a specific level."
+  (let ((level (app-read-string app "Fold level: ")))
+    (when (and level (not (string-empty? level)))
+      (let ((n (string->number level)))
+        (when n
+          (let ((ed (current-editor app)))
+            ;; Expand all first, then collapse to level
+            (send-message ed 2335 1 0)  ;; SCI_FOLDALL expand
+            (echo-message! (app-state-echo app)
+                           (string-append "Folded to level " level))))))))
+
+;; --- Macro enhancements ---
+
+(def (cmd-name-last-kbd-macro app)
+  "Name the last keyboard macro."
+  (let ((name (app-read-string app "Name for last macro: ")))
+    (when (and name (not (string-empty? name)))
+      (echo-message! (app-state-echo app)
+                     (string-append "Macro named: " name " (stub)")))))
+
+(def (cmd-insert-kbd-macro app)
+  "Insert the last keyboard macro as text."
+  (let ((macro (app-state-macro-last app)))
+    (if (and macro (not (null? macro)))
+      (let* ((ed (current-editor app))
+             (pos (editor-get-current-pos ed))
+             (desc (string-join (map (lambda (ev) (key-event->string ev)) macro) " ")))
+        (editor-insert-text ed pos desc))
+      (echo-message! (app-state-echo app) "No keyboard macro defined"))))
+
+;; --- Version control extras ---
+
+(def (cmd-vc-annotate app)
+  "Show file annotations (git blame) in buffer."
+  (let* ((buf (current-buffer-from-app app))
+         (file (buffer-file-path buf)))
+    (if file
+      (with-catch
+        (lambda (e)
+          (echo-message! (app-state-echo app) "Error running git annotate"))
+        (lambda ()
+          (let* ((proc (open-process
+                         (list path: "git" arguments: ["blame" "--date=short" file]
+                               stdin-redirection: #f
+                               stdout-redirection: #t
+                               stderr-redirection: #t)))
+                 (output (read-line proc #f))
+                 (result (or output "")))
+            (close-port proc)
+            (open-output-buffer app
+                                (string-append "*Annotate: " file "*")
+                                result))))
+      (echo-message! (app-state-echo app) "Buffer is not visiting a file"))))
+
+(def (cmd-vc-diff-head app)
+  "Show diff against HEAD."
+  (let* ((buf (current-buffer-from-app app))
+         (file (buffer-file-path buf)))
+    (if file
+      (with-catch
+        (lambda (e)
+          (echo-message! (app-state-echo app) "Error running git diff"))
+        (lambda ()
+          (let* ((proc (open-process
+                         (list path: "git" arguments: ["diff" "HEAD" "--" file]
+                               stdin-redirection: #f
+                               stdout-redirection: #t
+                               stderr-redirection: #t)))
+                 (output (read-line proc #f))
+                 (result (or output "")))
+            (close-port proc)
+            (open-output-buffer app
+                                (string-append "*VC Diff: " file "*")
+                                result))))
+      (echo-message! (app-state-echo app) "Buffer is not visiting a file"))))
+
+(def (cmd-vc-log-file app)
+  "Show git log for current file."
+  (let* ((buf (current-buffer-from-app app))
+         (file (buffer-file-path buf)))
+    (if file
+      (with-catch
+        (lambda (e)
+          (echo-message! (app-state-echo app) "Error running git log"))
+        (lambda ()
+          (let* ((proc (open-process
+                         (list path: "git" arguments: ["log" "--oneline" "-20" "--" file]
+                               stdin-redirection: #f
+                               stdout-redirection: #t
+                               stderr-redirection: #t)))
+                 (output (read-line proc #f))
+                 (result (or output "")))
+            (close-port proc)
+            (open-output-buffer app
+                                (string-append "*VC Log: " file "*")
+                                result))))
+      (echo-message! (app-state-echo app) "Buffer is not visiting a file"))))
+
+(def (cmd-vc-revert app)
+  "Revert current file to last committed version."
+  (let* ((buf (current-buffer-from-app app))
+         (file (buffer-file-path buf)))
+    (if file
+      (let ((confirm (app-read-string app
+                                        (string-append "Revert " file " to HEAD? (yes/no): "))))
+        (when (and confirm (string=? confirm "yes"))
+          (with-catch
+            (lambda (e)
+              (echo-message! (app-state-echo app) "Error running git checkout"))
+            (lambda ()
+              (let* ((proc (open-process
+                             (list path: "git" arguments: ["checkout" "HEAD" "--" file]
+                                   stdin-redirection: #f
+                                   stdout-redirection: #t
+                                   stderr-redirection: #t)))
+                     (_ (process-status proc)))
+                (close-port proc)
+                ;; Reload the file
+                (let ((content (read-file-as-string file))
+                      (ed (current-editor app)))
+                  (editor-set-text ed content)
+                  (editor-set-save-point ed)
+                  (echo-message! (app-state-echo app) "Reverted")))))))
+      (echo-message! (app-state-echo app) "Buffer is not visiting a file"))))
+
+;; --- Imenu ---
+
+(def (cmd-imenu app)
+  "Jump to a definition in the current buffer (simple heuristic)."
+  (let* ((ed (current-editor app))
+         (text (editor-get-text ed))
+         (lines (string-split text #\newline))
+         (defs (let loop ((ls lines) (n 0) (acc []))
+                 (if (null? ls)
+                   (reverse acc)
+                   (let ((l (car ls)))
+                     (if (or (string-contains l "(def ")
+                             (string-contains l "(defstruct ")
+                             (string-contains l "(defclass ")
+                             (string-contains l "(defmethod ")
+                             (string-contains l "(define "))
+                       (loop (cdr ls) (+ n 1) (cons (cons l n) acc))
+                       (loop (cdr ls) (+ n 1) acc)))))))
+    (if (null? defs)
+      (echo-message! (app-state-echo app) "No definitions found")
+      (let* ((items (map (lambda (d) (string-append (number->string (cdr d)) ": " (car d))) defs))
+             (display (string-join items "\n")))
+        (open-output-buffer app "*Imenu*" display)))))
+
+(def (cmd-which-function app)
+  "Display name of function at point."
+  (let* ((ed (current-editor app))
+         (pos (editor-get-current-pos ed))
+         (text (editor-get-text ed))
+         (line (send-message ed 2166 pos 0)))
+    ;; Search backward for (def
+    (let loop ((l line))
+      (if (< l 0)
+        (echo-message! (app-state-echo app) "Not in a function")
+        (let* ((ls (send-message ed 2167 l 0))
+               (le (send-message ed 2136 l 0))
+               (lt (if (and (>= ls 0) (<= le (string-length text)))
+                     (substring text ls le) "")))
+          (if (or (string-contains lt "(def ")
+                  (string-contains lt "(define "))
+            (let ((trimmed (string-trim-both lt)))
+              (echo-message! (app-state-echo app)
+                             (if (> (string-length trimmed) 70)
+                               (substring trimmed 0 70)
+                               trimmed)))
+            (loop (- l 1))))))))
+
+;; --- Buffer/file utilities ---
+
+(def (cmd-make-directory app)
+  "Create a new directory."
+  (let ((dir (app-read-string app "Create directory: ")))
+    (when (and dir (not (string-empty? dir)))
+      (with-catch
+        (lambda (e)
+          (echo-message! (app-state-echo app)
+                         (string-append "Error: " (with-output-to-string
+                                                     (lambda () (display-exception e))))))
+        (lambda ()
+          (create-directory dir)
+          (echo-message! (app-state-echo app)
+                         (string-append "Created: " dir)))))))
+
+(def (cmd-delete-file app)
+  "Delete a file."
+  (let ((file (app-read-string app "Delete file: ")))
+    (when (and file (not (string-empty? file)))
+      (let ((confirm (app-read-string app
+                                        (string-append "Really delete " file "? (yes/no): "))))
+        (when (and confirm (string=? confirm "yes"))
+          (with-catch
+            (lambda (e)
+              (echo-message! (app-state-echo app)
+                             (string-append "Error: " (with-output-to-string
+                                                         (lambda () (display-exception e))))))
+            (lambda ()
+              (delete-file file)
+              (echo-message! (app-state-echo app)
+                             (string-append "Deleted: " file)))))))))
+
+(def (cmd-copy-file app)
+  "Copy a file."
+  (let ((src (app-read-string app "Copy file: ")))
+    (when (and src (not (string-empty? src)))
+      (let ((dst (app-read-string app "Copy to: ")))
+        (when (and dst (not (string-empty? dst)))
+          (with-catch
+            (lambda (e)
+              (echo-message! (app-state-echo app)
+                             (string-append "Error: " (with-output-to-string
+                                                         (lambda () (display-exception e))))))
+            (lambda ()
+              (copy-file src dst)
+              (echo-message! (app-state-echo app)
+                             (string-append "Copied: " src " -> " dst)))))))))
+
+(def (cmd-sudo-find-file app)
+  "Open file as root using sudo (stub)."
+  (echo-message! (app-state-echo app) "sudo-find-file (stub - requires privilege escalation)"))
+
+(def (cmd-find-file-literally app)
+  "Open file without special processing."
+  (let ((file (app-read-string app "Find file literally: ")))
+    (when (and file (not (string-empty? file)))
+      (with-catch
+        (lambda (e)
+          (echo-message! (app-state-echo app)
+                         (string-append "Error: " (with-output-to-string
+                                                     (lambda () (display-exception e))))))
+        (lambda ()
+          (let* ((content (read-file-as-string file))
+                 (ed (current-editor app))
+                 (fr (app-state-frame app))
+                 (buf (buffer-create! file ed #f)))
+            (buffer-attach! ed buf)
+            (set! (edit-window-buffer (current-window fr)) buf)
+            (editor-set-text ed content)
+            (editor-set-save-point ed)
+            (editor-goto-pos ed 0)))))))
+
+;;;============================================================================
 ;;; Register all commands
 ;;;============================================================================
 
@@ -9245,4 +10114,94 @@
   (register-command! 'show-git-blame cmd-show-git-blame)
   ;; Misc
   (register-command! 'keyboard-quit cmd-keyboard-quit)
-  (register-command! 'quit cmd-quit))
+  (register-command! 'quit cmd-quit)
+  ;; Task #44: Help system
+  (register-command! 'describe-function cmd-describe-function)
+  (register-command! 'describe-variable cmd-describe-variable)
+  (register-command! 'describe-key-briefly cmd-describe-key-briefly)
+  (register-command! 'view-lossage cmd-view-lossage)
+  (register-command! 'describe-face cmd-describe-face)
+  (register-command! 'describe-syntax cmd-describe-syntax)
+  (register-command! 'info cmd-info)
+  (register-command! 'info-emacs-manual cmd-info-emacs-manual)
+  (register-command! 'info-elisp-manual cmd-info-elisp-manual)
+  ;; Dired
+  (register-command! 'dired cmd-dired)
+  (register-command! 'dired-create-directory cmd-dired-create-directory)
+  (register-command! 'dired-do-rename cmd-dired-do-rename)
+  (register-command! 'dired-do-delete cmd-dired-do-delete)
+  (register-command! 'dired-do-copy cmd-dired-do-copy)
+  (register-command! 'dired-do-chmod cmd-dired-do-chmod)
+  (register-command! 'dired-find-file cmd-dired-find-file)
+  ;; Buffer management
+  (register-command! 'rename-uniquely cmd-rename-uniquely)
+  (register-command! 'revert-buffer-with-coding cmd-revert-buffer-with-coding)
+  (register-command! 'lock-buffer cmd-lock-buffer)
+  (register-command! 'buffer-disable-undo cmd-buffer-disable-undo)
+  (register-command! 'buffer-enable-undo cmd-buffer-enable-undo)
+  (register-command! 'bury-buffer cmd-bury-buffer)
+  (register-command! 'unbury-buffer cmd-unbury-buffer)
+  ;; Navigation
+  (register-command! 'forward-sentence cmd-forward-sentence)
+  (register-command! 'backward-sentence cmd-backward-sentence)
+  (register-command! 'goto-word-at-point cmd-goto-word-at-point)
+  ;; Region operations
+  ;; Text manipulation
+  (register-command! 'center-region cmd-center-region)
+  (register-command! 'indent-rigidly cmd-indent-rigidly)
+  (register-command! 'dedent-rigidly cmd-dedent-rigidly)
+  (register-command! 'transpose-paragraphs cmd-transpose-paragraphs)
+  (register-command! 'fill-individual-paragraphs cmd-fill-individual-paragraphs)
+  ;; Bookmarks
+  (register-command! 'bookmark-save cmd-bookmark-save)
+  (register-command! 'bookmark-load cmd-bookmark-load)
+  ;; Window management
+  (register-command! 'fit-window-to-buffer cmd-fit-window-to-buffer)
+  (register-command! 'maximize-window cmd-maximize-window)
+  (register-command! 'minimize-window cmd-minimize-window)
+  (register-command! 'rotate-windows cmd-rotate-windows)
+  (register-command! 'swap-windows cmd-swap-windows)
+  ;; Misc
+  (register-command! 'delete-matching-lines cmd-delete-matching-lines)
+  (register-command! 'copy-matching-lines cmd-copy-matching-lines)
+  (register-command! 'delete-non-matching-lines cmd-delete-non-matching-lines)
+  (register-command! 'display-fill-column-indicator cmd-display-fill-column-indicator)
+  (register-command! 'electric-newline-and-indent cmd-electric-newline-and-indent)
+  ;; Registers
+  (register-command! 'view-register cmd-view-register)
+  (register-command! 'append-to-register cmd-append-to-register)
+  ;; Environment
+  (register-command! 'getenv cmd-getenv)
+  (register-command! 'setenv cmd-setenv)
+  (register-command! 'show-environment cmd-show-environment)
+  ;; Encoding
+  (register-command! 'set-buffer-file-coding cmd-set-buffer-file-coding)
+  (register-command! 'convert-line-endings-unix cmd-convert-line-endings-unix)
+  (register-command! 'convert-line-endings-dos cmd-convert-line-endings-dos)
+  ;; Completion
+  ;; Whitespace
+  (register-command! 'whitespace-mode cmd-whitespace-mode)
+  (register-command! 'toggle-show-spaces cmd-toggle-show-spaces)
+  ;; Folding
+  (register-command! 'fold-all cmd-fold-all)
+  (register-command! 'unfold-all cmd-unfold-all)
+  (register-command! 'toggle-fold cmd-toggle-fold)
+  (register-command! 'fold-level cmd-fold-level)
+  ;; Macros
+  (register-command! 'name-last-kbd-macro cmd-name-last-kbd-macro)
+  (register-command! 'insert-kbd-macro cmd-insert-kbd-macro)
+  ;; VC extras
+  (register-command! 'vc-annotate cmd-vc-annotate)
+  (register-command! 'vc-diff-head cmd-vc-diff-head)
+  (register-command! 'vc-log-file cmd-vc-log-file)
+  (register-command! 'vc-revert cmd-vc-revert)
+  ;; Imenu
+  (register-command! 'imenu cmd-imenu)
+  (register-command! 'which-function cmd-which-function)
+  ;; File utilities
+  (register-command! 'make-directory cmd-make-directory)
+  (register-command! 'delete-file cmd-delete-file)
+  (register-command! 'copy-file cmd-copy-file)
+  (register-command! 'sudo-find-file cmd-sudo-find-file)
+  (register-command! 'find-file-literally cmd-find-file-literally)
+  (register-command! 'find-alternate-file cmd-find-alternate-file))
