@@ -682,6 +682,31 @@
       ;; Count words region
       (check (keymap-lookup *ctrl-c-map* "L") => 'count-words-region))
 
+    (test-case "new keybindings: overwrite, visual-line, fill-col, etc"
+      (setup-default-bindings!)
+      ;; Overwrite mode
+      (check (keymap-lookup *global-keymap* "<insert>") => 'toggle-overwrite-mode)
+      ;; Visual line mode
+      (check (keymap-lookup *ctrl-c-map* "V") => 'toggle-visual-line-mode)
+      ;; Fill column
+      (check (keymap-lookup *ctrl-c-map* ".") => 'set-fill-column)
+      (check (keymap-lookup *ctrl-c-map* "|") => 'toggle-fill-column-indicator)
+      ;; Repeat complex command
+      (check (keymap-lookup *ctrl-c-map* "Z") => 'repeat-complex-command)
+      ;; Eldoc
+      (check (keymap-lookup *ctrl-c-map* "I") => 'eldoc)
+      ;; Highlight symbol/clear
+      (check (keymap-lookup *ctrl-c-map* "h") => 'highlight-symbol)
+      (check (keymap-lookup *ctrl-c-map* "H") => 'clear-highlight)
+      ;; Indent rigidly
+      (check (keymap-lookup *ctrl-c-map* ">") => 'indent-rigidly-right)
+      (check (keymap-lookup *ctrl-c-map* "<") => 'indent-rigidly-left)
+      ;; Buffer stats
+      (check (keymap-lookup *ctrl-c-map* "?") => 'buffer-stats)
+      ;; Show tabs/eol
+      (check (keymap-lookup *ctrl-c-map* "4") => 'toggle-show-tabs)
+      (check (keymap-lookup *ctrl-c-map* "6") => 'toggle-show-eol))
+
     ))
 
 ;; Run tests when executed directly

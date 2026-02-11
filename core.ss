@@ -520,7 +520,38 @@
   (keymap-bind! *ctrl-c-map* "N" 'sort-numeric)
 
   ;; Count words region
-  (keymap-bind! *ctrl-c-map* "L" 'count-words-region))
+  (keymap-bind! *ctrl-c-map* "L" 'count-words-region)
+
+  ;; Overwrite mode (Insert key)
+  (keymap-bind! *global-keymap* "<insert>" 'toggle-overwrite-mode)
+
+  ;; Visual line mode
+  (keymap-bind! *ctrl-c-map* "V" 'toggle-visual-line-mode)
+
+  ;; Fill column
+  (keymap-bind! *ctrl-c-map* "." 'set-fill-column)
+  (keymap-bind! *ctrl-c-map* "|" 'toggle-fill-column-indicator)
+
+  ;; Repeat complex command (C-x ESC ESC in real Emacs, use C-c Z)
+  (keymap-bind! *ctrl-c-map* "Z" 'repeat-complex-command)
+
+  ;; Eldoc
+  (keymap-bind! *ctrl-c-map* "I" 'eldoc)
+
+  ;; Highlight symbol / clear
+  (keymap-bind! *ctrl-c-map* "h" 'highlight-symbol)
+  (keymap-bind! *ctrl-c-map* "H" 'clear-highlight)
+
+  ;; Indent rigidly
+  (keymap-bind! *ctrl-c-map* ">" 'indent-rigidly-right)
+  (keymap-bind! *ctrl-c-map* "<" 'indent-rigidly-left)
+
+  ;; Buffer stats
+  (keymap-bind! *ctrl-c-map* "?" 'buffer-stats)
+
+  ;; Show tabs/eol
+  (keymap-bind! *ctrl-c-map* "4" 'toggle-show-tabs)
+  (keymap-bind! *ctrl-c-map* "6" 'toggle-show-eol))
 
 ;;;============================================================================
 ;;; Echo state

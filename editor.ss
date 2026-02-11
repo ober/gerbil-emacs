@@ -4611,6 +4611,360 @@
                          (number->string chars) " chars"))))))
 
 ;;;============================================================================
+;;; Overwrite mode toggle
+;;;============================================================================
+
+(def *overwrite-mode* #f)
+
+(def (cmd-toggle-overwrite-mode app)
+  "Toggle overwrite mode (insert vs overwrite)."
+  (set! *overwrite-mode* (not *overwrite-mode*))
+  ;; SCI_SETOVERTYPE (2186) not in gerbil-scintilla constants — use raw value
+  (let ((ed (current-editor app)))
+    (send-message ed 2186 (if *overwrite-mode* 1 0)))
+  (echo-message! (app-state-echo app)
+    (if *overwrite-mode*
+      "Overwrite mode on"
+      "Overwrite mode off")))
+
+;;;============================================================================
+;;; Visual line mode (toggle word-wrap + line-at-a-time navigation)
+;;;============================================================================
+
+(def *visual-line-mode* #f)
+
+(def (cmd-toggle-visual-line-mode app)
+  "Toggle visual-line-mode (word wrap + visual line movement)."
+  (set! *visual-line-mode* (not *visual-line-mode*))
+  (let ((ed (current-editor app)))
+    (send-message ed SCI_SETWRAPMODE
+      (if *visual-line-mode* 1 0)))  ; SC_WRAP_WORD=1, SC_WRAP_NONE=0
+  (echo-message! (app-state-echo app)
+    (if *visual-line-mode*
+      "Visual line mode on"
+      "Visual line mode off")))
+
+;;;============================================================================
+;;; Set fill column
+;;;============================================================================
+
+(def *fill-column* 80)
+
+(def (cmd-set-fill-column app)
+  "Set the fill column for line wrapping and centering."
+  (let* ((echo (app-state-echo app))
+         (fr (app-state-frame app))
+         (row (- (frame-height fr) 1))
+         (width (frame-width fr))
+         (input (echo-read-string echo
+                  (string-append "Fill column (current: "
+                                 (number->string *fill-column*) "): ")
+                  row width)))
+    (when (and input (> (string-length input) 0))
+      (let ((n (string->number input)))
+        (if (and n (> n 0))
+          (begin
+            (set! *fill-column* n)
+            (echo-message! echo
+              (string-append "Fill column set to " (number->string n))))
+          (echo-error! echo "Invalid number"))))))
+
+;;;============================================================================
+;;; Fill column indicator (display a vertical line)
+;;;============================================================================
+
+(def *fill-column-indicator* #f)
+
+(def (cmd-toggle-fill-column-indicator app)
+  "Toggle the fill column indicator (display in echo area)."
+  (set! *fill-column-indicator* (not *fill-column-indicator*))
+  (echo-message! (app-state-echo app)
+    (if *fill-column-indicator*
+      (string-append "Fill column indicator at " (number->string *fill-column*))
+      "Fill column indicator off")))
+
+;;;============================================================================
+;;; Toggle debug on error
+;;;============================================================================
+
+(def *debug-on-error* #f)
+
+(def (cmd-toggle-debug-on-error app)
+  "Toggle debug-on-error mode."
+  (set! *debug-on-error* (not *debug-on-error*))
+  (echo-message! (app-state-echo app)
+    (if *debug-on-error*
+      "Debug on error enabled"
+      "Debug on error disabled")))
+
+;;;============================================================================
+;;; Repeat complex command (re-execute last M-x command)
+;;;============================================================================
+
+(def *last-mx-command* #f)
+
+(def (cmd-repeat-complex-command app)
+  "Repeat the last M-x command."
+  (let ((cmd *last-mx-command*))
+    (if (symbol? cmd)
+      (begin
+        (echo-message! (app-state-echo app)
+          (string-append "Repeating: " (symbol->string cmd)))
+        (execute-command! app cmd))
+      (echo-error! (app-state-echo app) "No previous M-x command"))))
+
+;;;============================================================================
+;;; Eldoc-like: show function signature at point
+;;;============================================================================
+
+(def (cmd-eldoc app)
+  "Show info about the symbol at point (stub)."
+  (let* ((ed (current-editor app))
+         (pos (editor-get-current-pos ed))
+         (text (editor-get-text ed))
+         (len (string-length text)))
+    ;; Find word boundaries around cursor
+    (let* ((start (let loop ((i (- pos 1)))
+                    (if (or (< i 0)
+                            (let ((ch (string-ref text i)))
+                              (not (or (char-alphabetic? ch)
+                                       (char-numeric? ch)
+                                       (char=? ch #\-)
+                                       (char=? ch #\_)
+                                       (char=? ch #\!)
+                                       (char=? ch #\?)))))
+                      (+ i 1) (loop (- i 1)))))
+           (end (let loop ((i pos))
+                  (if (or (>= i len)
+                          (let ((ch (string-ref text i)))
+                            (not (or (char-alphabetic? ch)
+                                     (char-numeric? ch)
+                                     (char=? ch #\-)
+                                     (char=? ch #\_)
+                                     (char=? ch #\!)
+                                     (char=? ch #\?)))))
+                    i (loop (+ i 1)))))
+           (word (if (< start end) (substring text start end) #f)))
+      (if word
+        (echo-message! (app-state-echo app)
+          (string-append "Symbol: " word))
+        (echo-message! (app-state-echo app) "No symbol at point")))))
+
+;;;============================================================================
+;;; Highlight symbol at point (mark all occurrences)
+;;;============================================================================
+
+(def (cmd-highlight-symbol app)
+  "Highlight all occurrences of the word at point."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app))
+         (pos (editor-get-current-pos ed))
+         (text (editor-get-text ed))
+         (len (string-length text)))
+    ;; Get word at point
+    (let* ((start (let loop ((i (- pos 1)))
+                    (if (or (< i 0)
+                            (let ((ch (string-ref text i)))
+                              (not (or (char-alphabetic? ch)
+                                       (char-numeric? ch)
+                                       (char=? ch #\_) (char=? ch #\-)))))
+                      (+ i 1) (loop (- i 1)))))
+           (end (let loop ((i pos))
+                  (if (or (>= i len)
+                          (let ((ch (string-ref text i)))
+                            (not (or (char-alphabetic? ch)
+                                     (char-numeric? ch)
+                                     (char=? ch #\_) (char=? ch #\-)))))
+                    i (loop (+ i 1)))))
+           (word (if (< start end) (substring text start end) #f)))
+      (if (not word)
+        (echo-message! echo "No word at point")
+        ;; Count occurrences
+        (let ((count 0) (wlen (string-length word)))
+          (let loop ((i 0))
+            (when (<= (+ i wlen) len)
+              (when (string=? (substring text i (+ i wlen)) word)
+                (set! count (+ count 1)))
+              (loop (+ i 1))))
+          ;; Use Scintilla indicator to highlight
+          (send-message ed SCI_INDICSETSTYLE 0 7)  ; INDIC_ROUNDBOX
+          (send-message ed SCI_SETINDICATORCURRENT 0)
+          ;; Clear previous highlights
+          (send-message ed SCI_INDICATORCLEARRANGE 0 len)
+          ;; Set highlights for each occurrence
+          (let loop ((i 0))
+            (when (<= (+ i wlen) len)
+              (when (string=? (substring text i (+ i wlen)) word)
+                (send-message ed SCI_INDICATORFILLRANGE i wlen))
+              (loop (+ i 1))))
+          (echo-message! echo
+            (string-append (number->string count) " occurrence"
+                           (if (= count 1) "" "s")
+                           " of \"" word "\"")))))))
+
+;;;============================================================================
+;;; Clear highlight
+;;;============================================================================
+
+(def (cmd-clear-highlight app)
+  "Clear all occurrence highlights."
+  (let* ((ed (current-editor app))
+         (len (editor-get-text-length ed)))
+    (send-message ed SCI_SETINDICATORCURRENT 0)
+    (send-message ed SCI_INDICATORCLEARRANGE 0 len)
+    (echo-message! (app-state-echo app) "Highlights cleared")))
+
+;;;============================================================================
+;;; Indent rigidly (shift region left/right)
+;;;============================================================================
+
+(def (cmd-indent-rigidly-right app)
+  "Shift selected lines right by 2 spaces."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app))
+         (buf (current-buffer-from-app app))
+         (mark (buffer-mark buf)))
+    (if (not mark)
+      (echo-error! echo "No region")
+      (let* ((pos (editor-get-current-pos ed))
+             (start (min mark pos))
+             (end (max mark pos))
+             (text (substring (editor-get-text ed) start end))
+             (lines (string-split text #\newline))
+             (indented (map (lambda (line) (string-append "  " line)) lines))
+             (new-text (string-join indented "\n")))
+        (with-undo-action ed
+          (editor-delete-range ed start (- end start))
+          (editor-insert-text ed start new-text))
+        (set! (buffer-mark buf) start)
+        (editor-goto-pos ed (+ start (string-length new-text)))
+        (echo-message! echo "Indented right")))))
+
+(def (cmd-indent-rigidly-left app)
+  "Shift selected lines left by 2 spaces."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app))
+         (buf (current-buffer-from-app app))
+         (mark (buffer-mark buf)))
+    (if (not mark)
+      (echo-error! echo "No region")
+      (let* ((pos (editor-get-current-pos ed))
+             (start (min mark pos))
+             (end (max mark pos))
+             (text (substring (editor-get-text ed) start end))
+             (lines (string-split text #\newline))
+             (dedented (map (lambda (line)
+                              (cond
+                                ((and (>= (string-length line) 2)
+                                      (char=? (string-ref line 0) #\space)
+                                      (char=? (string-ref line 1) #\space))
+                                 (substring line 2 (string-length line)))
+                                ((and (> (string-length line) 0)
+                                      (char=? (string-ref line 0) #\tab))
+                                 (substring line 1 (string-length line)))
+                                (else line)))
+                            lines))
+             (new-text (string-join dedented "\n")))
+        (with-undo-action ed
+          (editor-delete-range ed start (- end start))
+          (editor-insert-text ed start new-text))
+        (set! (buffer-mark buf) start)
+        (editor-goto-pos ed (+ start (string-length new-text)))
+        (echo-message! echo "Indented left")))))
+
+;;;============================================================================
+;;; Goto first/last non-blank line
+;;;============================================================================
+
+(def (cmd-goto-first-non-blank app)
+  "Go to the first non-blank line in the buffer."
+  (let* ((ed (current-editor app))
+         (text (editor-get-text ed))
+         (lines (string-split text #\newline)))
+    (let loop ((i 0) (pos 0))
+      (if (>= i (length lines))
+        (editor-goto-pos ed 0)
+        (let ((line (list-ref lines i)))
+          (if (> (string-length (string-trim line)) 0)
+            (editor-goto-pos ed pos)
+            (loop (+ i 1) (+ pos (string-length line) 1))))))))
+
+(def (cmd-goto-last-non-blank app)
+  "Go to the last non-blank line in the buffer."
+  (let* ((ed (current-editor app))
+         (text (editor-get-text ed))
+         (lines (string-split text #\newline))
+         (total (length lines)))
+    (let loop ((i (- total 1)) (last-pos (string-length text)))
+      (if (< i 0)
+        (editor-goto-pos ed last-pos)
+        (let* ((line (list-ref lines i))
+               (line-start (let lp ((j 0) (pos 0))
+                             (if (>= j i) pos
+                               (lp (+ j 1) (+ pos (string-length (list-ref lines j)) 1))))))
+          (if (> (string-length (string-trim line)) 0)
+            (editor-goto-pos ed line-start)
+            (loop (- i 1) last-pos)))))))
+
+;;;============================================================================
+;;; Buffer statistics
+;;;============================================================================
+
+(def (cmd-buffer-stats app)
+  "Show detailed buffer statistics."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app))
+         (text (editor-get-text ed))
+         (chars (string-length text))
+         (lines (editor-get-line-count ed))
+         (words (let loop ((i 0) (in-word #f) (count 0))
+                  (if (>= i chars)
+                    (if in-word (+ count 1) count)
+                    (let ((ch (string-ref text i)))
+                      (if (or (char=? ch #\space) (char=? ch #\newline)
+                              (char=? ch #\tab))
+                        (loop (+ i 1) #f (if in-word (+ count 1) count))
+                        (loop (+ i 1) #t count))))))
+         (buf (current-buffer-from-app app))
+         (name (buffer-name buf))
+         (path (or (buffer-file-path buf) "(no file)")))
+    (echo-message! echo
+      (string-append name " | " path " | "
+                     (number->string lines) "L "
+                     (number->string words) "W "
+                     (number->string chars) "C"))))
+
+;;;============================================================================
+;;; Toggle show tabs
+;;;============================================================================
+
+(def *show-tabs* #f)
+
+(def (cmd-toggle-show-tabs app)
+  "Toggle visible tab characters."
+  (set! *show-tabs* (not *show-tabs*))
+  (let ((ed (current-editor app)))
+    (send-message ed SCI_SETVIEWWS
+      (if *show-tabs* 1 0)))  ; SCWS_VISIBLEALWAYS=1
+  (echo-message! (app-state-echo app)
+    (if *show-tabs* "Show tabs on" "Show tabs off")))
+
+;;;============================================================================
+;;; Toggle show EOL
+;;;============================================================================
+
+(def *show-eol* #f)
+
+(def (cmd-toggle-show-eol app)
+  "Toggle visible end-of-line characters."
+  (set! *show-eol* (not *show-eol*))
+  (let ((ed (current-editor app)))
+    (send-message ed SCI_SETVIEWEOL
+      (if *show-eol* 1 0)))
+  (echo-message! (app-state-echo app)
+    (if *show-eol* "Show EOL on" "Show EOL off")))
+
+;;;============================================================================
 ;;; Register all commands
 ;;;============================================================================
 
@@ -4900,6 +5254,33 @@
   (register-command! 'sort-numeric cmd-sort-numeric)
   ;; Count words region
   (register-command! 'count-words-region cmd-count-words-region)
+  ;; Overwrite mode
+  (register-command! 'toggle-overwrite-mode cmd-toggle-overwrite-mode)
+  ;; Visual line mode
+  (register-command! 'toggle-visual-line-mode cmd-toggle-visual-line-mode)
+  ;; Fill column
+  (register-command! 'set-fill-column cmd-set-fill-column)
+  (register-command! 'toggle-fill-column-indicator cmd-toggle-fill-column-indicator)
+  ;; Debug
+  (register-command! 'toggle-debug-on-error cmd-toggle-debug-on-error)
+  ;; Repeat complex command
+  (register-command! 'repeat-complex-command cmd-repeat-complex-command)
+  ;; Eldoc
+  (register-command! 'eldoc cmd-eldoc)
+  ;; Highlight symbol
+  (register-command! 'highlight-symbol cmd-highlight-symbol)
+  (register-command! 'clear-highlight cmd-clear-highlight)
+  ;; Indent rigidly
+  (register-command! 'indent-rigidly-right cmd-indent-rigidly-right)
+  (register-command! 'indent-rigidly-left cmd-indent-rigidly-left)
+  ;; Goto non-blank
+  (register-command! 'goto-first-non-blank cmd-goto-first-non-blank)
+  (register-command! 'goto-last-non-blank cmd-goto-last-non-blank)
+  ;; Buffer stats
+  (register-command! 'buffer-stats cmd-buffer-stats)
+  ;; Show tabs/eol
+  (register-command! 'toggle-show-tabs cmd-toggle-show-tabs)
+  (register-command! 'toggle-show-eol cmd-toggle-show-eol)
   ;; Misc
   (register-command! 'keyboard-quit cmd-keyboard-quit)
   (register-command! 'quit cmd-quit))
