@@ -241,7 +241,17 @@
   (keymap-bind! *global-keymap* "M-d" 'kill-word)
 
   ;; What line
-  (keymap-bind! *meta-g-map* "l"   'what-line))
+  (keymap-bind! *meta-g-map* "l"   'what-line)
+
+  ;; Write file (save as)
+  (keymap-bind! *ctrl-x-map* "C-w" 'write-file)
+
+  ;; Revert buffer
+  (keymap-bind! *ctrl-x-map* "C-r" 'revert-buffer)
+
+  ;; Beginning/end of defun
+  (keymap-bind! *global-keymap* "M-a" 'beginning-of-defun)
+  (keymap-bind! *global-keymap* "M-e" 'end-of-defun))
 
 ;;;============================================================================
 ;;; Echo state

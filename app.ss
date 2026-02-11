@@ -150,6 +150,10 @@
                   (editor-poll-notifications (edit-window-editor win)))
                 (frame-windows (app-state-frame app)))
 
+      ;; Update brace matching for current editor
+      (update-brace-match! (edit-window-editor
+                             (current-window (app-state-frame app))))
+
       ;; Poll REPL subprocess output
       (poll-repl-output! app)
 
@@ -190,7 +194,48 @@
   (editor-style-set-background ed STYLE_DEFAULT #x181818)
   (send-message ed SCI_STYLECLEARALL)  ; propagate to all styles
   ;; White caret for visibility
-  (editor-set-caret-foreground ed #xFFFFFF))
+  (editor-set-caret-foreground ed #xFFFFFF)
+  ;; Highlight current line with subtle background
+  (editor-set-caret-line-visible ed #t)
+  (editor-set-caret-line-background ed #x222222)
+  ;; Brace matching styles
+  (editor-style-set-foreground ed STYLE_BRACELIGHT #x00FF00)  ; green for match
+  (editor-style-set-bold ed STYLE_BRACELIGHT #t)
+  (editor-style-set-foreground ed STYLE_BRACEBAD #xFF0000)    ; red for mismatch
+  (editor-style-set-bold ed STYLE_BRACEBAD #t))
+
+;;;============================================================================
+;;; Brace/paren matching
+;;;============================================================================
+
+(def (brace-char? ch)
+  "Check if a character code represents a brace/paren/bracket."
+  (or (= ch 40) (= ch 41)    ; ( )
+      (= ch 91) (= ch 93)    ; [ ]
+      (= ch 123) (= ch 125))) ; { }
+
+(def (update-brace-match! ed)
+  "Highlight matching braces at cursor position."
+  (let* ((pos (editor-get-current-pos ed))
+         (ch-at (send-message ed SCI_GETCHARAT pos 0))
+         ;; Also check char before cursor
+         (ch-before (if (> pos 0) (send-message ed SCI_GETCHARAT (- pos 1) 0) 0)))
+    (cond
+      ;; Check char at cursor
+      ((brace-char? ch-at)
+       (let ((match (send-message ed SCI_BRACEMATCH pos 0)))
+         (if (>= match 0)
+           (send-message ed SCI_BRACEHIGHLIGHT pos match)
+           (send-message ed SCI_BRACEBADLIGHT pos 0))))
+      ;; Check char before cursor
+      ((brace-char? ch-before)
+       (let ((match (send-message ed SCI_BRACEMATCH (- pos 1) 0)))
+         (if (>= match 0)
+           (send-message ed SCI_BRACEHIGHLIGHT (- pos 1) match)
+           (send-message ed SCI_BRACEBADLIGHT (- pos 1) 0))))
+      ;; No brace at cursor — clear highlights
+      (else
+       (send-message ed SCI_BRACEHIGHLIGHT -1 -1)))))
 
 ;;;============================================================================
 ;;; Drawing helpers

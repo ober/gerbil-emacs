@@ -280,6 +280,46 @@
             (echo-message! echo (string-append "Wrote " filename))))))))
 
 ;;;============================================================================
+;;; Write file (Save As)
+;;;============================================================================
+
+(def (cmd-write-file app)
+  "Write buffer to a new file (save as)."
+  (let* ((echo (app-state-echo app))
+         (fr (app-state-frame app))
+         (row (- (frame-height fr) 1))
+         (width (frame-width fr))
+         (filename (echo-read-string echo "Write file: " row width)))
+    (when (and filename (> (string-length filename) 0))
+      (let* ((buf (current-buffer-from-app app))
+             (ed (current-editor app))
+             (text (editor-get-text ed)))
+        (set! (buffer-file-path buf) filename)
+        (set! (buffer-name buf) (path-strip-directory filename))
+        (write-string-to-file filename text)
+        (editor-set-save-point ed)
+        (echo-message! echo (string-append "Wrote " filename))))))
+
+;;;============================================================================
+;;; Revert buffer
+;;;============================================================================
+
+(def (cmd-revert-buffer app)
+  "Reload the current buffer from disk."
+  (let* ((buf (current-buffer-from-app app))
+         (path (buffer-file-path buf))
+         (echo (app-state-echo app)))
+    (if (and path (file-exists? path))
+      (let* ((ed (current-editor app))
+             (text (read-file-as-string path)))
+        (when text
+          (editor-set-text ed text)
+          (editor-set-save-point ed)
+          (editor-goto-pos ed 0)
+          (echo-message! echo (string-append "Reverted " path))))
+      (echo-error! echo "Buffer is not visiting a file"))))
+
+;;;============================================================================
 ;;; Buffer commands
 ;;;============================================================================
 
@@ -849,6 +889,54 @@
          (editor-insert-text ed pos "  "))))))
 
 ;;;============================================================================
+;;; Beginning/end of defun
+;;;============================================================================
+
+(def (cmd-beginning-of-defun app)
+  "Move to the beginning of the current/previous top-level form."
+  (let* ((ed (current-editor app))
+         (pos (editor-get-current-pos ed))
+         (text (editor-get-text ed))
+         (len (string-length text)))
+    ;; Search backward for '(' at column 0
+    (let loop ((i (- pos 1)))
+      (cond
+        ((< i 0)
+         (editor-goto-pos ed 0)
+         (echo-message! (app-state-echo app) "Beginning of buffer"))
+        ((and (char=? (string-ref text i) #\()
+              (or (= i 0) (char=? (string-ref text (- i 1)) #\newline)))
+         (editor-goto-pos ed i)
+         (editor-scroll-caret ed))
+        (else (loop (- i 1)))))))
+
+(def (cmd-end-of-defun app)
+  "Move to the end of the current top-level form."
+  (let* ((ed (current-editor app))
+         (pos (editor-get-current-pos ed))
+         (text (editor-get-text ed))
+         (len (string-length text)))
+    ;; First find the start of the current/next defun
+    (let find-start ((i pos))
+      (cond
+        ((>= i len)
+         (editor-goto-pos ed len)
+         (echo-message! (app-state-echo app) "End of buffer"))
+        ((and (char=? (string-ref text i) #\()
+              (or (= i 0) (char=? (string-ref text (- i 1)) #\newline)))
+         ;; Found start of defun, now find matching close paren
+         (let match ((j (+ i 1)) (depth 1))
+           (cond
+             ((>= j len) (editor-goto-pos ed len))
+             ((= depth 0)
+              (editor-goto-pos ed j)
+              (editor-scroll-caret ed))
+             ((char=? (string-ref text j) #\() (match (+ j 1) (+ depth 1)))
+             ((char=? (string-ref text j) #\)) (match (+ j 1) (- depth 1)))
+             (else (match (+ j 1) depth)))))
+        (else (find-start (+ i 1)))))))
+
+;;;============================================================================
 ;;; Toggle line numbers
 ;;;============================================================================
 
@@ -1340,6 +1428,12 @@
   (register-command! 'kill-word cmd-kill-word)
   ;; What line
   (register-command! 'what-line cmd-what-line)
+  ;; Write file / revert
+  (register-command! 'write-file cmd-write-file)
+  (register-command! 'revert-buffer cmd-revert-buffer)
+  ;; Defun navigation
+  (register-command! 'beginning-of-defun cmd-beginning-of-defun)
+  (register-command! 'end-of-defun cmd-end-of-defun)
   ;; Misc
   (register-command! 'keyboard-quit cmd-keyboard-quit)
   (register-command! 'quit cmd-quit))

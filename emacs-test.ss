@@ -347,6 +347,30 @@
       ;; What line (M-g prefix)
       (check (keymap-lookup *meta-g-map* "l") => 'what-line))
 
+    (test-case "new keybindings: write-file, revert, defun nav"
+      (setup-default-bindings!)
+      (check (keymap-lookup *ctrl-x-map* "C-w") => 'write-file)
+      (check (keymap-lookup *ctrl-x-map* "C-r") => 'revert-buffer)
+      (check (keymap-lookup *global-keymap* "M-a") => 'beginning-of-defun)
+      (check (keymap-lookup *global-keymap* "M-e") => 'end-of-defun))
+
+    (test-case "brace-char? helper"
+      ;; Test the brace matching character check
+      ;; ( = 40, ) = 41, [ = 91, ] = 93, { = 123, } = 125
+      (let ((bc? (lambda (ch)
+                   (let ((c (char->integer ch)))
+                     (or (= c 40) (= c 41)
+                         (= c 91) (= c 93)
+                         (= c 123) (= c 125))))))
+        (check (bc? #\() => #t)
+        (check (bc? #\)) => #t)
+        (check (bc? #\[) => #t)
+        (check (bc? #\]) => #t)
+        (check (bc? #\{) => #t)
+        (check (bc? #\}) => #t)
+        (check (bc? #\a) => #f)
+        (check (bc? #\space) => #f)))
+
     (test-case "word-char? helper"
       ;; Test word-char? logic (re-implemented inline for testing)
       (let ((wc? (lambda (ch)
