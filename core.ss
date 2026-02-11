@@ -662,7 +662,35 @@
   (keymap-bind! *meta-g-map* "d" 'forward-up-list)
   (keymap-bind! *meta-g-map* "k" 'kill-sexp)
   (keymap-bind! *meta-g-map* "f" 'forward-sexp)
-  (keymap-bind! *meta-g-map* "b" 'backward-sexp))
+  (keymap-bind! *meta-g-map* "b" 'backward-sexp)
+
+  ;; Mark sexp
+  (keymap-bind! *meta-g-map* "SPC" 'mark-sexp)
+
+  ;; Indent sexp
+  (keymap-bind! *meta-g-map* "TAB" 'indent-sexp)
+
+  ;; Word frequency analysis
+  (keymap-bind! *ctrl-c-map* "*" 'word-frequency)
+
+  ;; Insert UUID
+  (keymap-bind! *ctrl-c-map* "'" 'insert-uuid)
+
+  ;; Delete pair (surrounding delimiters)
+  (keymap-bind! *ctrl-c-map* "}" 'delete-pair)
+
+  ;; Toggle caret line highlight
+  (keymap-bind! *ctrl-c-map* "{" 'toggle-hl-line)
+
+  ;; Find alternate file
+  (keymap-bind! *ctrl-x-map* "C-v" 'find-alternate-file)
+
+  ;; Increment register
+  (keymap-bind! *ctrl-x-r-map* "+" 'increment-register)
+
+  ;; Copy buffer name to kill ring (via M-x or explicit binding)
+  ;; No keybinding — accessible via M-x copy-buffer-name
+  )
 
 ;;;============================================================================
 ;;; Echo state

@@ -791,6 +791,25 @@
       (check (keymap-lookup *meta-g-map* "f") => 'forward-sexp)
       (check (keymap-lookup *meta-g-map* "b") => 'backward-sexp))
 
+    (test-case "new keybindings: mark-sexp, word-freq, uuid, delete-pair, etc"
+      (setup-default-bindings!)
+      ;; Mark sexp
+      (check (keymap-lookup *meta-g-map* "SPC") => 'mark-sexp)
+      ;; Indent sexp
+      (check (keymap-lookup *meta-g-map* "TAB") => 'indent-sexp)
+      ;; Word frequency
+      (check (keymap-lookup *ctrl-c-map* "*") => 'word-frequency)
+      ;; Insert UUID
+      (check (keymap-lookup *ctrl-c-map* "'") => 'insert-uuid)
+      ;; Delete pair
+      (check (keymap-lookup *ctrl-c-map* "}") => 'delete-pair)
+      ;; Toggle hl-line
+      (check (keymap-lookup *ctrl-c-map* "{") => 'toggle-hl-line)
+      ;; Find alternate file
+      (check (keymap-lookup *ctrl-x-map* "C-v") => 'find-alternate-file)
+      ;; Increment register
+      (check (keymap-lookup *ctrl-x-r-map* "+") => 'increment-register))
+
     ))
 
 ;; Run tests when executed directly
