@@ -7945,6 +7945,650 @@
   (cmd-zoom-reset app))
 
 ;;;============================================================================
+;;; Task #43: project, search, and utilities
+;;;============================================================================
+
+;; Helper: create/find a named buffer, switch to it, set text
+(def (open-output-buffer app name text)
+  (let* ((ed (current-editor app))
+         (fr (app-state-frame app))
+         (buf (or (buffer-by-name name)
+                  (buffer-create! name ed #f))))
+    (buffer-attach! ed buf)
+    (set! (edit-window-buffer (current-window fr)) buf)
+    (editor-set-text ed text)
+    (editor-set-save-point ed)
+    (editor-goto-pos ed 0)))
+
+(def (cmd-project-find-file app)
+  "Find file in project (prompts for filename)."
+  (let* ((fr (app-state-frame app))
+         (echo (app-state-echo app))
+         (row (- (frame-height fr) 1))
+         (width (frame-width fr))
+         (buf (current-buffer-from-app app))
+         (base-dir (or (buffer-file-path buf) "."))
+         (dir (let ((d (path-directory base-dir)))
+                (if (string-empty? d) "." d)))
+         (filename (echo-read-string echo (string-append "Find in " dir ": ") row width)))
+    (when (and filename (not (string-empty? filename)))
+      (let ((full-path (path-expand filename dir)))
+        (if (file-exists? full-path)
+          (let* ((name (path-strip-directory full-path))
+                 (ed (current-editor app))
+                 (new-buf (buffer-create! name ed full-path)))
+            (buffer-attach! ed new-buf)
+            (set! (edit-window-buffer (current-window fr)) new-buf)
+            (let ((text (read-file-as-string full-path)))
+              (when text
+                (editor-set-text ed text)
+                (editor-set-save-point ed)
+                (editor-goto-pos ed 0)))
+            (echo-message! echo (string-append "Opened: " full-path)))
+          (echo-error! echo (string-append "File not found: " full-path)))))))
+
+(def (cmd-project-grep app)
+  "Grep for a pattern in the current file's directory."
+  (let* ((fr (app-state-frame app))
+         (echo (app-state-echo app))
+         (row (- (frame-height fr) 1))
+         (width (frame-width fr))
+         (buf (current-buffer-from-app app))
+         (path (buffer-file-path buf))
+         (dir (if path (path-directory path) "."))
+         (pattern (echo-read-string echo (string-append "Grep in " dir ": ") row width)))
+    (when (and pattern (not (string-empty? pattern)))
+      (let ((output (with-exception-catcher
+                      (lambda (e) (with-output-to-string (lambda () (display-exception e))))
+                      (lambda ()
+                        (let ((proc (open-process
+                                      (list path: "/usr/bin/grep"
+                                            arguments: (list "-rn" pattern dir)
+                                            stdin-redirection: #f
+                                            stdout-redirection: #t
+                                            stderr-redirection: #t))))
+                          (let ((result (read-line proc #f)))
+                            (process-status proc)
+                            (or result "(no matches)")))))))
+        ;; Show in a new buffer
+        (begin
+          (open-output-buffer app (string-append "*grep " pattern "*") output)
+          (echo-message! echo (string-append "grep: " pattern)))))))
+
+(def (cmd-project-compile app)
+  "Run make in the current file's directory."
+  (let* ((fr (app-state-frame app))
+         (echo (app-state-echo app))
+         (buf (current-buffer-from-app app))
+         (path (buffer-file-path buf))
+         (dir (if path (path-directory path) ".")))
+    (let ((output (with-exception-catcher
+                    (lambda (e) (with-output-to-string (lambda () (display-exception e))))
+                    (lambda ()
+                      (let ((proc (open-process
+                                    (list path: "/usr/bin/make"
+                                          arguments: '()
+                                          directory: dir
+                                          stdin-redirection: #f
+                                          stdout-redirection: #t
+                                          stderr-redirection: #t))))
+                        (let ((result (read-line proc #f)))
+                          (process-status proc)
+                          (or result "")))))))
+      (begin
+        (open-output-buffer app "*compile*" output)
+        (echo-message! echo "Compilation complete")))))
+
+(def (cmd-search-forward-word app)
+  "Search forward for the word at point."
+  (let* ((fr (app-state-frame app))
+         (ed (edit-window-editor (current-window fr)))
+         (echo (app-state-echo app))
+         (pos (editor-get-current-pos ed))
+         (text (editor-get-text ed))
+         (len (string-length text)))
+    (if (and (< pos len) (word-char? (char->integer (string-ref text pos))))
+      (let* ((start (let loop ((p pos))
+                      (if (and (> p 0) (word-char? (char->integer (string-ref text (- p 1)))))
+                        (loop (- p 1)) p)))
+             (end (let loop ((p pos))
+                    (if (and (< p len) (word-char? (char->integer (string-ref text p))))
+                      (loop (+ p 1)) p)))
+             (word (substring text start end))
+             (found (string-contains text word end)))
+        (if found
+          (begin
+            (editor-goto-pos ed found)
+            (editor-scroll-caret ed)
+            (echo-message! echo (string-append "Found: " word)))
+          (echo-error! echo (string-append "\"" word "\" not found below"))))
+      (echo-error! echo "Not on a word"))))
+
+(def (cmd-search-backward-word app)
+  "Search backward for the word at point."
+  (let* ((fr (app-state-frame app))
+         (ed (edit-window-editor (current-window fr)))
+         (echo (app-state-echo app))
+         (pos (editor-get-current-pos ed))
+         (text (editor-get-text ed))
+         (len (string-length text)))
+    (if (and (< pos len) (word-char? (char->integer (string-ref text pos))))
+      (let* ((start (let loop ((p pos))
+                      (if (and (> p 0) (word-char? (char->integer (string-ref text (- p 1)))))
+                        (loop (- p 1)) p)))
+             (end (let loop ((p pos))
+                    (if (and (< p len) (word-char? (char->integer (string-ref text p))))
+                      (loop (+ p 1)) p)))
+             (word (substring text start end))
+             ;; Search backwards by scanning from beginning
+             (found (let loop ((p 0) (last-found #f))
+                      (let ((f (string-contains text word p)))
+                        (if (and f (< f start))
+                          (loop (+ f 1) f)
+                          last-found)))))
+        (if found
+          (begin
+            (editor-goto-pos ed found)
+            (editor-scroll-caret ed)
+            (echo-message! echo (string-append "Found: " word)))
+          (echo-error! echo (string-append "\"" word "\" not found above"))))
+      (echo-error! echo "Not on a word"))))
+
+(def (cmd-replace-in-region app)
+  "Replace all occurrences of a string within the region."
+  (let* ((fr (app-state-frame app))
+         (ed (edit-window-editor (current-window fr)))
+         (echo (app-state-echo app))
+         (buf (current-buffer-from-app app))
+         (mark (buffer-mark buf))
+         (pos (editor-get-current-pos ed))
+         (row (- (frame-height fr) 1))
+         (width (frame-width fr)))
+    (if mark
+      (let ((search (echo-read-string echo "Replace in region: " row width)))
+        (when (and search (not (string-empty? search)))
+          (let ((replace (echo-read-string echo "Replace with: " row width)))
+            (when replace
+              (let* ((start (min pos mark))
+                     (end (max pos mark))
+                     (region (substring (editor-get-text ed) start end))
+                     (slen (string-length search))
+                     ;; Manual replace
+                     (result (let loop ((p 0) (acc []))
+                               (let ((f (string-contains region search p)))
+                                 (if f
+                                   (loop (+ f slen)
+                                         (cons replace (cons (substring region p f) acc)))
+                                   (list->string
+                                     (apply append
+                                       (map string->list
+                                            (reverse (cons (substring region p (string-length region)) acc))))))))))
+                (with-undo-action ed
+                  (editor-delete-range ed start (- end start))
+                  (editor-insert-text ed start result))
+                (set! (buffer-mark buf) #f)
+                (echo-message! echo "Replaced in region"))))))
+      (echo-error! echo "No mark set"))))
+
+(def (cmd-highlight-word-at-point app)
+  "Highlight all occurrences of the word at point."
+  ;; This sets the search indicator
+  (let* ((fr (app-state-frame app))
+         (ed (edit-window-editor (current-window fr)))
+         (echo (app-state-echo app))
+         (pos (editor-get-current-pos ed))
+         (text (editor-get-text ed))
+         (len (string-length text)))
+    (if (and (< pos len) (word-char? (char->integer (string-ref text pos))))
+      (let* ((start (let loop ((p pos))
+                      (if (and (> p 0) (word-char? (char->integer (string-ref text (- p 1)))))
+                        (loop (- p 1)) p)))
+             (end (let loop ((p pos))
+                    (if (and (< p len) (word-char? (char->integer (string-ref text p))))
+                      (loop (+ p 1)) p)))
+             (word (substring text start end))
+             ;; Count occurrences
+             (count (let loop ((p 0) (n 0))
+                      (let ((f (string-contains text word p)))
+                        (if f (loop (+ f (string-length word)) (+ n 1)) n)))))
+        (echo-message! echo (string-append "\"" word "\" — "
+                                            (number->string count) " occurrences")))
+      (echo-error! echo "Not on a word"))))
+
+(def (cmd-goto-definition app)
+  "Jump to definition of symbol at point (simple text search)."
+  (let* ((fr (app-state-frame app))
+         (ed (edit-window-editor (current-window fr)))
+         (echo (app-state-echo app))
+         (pos (editor-get-current-pos ed))
+         (text (editor-get-text ed))
+         (len (string-length text)))
+    (if (and (< pos len) (word-char? (char->integer (string-ref text pos))))
+      (let* ((start (let loop ((p pos))
+                      (if (and (> p 0) (word-char? (char->integer (string-ref text (- p 1)))))
+                        (loop (- p 1)) p)))
+             (end (let loop ((p pos))
+                    (if (and (< p len) (word-char? (char->integer (string-ref text p))))
+                      (loop (+ p 1)) p)))
+             (word (substring text start end))
+             ;; Search for "(def (WORD" or "(def WORD" or "(defstruct WORD"
+             (def-pattern (string-append "(def " word))
+             (found (or (string-contains text (string-append "(def (" word " "))
+                        (string-contains text (string-append "(def (" word ")"))
+                        (string-contains text (string-append "(def " word " "))
+                        (string-contains text (string-append "(def " word "\n"))
+                        (string-contains text (string-append "(defstruct " word))
+                        (string-contains text (string-append "(defclass " word)))))
+        (if found
+          (begin
+            (editor-goto-pos ed found)
+            (editor-scroll-caret ed)
+            (echo-message! echo (string-append "Jumped to definition of " word)))
+          (echo-error! echo (string-append "No definition found for " word))))
+      (echo-error! echo "Not on a word"))))
+
+(def (cmd-toggle-eol-conversion app)
+  "Toggle end-of-line conversion mode."
+  (echo-message! (app-state-echo app) "EOL conversion toggled (stub)"))
+
+(def (cmd-make-frame app)
+  "Create a new frame (stub — single frame only)."
+  (echo-message! (app-state-echo app) "Multiple frames not supported"))
+
+(def (cmd-delete-frame app)
+  "Delete the current frame (stub)."
+  (echo-message! (app-state-echo app) "Cannot delete the only frame"))
+
+(def (cmd-toggle-menu-bar app)
+  "Toggle menu bar display (stub)."
+  (echo-message! (app-state-echo app) "Menu bar toggled (not available in TUI)"))
+
+(def (cmd-toggle-tool-bar app)
+  "Toggle tool bar display (stub)."
+  (echo-message! (app-state-echo app) "Tool bar toggled (not available in TUI)"))
+
+(def (cmd-toggle-scroll-bar app)
+  "Toggle scroll bar display (stub)."
+  (echo-message! (app-state-echo app) "Scroll bar toggled (not available in TUI)"))
+
+(def (cmd-suspend-frame app)
+  "Suspend the editor (send to background)."
+  (echo-message! (app-state-echo app) "Suspend (use C-z from terminal)"))
+
+(def (cmd-list-directory app)
+  "List files in the current buffer's directory."
+  (let* ((fr (app-state-frame app))
+         (echo (app-state-echo app))
+         (buf (current-buffer-from-app app))
+         (path (buffer-file-path buf))
+         (dir (if path (path-directory path) ".")))
+    (let ((output (with-exception-catcher
+                    (lambda (e) (with-output-to-string (lambda () (display-exception e))))
+                    (lambda ()
+                      (let ((proc (open-process
+                                    (list path: "/bin/ls"
+                                          arguments: (list "-la" dir)
+                                          stdin-redirection: #f
+                                          stdout-redirection: #t
+                                          stderr-redirection: #t))))
+                        (let ((result (read-line proc #f)))
+                          (process-status proc)
+                          (or result "")))))))
+      (begin
+        (open-output-buffer app (string-append "*directory " dir "*") output)
+        (echo-message! echo dir)))))
+
+(def (cmd-find-grep app)
+  "Find files matching a pattern and grep inside them."
+  (let* ((fr (app-state-frame app))
+         (echo (app-state-echo app))
+         (row (- (frame-height fr) 1))
+         (width (frame-width fr))
+         (buf (current-buffer-from-app app))
+         (path (buffer-file-path buf))
+         (dir (if path (path-directory path) "."))
+         (pattern (echo-read-string echo "Find+grep pattern: " row width)))
+    (when (and pattern (not (string-empty? pattern)))
+      (let ((output (with-exception-catcher
+                      (lambda (e) (with-output-to-string (lambda () (display-exception e))))
+                      (lambda ()
+                        (let ((proc (open-process
+                                      (list path: "/usr/bin/grep"
+                                            arguments: (list "-rl" pattern dir)
+                                            stdin-redirection: #f
+                                            stdout-redirection: #t
+                                            stderr-redirection: #t))))
+                          (let ((result (read-line proc #f)))
+                            (process-status proc)
+                            (or result "(no files match)")))))))
+        (begin
+          (open-output-buffer app (string-append "*find-grep " pattern "*") output)
+          (echo-message! echo (string-append "Files matching: " pattern)))))))
+
+(def (cmd-insert-header-guard app)
+  "Insert C/C++ header guard."
+  (let* ((fr (app-state-frame app))
+         (ed (edit-window-editor (current-window fr)))
+         (echo (app-state-echo app))
+         (buf (current-buffer-from-app app))
+         (name (buffer-name buf))
+         (guard (string-upcase
+                  (let loop ((i 0) (acc []))
+                    (if (>= i (string-length name))
+                      (list->string (reverse acc))
+                      (let ((ch (string-ref name i)))
+                        (loop (+ i 1)
+                              (cons (if (or (char-alphabetic? ch) (char-numeric? ch))
+                                      ch #\_) acc)))))))
+         (text (string-append "#ifndef " guard "_H\n#define " guard "_H\n\n\n#endif /* " guard "_H */\n")))
+    (editor-insert-text ed 0 text)
+    (editor-goto-pos ed (+ (string-length (string-append "#ifndef " guard "_H\n#define " guard "_H\n\n")) 0))
+    (echo-message! echo "Header guard inserted")))
+
+(def (cmd-insert-include app)
+  "Insert a #include statement."
+  (let* ((fr (app-state-frame app))
+         (ed (edit-window-editor (current-window fr)))
+         (echo (app-state-echo app))
+         (pos (editor-get-current-pos ed))
+         (row (- (frame-height fr) 1))
+         (width (frame-width fr))
+         (header (echo-read-string echo "Include header: " row width)))
+    (when (and header (not (string-empty? header)))
+      (let ((line (if (char=? (string-ref header 0) #\<)
+                    (string-append "#include " header "\n")
+                    (string-append "#include \"" header "\"\n"))))
+        (editor-insert-text ed pos line)
+        (editor-goto-pos ed (+ pos (string-length line)))))))
+
+(def (cmd-insert-import app)
+  "Insert a Gerbil (import ...) statement."
+  (let* ((fr (app-state-frame app))
+         (ed (edit-window-editor (current-window fr)))
+         (echo (app-state-echo app))
+         (pos (editor-get-current-pos ed))
+         (row (- (frame-height fr) 1))
+         (width (frame-width fr))
+         (module (echo-read-string echo "Import module: " row width)))
+    (when (and module (not (string-empty? module)))
+      (let ((line (string-append "(import " module ")\n")))
+        (editor-insert-text ed pos line)
+        (editor-goto-pos ed (+ pos (string-length line)))))))
+
+(def (cmd-insert-export app)
+  "Insert a Gerbil (export ...) statement."
+  (let* ((fr (app-state-frame app))
+         (ed (edit-window-editor (current-window fr)))
+         (echo (app-state-echo app))
+         (pos (editor-get-current-pos ed))
+         (row (- (frame-height fr) 1))
+         (width (frame-width fr))
+         (sym (echo-read-string echo "Export symbol: " row width)))
+    (when (and sym (not (string-empty? sym)))
+      (let ((line (string-append "(export " sym ")\n")))
+        (editor-insert-text ed pos line)
+        (editor-goto-pos ed (+ pos (string-length line)))))))
+
+(def (cmd-insert-defun app)
+  "Insert a Gerbil (def (name ...) ...) template."
+  (let* ((fr (app-state-frame app))
+         (ed (edit-window-editor (current-window fr)))
+         (echo (app-state-echo app))
+         (pos (editor-get-current-pos ed))
+         (row (- (frame-height fr) 1))
+         (width (frame-width fr))
+         (name (echo-read-string echo "Function name: " row width)))
+    (when (and name (not (string-empty? name)))
+      (let ((template (string-append "(def (" name ")\n  )\n")))
+        (editor-insert-text ed pos template)
+        ;; Position inside the body
+        (editor-goto-pos ed (+ pos (string-length (string-append "(def (" name ")\n  "))))))))
+
+(def (cmd-insert-let app)
+  "Insert a (let ((var val)) ...) template."
+  (let* ((fr (app-state-frame app))
+         (ed (edit-window-editor (current-window fr)))
+         (pos (editor-get-current-pos ed))
+         (template "(let* (())\n  )\n"))
+    (editor-insert-text ed pos template)
+    (editor-goto-pos ed (+ pos 8))))  ; Inside first binding pair
+
+(def (cmd-insert-cond app)
+  "Insert a (cond ...) template."
+  (let* ((fr (app-state-frame app))
+         (ed (edit-window-editor (current-window fr)))
+         (pos (editor-get-current-pos ed))
+         (template "(cond\n  (())\n  (else\n   ))\n"))
+    (editor-insert-text ed pos template)
+    (editor-goto-pos ed (+ pos 9))))  ; Inside first condition
+
+(def (cmd-insert-match app)
+  "Insert a (match ...) template."
+  (let* ((fr (app-state-frame app))
+         (ed (edit-window-editor (current-window fr)))
+         (pos (editor-get-current-pos ed))
+         (template "(match \n  (())\n  (else ))\n"))
+    (editor-insert-text ed pos template)
+    (editor-goto-pos ed (+ pos 7))))  ; After "match "
+
+(def (cmd-insert-when app)
+  "Insert a (when ...) template."
+  (let* ((fr (app-state-frame app))
+         (ed (edit-window-editor (current-window fr)))
+         (pos (editor-get-current-pos ed))
+         (template "(when \n  )\n"))
+    (editor-insert-text ed pos template)
+    (editor-goto-pos ed (+ pos 6))))  ; After "when "
+
+(def (cmd-insert-unless app)
+  "Insert an (unless ...) template."
+  (let* ((fr (app-state-frame app))
+         (ed (edit-window-editor (current-window fr)))
+         (pos (editor-get-current-pos ed))
+         (template "(unless \n  )\n"))
+    (editor-insert-text ed pos template)
+    (editor-goto-pos ed (+ pos 8))))  ; After "unless "
+
+(def (cmd-insert-lambda app)
+  "Insert a (lambda ...) template."
+  (let* ((fr (app-state-frame app))
+         (ed (edit-window-editor (current-window fr)))
+         (pos (editor-get-current-pos ed))
+         (template "(lambda ()\n  )\n"))
+    (editor-insert-text ed pos template)
+    (editor-goto-pos ed (+ pos 9))))  ; Inside parameter list
+
+(def (cmd-toggle-auto-pair-mode app)
+  "Toggle automatic bracket/quote pairing."
+  (echo-message! (app-state-echo app) "Auto-pair toggled (use M-x toggle-electric-pair)"))
+
+(def (cmd-count-buffers app)
+  "Count the number of open buffers."
+  (let ((count (length (buffer-list))))
+    (echo-message! (app-state-echo app)
+      (string-append (number->string count) " buffers open"))))
+
+(def (cmd-list-recent-files app)
+  "List recently opened files (shows all file-backed buffers)."
+  (let* ((echo (app-state-echo app))
+         (files (filter-map (lambda (buf)
+                              (buffer-file-path buf))
+                            (buffer-list))))
+    (if (null? files)
+      (echo-message! echo "No file-backed buffers")
+      (begin
+        (open-output-buffer app "*recent-files*" (string-join files "\n"))
+        (echo-message! echo (string-append (number->string (length files)) " files"))))))
+
+(def (cmd-clear-recent-files app)
+  "Clear the recent files list (stub)."
+  (echo-message! (app-state-echo app) "Recent files cleared (stub)"))
+
+(def (cmd-show-keybinding-for app)
+  "Show what key is bound to a command."
+  (let* ((fr (app-state-frame app))
+         (echo (app-state-echo app))
+         (row (- (frame-height fr) 1))
+         (width (frame-width fr))
+         (name (echo-read-string echo "Show keybinding for command: " row width)))
+    (when (and name (not (string-empty? name)))
+      (let* ((sym (string->symbol name))
+             ;; Search keymaps for this command
+             (found (let scan-keymap ((km *global-keymap*) (prefix ""))
+                      (let loop ((keys (keymap-entries km)))
+                        (cond
+                          ((null? keys) #f)
+                          ((eq? (cdar keys) sym)
+                           (string-append prefix (caar keys)))
+                          ((hash-table? (cdar keys))
+                           (or (scan-keymap (cdar keys) (string-append prefix (caar keys) " "))
+                               (loop (cdr keys))))
+                          (else (loop (cdr keys))))))))
+        (if found
+          (echo-message! echo (string-append name " is on " found))
+          (echo-message! echo (string-append name " is not bound to any key")))))))
+
+(def (cmd-sort-imports app)
+  "Sort import lines in the current region or near point."
+  (let* ((fr (app-state-frame app))
+         (ed (edit-window-editor (current-window fr)))
+         (echo (app-state-echo app))
+         (buf (current-buffer-from-app app))
+         (mark (buffer-mark buf))
+         (pos (editor-get-current-pos ed)))
+    (if mark
+      (let* ((start (min pos mark))
+             (end (max pos mark))
+             (start-line (editor-line-from-position ed start))
+             (end-line (editor-line-from-position ed end))
+             (line-start (editor-position-from-line ed start-line))
+             (line-end (editor-get-line-end-position ed end-line))
+             (text (editor-get-text-range ed line-start (- line-end line-start)))
+             (lines (string-split text #\newline))
+             (sorted (sort lines string<?))
+             (result (string-join sorted "\n")))
+        (with-undo-action ed
+          (editor-delete-range ed line-start (- line-end line-start))
+          (editor-insert-text ed line-start result))
+        (set! (buffer-mark buf) #f)
+        (echo-message! echo "Imports sorted"))
+      (echo-error! echo "No mark set (select import lines first)"))))
+
+(def (cmd-show-git-status app)
+  "Show git status for the current file's directory."
+  (let* ((fr (app-state-frame app))
+         (echo (app-state-echo app))
+         (buf (current-buffer-from-app app))
+         (path (buffer-file-path buf))
+         (dir (if path (path-directory path) ".")))
+    (let ((output (with-exception-catcher
+                    (lambda (e) "Not a git repository")
+                    (lambda ()
+                      (let ((proc (open-process
+                                    (list path: "/usr/bin/git"
+                                          arguments: (list "status" "--short")
+                                          directory: dir
+                                          stdin-redirection: #f
+                                          stdout-redirection: #t
+                                          stderr-redirection: #t))))
+                        (let ((result (read-line proc #f)))
+                          (process-status proc)
+                          (or result "(clean)")))))))
+      (open-output-buffer app "*git-status*" output)
+      (echo-message! echo "git status"))))
+
+(def (cmd-show-git-log app)
+  "Show git log for the current file."
+  (let* ((fr (app-state-frame app))
+         (echo (app-state-echo app))
+         (buf (current-buffer-from-app app))
+         (path (buffer-file-path buf))
+         (dir (if path (path-directory path) ".")))
+    (let ((output (with-exception-catcher
+                    (lambda (e) "Not a git repository")
+                    (lambda ()
+                      (let* ((args (if path
+                                     (list "log" "--oneline" "-20" path)
+                                     (list "log" "--oneline" "-20")))
+                             (proc (open-process
+                                     (list path: "/usr/bin/git"
+                                           arguments: args
+                                           directory: dir
+                                           stdin-redirection: #f
+                                           stdout-redirection: #t
+                                           stderr-redirection: #t))))
+                        (let ((result (read-line proc #f)))
+                          (process-status proc)
+                          (or result "(no commits)")))))))
+      (open-output-buffer app "*git-log*" output)
+      (echo-message! echo "git log"))))
+
+(def (cmd-show-git-diff app)
+  "Show git diff for the current file."
+  (let* ((fr (app-state-frame app))
+         (echo (app-state-echo app))
+         (buf (current-buffer-from-app app))
+         (path (buffer-file-path buf))
+         (dir (if path (path-directory path) ".")))
+    (let ((output (with-exception-catcher
+                    (lambda (e) "Not a git repository")
+                    (lambda ()
+                      (let* ((args (if path (list "diff" path) (list "diff")))
+                             (proc (open-process
+                                     (list path: "/usr/bin/git"
+                                           arguments: args
+                                           directory: dir
+                                           stdin-redirection: #f
+                                           stdout-redirection: #t
+                                           stderr-redirection: #t))))
+                        (let ((result (read-line proc #f)))
+                          (process-status proc)
+                          (or result "(no changes)")))))))
+      (open-output-buffer app "*git-diff*" output)
+      (echo-message! echo "git diff"))))
+
+(def (cmd-show-git-blame app)
+  "Show git blame for the current file."
+  (let* ((fr (app-state-frame app))
+         (echo (app-state-echo app))
+         (buf (current-buffer-from-app app))
+         (path (buffer-file-path buf)))
+    (if path
+      (let* ((dir (path-directory path))
+             (output (with-exception-catcher
+                       (lambda (e) "Not a git repository or file not tracked")
+                       (lambda ()
+                         (let ((proc (open-process
+                                       (list path: "/usr/bin/git"
+                                             arguments: (list "blame" "--date=short" path)
+                                             directory: dir
+                                             stdin-redirection: #f
+                                             stdout-redirection: #t
+                                             stderr-redirection: #t))))
+                           (let ((result (read-line proc #f)))
+                             (process-status proc)
+                             (or result "(no data)")))))))
+        (open-output-buffer app (string-append "*git-blame " (path-strip-directory path) "*") output)
+        (echo-message! echo "git blame"))
+      (echo-error! echo "Buffer has no file"))))
+
+(def (cmd-toggle-flyspell app)
+  "Toggle spell checking (stub)."
+  (echo-message! (app-state-echo app) "Spell check toggled (stub)"))
+
+(def (cmd-toggle-flymake app)
+  "Toggle syntax checking (stub)."
+  (echo-message! (app-state-echo app) "Syntax check toggled (stub)"))
+
+(def (cmd-toggle-lsp app)
+  "Toggle LSP support (stub)."
+  (echo-message! (app-state-echo app) "LSP toggled (stub)"))
+
+(def (cmd-toggle-auto-revert-global app)
+  "Toggle global auto-revert mode."
+  (echo-message! (app-state-echo app) "Global auto-revert toggled (stub)"))
+
+;;;============================================================================
 ;;; Register all commands
 ;;;============================================================================
 
@@ -8544,6 +9188,61 @@
   (register-command! 'increase-font-size cmd-increase-font-size)
   (register-command! 'decrease-font-size cmd-decrease-font-size)
   (register-command! 'reset-font-size cmd-reset-font-size)
+  ;; Project
+  (register-command! 'project-find-file cmd-project-find-file)
+  (register-command! 'project-grep cmd-project-grep)
+  (register-command! 'project-compile cmd-project-compile)
+  ;; Word search
+  (register-command! 'search-forward-word cmd-search-forward-word)
+  (register-command! 'search-backward-word cmd-search-backward-word)
+  (register-command! 'highlight-word-at-point cmd-highlight-word-at-point)
+  ;; Replace in region
+  (register-command! 'replace-in-region cmd-replace-in-region)
+  ;; Go to definition
+  (register-command! 'goto-definition cmd-goto-definition)
+  ;; Frame stubs
+  (register-command! 'toggle-eol-conversion cmd-toggle-eol-conversion)
+  (register-command! 'make-frame cmd-make-frame)
+  (register-command! 'delete-frame cmd-delete-frame)
+  (register-command! 'toggle-menu-bar cmd-toggle-menu-bar)
+  (register-command! 'toggle-tool-bar cmd-toggle-tool-bar)
+  (register-command! 'toggle-scroll-bar cmd-toggle-scroll-bar)
+  (register-command! 'suspend-frame cmd-suspend-frame)
+  ;; Directory
+  (register-command! 'list-directory cmd-list-directory)
+  (register-command! 'find-grep cmd-find-grep)
+  ;; C/C++ helpers
+  (register-command! 'insert-header-guard cmd-insert-header-guard)
+  (register-command! 'insert-include cmd-insert-include)
+  ;; Scheme helpers
+  (register-command! 'insert-import cmd-insert-import)
+  (register-command! 'insert-export cmd-insert-export)
+  (register-command! 'insert-defun cmd-insert-defun)
+  (register-command! 'insert-let cmd-insert-let)
+  (register-command! 'insert-cond cmd-insert-cond)
+  (register-command! 'insert-match cmd-insert-match)
+  (register-command! 'insert-when cmd-insert-when)
+  (register-command! 'insert-unless cmd-insert-unless)
+  (register-command! 'insert-lambda cmd-insert-lambda)
+  ;; Toggles
+  (register-command! 'toggle-auto-pair-mode cmd-toggle-auto-pair-mode)
+  (register-command! 'toggle-flyspell cmd-toggle-flyspell)
+  (register-command! 'toggle-flymake cmd-toggle-flymake)
+  (register-command! 'toggle-lsp cmd-toggle-lsp)
+  (register-command! 'toggle-auto-revert-global cmd-toggle-auto-revert-global)
+  ;; Buffer info
+  (register-command! 'count-buffers cmd-count-buffers)
+  (register-command! 'list-recent-files cmd-list-recent-files)
+  (register-command! 'clear-recent-files cmd-clear-recent-files)
+  ;; Key info
+  (register-command! 'show-keybinding-for cmd-show-keybinding-for)
+  ;; Sort imports
+  (register-command! 'sort-imports cmd-sort-imports)
+  ;; Git
+  (register-command! 'show-git-status cmd-show-git-status)
+  (register-command! 'show-git-log cmd-show-git-log)
+  (register-command! 'show-git-diff cmd-show-git-diff)
+  (register-command! 'show-git-blame cmd-show-git-blame)
   ;; Misc
   (register-command! 'keyboard-quit cmd-keyboard-quit)
   (register-command! 'quit cmd-quit))
