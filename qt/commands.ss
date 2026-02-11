@@ -102,7 +102,9 @@
 (def (cmd-backward-delete-char app)
   (let ((buf (current-qt-buffer app)))
     (if (repl-buffer? buf)
-      ;; In REPL buffers, don't delete past the prompt
+      ;; In REPL buffers, don't delete past the prompt.
+      ;; Use cursor-position which is in the same units as the document model.
+      ;; prompt-pos is set from string-length(toPlainText) which matches cursor units.
       (let* ((ed (current-qt-editor app))
              (pos (qt-plain-text-edit-cursor-position ed))
              (rs (hash-get *repl-state* buf)))
@@ -486,11 +488,11 @@
         ;; Spawn gxi subprocess
         (let ((rs (repl-start!)))
           (hash-put! *repl-state* buf rs)
-          ;; Insert initial prompt
-          (qt-plain-text-edit-set-text! ed repl-prompt)
-          (let ((len (qt-plain-text-edit-text-length ed)))
-            (set! (repl-state-prompt-pos rs) len)
-            (qt-plain-text-edit-set-cursor-position! ed len)))
+          ;; Don't insert initial prompt — let the timer handle it when
+          ;; gxi's startup banner arrives. Set prompt-pos high to prevent
+          ;; typing until gxi is ready.
+          (qt-plain-text-edit-set-text! ed "")
+          (set! (repl-state-prompt-pos rs) 999999999))
         (echo-message! (app-state-echo app) "REPL started")))))
 
 (def (cmd-repl-send app)
@@ -501,18 +503,19 @@
       (let* ((ed (current-qt-editor app))
              (prompt-pos (repl-state-prompt-pos rs))
              (all-text (qt-plain-text-edit-text ed))
-             (end-pos (string-length all-text))
+             (text-len (string-length all-text))
              ;; Extract user input after the prompt
-             (input (if (> end-pos prompt-pos)
-                      (substring all-text prompt-pos end-pos)
+             (input (if (and (<= prompt-pos text-len) (> text-len prompt-pos))
+                      (substring all-text prompt-pos text-len)
                       "")))
-        ;; Append newline to the buffer
-        (qt-plain-text-edit-append! ed "")  ; append inserts a block break (newline)
-        ;; Send to gxi
-        (repl-send! rs input)
-        ;; Update prompt-pos to after the newline
-        (set! (repl-state-prompt-pos rs)
-          (qt-plain-text-edit-text-length ed))))))
+        (when (> (string-length input) 0)
+          ;; Append newline to the buffer
+          (qt-plain-text-edit-append! ed "")
+          ;; Send to gxi
+          (repl-send! rs input)
+          ;; Prevent typing until gxi responds (timer will reset prompt-pos)
+          (qt-plain-text-edit-move-cursor! ed QT_CURSOR_END)
+          (set! (repl-state-prompt-pos rs) 999999999))))))
 
 (def (cmd-eval-expression app)
   "Prompt for an expression, eval it in-process."

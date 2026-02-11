@@ -147,12 +147,12 @@
                                   ;; Insert output + new prompt
                                   (qt-plain-text-edit-append! ed output)
                                   (qt-plain-text-edit-append! ed repl-prompt)
-                                  ;; Update prompt-pos
+                                  ;; Set prompt-pos from text length (same units
+                                  ;; as substring extraction in cmd-repl-send)
                                   (set! (repl-state-prompt-pos rs)
-                                    (qt-plain-text-edit-text-length ed))
-                                  ;; Move cursor to end
-                                  (qt-plain-text-edit-set-cursor-position!
-                                    ed (qt-plain-text-edit-text-length ed))
+                                    (string-length (qt-plain-text-edit-text ed)))
+                                  ;; Move cursor to end so user types at the prompt
+                                  (qt-plain-text-edit-move-cursor! ed QT_CURSOR_END)
                                   (qt-plain-text-edit-ensure-cursor-visible! ed))
                                 (loop (cdr wins)))))))))))
               (buffer-list))))
