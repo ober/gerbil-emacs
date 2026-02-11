@@ -1,15 +1,17 @@
-.PHONY: all build clean test install build-qt install-qt
+.PHONY: all build clean test install install-qt
 
-# Dependencies: gerbil-scintilla (TUI) and gerbil-qt (Qt) must be built first
-SCINTILLA_DIR = $(HOME)/mine/gerbil-scintilla
-QT_DIR = $(HOME)/mine/gerbil-qt
-export GERBIL_LOADPATH = $(SCINTILLA_DIR)/.gerbil/lib:$(QT_DIR)/.gerbil/lib
+export GERBIL_LOADPATH := $(HOME)/.gerbil/lib
+
+OPENSSL_RPATH = /home/linuxbrew/.linuxbrew/opt/openssl@3/lib
+QT_SHIM_RPATH = $(HOME)/.gerbil/lib/gerbil-qt
 
 all: build
 
 build:
 	chmod +x build.ss
 	gerbil build
+	patchelf --set-rpath $(OPENSSL_RPATH) .gerbil/bin/gerbil-emacs
+	patchelf --set-rpath $(OPENSSL_RPATH):$(QT_SHIM_RPATH) .gerbil/bin/gerbil-emacs-qt
 
 clean:
 	gerbil clean
@@ -22,9 +24,10 @@ PREFIX ?= $(HOME)/.local
 
 install: build
 	mkdir -p $(PREFIX)/bin
-	cp .gerbil/bin/gerbil-emacs $(PREFIX)/bin/gerbil-emacs
-	cp .gerbil/bin/gerbil-emacs-qt $(PREFIX)/bin/gerbil-emacs-qt
+	cp -f .gerbil/bin/gerbil-emacs $(PREFIX)/bin/
+	cp -f .gerbil/bin/gerbil-emacs-qt $(PREFIX)/bin/
+	@echo "Installed to $(PREFIX)/bin"
 
 install-qt: build
 	mkdir -p $(PREFIX)/bin
-	cp .gerbil/bin/gerbil-emacs-qt $(PREFIX)/bin/gerbil-emacs-qt
+	cp -f .gerbil/bin/gerbil-emacs-qt $(PREFIX)/bin/
