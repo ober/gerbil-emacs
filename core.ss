@@ -43,9 +43,17 @@
 
   ;; File I/O helpers
   read-file-as-string
-  write-string-to-file)
+  write-string-to-file
 
-(import :std/sugar)
+  ;; Dired (directory listing) shared logic
+  *dired-entries*
+  dired-buffer?
+  strip-trailing-slash
+  dired-format-listing)
+
+(import :std/sugar
+        :std/sort
+        :std/srfi/13)
 
 ;;;============================================================================
 ;;; Keymap data structure
@@ -262,3 +270,106 @@
 (def (write-string-to-file path str)
   (call-with-output-file path
     (lambda (port) (display str port))))
+
+;;;============================================================================
+;;; Dired (directory listing) shared logic
+;;;============================================================================
+
+;; Maps dired buffers to their entries vectors (index → full-path)
+(def *dired-entries* (make-hash-table))
+
+(def (dired-buffer? buf)
+  "Check if this buffer is a dired (directory listing) buffer."
+  (eq? (buffer-lexer-lang buf) 'dired))
+
+(def (strip-trailing-slash path)
+  (if (and (> (string-length path) 1)
+           (char=? (string-ref path (- (string-length path) 1)) #\/))
+    (substring path 0 (- (string-length path) 1))
+    path))
+
+(def (mode->permission-string mode)
+  "Convert file permission bits to rwxrwxrwx string."
+  (let ((p (bitwise-and mode #o777)))
+    (string
+      (if (not (zero? (bitwise-and p #o400))) #\r #\-)
+      (if (not (zero? (bitwise-and p #o200))) #\w #\-)
+      (if (not (zero? (bitwise-and p #o100))) #\x #\-)
+      (if (not (zero? (bitwise-and p #o040))) #\r #\-)
+      (if (not (zero? (bitwise-and p #o020))) #\w #\-)
+      (if (not (zero? (bitwise-and p #o010))) #\x #\-)
+      (if (not (zero? (bitwise-and p #o004))) #\r #\-)
+      (if (not (zero? (bitwise-and p #o002))) #\w #\-)
+      (if (not (zero? (bitwise-and p #o001))) #\x #\-))))
+
+(def (format-size size)
+  "Right-align size in 8-char field."
+  (let ((s (number->string size)))
+    (string-append (make-string (max 0 (- 8 (string-length s))) #\space) s)))
+
+(def (dired-format-entry dir name)
+  "Format one dired line for a file/directory entry."
+  (let ((full (if (string=? name "..")
+                (strip-trailing-slash (path-directory dir))
+                (string-append dir "/" name))))
+    (with-catch
+      (lambda (e)
+        (string-append "  ?????????? " (make-string 8 #\?) " " name))
+      (lambda ()
+        (let* ((info (file-info full))
+               (type (file-info-type info))
+               (mode (file-info-mode info))
+               (size (file-info-size info))
+               (type-char (case type
+                            ((directory) #\d)
+                            ((symbolic-link) #\l)
+                            (else #\-)))
+               (perms (mode->permission-string mode))
+               (display-name (if (eq? type 'directory)
+                               (string-append name "/")
+                               name)))
+          (string-append "  " (string type-char) perms " "
+                         (format-size size) " " display-name))))))
+
+(def (dired-format-listing dir)
+  "Format a directory listing.
+   Returns (values text entries-vector).
+   entries-vector maps index i to the full path of entry at line (i + 3)."
+  (let* ((raw-entries (directory-files
+                        (list path: dir ignore-hidden: 'dot-and-dot-dot)))
+         (entries (sort raw-entries string<?))
+         ;; Separate directories and files, dirs first
+         (dirs (filter (lambda (name)
+                         (with-catch
+                           (lambda (e) #f)
+                           (lambda ()
+                             (eq? 'directory
+                                  (file-info-type
+                                   (file-info (string-append dir "/" name)))))))
+                       entries))
+         (files (filter (lambda (name)
+                          (with-catch
+                            (lambda (e) #t)
+                            (lambda ()
+                              (not (eq? 'directory
+                                        (file-info-type
+                                         (file-info (string-append dir "/" name))))))))
+                        entries))
+         ;; ".." first, then dirs, then files
+         (ordered (append '("..") dirs files))
+         ;; Format lines
+         (header (string-append "  " dir ":"))
+         (total-line (string-append "  " (number->string (length entries))
+                                    " entries"))
+         (entry-lines (map (lambda (name) (dired-format-entry dir name))
+                           ordered))
+         (all-lines (append (list header total-line "") entry-lines))
+         (text (string-join all-lines "\n"))
+         ;; Build entries vector: index i → full path
+         (paths (list->vector
+                  (map (lambda (name)
+                         (if (string=? name "..")
+                           (strip-trailing-slash (path-directory dir))
+                           (string-append dir "/" name)))
+                       ordered))))
+    (values text paths)))

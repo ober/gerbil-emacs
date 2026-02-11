@@ -41,8 +41,10 @@
 ;;;============================================================================
 
 (def (cmd-self-insert! app ch)
-  (let ((ed (current-editor app)))
-    (editor-send-key ed ch)))
+  ;; Suppress self-insert in dired buffers
+  (unless (dired-buffer? (current-buffer-from-app app))
+    (let ((ed (current-editor app)))
+      (editor-send-key ed ch))))
 
 ;;;============================================================================
 ;;; Navigation commands
@@ -98,7 +100,9 @@
   (editor-send-key (current-editor app) SCK_BACK))
 
 (def (cmd-newline app)
-  (editor-send-key (current-editor app) SCK_RETURN))
+  (if (dired-buffer? (current-buffer-from-app app))
+    (cmd-dired-find-file app)
+    (editor-send-key (current-editor app) SCK_RETURN)))
 
 (def (cmd-open-line app)
   (let* ((ed (current-editor app))
@@ -185,24 +189,23 @@
          (filename (echo-read-string echo "Find file: " row width)))
     (when filename
       (when (> (string-length filename) 0)
-        (let* ((name (path-strip-directory filename))
-               (ed (current-editor app))
-               (buf (buffer-create! name ed filename)))
-          ;; Switch to new buffer
-          (buffer-attach! ed buf)
-          (set! (edit-window-buffer (current-window fr)) buf)
-          ;; Load file if it exists and is a regular file
-          (if (and (file-exists? filename)
-                   (eq? 'directory (file-info-type (file-info filename))))
-            (echo-error! echo (string-append filename " is a directory"))
-            (begin
-              (when (file-exists? filename)
-                (let ((text (read-file-as-string filename)))
-                  (when text
-                    (editor-set-text ed text)
-                    (editor-set-save-point ed)
-                    (editor-goto-pos ed 0))))
-              (echo-message! echo (string-append "Opened: " filename))))))))
+        ;; Check if it's a directory
+        (if (and (file-exists? filename)
+                 (eq? 'directory (file-info-type (file-info filename))))
+          (dired-open-directory! app filename)
+          ;; Regular file
+          (let* ((name (path-strip-directory filename))
+                 (ed (current-editor app))
+                 (buf (buffer-create! name ed filename)))
+            (buffer-attach! ed buf)
+            (set! (edit-window-buffer (current-window fr)) buf)
+            (when (file-exists? filename)
+              (let ((text (read-file-as-string filename)))
+                (when text
+                  (editor-set-text ed text)
+                  (editor-set-save-point ed)
+                  (editor-goto-pos ed 0))))
+            (echo-message! echo (string-append "Opened: " filename))))))))
 
 (def (cmd-save-buffer app)
   (let* ((ed (current-editor app))
@@ -273,6 +276,8 @@
                     (when other
                       (buffer-attach! ed other)
                       (set! (edit-window-buffer (current-window fr)) other))))
+                ;; Clean up dired entries if applicable
+                (hash-remove! *dired-entries* buf)
                 (buffer-kill! ed buf)
                 (echo-message! echo (string-append "Killed " target-name)))))
           (echo-error! echo (string-append "No buffer: " target-name)))))))
@@ -384,6 +389,72 @@
 
 (def (cmd-quit app)
   (set! (app-state-running app) #f))
+
+;;;============================================================================
+;;; Dired (directory listing) support
+;;;============================================================================
+
+(def (dired-open-directory! app dir-path)
+  "Open a directory listing in a new dired buffer."
+  (let* ((dir (strip-trailing-slash dir-path))
+         (name (string-append dir "/"))
+         (fr (app-state-frame app))
+         (ed (current-editor app))
+         (buf (buffer-create! name ed dir)))
+    ;; Mark as dired buffer
+    (set! (buffer-lexer-lang buf) 'dired)
+    ;; Attach buffer to editor
+    (buffer-attach! ed buf)
+    (set! (edit-window-buffer (current-window fr)) buf)
+    ;; Generate and set listing
+    (let-values (((text entries) (dired-format-listing dir)))
+      (editor-set-text ed text)
+      (editor-set-save-point ed)
+      ;; Position cursor at first entry (line 3, after header + count + blank)
+      (editor-goto-pos ed 0)
+      (editor-send-key ed SCK_DOWN)
+      (editor-send-key ed SCK_DOWN)
+      (editor-send-key ed SCK_DOWN)
+      (editor-send-key ed SCK_HOME)
+      ;; Store entries for navigation
+      (hash-put! *dired-entries* buf entries))
+    (echo-message! (app-state-echo app) (string-append "Directory: " dir))))
+
+(def (cmd-dired-find-file app)
+  "In a dired buffer, open the file or directory under cursor."
+  (let* ((buf (current-buffer-from-app app))
+         (ed (current-editor app))
+         (pos (editor-get-current-pos ed))
+         (line (editor-line-from-position ed pos))
+         (entries (hash-get *dired-entries* buf)))
+    (when entries
+      (let ((idx (- line 3)))
+        (if (or (< idx 0) (>= idx (vector-length entries)))
+          (echo-message! (app-state-echo app) "No file on this line")
+          (let ((full-path (vector-ref entries idx)))
+            (with-catch
+              (lambda (e)
+                (echo-error! (app-state-echo app)
+                             (string-append "Error: "
+                               (with-output-to-string
+                                 (lambda () (display-exception e))))))
+              (lambda ()
+                (let ((info (file-info full-path)))
+                  (if (eq? 'directory (file-info-type info))
+                    (dired-open-directory! app full-path)
+                    ;; Open as regular file
+                    (let* ((fname (path-strip-directory full-path))
+                           (fr (app-state-frame app))
+                           (new-buf (buffer-create! fname ed full-path)))
+                      (buffer-attach! ed new-buf)
+                      (set! (edit-window-buffer (current-window fr)) new-buf)
+                      (let ((text (read-file-as-string full-path)))
+                        (when text
+                          (editor-set-text ed text)
+                          (editor-set-save-point ed)
+                          (editor-goto-pos ed 0)))
+                      (echo-message! (app-state-echo app)
+                                     (string-append "Opened: " full-path)))))))))))))
 
 ;;;============================================================================
 ;;; Register all commands
