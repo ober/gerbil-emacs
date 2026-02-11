@@ -581,6 +581,18 @@
       ;; Copy line
       (check (keymap-lookup *ctrl-c-map* "c") => 'copy-line))
 
+    (test-case "new keybindings: where-is, apropos, read-only, etc"
+      ;; Help extensions
+      (check (keymap-lookup *help-map* "w") => 'where-is)
+      (check (keymap-lookup *help-map* "a") => 'apropos-command)
+      ;; Buffer: read-only, rename
+      (check (keymap-lookup *ctrl-x-map* "C-q") => 'toggle-read-only)
+      (check (keymap-lookup *ctrl-x-r-map* "n") => 'rename-buffer)
+      ;; C-x 4 prefix
+      (check (hash-table? (keymap-lookup *ctrl-x-map* "4")) => #t)
+      (check (keymap-lookup *ctrl-x-4-map* "b") => 'switch-buffer-other-window)
+      (check (keymap-lookup *ctrl-x-4-map* "f") => 'find-file-other-window))
+
     ))
 
 ;; Run tests when executed directly

@@ -20,6 +20,7 @@
   *ctrl-x-r-map*
   *ctrl-c-map*
   *meta-s-map*
+  *ctrl-x-4-map*
   *all-commands*
   setup-default-bindings!
 
@@ -104,6 +105,7 @@
 (def *meta-g-map*   (make-keymap))
 (def *help-map*     (make-keymap))
 (def *meta-s-map*   (make-keymap))
+(def *ctrl-x-4-map* (make-keymap))
 
 (def (make-initial-key-state)
   (make-key-state *global-keymap* []))
@@ -417,7 +419,20 @@
   (keymap-bind! *ctrl-c-map* "l" 'count-lines-region)
 
   ;; Copy line (C-c c)
-  (keymap-bind! *ctrl-c-map* "c" 'copy-line))
+  (keymap-bind! *ctrl-c-map* "c" 'copy-line)
+
+  ;; Help: where-is, apropos
+  (keymap-bind! *help-map* "w" 'where-is)
+  (keymap-bind! *help-map* "a" 'apropos-command)
+
+  ;; Buffer: toggle-read-only, rename-buffer
+  (keymap-bind! *ctrl-x-map* "C-q" 'toggle-read-only)
+  (keymap-bind! *ctrl-x-r-map* "n" 'rename-buffer)
+
+  ;; Other-window commands (C-x 4 prefix)
+  (keymap-bind! *ctrl-x-map* "4" *ctrl-x-4-map*)
+  (keymap-bind! *ctrl-x-4-map* "b" 'switch-buffer-other-window)
+  (keymap-bind! *ctrl-x-4-map* "f" 'find-file-other-window))
 
 ;;;============================================================================
 ;;; Echo state

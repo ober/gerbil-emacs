@@ -3425,6 +3425,151 @@
     (echo-message! (app-state-echo app) "Line copied")))
 
 ;;;============================================================================
+;;; Help: where-is, apropos-command
+;;;============================================================================
+
+(def (cmd-where-is app)
+  "Show what key a command is bound to."
+  (let* ((echo (app-state-echo app))
+         (fr (app-state-frame app))
+         (row (- (frame-height fr) 1))
+         (width (frame-width fr))
+         (input (echo-read-string echo "Where is command: " row width)))
+    (if (not input)
+      (echo-message! echo "Cancelled")
+      (let* ((cmd-name (string->symbol input))
+             ;; Search all keymaps for this command
+             (found '()))
+        ;; Search global keymap
+        (for-each
+          (lambda (entry)
+            (let ((key (car entry))
+                  (val (cdr entry)))
+              (cond
+                ((eq? val cmd-name)
+                 (set! found (cons key found)))
+                ((hash-table? val)
+                 ;; Search prefix map
+                 (for-each
+                   (lambda (sub)
+                     (when (eq? (cdr sub) cmd-name)
+                       (set! found (cons (string-append key " " (car sub)) found))))
+                   (keymap-entries val))))))
+          (keymap-entries *global-keymap*))
+        (if (null? found)
+          (echo-message! echo (string-append input " is not on any key"))
+          (echo-message! echo
+            (string-append input " is on "
+                           (string-join (reverse found) ", "))))))))
+
+(def (cmd-apropos-command app)
+  "Search commands by name substring."
+  (let* ((echo (app-state-echo app))
+         (fr (app-state-frame app))
+         (row (- (frame-height fr) 1))
+         (width (frame-width fr))
+         (input (echo-read-string echo "Apropos command: " row width)))
+    (if (not input)
+      (echo-message! echo "Cancelled")
+      (let ((matches '()))
+        ;; Search all registered commands
+        (hash-for-each
+          (lambda (name _proc)
+            (when (string-contains (symbol->string name) input)
+              (set! matches (cons (symbol->string name) matches))))
+          *all-commands*)
+        (if (null? matches)
+          (echo-message! echo (string-append "No commands matching '" input "'"))
+          (let* ((sorted (sort matches string<?))
+                 (text (string-append "Commands matching '" input "':\n\n"
+                                      (string-join sorted "\n") "\n")))
+            ;; Show in *Help* buffer
+            (let* ((ed (current-editor app))
+                   (buf (or (buffer-by-name "*Help*")
+                            (buffer-create! "*Help*" ed #f))))
+              (buffer-attach! ed buf)
+              (set! (edit-window-buffer (current-window fr)) buf)
+              (editor-set-text ed text)
+              (editor-set-save-point ed)
+              (editor-goto-pos ed 0)
+              (echo-message! echo
+                (string-append (number->string (length sorted))
+                               " commands match")))))))))
+
+;;;============================================================================
+;;; Buffer: toggle-read-only, rename-buffer
+;;;============================================================================
+
+(def (cmd-toggle-read-only app)
+  "Toggle the read-only state of the current buffer."
+  (let* ((ed (current-editor app))
+         (readonly? (editor-get-read-only? ed)))
+    (editor-set-read-only ed (not readonly?))
+    (echo-message! (app-state-echo app)
+      (if readonly? "Buffer is now writable" "Buffer is now read-only"))))
+
+(def (cmd-rename-buffer app)
+  "Rename the current buffer."
+  (let* ((echo (app-state-echo app))
+         (fr (app-state-frame app))
+         (row (- (frame-height fr) 1))
+         (width (frame-width fr))
+         (buf (current-buffer-from-app app))
+         (old-name (buffer-name buf))
+         (new-name (echo-read-string echo
+                     (string-append "Rename buffer (was " old-name "): ")
+                     row width)))
+    (if (not new-name)
+      (echo-message! echo "Cancelled")
+      (if (string-empty? new-name)
+        (echo-error! echo "Name cannot be empty")
+        (begin
+          (set! (buffer-name buf) new-name)
+          (echo-message! echo
+            (string-append "Renamed to " new-name)))))))
+
+;;;============================================================================
+;;; Other-window commands: find-file/switch-buffer in other window
+;;;============================================================================
+
+(def (cmd-switch-buffer-other-window app)
+  "Switch to a buffer in the other window."
+  (let* ((echo (app-state-echo app))
+         (fr (app-state-frame app))
+         (wins (frame-windows fr)))
+    (if (<= (length wins) 1)
+      ;; Split first, then switch buffer in the new window
+      (begin
+        (cmd-split-window app)
+        (frame-other-window! fr)
+        (cmd-switch-buffer app))
+      ;; Already split: switch to other window, then prompt for buffer
+      (begin
+        (frame-other-window! fr)
+        (cmd-switch-buffer app)))))
+
+(def (cmd-find-file-other-window app)
+  "Open a file in the other window."
+  (let* ((fr (app-state-frame app))
+         (wins (frame-windows fr)))
+    (if (<= (length wins) 1)
+      (begin
+        (cmd-split-window app)
+        (frame-other-window! fr)
+        (cmd-find-file app))
+      (begin
+        (frame-other-window! fr)
+        (cmd-find-file app)))))
+
+;;;============================================================================
+;;; Emacs-style universal argument (C-u) stub
+;;;============================================================================
+
+(def (cmd-universal-argument app)
+  "Universal argument (stub — displays message only)."
+  (echo-message! (app-state-echo app) "C-u prefix not yet supported"))
+
+;;;============================================================================
 ;;; Register all commands
 ;;;============================================================================
 
@@ -3637,6 +3782,17 @@
   (register-command! 'count-lines-region cmd-count-lines-region)
   ;; Copy line
   (register-command! 'copy-line cmd-copy-line)
+  ;; Help: where-is, apropos
+  (register-command! 'where-is cmd-where-is)
+  (register-command! 'apropos-command cmd-apropos-command)
+  ;; Buffer: read-only, rename
+  (register-command! 'toggle-read-only cmd-toggle-read-only)
+  (register-command! 'rename-buffer cmd-rename-buffer)
+  ;; Other-window
+  (register-command! 'switch-buffer-other-window cmd-switch-buffer-other-window)
+  (register-command! 'find-file-other-window cmd-find-file-other-window)
+  ;; Universal argument (stub)
+  (register-command! 'universal-argument cmd-universal-argument)
   ;; Misc
   (register-command! 'keyboard-quit cmd-keyboard-quit)
   (register-command! 'quit cmd-quit))
