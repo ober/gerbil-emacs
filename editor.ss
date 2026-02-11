@@ -191,14 +191,18 @@
           ;; Switch to new buffer
           (buffer-attach! ed buf)
           (set! (edit-window-buffer (current-window fr)) buf)
-          ;; Load file if it exists
-          (when (file-exists? filename)
-            (let ((text (read-file-as-string filename)))
-              (when text
-                (editor-set-text ed text)
-                (editor-set-save-point ed)
-                (editor-goto-pos ed 0))))
-          (echo-message! echo (string-append "Opened: " filename)))))))
+          ;; Load file if it exists and is a regular file
+          (if (and (file-exists? filename)
+                   (eq? 'directory (file-info-type (file-info filename))))
+            (echo-error! echo (string-append filename " is a directory"))
+            (begin
+              (when (file-exists? filename)
+                (let ((text (read-file-as-string filename)))
+                  (when text
+                    (editor-set-text ed text)
+                    (editor-set-save-point ed)
+                    (editor-goto-pos ed 0))))
+              (echo-message! echo (string-append "Opened: " filename))))))))
 
 (def (cmd-save-buffer app)
   (let* ((ed (current-editor app))
