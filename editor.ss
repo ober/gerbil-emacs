@@ -19,6 +19,8 @@
         :std/sort
         :std/srfi/13
         :std/text/base64
+        :std/text/hex
+        :std/crypto/digest
         :gerbil-scintilla/constants
         :gerbil-scintilla/scintilla
         :gerbil-scintilla/style
@@ -3835,6 +3837,199 @@
                          (if (= removed 1) "" "s")))))))
 
 ;;;============================================================================
+;;; Diff buffer with file
+;;;============================================================================
+
+(def (cmd-diff-buffer-with-file app)
+  "Show diff between buffer contents and the saved file."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app))
+         (fr (app-state-frame app))
+         (buf (current-buffer-from-app app))
+         (path (buffer-file-path buf)))
+    (if (not path)
+      (echo-error! echo "Buffer has no associated file")
+      (if (not (file-exists? path))
+        (echo-error! echo (string-append "File not found: " path))
+        (let* ((file-text (read-file-as-string path))
+               (buf-text (editor-get-text ed))
+               ;; Write both to temp files and run diff
+               (pid (number->string (##current-process-id)))
+               (tmp1 (string-append "/tmp/gerbil-emacs-diff-file-" pid))
+               (tmp2 (string-append "/tmp/gerbil-emacs-diff-buf-" pid)))
+          (write-string-to-file file-text tmp1)
+          (write-string-to-file buf-text tmp2)
+          (let* ((proc (open-process
+                         (list path: "/usr/bin/diff"
+                               arguments: (list "-u" tmp1 tmp2)
+                               stdin-redirection: #f
+                               stdout-redirection: #t
+                               stderr-redirection: #t)))
+                 (output (read-line proc #f))
+                 (status (process-status proc)))
+            ;; Clean up temp files
+            (with-catch void (lambda () (delete-file tmp1)))
+            (with-catch void (lambda () (delete-file tmp2)))
+            (if (and output (> (string-length output) 0))
+              ;; Show diff in *Diff* buffer
+              (let ((diff-buf (or (buffer-by-name "*Diff*")
+                                  (buffer-create! "*Diff*" ed #f))))
+                (buffer-attach! ed diff-buf)
+                (set! (edit-window-buffer (current-window fr)) diff-buf)
+                (editor-set-text ed output)
+                (editor-set-save-point ed)
+                (editor-goto-pos ed 0)
+                (echo-message! echo "*Diff*"))
+              (echo-message! echo "No differences"))))))))
+
+;;;============================================================================
+;;; Checksum: SHA256
+;;;============================================================================
+
+(def (cmd-checksum app)
+  "Show SHA256 checksum of the buffer or region."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app))
+         (buf (current-buffer-from-app app))
+         (mark (buffer-mark buf))
+         (text (editor-get-text ed)))
+    (let-values (((start end)
+                  (if mark
+                    (let ((pos (editor-get-current-pos ed)))
+                      (values (min mark pos) (max mark pos)))
+                    (values 0 (string-length text)))))
+      (let* ((region (substring text start end))
+             (hash-bytes (sha256 (string->bytes region)))
+             (hex-str (hex-encode hash-bytes)))
+        (when mark (set! (buffer-mark buf) #f))
+        (echo-message! echo (string-append "SHA256: " hex-str))))))
+
+;;;============================================================================
+;;; Async shell command
+;;;============================================================================
+
+(def (cmd-async-shell-command app)
+  "Run a shell command asynchronously, showing output in *Async Shell*."
+  (let* ((echo (app-state-echo app))
+         (fr (app-state-frame app))
+         (row (- (frame-height fr) 1))
+         (width (frame-width fr))
+         (cmd (echo-read-string echo "Async shell command: " row width)))
+    (if (not cmd)
+      (echo-message! echo "Cancelled")
+      (let* ((ed (current-editor app))
+             (proc (open-process
+                     (list path: "/bin/sh"
+                           arguments: (list "-c" cmd)
+                           stdin-redirection: #f
+                           stdout-redirection: #t
+                           stderr-redirection: #t)))
+             (output (read-line proc #f))
+             (status (process-status proc)))
+        (if (and output (> (string-length output) 0))
+          (let ((out-buf (or (buffer-by-name "*Async Shell*")
+                             (buffer-create! "*Async Shell*" ed #f))))
+            (buffer-attach! ed out-buf)
+            (set! (edit-window-buffer (current-window fr)) out-buf)
+            (editor-set-text ed
+              (string-append "$ " cmd "\n\n" output "\n\n"
+                             "(exit " (number->string status) ")"))
+            (editor-set-save-point ed)
+            (editor-goto-pos ed 0)
+            (echo-message! echo "*Async Shell*"))
+          (echo-message! echo
+            (string-append "Command finished (exit " (number->string status) ")")))))))
+
+;;;============================================================================
+;;; Toggle truncate lines
+;;;============================================================================
+
+(def (cmd-toggle-truncate-lines app)
+  "Toggle line truncation (word wrap)."
+  (cmd-toggle-word-wrap app))
+
+;;;============================================================================
+;;; Grep in buffer (interactive)
+;;;============================================================================
+
+(def (cmd-grep-buffer app)
+  "Search for matching lines and show in *Grep* buffer."
+  (let* ((echo (app-state-echo app))
+         (fr (app-state-frame app))
+         (row (- (frame-height fr) 1))
+         (width (frame-width fr))
+         (pattern (echo-read-string echo "Grep buffer: " row width)))
+    (if (not pattern)
+      (echo-message! echo "Cancelled")
+      (let* ((ed (current-editor app))
+             (text (editor-get-text ed))
+             (buf-name (buffer-name (current-buffer-from-app app)))
+             (lines (string-split text #\newline))
+             (matches '())
+             (line-num 0))
+        ;; Collect matching lines with line numbers
+        (for-each
+          (lambda (line)
+            (set! line-num (+ line-num 1))
+            (when (string-contains line pattern)
+              (set! matches
+                (cons (string-append
+                        (number->string line-num) ": " line)
+                      matches))))
+          lines)
+        (if (null? matches)
+          (echo-message! echo (string-append "No matches for '" pattern "'"))
+          (let* ((result (string-append "Grep: " pattern " in " buf-name "\n\n"
+                                        (string-join (reverse matches) "\n") "\n"))
+                 (grep-buf (or (buffer-by-name "*Grep*")
+                               (buffer-create! "*Grep*" ed #f))))
+            (buffer-attach! ed grep-buf)
+            (set! (edit-window-buffer (current-window fr)) grep-buf)
+            (editor-set-text ed result)
+            (editor-set-save-point ed)
+            (editor-goto-pos ed 0)
+            (echo-message! echo
+              (string-append (number->string (length matches)) " match"
+                             (if (= (length matches) 1) "" "es")))))))))
+
+;;;============================================================================
+;;; Misc: insert-date, insert-char
+;;;============================================================================
+
+(def (cmd-insert-date app)
+  "Insert current date/time at point."
+  (let* ((ed (current-editor app))
+         (pos (editor-get-current-pos ed))
+         ;; Use external date command for simplicity
+         (proc (open-process
+                 (list path: "/bin/date"
+                       arguments: '()
+                       stdout-redirection: #t)))
+         (output (read-line proc))
+         (status (process-status proc)))
+    (when (and (string? output) (> (string-length output) 0))
+      (editor-insert-text ed pos output))))
+
+(def (cmd-insert-char app)
+  "Insert a character by its Unicode code point."
+  (let* ((echo (app-state-echo app))
+         (fr (app-state-frame app))
+         (row (- (frame-height fr) 1))
+         (width (frame-width fr))
+         (input (echo-read-string echo "Insert char (hex code): " row width)))
+    (if (not input)
+      (echo-message! echo "Cancelled")
+      (let ((code (string->number input 16)))
+        (if (not code)
+          (echo-error! echo "Invalid hex code")
+          (let* ((ed (current-editor app))
+                 (pos (editor-get-current-pos ed))
+                 (ch (string (integer->char code))))
+            (editor-insert-text ed pos ch)
+            (echo-message! echo
+              (string-append "Inserted U+" input))))))))
+
+;;;============================================================================
 ;;; Register all commands
 ;;;============================================================================
 
@@ -4069,6 +4264,18 @@
   ;; Count/dedup
   (register-command! 'count-matches cmd-count-matches)
   (register-command! 'delete-duplicate-lines cmd-delete-duplicate-lines)
+  ;; Diff, checksum
+  (register-command! 'diff-buffer-with-file cmd-diff-buffer-with-file)
+  (register-command! 'checksum cmd-checksum)
+  ;; Async shell
+  (register-command! 'async-shell-command cmd-async-shell-command)
+  ;; Toggle truncate
+  (register-command! 'toggle-truncate-lines cmd-toggle-truncate-lines)
+  ;; Grep buffer
+  (register-command! 'grep-buffer cmd-grep-buffer)
+  ;; Insert date, insert char
+  (register-command! 'insert-date cmd-insert-date)
+  (register-command! 'insert-char cmd-insert-char)
   ;; Misc
   (register-command! 'keyboard-quit cmd-keyboard-quit)
   (register-command! 'quit cmd-quit))

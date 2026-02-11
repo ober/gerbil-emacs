@@ -441,7 +441,24 @@
 
   ;; Count matches, dedup
   (keymap-bind! *meta-s-map* "c" 'count-matches)
-  (keymap-bind! *ctrl-c-map* "u" 'delete-duplicate-lines))
+  (keymap-bind! *ctrl-c-map* "u" 'delete-duplicate-lines)
+
+  ;; Diff buffer, checksum
+  (keymap-bind! *ctrl-c-map* "d" 'diff-buffer-with-file)
+  (keymap-bind! *ctrl-c-map* "5" 'checksum)
+
+  ;; Async shell command
+  (keymap-bind! *global-keymap* "M-&" 'async-shell-command)
+
+  ;; Toggle truncate lines
+  (keymap-bind! *ctrl-x-map* "$" 'toggle-truncate-lines)
+
+  ;; Grep buffer
+  (keymap-bind! *meta-s-map* "g" 'grep-buffer)
+
+  ;; Insert date, insert char
+  (keymap-bind! *ctrl-c-map* "D" 'insert-date)
+  (keymap-bind! *ctrl-c-map* "8" 'insert-char))
 
 ;;;============================================================================
 ;;; Echo state

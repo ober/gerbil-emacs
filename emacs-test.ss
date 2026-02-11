@@ -625,6 +625,15 @@
       (check (keymap-lookup *meta-s-map* "c") => 'count-matches)
       (check (keymap-lookup *ctrl-c-map* "u") => 'delete-duplicate-lines))
 
+    (test-case "new keybindings: diff, checksum, grep-buffer, etc"
+      (check (keymap-lookup *ctrl-c-map* "d") => 'diff-buffer-with-file)
+      (check (keymap-lookup *ctrl-c-map* "5") => 'checksum)
+      (check (keymap-lookup *global-keymap* "M-&") => 'async-shell-command)
+      (check (keymap-lookup *ctrl-x-map* "$") => 'toggle-truncate-lines)
+      (check (keymap-lookup *meta-s-map* "g") => 'grep-buffer)
+      (check (keymap-lookup *ctrl-c-map* "D") => 'insert-date)
+      (check (keymap-lookup *ctrl-c-map* "8") => 'insert-char))
+
     ))
 
 ;; Run tests when executed directly
