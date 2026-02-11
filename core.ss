@@ -478,7 +478,49 @@
   (keymap-bind! *ctrl-c-map* "f" 'toggle-highlighting)
 
   ;; Display time
-  (keymap-bind! *ctrl-c-map* "T" 'display-time))
+  (keymap-bind! *ctrl-c-map* "T" 'display-time)
+
+  ;; Calculator
+  (keymap-bind! *ctrl-c-map* "=" 'calc)
+
+  ;; Case fold search toggle
+  (keymap-bind! *ctrl-c-map* "C" 'toggle-case-fold-search)
+
+  ;; Describe bindings (C-h B — uppercase to avoid collision with C-h b list-bindings)
+  (keymap-bind! *help-map* "B" 'describe-bindings)
+
+  ;; Center line
+  (keymap-bind! *global-keymap* "M-o" 'center-line)
+
+  ;; What face
+  (keymap-bind! *ctrl-c-map* "F" 'what-face)
+
+  ;; List processes
+  (keymap-bind! *ctrl-c-map* "P" 'list-processes)
+
+  ;; View messages
+  (keymap-bind! *ctrl-c-map* "m" 'view-messages)
+
+  ;; Auto fill toggle
+  (keymap-bind! *ctrl-c-map* "q" 'toggle-auto-fill)
+
+  ;; Delete trailing whitespace
+  (keymap-bind! *ctrl-c-map* "W" 'delete-trailing-whitespace)
+
+  ;; Ediff buffers
+  (keymap-bind! *ctrl-c-map* "B" 'ediff-buffers)
+
+  ;; Rename/delete file
+  (keymap-bind! *ctrl-c-map* "M" 'rename-file-and-buffer)
+
+  ;; Sudo write
+  (keymap-bind! *ctrl-c-map* "X" 'sudo-write)
+
+  ;; Sort numeric
+  (keymap-bind! *ctrl-c-map* "N" 'sort-numeric)
+
+  ;; Count words region
+  (keymap-bind! *ctrl-c-map* "L" 'count-words-region))
 
 ;;;============================================================================
 ;;; Echo state

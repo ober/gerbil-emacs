@@ -4186,6 +4186,431 @@
   (echo-message! (app-state-echo app) (current-directory)))
 
 ;;;============================================================================
+;;; Ediff (compare two buffers)
+;;;============================================================================
+
+(def (cmd-ediff-buffers app)
+  "Compare two buffers and show differences in a *Diff* buffer."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app))
+         (fr (app-state-frame app))
+         (row (- (frame-height fr) 1))
+         (width (frame-width fr))
+         (names (map buffer-name (buffer-list))))
+    (if (< (length names) 2)
+      (echo-error! echo "Need at least 2 buffers to compare")
+      (let* ((name-a (echo-read-string echo "Buffer A: " row width))
+             (buf-a (and name-a (buffer-by-name name-a))))
+        (if (not buf-a)
+          (echo-error! echo (string-append "No buffer: " (or name-a "")))
+          (let* ((name-b (echo-read-string echo "Buffer B: " row width))
+                 (buf-b (and name-b (buffer-by-name name-b))))
+            (if (not buf-b)
+              (echo-error! echo (string-append "No buffer: " (or name-b "")))
+              ;; Get text from both buffers, write to temp files, diff
+              (let* ((pid (number->string (##current-process-id)))
+                     (tmp-a (string-append "/tmp/gerbil-ediff-a-" pid))
+                     (tmp-b (string-append "/tmp/gerbil-ediff-b-" pid)))
+                ;; We need the text from those buffers — find their windows
+                (let ((text-a #f) (text-b #f))
+                  (for-each
+                    (lambda (win)
+                      (let ((wb (edit-window-buffer win)))
+                        (when (eq? wb buf-a)
+                          (set! text-a (editor-get-text (edit-window-editor win))))
+                        (when (eq? wb buf-b)
+                          (set! text-b (editor-get-text (edit-window-editor win))))))
+                    (frame-windows fr))
+                  ;; Fallback: if buffer not in a window, use current editor temporarily
+                  (unless text-a
+                    (buffer-attach! ed buf-a)
+                    (set! text-a (editor-get-text ed)))
+                  (unless text-b
+                    (buffer-attach! ed buf-b)
+                    (set! text-b (editor-get-text ed)))
+                  ;; Write to temp files and diff
+                  (write-string-to-file tmp-a text-a)
+                  (write-string-to-file tmp-b text-b)
+                  (let* ((proc (open-process
+                                 (list path: "/usr/bin/diff"
+                                       arguments: (list "-u"
+                                                        (string-append "--label=" name-a)
+                                                        (string-append "--label=" name-b)
+                                                        tmp-a tmp-b)
+                                       stdout-redirection: #t
+                                       stderr-redirection: #t)))
+                         (output (read-line proc #f))
+                         (status (process-status proc)))
+                    ;; Cleanup temp files
+                    (with-catch void (lambda () (delete-file tmp-a)))
+                    (with-catch void (lambda () (delete-file tmp-b)))
+                    ;; Show diff in buffer
+                    (let ((diff-buf (buffer-create! "*Diff*" ed #f)))
+                      (buffer-attach! ed diff-buf)
+                      (set! (edit-window-buffer (current-window fr)) diff-buf)
+                      (if (and (string? output) (> (string-length output) 0))
+                        (editor-set-text ed output)
+                        (editor-set-text ed "(no differences)\n"))
+                      (editor-set-save-point ed)
+                      (editor-goto-pos ed 0)
+                      (editor-set-read-only ed #t))))))))))))
+
+;;;============================================================================
+;;; Simple calculator
+;;;============================================================================
+
+(def (cmd-calc app)
+  "Evaluate a math expression from the echo area."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app))
+         (fr (app-state-frame app))
+         (row (- (frame-height fr) 1))
+         (width (frame-width fr))
+         (expr (echo-read-string echo "Calc: " row width)))
+    (when (and expr (> (string-length expr) 0))
+      (let-values (((result error?) (eval-expression-string expr)))
+        (if error?
+          (echo-error! echo (string-append "Error: " result))
+          (echo-message! echo (string-append "= " result)))))))
+
+;;;============================================================================
+;;; Toggle case-fold-search
+;;;============================================================================
+
+(def *case-fold-search* #t)
+
+(def (cmd-toggle-case-fold-search app)
+  "Toggle case-sensitive search."
+  (set! *case-fold-search* (not *case-fold-search*))
+  (echo-message! (app-state-echo app)
+    (if *case-fold-search*
+      "Case-insensitive search"
+      "Case-sensitive search")))
+
+;;;============================================================================
+;;; Describe-bindings (full binding list in a buffer)
+;;;============================================================================
+
+(def (cmd-describe-bindings app)
+  "Show all keybindings in a *Bindings* buffer."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app))
+         (fr (app-state-frame app)))
+    (let ((lines []))
+      ;; Collect bindings from all keymaps
+      (define (collect-prefix prefix km)
+        (for-each
+          (lambda (entry)
+            (let ((key (car entry))
+                  (val (cdr entry)))
+              (if (hash-table? val)
+                (collect-prefix (string-append prefix key " ") val)
+                (set! lines (cons (string-append prefix key "\t"
+                                                 (symbol->string val))
+                                  lines)))))
+          (keymap-entries km)))
+      (collect-prefix "" *global-keymap*)
+      ;; Sort and display
+      (let* ((sorted (sort lines string<?))
+             (text (string-join sorted "\n"))
+             (buf (buffer-create! "*Bindings*" ed #f)))
+        (buffer-attach! ed buf)
+        (set! (edit-window-buffer (current-window fr)) buf)
+        (editor-set-text ed text)
+        (editor-set-save-point ed)
+        (editor-goto-pos ed 0)
+        (editor-set-read-only ed #t)
+        (echo-message! echo
+          (string-append (number->string (length sorted)) " bindings"))))))
+
+;;;============================================================================
+;;; Center line
+;;;============================================================================
+
+(def (cmd-center-line app)
+  "Center the current line within fill-column (80)."
+  (let* ((ed (current-editor app))
+         (pos (editor-get-current-pos ed))
+         (line-num (editor-line-from-position ed pos))
+         (line-start (editor-position-from-line ed line-num))
+         (line-end (editor-get-line-end-position ed line-num))
+         (text (substring (editor-get-text ed) line-start line-end))
+         ;; Strip leading whitespace
+         (trimmed (let loop ((i 0))
+                    (if (and (< i (string-length text))
+                             (or (char=? (string-ref text i) #\space)
+                                 (char=? (string-ref text i) #\tab)))
+                      (loop (+ i 1))
+                      (substring text i (string-length text)))))
+         (fill-col 80)
+         (padding (max 0 (quotient (- fill-col (string-length trimmed)) 2)))
+         (new-line (string-append (make-string padding #\space) trimmed)))
+    (with-undo-action ed
+      (editor-delete-range ed line-start (- line-end line-start))
+      (editor-insert-text ed line-start new-line))))
+
+;;;============================================================================
+;;; What face (show current style info)
+;;;============================================================================
+
+(def (cmd-what-face app)
+  "Show the Scintilla style at point."
+  (let* ((ed (current-editor app))
+         (pos (editor-get-current-pos ed))
+         (style (send-message ed SCI_GETSTYLEAT pos)))
+    (echo-message! (app-state-echo app)
+      (string-append "Style " (number->string style) " at pos "
+                     (number->string pos)))))
+
+;;;============================================================================
+;;; List processes
+;;;============================================================================
+
+(def (cmd-list-processes app)
+  "Show running subprocesses in *Processes* buffer."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app))
+         (fr (app-state-frame app))
+         (lines ["PID\tType\tBuffer"
+                 "---\t----\t------"]))
+    ;; Check REPL buffers
+    (for-each
+      (lambda (buf)
+        (when (repl-buffer? buf)
+          (let ((rs (hash-get *repl-state* buf)))
+            (when rs
+              (set! lines (cons
+                (string-append "?\tREPL\t" (buffer-name buf))
+                lines))))))
+      (buffer-list))
+    ;; Check shell buffers
+    (for-each
+      (lambda (buf)
+        (when (shell-buffer? buf)
+          (let ((ss (hash-get *shell-state* buf)))
+            (when ss
+              (set! lines (cons
+                (string-append "?\tShell\t" (buffer-name buf))
+                lines))))))
+      (buffer-list))
+    (let* ((text (string-join (reverse lines) "\n"))
+           (proc-buf (buffer-create! "*Processes*" ed #f)))
+      (buffer-attach! ed proc-buf)
+      (set! (edit-window-buffer (current-window fr)) proc-buf)
+      (editor-set-text ed text)
+      (editor-set-save-point ed)
+      (editor-goto-pos ed 0)
+      (editor-set-read-only ed #t)
+      (echo-message! echo "Process list"))))
+
+;;;============================================================================
+;;; View echo area messages (like *Messages*)
+;;;============================================================================
+
+(def *message-log* [])
+(def *message-log-max* 100)
+
+(def (log-message! msg)
+  "Add a message to the message log."
+  (set! *message-log* (cons msg *message-log*))
+  (when (> (length *message-log*) *message-log-max*)
+    (set! *message-log*
+      (let loop ((msgs *message-log*) (n 0) (acc []))
+        (if (or (null? msgs) (>= n *message-log-max*))
+          (reverse acc)
+          (loop (cdr msgs) (+ n 1) (cons (car msgs) acc)))))))
+
+(def (cmd-view-messages app)
+  "Show recent echo area messages in *Messages* buffer."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app))
+         (fr (app-state-frame app))
+         (text (if (null? *message-log*)
+                 "(no messages)\n"
+                 (string-join (reverse *message-log*) "\n")))
+         (buf (buffer-create! "*Messages*" ed #f)))
+    (buffer-attach! ed buf)
+    (set! (edit-window-buffer (current-window fr)) buf)
+    (editor-set-text ed text)
+    (editor-set-save-point ed)
+    ;; Go to end to see latest messages
+    (editor-goto-pos ed (string-length text))
+    (editor-set-read-only ed #t)
+    (echo-message! echo "*Messages*")))
+
+;;;============================================================================
+;;; Auto-fill mode toggle (stub)
+;;;============================================================================
+
+(def *auto-fill-mode* #f)
+
+(def (cmd-toggle-auto-fill app)
+  "Toggle auto-fill mode (line wrap at fill-column)."
+  (set! *auto-fill-mode* (not *auto-fill-mode*))
+  (echo-message! (app-state-echo app)
+    (if *auto-fill-mode*
+      "Auto-fill mode on"
+      "Auto-fill mode off")))
+
+;;; (delete-trailing-whitespace defined earlier at line ~1247)
+
+;;;============================================================================
+;;; Rename file (rename-file-and-buffer)
+;;;============================================================================
+
+(def (cmd-rename-file-and-buffer app)
+  "Rename current file on disk and update the buffer name."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app))
+         (fr (app-state-frame app))
+         (row (- (frame-height fr) 1))
+         (width (frame-width fr))
+         (buf (current-buffer-from-app app))
+         (old-path (buffer-file-path buf)))
+    (if (not old-path)
+      (echo-error! echo "Buffer is not visiting a file")
+      (let ((new-path (echo-read-string echo
+                        (string-append "Rename " old-path " to: ")
+                        row width)))
+        (when (and new-path (> (string-length new-path) 0))
+          (with-catch
+            (lambda (e)
+              (echo-error! echo
+                (string-append "Error: "
+                  (with-output-to-string (lambda () (display-exception e))))))
+            (lambda ()
+              (rename-file old-path new-path)
+              (set! (buffer-file-path buf) new-path)
+              (set! (buffer-name buf) (path-strip-directory new-path))
+              (echo-message! echo
+                (string-append "Renamed to " new-path)))))))))
+
+;;;============================================================================
+;;; Kill buffer and delete file
+;;;============================================================================
+
+(def (cmd-delete-file-and-buffer app)
+  "Delete the file on disk and kill the buffer."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app))
+         (fr (app-state-frame app))
+         (row (- (frame-height fr) 1))
+         (width (frame-width fr))
+         (buf (current-buffer-from-app app))
+         (path (buffer-file-path buf)))
+    (if (not path)
+      (echo-error! echo "Buffer is not visiting a file")
+      (let ((confirm (echo-read-string echo
+                       (string-append "Really delete " path "? (yes/no) ")
+                       row width)))
+        (when (and confirm (string=? confirm "yes"))
+          (with-catch
+            (lambda (e)
+              (echo-error! echo
+                (string-append "Error: "
+                  (with-output-to-string (lambda () (display-exception e))))))
+            (lambda ()
+              (delete-file path)
+              (echo-message! echo (string-append "Deleted " path))
+              ;; Switch away from this buffer
+              (let ((scratch (or (buffer-by-name buffer-scratch-name)
+                                 (buffer-create! buffer-scratch-name ed #f))))
+                (buffer-attach! ed scratch)
+                (set! (edit-window-buffer
+                        (current-window (app-state-frame app))) scratch)
+                (buffer-list-remove! buf)))))))))
+
+;;;============================================================================
+;;; Sudo write (write file with sudo)
+;;;============================================================================
+
+(def (cmd-sudo-write app)
+  "Write current buffer using sudo tee."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app))
+         (buf (current-buffer-from-app app))
+         (path (buffer-file-path buf)))
+    (if (not path)
+      (echo-error! echo "Buffer has no file path")
+      (let* ((text (editor-get-text ed))
+             (pid (number->string (##current-process-id)))
+             (tmp (string-append "/tmp/gerbil-emacs-sudo-" pid)))
+        (write-string-to-file tmp text)
+        (let* ((proc (open-process
+                        (list path: "/usr/bin/sudo"
+                              arguments: (list "cp" tmp path)
+                              stderr-redirection: #t)))
+               (status (process-status proc)))
+          (with-catch void (lambda () (delete-file tmp)))
+          (if (= status 0)
+            (begin
+              (editor-set-save-point ed)
+              (echo-message! echo (string-append "Saved (sudo) " path)))
+            (echo-error! echo "sudo write failed")))))))
+
+;;;============================================================================
+;;; Sort region (different sort types)
+;;;============================================================================
+
+(def (cmd-sort-numeric app)
+  "Sort lines in region numerically."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app))
+         (buf (current-buffer-from-app app))
+         (mark (buffer-mark buf)))
+    (if (not mark)
+      (echo-error! echo "No region")
+      (let* ((pos (editor-get-current-pos ed))
+             (start (min mark pos))
+             (end (max mark pos))
+             (text (substring (editor-get-text ed) start end))
+             (lines (string-split text #\newline))
+             (sorted (sort lines
+                       (lambda (a b)
+                         (let ((na (with-catch (lambda (e) 0)
+                                     (lambda () (string->number a))))
+                               (nb (with-catch (lambda (e) 0)
+                                     (lambda () (string->number b)))))
+                           (< (or na 0) (or nb 0))))))
+             (new-text (string-join sorted "\n")))
+        (with-undo-action ed
+          (editor-delete-range ed start (- end start))
+          (editor-insert-text ed start new-text))
+        (set! (buffer-mark buf) #f)
+        (echo-message! echo "Sorted numerically")))))
+
+;;;============================================================================
+;;; Word count region
+;;;============================================================================
+
+(def (cmd-count-words-region app)
+  "Count words in the selected region."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app))
+         (buf (current-buffer-from-app app))
+         (mark (buffer-mark buf)))
+    (if (not mark)
+      (echo-error! echo "No region")
+      (let* ((pos (editor-get-current-pos ed))
+             (start (min mark pos))
+             (end (max mark pos))
+             (text (substring (editor-get-text ed) start end))
+             (chars (- end start))
+             (lines (length (string-split text #\newline)))
+             (words (let loop ((i 0) (in-word #f) (count 0))
+                      (if (>= i (string-length text))
+                        (if in-word (+ count 1) count)
+                        (let ((ch (string-ref text i)))
+                          (if (or (char=? ch #\space) (char=? ch #\newline)
+                                  (char=? ch #\tab))
+                            (loop (+ i 1) #f (if in-word (+ count 1) count))
+                            (loop (+ i 1) #t count)))))))
+        (echo-message! echo
+          (string-append "Region: " (number->string lines) " lines, "
+                         (number->string words) " words, "
+                         (number->string chars) " chars"))))))
+
+;;;============================================================================
 ;;; Register all commands
 ;;;============================================================================
 
@@ -4447,6 +4872,34 @@
   ;; Display time, pwd
   (register-command! 'display-time cmd-display-time)
   (register-command! 'pwd cmd-pwd)
+  ;; Ediff
+  (register-command! 'ediff-buffers cmd-ediff-buffers)
+  ;; Calculator
+  (register-command! 'calc cmd-calc)
+  ;; Case fold search
+  (register-command! 'toggle-case-fold-search cmd-toggle-case-fold-search)
+  ;; Describe bindings
+  (register-command! 'describe-bindings cmd-describe-bindings)
+  ;; Center line
+  (register-command! 'center-line cmd-center-line)
+  ;; What face
+  (register-command! 'what-face cmd-what-face)
+  ;; List processes
+  (register-command! 'list-processes cmd-list-processes)
+  ;; Messages
+  (register-command! 'view-messages cmd-view-messages)
+  ;; Auto fill
+  (register-command! 'toggle-auto-fill cmd-toggle-auto-fill)
+  ;; Rename file
+  (register-command! 'rename-file-and-buffer cmd-rename-file-and-buffer)
+  ;; Delete file
+  (register-command! 'delete-file-and-buffer cmd-delete-file-and-buffer)
+  ;; Sudo write
+  (register-command! 'sudo-write cmd-sudo-write)
+  ;; Sort numeric
+  (register-command! 'sort-numeric cmd-sort-numeric)
+  ;; Count words region
+  (register-command! 'count-words-region cmd-count-words-region)
   ;; Misc
   (register-command! 'keyboard-quit cmd-keyboard-quit)
   (register-command! 'quit cmd-quit))

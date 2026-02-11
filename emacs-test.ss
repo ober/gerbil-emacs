@@ -651,6 +651,37 @@
       ;; Display time
       (check (keymap-lookup *ctrl-c-map* "T") => 'display-time))
 
+    (test-case "new keybindings: ediff, calc, describe-bindings, etc"
+      (setup-default-bindings!)
+      ;; Calculator
+      (check (keymap-lookup *ctrl-c-map* "=") => 'calc)
+      ;; Case fold search
+      (check (keymap-lookup *ctrl-c-map* "C") => 'toggle-case-fold-search)
+      ;; Describe bindings
+      (check (keymap-lookup *help-map* "B") => 'describe-bindings)
+      ;; Center line
+      (check (keymap-lookup *global-keymap* "M-o") => 'center-line)
+      ;; What face
+      (check (keymap-lookup *ctrl-c-map* "F") => 'what-face)
+      ;; List processes
+      (check (keymap-lookup *ctrl-c-map* "P") => 'list-processes)
+      ;; View messages
+      (check (keymap-lookup *ctrl-c-map* "m") => 'view-messages)
+      ;; Auto fill
+      (check (keymap-lookup *ctrl-c-map* "q") => 'toggle-auto-fill)
+      ;; Delete trailing whitespace
+      (check (keymap-lookup *ctrl-c-map* "W") => 'delete-trailing-whitespace)
+      ;; Ediff buffers
+      (check (keymap-lookup *ctrl-c-map* "B") => 'ediff-buffers)
+      ;; Rename file
+      (check (keymap-lookup *ctrl-c-map* "M") => 'rename-file-and-buffer)
+      ;; Sudo write
+      (check (keymap-lookup *ctrl-c-map* "X") => 'sudo-write)
+      ;; Sort numeric
+      (check (keymap-lookup *ctrl-c-map* "N") => 'sort-numeric)
+      ;; Count words region
+      (check (keymap-lookup *ctrl-c-map* "L") => 'count-words-region))
+
     ))
 
 ;; Run tests when executed directly
