@@ -1,4 +1,4 @@
-.PHONY: all build clean test
+.PHONY: all build clean test install
 
 # gerbil-scintilla must be built first; point GERBIL_LOADPATH to it
 SCINTILLA_DIR = $(HOME)/mine/gerbil-scintilla
@@ -16,3 +16,9 @@ clean:
 
 test: build
 	gerbil test
+
+PREFIX ?= $(HOME)/.local
+
+install: build
+	mkdir -p $(PREFIX)/bin
+	cp .gerbil/bin/gerbil-emacs $(PREFIX)/bin/gerbil-emacs
