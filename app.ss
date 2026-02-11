@@ -208,12 +208,6 @@
 ;;; Brace/paren matching
 ;;;============================================================================
 
-(def (brace-char? ch)
-  "Check if a character code represents a brace/paren/bracket."
-  (or (= ch 40) (= ch 41)    ; ( )
-      (= ch 91) (= ch 93)    ; [ ]
-      (= ch 123) (= ch 125))) ; { }
-
 (def (update-brace-match! ed)
   "Highlight matching braces at cursor position."
   (let* ((pos (editor-get-current-pos ed))

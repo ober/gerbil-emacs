@@ -17,6 +17,8 @@
   *ctrl-x-map*
   *meta-g-map*
   *help-map*
+  *ctrl-x-r-map*
+  *ctrl-c-map*
   *meta-s-map*
   *all-commands*
   setup-default-bindings!
@@ -45,6 +47,9 @@
   buffer-list-remove!
   buffer-by-name
   buffer-scratch-name
+
+  ;; Shared helpers
+  brace-char?
 
   ;; File I/O helpers
   read-file-as-string
@@ -94,6 +99,8 @@
 ;;; Global keymaps
 (def *global-keymap* (make-keymap))
 (def *ctrl-x-map*   (make-keymap))
+(def *ctrl-x-r-map* (make-keymap))
+(def *ctrl-c-map*   (make-keymap))
 (def *meta-g-map*   (make-keymap))
 (def *help-map*     (make-keymap))
 (def *meta-s-map*   (make-keymap))
@@ -174,7 +181,17 @@
 
   ;; REPL
   (keymap-bind! *global-keymap* "M-:" 'eval-expression)
-  (keymap-bind! *ctrl-x-map* "r"   'repl)
+  ;; C-c prefix
+  (keymap-bind! *global-keymap* "C-c" *ctrl-c-map*)
+  (keymap-bind! *ctrl-c-map* "z"   'repl)
+
+  ;; C-x r prefix (registers/bookmarks/rectangles)
+  (keymap-bind! *ctrl-x-map* "r"   *ctrl-x-r-map*)
+  (keymap-bind! *ctrl-x-r-map* "m" 'bookmark-set)
+  (keymap-bind! *ctrl-x-r-map* "b" 'bookmark-jump)
+  (keymap-bind! *ctrl-x-r-map* "l" 'bookmark-list)
+  (keymap-bind! *ctrl-x-r-map* "k" 'kill-rectangle)
+  (keymap-bind! *ctrl-x-r-map* "y" 'yank-rectangle)
 
   ;; M-x
   (keymap-bind! *global-keymap* "M-x" 'execute-extended-command)
@@ -255,9 +272,6 @@
   (keymap-bind! *global-keymap* "M-a" 'beginning-of-defun)
   (keymap-bind! *global-keymap* "M-e" 'end-of-defun)
 
-  ;; Delete trailing whitespace
-  (keymap-bind! *ctrl-x-map* "C-o" 'delete-trailing-whitespace)
-
   ;; Count words
   (keymap-bind! *global-keymap* "M-=" 'count-words)
 
@@ -275,7 +289,23 @@
   (keymap-bind! *global-keymap* "M-|" 'shell-command-on-region)
 
   ;; Sort lines in region
-  (keymap-bind! *global-keymap* "M-^" 'sort-lines))
+  (keymap-bind! *global-keymap* "M-^" 'sort-lines)
+
+  ;; Go to matching paren
+  (keymap-bind! *ctrl-c-map* "p" 'goto-matching-paren)
+
+  ;; Join lines
+  (keymap-bind! *global-keymap* "M-j" 'join-line)
+
+  ;; Delete blank lines
+  (keymap-bind! *ctrl-x-map* "C-o" 'delete-blank-lines)
+
+  ;; Indent region
+  (keymap-bind! *ctrl-c-map* "TAB" 'indent-region)
+
+  ;; Downcase/upcase region
+  (keymap-bind! *ctrl-x-map* "C-l" 'downcase-region)
+  (keymap-bind! *ctrl-x-map* "C-u" 'upcase-region))
 
 ;;;============================================================================
 ;;; Echo state
@@ -354,6 +384,8 @@
    last-yank-pos ; integer or #f: position where last yank was inserted
    last-yank-len ; integer or #f: length of last yanked text
    last-compile  ; string or #f: last compile command
+   bookmarks     ; hash-table: name -> (buffer-name . position)
+   rect-kill     ; list of strings (rectangle kill ring)
    key-handler)  ; procedure or #f: (lambda (editor) ...) installs key handler on editor
   transparent: #t)
 
@@ -362,14 +394,16 @@
    frame
    (make-initial-echo-state)
    (make-initial-key-state)
-   #t     ; running
-   #f     ; last-search
-   []     ; kill-ring
-   0      ; kill-ring-idx
-   #f     ; last-yank-pos
-   #f     ; last-yank-len
-   #f     ; last-compile
-   #f))   ; key-handler
+   #t                    ; running
+   #f                    ; last-search
+   []                    ; kill-ring
+   0                     ; kill-ring-idx
+   #f                    ; last-yank-pos
+   #f                    ; last-yank-len
+   #f                    ; last-compile
+   (make-hash-table)     ; bookmarks
+   []                    ; rect-kill
+   #f))                  ; key-handler
 
 ;;;============================================================================
 ;;; Command registry
@@ -392,6 +426,16 @@
       (cmd app)
       (echo-error! (app-state-echo app)
                    (string-append (symbol->string name) " is undefined")))))
+
+;;;============================================================================
+;;; Shared helpers
+;;;============================================================================
+
+(def (brace-char? ch)
+  "Check if a character code represents a brace/paren/bracket."
+  (or (= ch 40) (= ch 41)    ; ( )
+      (= ch 91) (= ch 93)    ; [ ]
+      (= ch 123) (= ch 125))) ; { }
 
 ;;;============================================================================
 ;;; File I/O helpers

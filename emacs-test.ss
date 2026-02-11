@@ -170,7 +170,7 @@
       (check (keymap-lookup *ctrl-x-map* "C-c") => 'quit)
       ;; REPL bindings
       (check (keymap-lookup *global-keymap* "M-:") => 'eval-expression)
-      (check (keymap-lookup *ctrl-x-map* "r") => 'repl)
+      (check (hash-table? (keymap-lookup *ctrl-x-map* "r")) => #t)  ; C-x r is now prefix map
       ;; New bindings: M-x, M-g, C-h, C-x C-b, M-%, TAB
       (check (keymap-lookup *global-keymap* "M-x") => 'execute-extended-command)
       (check (hash-table? (keymap-lookup *global-keymap* "M-g")) => #t)
@@ -368,9 +368,9 @@
         (check (apc 97) => #f)   ; 'a' -> no pair
         (check (apc 32) => #f))) ; space -> no pair
 
-    (test-case "new keybindings: trailing whitespace, count words"
+    (test-case "new keybindings: delete-blank-lines, count words"
       (setup-default-bindings!)
-      (check (keymap-lookup *ctrl-x-map* "C-o") => 'delete-trailing-whitespace)
+      (check (keymap-lookup *ctrl-x-map* "C-o") => 'delete-blank-lines)
       (check (keymap-lookup *global-keymap* "M-=") => 'count-words))
 
     (test-case "brace-char? helper"
@@ -420,7 +420,28 @@
         (check (app-state-kill-ring-idx app) => 0)
         (check (app-state-last-yank-pos app) => #f)
         (check (app-state-last-yank-len app) => #f)
-        (check (app-state-last-compile app) => #f)))
+        (check (app-state-last-compile app) => #f)
+        (check (hash-table? (app-state-bookmarks app)) => #t)
+        (check (app-state-rect-kill app) => [])))
+
+    (test-case "bookmark and register keybindings"
+      (setup-default-bindings!)
+      ;; C-c prefix
+      (check (hash-table? (keymap-lookup *global-keymap* "C-c")) => #t)
+      (let ((cc-map (keymap-lookup *global-keymap* "C-c")))
+        (check (keymap-lookup cc-map "z") => 'repl)
+        (check (keymap-lookup cc-map "p") => 'goto-matching-paren))
+      ;; C-x r prefix
+      (let ((rxr-map (keymap-lookup *ctrl-x-map* "r")))
+        (check (keymap-lookup rxr-map "m") => 'bookmark-set)
+        (check (keymap-lookup rxr-map "b") => 'bookmark-jump)
+        (check (keymap-lookup rxr-map "l") => 'bookmark-list)
+        (check (keymap-lookup rxr-map "k") => 'kill-rectangle)
+        (check (keymap-lookup rxr-map "y") => 'yank-rectangle))
+      ;; Other new bindings
+      (check (keymap-lookup *global-keymap* "M-j") => 'join-line)
+      (check (keymap-lookup *ctrl-x-map* "C-l") => 'downcase-region)
+      (check (keymap-lookup *ctrl-x-map* "C-u") => 'upcase-region))
 
     (test-case "eval-expression-string"
       ;; Test in-process eval

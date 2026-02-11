@@ -1633,6 +1633,317 @@
           (string-append "Sorted " (number->string (length sorted)) " lines"))))))
 
 ;;;============================================================================
+;;; Bookmarks
+;;;============================================================================
+
+(def (cmd-bookmark-set app)
+  "Set a bookmark at the current position."
+  (let* ((echo (app-state-echo app))
+         (fr (app-state-frame app))
+         (row (- (frame-height fr) 1))
+         (width (frame-width fr))
+         (name (echo-read-string echo "Bookmark name: " row width)))
+    (when (and name (> (string-length name) 0))
+      (let* ((buf (current-buffer-from-app app))
+             (ed (current-editor app))
+             (pos (editor-get-current-pos ed)))
+        (hash-put! (app-state-bookmarks app) name
+                   (cons (buffer-name buf) pos))
+        (echo-message! echo (string-append "Bookmark \"" name "\" set"))))))
+
+(def (cmd-bookmark-jump app)
+  "Jump to a named bookmark."
+  (let* ((echo (app-state-echo app))
+         (fr (app-state-frame app))
+         (row (- (frame-height fr) 1))
+         (width (frame-width fr))
+         (name (echo-read-string echo "Jump to bookmark: " row width)))
+    (when (and name (> (string-length name) 0))
+      (let ((bm (hash-get (app-state-bookmarks app) name)))
+        (if bm
+          (let* ((buf-name (car bm))
+                 (pos (cdr bm))
+                 (buf (buffer-by-name buf-name)))
+            (if buf
+              (let ((ed (current-editor app)))
+                (buffer-attach! ed buf)
+                (set! (edit-window-buffer (current-window fr)) buf)
+                (editor-goto-pos ed pos)
+                (editor-scroll-caret ed)
+                (echo-message! echo (string-append "Jumped to \"" name "\"")))
+              (echo-error! echo (string-append "Buffer gone: " buf-name))))
+          (echo-error! echo (string-append "No bookmark: " name)))))))
+
+(def (cmd-bookmark-list app)
+  "Display all bookmarks in a *Bookmarks* buffer."
+  (let* ((fr (app-state-frame app))
+         (ed (current-editor app))
+         (bms (app-state-bookmarks app))
+         (entries '()))
+    (hash-for-each
+      (lambda (name val)
+        (set! entries
+          (cons (string-append "  " name "\t"
+                               (car val) ":"
+                               (number->string (cdr val)))
+                entries)))
+      bms)
+    (let* ((sorted (sort entries string<?))
+           (text (if (null? sorted)
+                   "No bookmarks set.\n"
+                   (string-append "Bookmarks:\n\n"
+                                  (string-join sorted "\n")
+                                  "\n")))
+           (buf (or (buffer-by-name "*Bookmarks*")
+                    (buffer-create! "*Bookmarks*" ed #f))))
+      (buffer-attach! ed buf)
+      (set! (edit-window-buffer (current-window fr)) buf)
+      (editor-set-text ed text)
+      (editor-set-save-point ed)
+      (editor-goto-pos ed 0)
+      (echo-message! (app-state-echo app) "*Bookmarks*"))))
+
+;;;============================================================================
+;;; Rectangle operations
+;;;============================================================================
+
+(def (get-region-lines app)
+  "Get start/end lines and columns from mark and point.
+   Returns (values start-line start-col end-line end-col) or #f."
+  (let* ((ed (current-editor app))
+         (buf (current-buffer-from-app app))
+         (mark (buffer-mark buf)))
+    (if (not mark)
+      (values #f #f #f #f)
+      (let* ((pos (editor-get-current-pos ed))
+             (start (min mark pos))
+             (end (max mark pos))
+             (start-line (editor-line-from-position ed start))
+             (end-line (editor-line-from-position ed end))
+             (start-col (editor-get-column ed start))
+             (end-col (editor-get-column ed end)))
+        (values start-line start-col end-line end-col)))))
+
+(def (cmd-kill-rectangle app)
+  "Kill the rectangle defined by mark and point."
+  (let ((echo (app-state-echo app)))
+    (let-values (((start-line start-col end-line end-col) (get-region-lines app)))
+      (if (not start-line)
+        (echo-error! echo "No region (set mark first)")
+        (let* ((ed (current-editor app))
+               (left-col (min start-col end-col))
+               (right-col (max start-col end-col))
+               (rect-lines '()))
+          ;; Extract and delete rectangle, line by line from bottom to top
+          (let loop ((line end-line))
+            (when (>= line start-line)
+              (let* ((line-start (editor-position-from-line ed line))
+                     (line-end (editor-get-line-end-position ed line))
+                     (line-text (editor-get-line ed line))
+                     (line-len (string-length (string-trim-right line-text #\newline)))
+                     (l (min left-col line-len))
+                     (r (min right-col line-len))
+                     (extracted (if (< l r)
+                                  (substring (string-trim-right line-text #\newline) l r)
+                                  "")))
+                (set! rect-lines (cons extracted rect-lines))
+                ;; Delete the rectangle portion of this line
+                (when (< l r)
+                  (editor-delete-range ed (+ line-start l) (- r l)))
+                (loop (- line 1)))))
+          ;; Store in rectangle kill ring
+          (set! (app-state-rect-kill app) rect-lines)
+          (set! (buffer-mark (current-buffer-from-app app)) #f)
+          (echo-message! echo
+            (string-append "Killed rectangle (" (number->string (length rect-lines)) " lines)")))))))
+
+(def (cmd-yank-rectangle app)
+  "Yank (paste) the last killed rectangle at point."
+  (let* ((echo (app-state-echo app))
+         (rk (app-state-rect-kill app)))
+    (if (null? rk)
+      (echo-error! echo "No rectangle to yank")
+      (let* ((ed (current-editor app))
+             (pos (editor-get-current-pos ed))
+             (line (editor-line-from-position ed pos))
+             (col (editor-get-column ed pos)))
+        (with-undo-action ed
+          (let loop ((lines rk) (cur-line line))
+            (when (pair? lines)
+              (let* ((rect-text (car lines))
+                     (line-start (editor-position-from-line ed cur-line))
+                     (line-end (editor-get-line-end-position ed cur-line))
+                     (line-len (- line-end line-start))
+                     ;; Pad line if shorter than insertion column
+                     (insert-pos (+ line-start (min col line-len))))
+                (when (< line-len col)
+                  (editor-insert-text ed line-end
+                    (make-string (- col line-len) #\space)))
+                (let ((actual-pos (+ line-start col)))
+                  (editor-insert-text ed actual-pos rect-text)))
+              (loop (cdr lines) (+ cur-line 1)))))
+        (echo-message! echo "Rectangle yanked")))))
+
+;;;============================================================================
+;;; Go to matching paren
+;;;============================================================================
+
+(def (cmd-goto-matching-paren app)
+  "Jump to the matching parenthesis/bracket/brace."
+  (let* ((ed (current-editor app))
+         (pos (editor-get-current-pos ed))
+         (ch-at (send-message ed SCI_GETCHARAT pos 0))
+         (ch-before (if (> pos 0) (send-message ed SCI_GETCHARAT (- pos 1) 0) 0)))
+    (cond
+      ((brace-char? ch-at)
+       (let ((match (send-message ed SCI_BRACEMATCH pos 0)))
+         (if (>= match 0)
+           (editor-goto-pos ed match)
+           (echo-error! (app-state-echo app) "No matching paren"))))
+      ((brace-char? ch-before)
+       (let ((match (send-message ed SCI_BRACEMATCH (- pos 1) 0)))
+         (if (>= match 0)
+           (editor-goto-pos ed match)
+           (echo-error! (app-state-echo app) "No matching paren"))))
+      (else
+       (echo-error! (app-state-echo app) "Not on a paren")))))
+
+;;;============================================================================
+;;; Join line (M-j)
+;;;============================================================================
+
+(def (cmd-join-line app)
+  "Join the current line with the next line."
+  (let* ((ed (current-editor app))
+         (pos (editor-get-current-pos ed))
+         (line (editor-line-from-position ed pos))
+         (line-end (editor-get-line-end-position ed line))
+         (total (editor-get-line-count ed)))
+    (when (< (+ line 1) total)
+      ;; Get next line text to find leading whitespace
+      (let* ((next-start (editor-position-from-line ed (+ line 1)))
+             (text (editor-get-text ed))
+             (next-ws-end next-start))
+        ;; Skip whitespace at start of next line
+        (let skip ((i next-start))
+          (when (< i (string-length text))
+            (let ((ch (string-ref text i)))
+              (when (or (char=? ch #\space) (char=? ch #\tab))
+                (set! next-ws-end (+ i 1))
+                (skip (+ i 1))))))
+        ;; Delete from end of current line to end of whitespace on next line
+        ;; and insert a single space
+        (with-undo-action ed
+          (editor-delete-range ed line-end (- next-ws-end line-end))
+          (editor-insert-text ed line-end " "))))))
+
+;;;============================================================================
+;;; Delete blank lines (C-x C-o)
+;;;============================================================================
+
+(def (cmd-delete-blank-lines app)
+  "Delete blank lines around point."
+  (let* ((ed (current-editor app))
+         (pos (editor-get-current-pos ed))
+         (text (editor-get-text ed))
+         (line (editor-line-from-position ed pos))
+         (total (editor-get-line-count ed))
+         ;; Check if current line is blank
+         (line-text (editor-get-line ed line))
+         (blank? (lambda (s) (string=? (string-trim s) ""))))
+    (if (blank? line-text)
+      ;; Find range of blank lines around point
+      (let find-start ((l line))
+        (let ((start (if (and (> l 0) (blank? (editor-get-line ed (- l 1))))
+                       (find-start (- l 1))
+                       l)))
+          (let find-end ((l line))
+            (let ((end (if (and (< (+ l 1) total) (blank? (editor-get-line ed (+ l 1))))
+                         (find-end (+ l 1))
+                         l)))
+              ;; Delete from start of first blank line to end of last + newline
+              (let* ((del-start (editor-position-from-line ed start))
+                     (del-end (if (< (+ end 1) total)
+                                (editor-position-from-line ed (+ end 1))
+                                (editor-get-text-length ed))))
+                ;; Keep one blank line
+                (editor-delete-range ed del-start (- del-end del-start))
+                (editor-insert-text ed del-start "\n")
+                (echo-message! (app-state-echo app) "Blank lines deleted"))))))
+      (echo-message! (app-state-echo app) "Not on a blank line"))))
+
+;;;============================================================================
+;;; Indent region
+;;;============================================================================
+
+(def (cmd-indent-region app)
+  "Indent all lines in region by 2 spaces."
+  (let* ((echo (app-state-echo app))
+         (ed (current-editor app))
+         (buf (current-buffer-from-app app))
+         (mark (buffer-mark buf)))
+    (if (not mark)
+      (echo-error! echo "No region (set mark first)")
+      (let* ((pos (editor-get-current-pos ed))
+             (start (min mark pos))
+             (end (max mark pos))
+             (start-line (editor-line-from-position ed start))
+             (end-line (editor-line-from-position ed end)))
+        (with-undo-action ed
+          ;; Insert 2 spaces at beginning of each line, from bottom to top
+          (let loop ((line end-line))
+            (when (>= line start-line)
+              (let ((line-pos (editor-position-from-line ed line)))
+                (editor-insert-text ed line-pos "  "))
+              (loop (- line 1)))))
+        (set! (buffer-mark buf) #f)
+        (echo-message! echo "Region indented")))))
+
+;;;============================================================================
+;;; Case region
+;;;============================================================================
+
+(def (cmd-downcase-region app)
+  "Convert region to lowercase."
+  (let* ((echo (app-state-echo app))
+         (ed (current-editor app))
+         (buf (current-buffer-from-app app))
+         (mark (buffer-mark buf)))
+    (if (not mark)
+      (echo-error! echo "No region")
+      (let* ((pos (editor-get-current-pos ed))
+             (start (min mark pos))
+             (end (max mark pos))
+             (text (editor-get-text ed))
+             (region (substring text start end))
+             (lower (string-downcase region)))
+        (with-undo-action ed
+          (editor-delete-range ed start (- end start))
+          (editor-insert-text ed start lower))
+        (set! (buffer-mark buf) #f)
+        (echo-message! echo "Region downcased")))))
+
+(def (cmd-upcase-region app)
+  "Convert region to uppercase."
+  (let* ((echo (app-state-echo app))
+         (ed (current-editor app))
+         (buf (current-buffer-from-app app))
+         (mark (buffer-mark buf)))
+    (if (not mark)
+      (echo-error! echo "No region")
+      (let* ((pos (editor-get-current-pos ed))
+             (start (min mark pos))
+             (end (max mark pos))
+             (text (editor-get-text ed))
+             (region (substring text start end))
+             (upper (string-upcase region)))
+        (with-undo-action ed
+          (editor-delete-range ed start (- end start))
+          (editor-insert-text ed start upper))
+        (set! (buffer-mark buf) #f)
+        (echo-message! echo "Region upcased")))))
+
+;;;============================================================================
 ;;; Register all commands
 ;;;============================================================================
 
@@ -1747,6 +2058,24 @@
   (register-command! 'shell-command-on-region cmd-shell-command-on-region)
   ;; Sort lines
   (register-command! 'sort-lines cmd-sort-lines)
+  ;; Bookmarks
+  (register-command! 'bookmark-set cmd-bookmark-set)
+  (register-command! 'bookmark-jump cmd-bookmark-jump)
+  (register-command! 'bookmark-list cmd-bookmark-list)
+  ;; Rectangle operations
+  (register-command! 'kill-rectangle cmd-kill-rectangle)
+  (register-command! 'yank-rectangle cmd-yank-rectangle)
+  ;; Go to matching paren
+  (register-command! 'goto-matching-paren cmd-goto-matching-paren)
+  ;; Join line
+  (register-command! 'join-line cmd-join-line)
+  ;; Delete blank lines
+  (register-command! 'delete-blank-lines cmd-delete-blank-lines)
+  ;; Indent region
+  (register-command! 'indent-region cmd-indent-region)
+  ;; Case region
+  (register-command! 'downcase-region cmd-downcase-region)
+  (register-command! 'upcase-region cmd-upcase-region)
   ;; Misc
   (register-command! 'keyboard-quit cmd-keyboard-quit)
   (register-command! 'quit cmd-quit))
