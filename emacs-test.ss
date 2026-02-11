@@ -168,7 +168,34 @@
       (check (keymap-lookup *ctrl-x-map* "C-c") => 'quit)
       ;; REPL bindings
       (check (keymap-lookup *global-keymap* "M-:") => 'eval-expression)
-      (check (keymap-lookup *ctrl-x-map* "r") => 'repl))
+      (check (keymap-lookup *ctrl-x-map* "r") => 'repl)
+      ;; New bindings: M-x, M-g, C-h, C-x C-b, M-%, TAB
+      (check (keymap-lookup *global-keymap* "M-x") => 'execute-extended-command)
+      (check (hash-table? (keymap-lookup *global-keymap* "M-g")) => #t)
+      (check (keymap-lookup *meta-g-map* "g") => 'goto-line)
+      (check (keymap-lookup *meta-g-map* "M-g") => 'goto-line)
+      (check (hash-table? (keymap-lookup *global-keymap* "C-h")) => #t)
+      (check (keymap-lookup *help-map* "k") => 'describe-key)
+      (check (keymap-lookup *help-map* "b") => 'list-bindings)
+      (check (keymap-lookup *help-map* "f") => 'describe-command)
+      (check (keymap-lookup *ctrl-x-map* "C-b") => 'list-buffers)
+      (check (keymap-lookup *global-keymap* "M-%") => 'query-replace)
+      (check (keymap-lookup *global-keymap* "TAB") => 'indent-or-complete))
+
+    (test-case "key-event->string: TAB key"
+      ;; Tab key = 0x09
+      (check (key-event->string (make-tui-event 1 0 #x09 0 0 0 0 0)) => "TAB")
+      ;; M-TAB = Tab with Alt
+      (check (key-event->string (make-tui-event 1 1 #x09 0 0 0 0 0)) => "M-TAB"))
+
+    (test-case "keymap-entries"
+      (let ((km (make-keymap)))
+        (keymap-bind! km "C-a" 'foo)
+        (keymap-bind! km "C-b" 'bar)
+        (let ((entries (keymap-entries km)))
+          (check (length entries) => 2)
+          (check (assoc "C-a" entries) => '("C-a" . foo))
+          (check (assoc "C-b" entries) => '("C-b" . bar)))))
 
     (test-case "eval-expression-string: simple expression"
       (let-values (((result error?) (eval-expression-string "(+ 1 2)")))

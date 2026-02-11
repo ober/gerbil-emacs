@@ -12,9 +12,12 @@
   execute-command!
   cmd-self-insert!
   register-all-commands!
-  read-file-as-string)
+  read-file-as-string
+  position-cursor-for-replace!)
 
 (import :std/sugar
+        :std/sort
+        :std/srfi/13
         :gerbil-scintilla/constants
         :gerbil-scintilla/scintilla
         :gerbil-scintilla/style
@@ -416,6 +419,276 @@
                              (string-append "Not found: " query))))))))))
 
 ;;;============================================================================
+;;; Goto line
+;;;============================================================================
+
+(def (cmd-goto-line app)
+  (let* ((echo (app-state-echo app))
+         (fr (app-state-frame app))
+         (row (- (frame-height fr) 1))
+         (width (frame-width fr))
+         (input (echo-read-string echo "Goto line: " row width)))
+    (when (and input (> (string-length input) 0))
+      (let ((line-num (string->number input)))
+        (if (and line-num (> line-num 0))
+          (let ((ed (current-editor app)))
+            (editor-goto-line ed (- line-num 1))  ; 0-based
+            (editor-scroll-caret ed)
+            (echo-message! echo (string-append "Line " input)))
+          (echo-error! echo "Invalid line number"))))))
+
+;;;============================================================================
+;;; M-x (execute extended command)
+;;;============================================================================
+
+(def (cmd-execute-extended-command app)
+  (let* ((echo (app-state-echo app))
+         (fr (app-state-frame app))
+         (row (- (frame-height fr) 1))
+         (width (frame-width fr))
+         (input (echo-read-string echo "M-x " row width)))
+    (when (and input (> (string-length input) 0))
+      (let ((cmd-name (string->symbol input)))
+        (execute-command! app cmd-name)))))
+
+;;;============================================================================
+;;; Help commands
+;;;============================================================================
+
+(def (cmd-describe-key app)
+  "Prompt for a key, display its binding."
+  (let* ((echo (app-state-echo app))
+         (fr (app-state-frame app))
+         (row (- (frame-height fr) 1))
+         (width (frame-width fr)))
+    ;; Draw prompt
+    (tui-print! 0 row #xd8d8d8 #x181818 (make-string width #\space))
+    (tui-print! 0 row #xd8d8d8 #x181818 "Describe key: ")
+    (tui-present!)
+    ;; Wait for a key event
+    (let ((ev (tui-poll-event)))
+      (when (and ev (tui-event-key? ev))
+        (let* ((key-str (key-event->string ev))
+               (binding (keymap-lookup *global-keymap* key-str)))
+          (cond
+            ((hash-table? binding)
+             (echo-message! echo (string-append key-str " is a prefix key")))
+            ((symbol? binding)
+             (echo-message! echo
+               (string-append key-str " runs " (symbol->string binding))))
+            (else
+             (echo-message! echo
+               (string-append key-str " is not bound")))))))))
+
+(def (cmd-describe-command app)
+  "Prompt for a command name, show if it exists."
+  (let* ((echo (app-state-echo app))
+         (fr (app-state-frame app))
+         (row (- (frame-height fr) 1))
+         (width (frame-width fr))
+         (input (echo-read-string echo "Describe command: " row width)))
+    (when (and input (> (string-length input) 0))
+      (let ((cmd (find-command (string->symbol input))))
+        (if cmd
+          (echo-message! echo (string-append input " is a command"))
+          (echo-error! echo (string-append input " is not a command")))))))
+
+(def (cmd-list-bindings app)
+  "Display all keybindings in a *Help* buffer."
+  (let* ((fr (app-state-frame app))
+         (ed (current-editor app))
+         (lines '()))
+    ;; Collect global keymap bindings
+    (for-each
+      (lambda (entry)
+        (let ((key (car entry))
+              (val (cdr entry)))
+          (cond
+            ((symbol? val)
+             (set! lines (cons (string-append "  " key "\t" (symbol->string val))
+                               lines)))
+            ((hash-table? val)
+             ;; Prefix map: list its sub-bindings
+             (for-each
+               (lambda (sub-entry)
+                 (let ((sub-key (car sub-entry))
+                       (sub-val (cdr sub-entry)))
+                   (when (symbol? sub-val)
+                     (set! lines
+                       (cons (string-append "  " key " " sub-key "\t"
+                                            (symbol->string sub-val))
+                             lines)))))
+               (keymap-entries val))))))
+      (keymap-entries *global-keymap*))
+    ;; Sort and format
+    (let* ((sorted (sort lines string<?))
+           (text (string-append "Key Bindings:\n\n"
+                                (string-join sorted "\n")
+                                "\n")))
+      ;; Create or reuse *Help* buffer
+      (let ((buf (or (buffer-by-name "*Help*")
+                     (buffer-create! "*Help*" ed #f))))
+        (buffer-attach! ed buf)
+        (set! (edit-window-buffer (current-window fr)) buf)
+        (editor-set-text ed text)
+        (editor-set-save-point ed)
+        (editor-goto-pos ed 0)
+        (echo-message! (app-state-echo app) "*Help*")))))
+
+;;;============================================================================
+;;; Buffer list
+;;;============================================================================
+
+(def (cmd-list-buffers app)
+  "Display all buffers in a *Buffer List* buffer."
+  (let* ((fr (app-state-frame app))
+         (ed (current-editor app))
+         (bufs (buffer-list))
+         (header "  Buffer\t\tFile\n  ------\t\t----\n")
+         (lines (map (lambda (buf)
+                       (let ((name (buffer-name buf))
+                             (path (or (buffer-file-path buf) "")))
+                         (string-append "  " name "\t\t" path)))
+                     bufs))
+         (text (string-append header (string-join lines "\n") "\n")))
+    (let ((buf (or (buffer-by-name "*Buffer List*")
+                   (buffer-create! "*Buffer List*" ed #f))))
+      (buffer-attach! ed buf)
+      (set! (edit-window-buffer (current-window fr)) buf)
+      (editor-set-text ed text)
+      (editor-set-save-point ed)
+      (editor-goto-pos ed 0)
+      (echo-message! (app-state-echo app) "*Buffer List*"))))
+
+;;;============================================================================
+;;; Query replace
+;;;============================================================================
+
+(def (cmd-query-replace app)
+  "Interactive search and replace (M-%)."
+  (let* ((echo (app-state-echo app))
+         (fr (app-state-frame app))
+         (row (- (frame-height fr) 1))
+         (width (frame-width fr))
+         (from-str (echo-read-string echo "Query replace: " row width)))
+    (when (and from-str (> (string-length from-str) 0))
+      (let ((to-str (echo-read-string echo
+                      (string-append "Replace \"" from-str "\" with: ")
+                      row width)))
+        (when to-str
+          (let ((ed (current-editor app)))
+            (query-replace-loop! app ed from-str to-str)))))))
+
+(def (query-replace-loop! app ed from-str to-str)
+  "Drive the query-replace interaction."
+  (let* ((echo (app-state-echo app))
+         (fr (app-state-frame app))
+         (row (- (frame-height fr) 1))
+         (width (frame-width fr))
+         (from-len (string-length from-str))
+         (to-len (string-length to-str))
+         (replaced 0))
+    ;; Start searching from beginning
+    (editor-goto-pos ed 0)
+    (let loop ()
+      (let ((text-len (editor-get-text-length ed))
+            (pos (editor-get-current-pos ed)))
+        ;; Search forward
+        (send-message ed SCI_SETTARGETSTART pos)
+        (send-message ed SCI_SETTARGETEND text-len)
+        (send-message ed SCI_SETSEARCHFLAGS 0)
+        (let ((found (send-message/string ed SCI_SEARCHINTARGET from-str)))
+          (if (< found 0)
+            ;; No more matches
+            (echo-message! echo
+              (string-append "Replaced " (number->string replaced) " occurrences"))
+            ;; Found a match, highlight it
+            (begin
+              (editor-set-selection ed found (+ found from-len))
+              (editor-scroll-caret ed)
+              ;; Redraw so user can see the match
+              (frame-refresh! fr)
+              (position-cursor-for-replace! app)
+              ;; Prompt: y/n/!/q
+              (tui-print! 0 row #xd8d8d8 #x181818 (make-string width #\space))
+              (tui-print! 0 row #xd8d8d8 #x181818
+                "Replace? (y)es (n)o (!)all (q)uit")
+              (tui-present!)
+              (let ((ev (tui-poll-event)))
+                (when (and ev (tui-event-key? ev))
+                  (let ((ch (tui-event-ch ev)))
+                    (cond
+                      ;; Yes: replace and continue
+                      ((= ch (char->integer #\y))
+                       (send-message ed SCI_SETTARGETSTART found)
+                       (send-message ed SCI_SETTARGETEND (+ found from-len))
+                       (send-message/string ed SCI_REPLACETARGET to-str)
+                       (editor-goto-pos ed (+ found to-len))
+                       (set! replaced (+ replaced 1))
+                       (loop))
+                      ;; No: skip
+                      ((= ch (char->integer #\n))
+                       (editor-goto-pos ed (+ found from-len))
+                       (loop))
+                      ;; All: replace all remaining
+                      ((= ch (char->integer #\!))
+                       (let all-loop ()
+                         (let ((text-len2 (editor-get-text-length ed))
+                               (pos2 (editor-get-current-pos ed)))
+                           (send-message ed SCI_SETTARGETSTART pos2)
+                           (send-message ed SCI_SETTARGETEND text-len2)
+                           (let ((found2 (send-message/string ed SCI_SEARCHINTARGET from-str)))
+                             (when (>= found2 0)
+                               (send-message ed SCI_SETTARGETSTART found2)
+                               (send-message ed SCI_SETTARGETEND (+ found2 from-len))
+                               (send-message/string ed SCI_REPLACETARGET to-str)
+                               (editor-goto-pos ed (+ found2 to-len))
+                               (set! replaced (+ replaced 1))
+                               (all-loop)))))
+                       (echo-message! echo
+                         (string-append "Replaced " (number->string replaced) " occurrences")))
+                      ;; Quit
+                      ((= ch (char->integer #\q))
+                       (echo-message! echo
+                         (string-append "Replaced " (number->string replaced) " occurrences")))
+                      ;; Unknown key: skip
+                      (else (loop)))))))))))))
+
+(def (position-cursor-for-replace! app)
+  "Helper to show cursor during query-replace."
+  (let* ((fr (app-state-frame app))
+         (win (current-window fr))
+         (ed (edit-window-editor win))
+         (pos (editor-get-current-pos ed))
+         (screen-x (send-message ed SCI_POINTXFROMPOSITION 0 pos))
+         (screen-y (send-message ed SCI_POINTYFROMPOSITION 0 pos))
+         (win-x (edit-window-x win))
+         (win-y (edit-window-y win)))
+    (tui-set-cursor! (+ win-x screen-x) (+ win-y screen-y))
+    (tui-present!)))
+
+;;;============================================================================
+;;; Tab / indent
+;;;============================================================================
+
+(def (cmd-indent-or-complete app)
+  "Insert appropriate indentation."
+  (let* ((ed (current-editor app))
+         (buf (current-buffer-from-app app)))
+    (cond
+      ((dired-buffer? buf) (void))
+      ((repl-buffer? buf)
+       ;; In REPL, insert 2 spaces
+       (let ((pos (editor-get-current-pos ed))
+             (rs (hash-get *repl-state* buf)))
+         (when (and rs (>= pos (repl-state-prompt-pos rs)))
+           (editor-insert-text ed pos "  "))))
+      (else
+       ;; Insert 2-space indent (Scheme convention)
+       (let ((pos (editor-get-current-pos ed)))
+         (editor-insert-text ed pos "  "))))))
+
+;;;============================================================================
 ;;; Misc commands
 ;;;============================================================================
 
@@ -588,7 +861,7 @@
   (register-command! 'newline cmd-newline)
   (register-command! 'open-line cmd-open-line)
   (register-command! 'undo cmd-undo)
-  (register-command! 'indent cmd-newline)  ; Tab inserts newline for now
+  ;; (indent was here — now replaced by indent-or-complete)
   ;; Kill/Yank
   (register-command! 'kill-line cmd-kill-line)
   (register-command! 'yank cmd-yank)
@@ -614,6 +887,20 @@
   ;; REPL
   (register-command! 'repl cmd-repl)
   (register-command! 'eval-expression cmd-eval-expression)
+  ;; Goto line
+  (register-command! 'goto-line cmd-goto-line)
+  ;; M-x
+  (register-command! 'execute-extended-command cmd-execute-extended-command)
+  ;; Help
+  (register-command! 'describe-key cmd-describe-key)
+  (register-command! 'describe-command cmd-describe-command)
+  (register-command! 'list-bindings cmd-list-bindings)
+  ;; Buffer list
+  (register-command! 'list-buffers cmd-list-buffers)
+  ;; Query replace
+  (register-command! 'query-replace cmd-query-replace)
+  ;; Tab/indent
+  (register-command! 'indent-or-complete cmd-indent-or-complete)
   ;; Misc
   (register-command! 'keyboard-quit cmd-keyboard-quit)
   (register-command! 'quit cmd-quit))

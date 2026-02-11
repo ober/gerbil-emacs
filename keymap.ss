@@ -71,6 +71,8 @@
         ;; C-@ / C-SPC (key=0x00, ch=0)
         ((and (= key 0) (= ch 0) (not alt?))
          "C-@")
+        ;; Tab (0x09) -> "TAB" (before generic C- mapping)
+        ((= key #x09) (if alt? "M-TAB" "TAB"))
         ;; Ctrl keys 0x01-0x1A -> C-a through C-z
         ((and (>= key #x01) (<= key #x1A))
          (string-append "C-" (string (integer->char (+ key #x60)))))

@@ -10,10 +10,14 @@
   make-keymap
   keymap-bind!
   keymap-lookup
+  keymap-entries
   (struct-out key-state)
   make-initial-key-state
   *global-keymap*
   *ctrl-x-map*
+  *meta-g-map*
+  *help-map*
+  *all-commands*
   setup-default-bindings!
 
   ;; App state
@@ -73,6 +77,10 @@
 (def (keymap-lookup km key-str)
   (hash-get km key-str))
 
+(def (keymap-entries km)
+  "Return list of (key . value) for all entries in a keymap."
+  (hash->list km))
+
 ;;;============================================================================
 ;;; Key state machine for multi-key sequences
 ;;;============================================================================
@@ -85,6 +93,8 @@
 ;;; Global keymaps
 (def *global-keymap* (make-keymap))
 (def *ctrl-x-map*   (make-keymap))
+(def *meta-g-map*   (make-keymap))
+(def *help-map*     (make-keymap))
 
 (def (make-initial-key-state)
   (make-key-state *global-keymap* []))
@@ -162,7 +172,30 @@
 
   ;; REPL
   (keymap-bind! *global-keymap* "M-:" 'eval-expression)
-  (keymap-bind! *ctrl-x-map* "r"   'repl))
+  (keymap-bind! *ctrl-x-map* "r"   'repl)
+
+  ;; M-x
+  (keymap-bind! *global-keymap* "M-x" 'execute-extended-command)
+
+  ;; Goto line (M-g prefix map)
+  (keymap-bind! *global-keymap* "M-g" *meta-g-map*)
+  (keymap-bind! *meta-g-map* "g"     'goto-line)
+  (keymap-bind! *meta-g-map* "M-g"   'goto-line)
+
+  ;; Help (C-h prefix map)
+  (keymap-bind! *global-keymap* "C-h" *help-map*)
+  (keymap-bind! *help-map* "k"     'describe-key)
+  (keymap-bind! *help-map* "b"     'list-bindings)
+  (keymap-bind! *help-map* "f"     'describe-command)
+
+  ;; Buffer list
+  (keymap-bind! *ctrl-x-map* "C-b" 'list-buffers)
+
+  ;; Query replace
+  (keymap-bind! *global-keymap* "M-%" 'query-replace)
+
+  ;; Tab
+  (keymap-bind! *global-keymap* "TAB" 'indent-or-complete))
 
 ;;;============================================================================
 ;;; Echo state
@@ -255,6 +288,9 @@
 ;;;============================================================================
 
 (def *commands* (make-hash-table))
+
+;; Alias for external access to command table
+(def *all-commands* *commands*)
 
 (def (register-command! name proc)
   (hash-put! *commands* name proc))
