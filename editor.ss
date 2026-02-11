@@ -25,7 +25,8 @@
         :gerbil-emacs/buffer
         :gerbil-emacs/window
         :gerbil-emacs/modeline
-        :gerbil-emacs/echo)
+        :gerbil-emacs/echo
+        :gerbil-emacs/highlight)
 
 ;;;============================================================================
 ;;; Accessors
@@ -225,6 +226,9 @@
                   (editor-set-text ed text)
                   (editor-set-save-point ed)
                   (editor-goto-pos ed 0))))
+            ;; Apply syntax highlighting for Gerbil files
+            (when (gerbil-file-extension? filename)
+              (setup-gerbil-highlighting! ed))
             (echo-message! echo (string-append "Opened: " filename))))))))
 
 (def (cmd-save-buffer app)
@@ -485,6 +489,9 @@
                           (editor-set-text ed text)
                           (editor-set-save-point ed)
                           (editor-goto-pos ed 0)))
+                      ;; Apply syntax highlighting for Gerbil files
+                      (when (gerbil-file-extension? full-path)
+                        (setup-gerbil-highlighting! ed))
                       (echo-message! (app-state-echo app)
                                      (string-append "Opened: " full-path)))))))))))))
 

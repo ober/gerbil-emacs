@@ -15,7 +15,8 @@
         :gerbil-emacs/window
         :gerbil-emacs/modeline
         :gerbil-emacs/echo
-        :gerbil-emacs/editor)
+        :gerbil-emacs/editor
+        :gerbil-emacs/highlight)
 
 ;;;============================================================================
 ;;; Application initialization
@@ -69,7 +70,10 @@
         (when text
           (editor-set-text ed text)
           (editor-set-save-point ed)
-          (editor-goto-pos ed 0))))))
+          (editor-goto-pos ed 0))))
+    ;; Apply syntax highlighting for Gerbil files
+    (when (gerbil-file-extension? filename)
+      (setup-gerbil-highlighting! ed))))
 
 ;;;============================================================================
 ;;; REPL output polling

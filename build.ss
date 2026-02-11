@@ -48,6 +48,8 @@
   `(;; Shared core (no backend dependencies)
     "core"
     "repl"
+    ;; Syntax highlighting (depends on gerbil-scintilla/lexer)
+    "highlight"
     ;; TUI backend
     "keymap"
     "buffer"
