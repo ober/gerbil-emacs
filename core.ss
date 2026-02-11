@@ -17,6 +17,7 @@
   *ctrl-x-map*
   *meta-g-map*
   *help-map*
+  *meta-s-map*
   *all-commands*
   setup-default-bindings!
 
@@ -95,6 +96,7 @@
 (def *ctrl-x-map*   (make-keymap))
 (def *meta-g-map*   (make-keymap))
 (def *help-map*     (make-keymap))
+(def *meta-s-map*   (make-keymap))
 
 (def (make-initial-key-state)
   (make-key-state *global-keymap* []))
@@ -257,7 +259,23 @@
   (keymap-bind! *ctrl-x-map* "C-o" 'delete-trailing-whitespace)
 
   ;; Count words
-  (keymap-bind! *global-keymap* "M-=" 'count-words))
+  (keymap-bind! *global-keymap* "M-=" 'count-words)
+
+  ;; Yank-pop (rotate kill ring)
+  (keymap-bind! *global-keymap* "M-y" 'yank-pop)
+
+  ;; Occur (search prefix M-s)
+  (keymap-bind! *global-keymap* "M-s" *meta-s-map*)
+  (keymap-bind! *meta-s-map* "o" 'occur)
+
+  ;; Compile
+  (keymap-bind! *ctrl-x-map* "c" 'compile)
+
+  ;; Pipe region to shell
+  (keymap-bind! *global-keymap* "M-|" 'shell-command-on-region)
+
+  ;; Sort lines in region
+  (keymap-bind! *global-keymap* "M-^" 'sort-lines))
 
 ;;;============================================================================
 ;;; Echo state
@@ -332,6 +350,10 @@
    running       ; boolean
    last-search   ; string or #f
    kill-ring     ; list of killed text strings
+   kill-ring-idx ; integer: index into kill-ring for yank-pop rotation
+   last-yank-pos ; integer or #f: position where last yank was inserted
+   last-yank-len ; integer or #f: length of last yanked text
+   last-compile  ; string or #f: last compile command
    key-handler)  ; procedure or #f: (lambda (editor) ...) installs key handler on editor
   transparent: #t)
 
@@ -343,6 +365,10 @@
    #t     ; running
    #f     ; last-search
    []     ; kill-ring
+   0      ; kill-ring-idx
+   #f     ; last-yank-pos
+   #f     ; last-yank-len
+   #f     ; last-compile
    #f))   ; key-handler
 
 ;;;============================================================================

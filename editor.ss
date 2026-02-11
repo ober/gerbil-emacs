@@ -221,7 +221,15 @@
                   (cons clip (app-state-kill-ring app)))))))))
 
 (def (cmd-yank app)
-  (editor-paste (current-editor app)))
+  "Yank (paste) and track position for yank-pop."
+  (let* ((ed (current-editor app))
+         (pos (editor-get-current-pos ed)))
+    (editor-paste ed)
+    ;; Track where we yanked so yank-pop can replace it
+    (let ((new-pos (editor-get-current-pos ed)))
+      (set! (app-state-last-yank-pos app) pos)
+      (set! (app-state-last-yank-len app) (- new-pos pos))
+      (set! (app-state-kill-ring-idx app) 0))))
 
 ;;;============================================================================
 ;;; Mark and region
@@ -1412,6 +1420,219 @@
           (echo-message! echo result))))))
 
 ;;;============================================================================
+;;; Yank-pop (M-y) — rotate through kill ring
+;;;============================================================================
+
+(def (cmd-yank-pop app)
+  "Replace last yank with previous kill ring entry."
+  (let ((kr (app-state-kill-ring app))
+        (pos (app-state-last-yank-pos app))
+        (len (app-state-last-yank-len app)))
+    (if (or (null? kr) (not pos) (not len))
+      (echo-error! (app-state-echo app) "No previous yank")
+      (let* ((idx (modulo (+ (app-state-kill-ring-idx app) 1) (length kr)))
+             (text (list-ref kr idx))
+             (ed (current-editor app)))
+        ;; Delete the previous yank
+        (editor-delete-range ed pos len)
+        ;; Insert the next kill ring entry
+        (editor-insert-text ed pos text)
+        (editor-goto-pos ed (+ pos (string-length text)))
+        ;; Update tracking
+        (set! (app-state-kill-ring-idx app) idx)
+        (set! (app-state-last-yank-len app) (string-length text))))))
+
+;;;============================================================================
+;;; Occur mode (M-s o) — list matching lines
+;;;============================================================================
+
+(def (cmd-occur app)
+  "List all lines matching a pattern in the current buffer."
+  (let* ((echo (app-state-echo app))
+         (fr (app-state-frame app))
+         (row (- (frame-height fr) 1))
+         (width (frame-width fr))
+         (pattern (echo-read-string echo "Occur: " row width)))
+    (when (and pattern (> (string-length pattern) 0))
+      (let* ((ed (current-editor app))
+             (src-name (buffer-name (current-buffer-from-app app)))
+             (text (editor-get-text ed))
+             (lines (string-split text #\newline))
+             (matches '())
+             (line-num 0))
+        ;; Find matching lines
+        (for-each
+          (lambda (line)
+            (set! line-num (+ line-num 1))
+            (when (string-contains line pattern)
+              (set! matches
+                (cons (string-append
+                        (number->string line-num) ":"
+                        line)
+                      matches))))
+          lines)
+        (let ((matches (reverse matches)))
+          (if (null? matches)
+            (echo-error! echo (string-append "No matches for: " pattern))
+            ;; Display in *Occur* buffer
+            (let* ((header (string-append (number->string (length matches))
+                                          " matches for \"" pattern
+                                          "\" in " src-name ":\n\n"))
+                   (result-text (string-append header
+                                               (string-join matches "\n")
+                                               "\n"))
+                   (buf (or (buffer-by-name "*Occur*")
+                            (buffer-create! "*Occur*" ed #f))))
+              (buffer-attach! ed buf)
+              (set! (edit-window-buffer (current-window fr)) buf)
+              (editor-set-text ed result-text)
+              (editor-set-save-point ed)
+              (editor-goto-pos ed 0)
+              (echo-message! echo
+                (string-append (number->string (length matches))
+                               " matches")))))))))
+
+;;;============================================================================
+;;; Compile mode (C-x c) — run build command
+;;;============================================================================
+
+(def (cmd-compile app)
+  "Run a compile command and display output in *Compilation* buffer."
+  (let* ((echo (app-state-echo app))
+         (fr (app-state-frame app))
+         (row (- (frame-height fr) 1))
+         (width (frame-width fr))
+         (default (or (app-state-last-compile app) "make build"))
+         (prompt (string-append "Compile command [" default "]: "))
+         (input (echo-read-string echo prompt row width)))
+    (when input
+      (let* ((cmd (if (string=? input "") default input))
+             (ed (current-editor app)))
+        (set! (app-state-last-compile app) cmd)
+        ;; Run the command and capture output
+        (echo-message! echo (string-append "Running: " cmd))
+        ;; Redraw to show message
+        (frame-refresh! (app-state-frame app))
+        (let* ((output (with-catch
+                         (lambda (e)
+                           (string-append "Error running command: "
+                             (with-output-to-string
+                               (lambda () (display-exception e)))))
+                         (lambda ()
+                           (let ((proc (open-process
+                                         (list path: "/bin/sh"
+                                               arguments: (list "-c" cmd)
+                                               stdin-redirection: #f
+                                               stdout-redirection: #t
+                                               stderr-redirection: #t
+                                               pseudo-terminal: #f))))
+                             (let ((result (read-line proc #f)))
+                               (let ((status (process-status proc)))
+                                 (string-append
+                                   (or result "")
+                                   "\n\nProcess exited with status "
+                                   (number->string status))))))))
+               (text (string-append "-*- Compilation -*-\n"
+                                    "Command: " cmd "\n"
+                                    (make-string 60 #\-) "\n\n"
+                                    output "\n"))
+               (buf (or (buffer-by-name "*Compilation*")
+                        (buffer-create! "*Compilation*" ed #f))))
+          (buffer-attach! ed buf)
+          (set! (edit-window-buffer (current-window fr)) buf)
+          (editor-set-text ed text)
+          (editor-set-save-point ed)
+          (editor-goto-pos ed 0)
+          (echo-message! echo "Compilation finished"))))))
+
+;;;============================================================================
+;;; Shell command on region (M-|)
+;;;============================================================================
+
+(def (cmd-shell-command-on-region app)
+  "Pipe region through a shell command, display output."
+  (let* ((echo (app-state-echo app))
+         (fr (app-state-frame app))
+         (row (- (frame-height fr) 1))
+         (width (frame-width fr))
+         (cmd (echo-read-string echo "Shell command on region: " row width)))
+    (when (and cmd (> (string-length cmd) 0))
+      (let* ((ed (current-editor app))
+             (buf (current-buffer-from-app app))
+             (mark (buffer-mark buf)))
+        (if (not mark)
+          (echo-error! echo "No region (set mark first)")
+          (let* ((pos (editor-get-current-pos ed))
+                 (start (min mark pos))
+                 (end (max mark pos))
+                 (text (editor-get-text ed))
+                 (region-text (substring text start end))
+                 ;; Run command with region as stdin
+                 (output (with-catch
+                           (lambda (e)
+                             (string-append "Error: "
+                               (with-output-to-string
+                                 (lambda () (display-exception e)))))
+                           (lambda ()
+                             (let ((proc (open-process
+                                           (list path: "/bin/sh"
+                                                 arguments: (list "-c" cmd)
+                                                 stdin-redirection: #t
+                                                 stdout-redirection: #t
+                                                 stderr-redirection: #t
+                                                 pseudo-terminal: #f))))
+                               (display region-text proc)
+                               (close-output-port proc)
+                               (let ((result (read-line proc #f)))
+                                 (process-status proc)
+                                 (or result "")))))))
+            ;; Display output in *Shell Output* buffer
+            (let ((out-buf (or (buffer-by-name "*Shell Output*")
+                               (buffer-create! "*Shell Output*" ed #f))))
+              (buffer-attach! ed out-buf)
+              (set! (edit-window-buffer (current-window fr)) out-buf)
+              (editor-set-text ed output)
+              (editor-set-save-point ed)
+              (editor-goto-pos ed 0)
+              (set! (buffer-mark buf) #f)
+              (echo-message! echo "Shell command done"))))))))
+
+;;;============================================================================
+;;; Sort lines (M-^)
+;;;============================================================================
+
+(def (cmd-sort-lines app)
+  "Sort lines in the buffer (or region if mark is set)."
+  (let* ((ed (current-editor app))
+         (buf (current-buffer-from-app app))
+         (mark (buffer-mark buf))
+         (text (editor-get-text ed)))
+    (if mark
+      ;; Sort region only
+      (let* ((pos (editor-get-current-pos ed))
+             (start (min mark pos))
+             (end (max mark pos))
+             (region (substring text start end))
+             (lines (string-split region #\newline))
+             (sorted (sort lines string<?))
+             (result (string-join sorted "\n")))
+        (with-undo-action ed
+          (editor-delete-range ed start (- end start))
+          (editor-insert-text ed start result))
+        (set! (buffer-mark buf) #f)
+        (echo-message! (app-state-echo app)
+          (string-append "Sorted " (number->string (length sorted)) " lines")))
+      ;; Sort whole buffer
+      (let* ((lines (string-split text #\newline))
+             (sorted (sort lines string<?))
+             (result (string-join sorted "\n"))
+             (pos (editor-get-current-pos ed)))
+        (editor-set-text ed result)
+        (editor-goto-pos ed (min pos (editor-get-text-length ed)))
+        (echo-message! (app-state-echo app)
+          (string-append "Sorted " (number->string (length sorted)) " lines"))))))
+
+;;;============================================================================
 ;;; Register all commands
 ;;;============================================================================
 
@@ -1516,6 +1737,16 @@
   (register-command! 'delete-trailing-whitespace cmd-delete-trailing-whitespace)
   ;; Count words
   (register-command! 'count-words cmd-count-words)
+  ;; Yank-pop
+  (register-command! 'yank-pop cmd-yank-pop)
+  ;; Occur
+  (register-command! 'occur cmd-occur)
+  ;; Compile
+  (register-command! 'compile cmd-compile)
+  ;; Shell command on region
+  (register-command! 'shell-command-on-region cmd-shell-command-on-region)
+  ;; Sort lines
+  (register-command! 'sort-lines cmd-sort-lines)
   ;; Misc
   (register-command! 'keyboard-quit cmd-keyboard-quit)
   (register-command! 'quit cmd-quit))

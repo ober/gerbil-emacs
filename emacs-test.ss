@@ -403,6 +403,35 @@
         (check (wc? #\space) => #f)
         (check (wc? #\() => #f)))
 
+    (test-case "new keybindings: yank-pop, occur, compile, etc"
+      ;; Test new keybinding registrations
+      (setup-default-bindings!)
+      (check (keymap-lookup *global-keymap* "M-y") => 'yank-pop)
+      (check (hash-table? (keymap-lookup *global-keymap* "M-s")) => #t)
+      (let ((ms-map (keymap-lookup *global-keymap* "M-s")))
+        (check (keymap-lookup ms-map "o") => 'occur))
+      (check (keymap-lookup *ctrl-x-map* "c") => 'compile)
+      (check (keymap-lookup *global-keymap* "M-|") => 'shell-command-on-region)
+      (check (keymap-lookup *global-keymap* "M-^") => 'sort-lines))
+
+    (test-case "app-state new fields"
+      ;; Test new app-state fields have correct defaults
+      (let ((app (new-app-state #f)))
+        (check (app-state-kill-ring-idx app) => 0)
+        (check (app-state-last-yank-pos app) => #f)
+        (check (app-state-last-yank-len app) => #f)
+        (check (app-state-last-compile app) => #f)))
+
+    (test-case "eval-expression-string"
+      ;; Test in-process eval
+      (let-values (((result error?) (eval-expression-string "(+ 1 2)")))
+        (check result => "3")
+        (check error? => #f))
+      ;; Test error case
+      (let-values (((result error?) (eval-expression-string "(/ 1 0)")))
+        (check error? => #t)
+        (check (string? result) => #t)))
+
     (test-case "repl subprocess lifecycle"
       (let ((rs (repl-start!)))
         ;; Verify state is initialized
