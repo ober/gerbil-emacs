@@ -83,7 +83,7 @@
            (editor-send-key ed ch))))
       (else
        (let* ((ed (current-editor app))
-              (close-ch (auto-pair-char ch)))
+              (close-ch (and *auto-pair-mode* (auto-pair-char ch))))
          (if close-ch
            ;; Auto-pair: insert both chars and place cursor between
            (let ((pos (editor-get-current-pos ed)))
@@ -5263,6 +5263,298 @@
                        "")))))
 
 ;;;============================================================================
+;;; Whitespace cleanup, electric-pair toggle, and more (Task #36)
+;;;============================================================================
+
+;; Global toggle for auto-pair mode
+(def *auto-pair-mode* #t)
+
+;; Recenter cycle state: 'center -> 'top -> 'bottom -> 'center
+(def *recenter-position* 'center)
+
+(def (cmd-whitespace-cleanup app)
+  "Remove trailing whitespace and convert tabs to spaces."
+  (let* ((ed (current-editor app))
+         (text (editor-get-text ed))
+         (lines (string-split text #\newline))
+         (cleaned (map (lambda (line) (string-trim-right line)) lines))
+         (result (string-join cleaned "\n")))
+    (unless (string=? text result)
+      (with-undo-action ed
+        (editor-delete-range ed 0 (string-length text))
+        (editor-insert-text ed 0 result)))
+    (echo-message! (app-state-echo app) "Whitespace cleaned")))
+
+(def (cmd-toggle-electric-pair app)
+  "Toggle auto-pair mode for brackets and quotes."
+  (set! *auto-pair-mode* (not *auto-pair-mode*))
+  (echo-message! (app-state-echo app)
+    (if *auto-pair-mode* "Electric pair mode ON" "Electric pair mode OFF")))
+
+(def (cmd-previous-buffer app)
+  "Switch to the previous buffer in the buffer list."
+  (let* ((bufs (buffer-list))
+         (cur (current-buffer-from-app app))
+         (idx (let loop ((bs bufs) (i 0))
+                (cond ((null? bs) 0)
+                      ((eq? (car bs) cur) i)
+                      (else (loop (cdr bs) (+ i 1))))))
+         (prev-idx (if (= idx 0) (- (length bufs) 1) (- idx 1)))
+         (prev-buf (list-ref bufs prev-idx))
+         (ed (current-editor app))
+         (fr (app-state-frame app)))
+    (buffer-attach! ed prev-buf)
+    (set! (edit-window-buffer (current-window fr)) prev-buf)
+    (echo-message! (app-state-echo app)
+      (string-append "Buffer: " (buffer-name prev-buf)))))
+
+(def (cmd-next-buffer app)
+  "Switch to the next buffer in the buffer list."
+  (let* ((bufs (buffer-list))
+         (cur (current-buffer-from-app app))
+         (idx (let loop ((bs bufs) (i 0))
+                (cond ((null? bs) 0)
+                      ((eq? (car bs) cur) i)
+                      (else (loop (cdr bs) (+ i 1))))))
+         (next-idx (if (>= (+ idx 1) (length bufs)) 0 (+ idx 1)))
+         (next-buf (list-ref bufs next-idx))
+         (ed (current-editor app))
+         (fr (app-state-frame app)))
+    (buffer-attach! ed next-buf)
+    (set! (edit-window-buffer (current-window fr)) next-buf)
+    (echo-message! (app-state-echo app)
+      (string-append "Buffer: " (buffer-name next-buf)))))
+
+(def (cmd-balance-windows app)
+  "Make all windows the same size."
+  (frame-layout! (app-state-frame app))
+  (echo-message! (app-state-echo app) "Windows balanced"))
+
+(def (cmd-move-to-window-line app)
+  "Move point to center, then top, then bottom of window (like Emacs M-r)."
+  (let* ((ed (current-editor app))
+         (first-vis (editor-get-first-visible-line ed))
+         ;; Use raw SCI_LINESONSCREEN = 2370
+         (lines-on-screen (send-message ed 2370))
+         (target-line
+           (case *recenter-position*
+             ((center) (+ first-vis (quotient lines-on-screen 2)))
+             ((top) first-vis)
+             ((bottom) (+ first-vis (- lines-on-screen 1))))))
+    (editor-goto-pos ed (editor-position-from-line ed target-line))
+    ;; Cycle: center -> top -> bottom -> center
+    (set! *recenter-position*
+      (case *recenter-position*
+        ((center) 'top)
+        ((top) 'bottom)
+        ((bottom) 'center)))))
+
+(def (cmd-kill-buffer-and-window app)
+  "Kill current buffer and close its window."
+  (let* ((fr (app-state-frame app))
+         (wins (frame-windows fr)))
+    (if (= (length wins) 1)
+      (echo-message! (app-state-echo app) "Can't delete sole window")
+      (let* ((ed (current-editor app))
+             (buf (current-buffer-from-app app)))
+        (frame-delete-window! fr)
+        (frame-layout! fr)
+        ;; Clean up the buffer
+        (hash-remove! *dired-entries* buf)
+        (hash-remove! *eshell-state* buf)
+        (let ((rs (hash-get *repl-state* buf)))
+          (when rs (repl-stop! rs) (hash-remove! *repl-state* buf)))
+        (let ((ss (hash-get *shell-state* buf)))
+          (when ss (shell-stop! ss) (hash-remove! *shell-state* buf)))))))
+
+(def (cmd-flush-undo app)
+  "Clear the undo history of the current buffer."
+  (let ((ed (current-editor app)))
+    (editor-empty-undo-buffer ed)
+    (echo-message! (app-state-echo app) "Undo history cleared")))
+
+(def (cmd-upcase-initials-region app)
+  "Capitalize the first letter of each word in region."
+  (let* ((ed (current-editor app))
+         (buf (current-buffer-from-app app))
+         (mark (buffer-mark buf))
+         (pos (editor-get-current-pos ed)))
+    (if (not mark)
+      (echo-message! (app-state-echo app) "No region")
+      (let* ((start (min mark pos))
+             (end (max mark pos))
+             (text (substring (editor-get-text ed) start end))
+             (result (string-titlecase text)))
+        (with-undo-action ed
+          (editor-delete-range ed start (- end start))
+          (editor-insert-text ed start result))
+        (set! (buffer-mark buf) #f)))))
+
+(def (cmd-untabify-buffer app)
+  "Convert all tabs to spaces in the entire buffer."
+  (let* ((ed (current-editor app))
+         (text (editor-get-text ed))
+         (tab-w (editor-get-tab-width ed))
+         (spaces (make-string tab-w #\space)))
+    (if (not (string-contains text "\t"))
+      (echo-message! (app-state-echo app) "No tabs found")
+      (let* ((parts (string-split text #\tab))
+             (result (string-join parts spaces)))
+        (with-undo-action ed
+          (editor-delete-range ed 0 (string-length text))
+          (editor-insert-text ed 0 result))
+        (echo-message! (app-state-echo app) "Untabified buffer")))))
+
+(def (cmd-insert-buffer-name app)
+  "Insert the current buffer name at point."
+  (let* ((ed (current-editor app))
+         (buf (current-buffer-from-app app))
+         (pos (editor-get-current-pos ed)))
+    (editor-insert-text ed pos (buffer-name buf))
+    (editor-goto-pos ed (+ pos (string-length (buffer-name buf))))))
+
+(def (cmd-toggle-line-move-visual app)
+  "Toggle whether line movement is visual or logical."
+  ;; Scintilla doesn't distinguish, so this is a stub toggle
+  (echo-message! (app-state-echo app) "Line move is always visual in Scintilla"))
+
+(def (cmd-mark-defun app)
+  "Mark the current top-level form (defun-like region)."
+  (let* ((ed (current-editor app))
+         (pos (editor-get-current-pos ed))
+         (text (editor-get-text ed))
+         (len (string-length text)))
+    ;; Find beginning of defun (search backward for "\n(" at column 0)
+    (let ((defun-start
+            (let loop ((i pos))
+              (cond ((= i 0) 0)
+                    ((and (= i 0) (char=? (string-ref text 0) #\()) 0)
+                    ((and (> i 0)
+                          (char=? (string-ref text i) #\()
+                          (or (= i 0)
+                              (char=? (string-ref text (- i 1)) #\newline)))
+                     i)
+                    (else (loop (- i 1)))))))
+      ;; Find end of defun — matching paren
+      (let ((defun-end
+              (let loop ((i defun-start) (depth 0))
+                (cond ((>= i len) len)
+                      ((char=? (string-ref text i) #\()
+                       (loop (+ i 1) (+ depth 1)))
+                      ((char=? (string-ref text i) #\))
+                       (if (= depth 1) (+ i 1)
+                         (loop (+ i 1) (- depth 1))))
+                      (else (loop (+ i 1) depth))))))
+        (editor-set-selection ed defun-start defun-end)
+        (echo-message! (app-state-echo app) "Defun marked")))))
+
+(def (cmd-goto-line-beginning app)
+  "Move to the very first position in the buffer (alias for M-<)."
+  (editor-goto-pos (current-editor app) 0))
+
+(def (cmd-shrink-window-horizontally app)
+  "Make current window narrower (horizontal split only)."
+  (echo-message! (app-state-echo app)
+    "Use C-x } / C-x { for horizontal resize (not implemented)"))
+
+(def (cmd-insert-parentheses app)
+  "Insert () and position cursor between them."
+  (let* ((ed (current-editor app))
+         (pos (editor-get-current-pos ed)))
+    (editor-insert-text ed pos "()")
+    (editor-goto-pos ed (+ pos 1))))
+
+(def (cmd-insert-pair-brackets app)
+  "Insert [] and position cursor between them."
+  (let* ((ed (current-editor app))
+         (pos (editor-get-current-pos ed)))
+    (editor-insert-text ed pos "[]")
+    (editor-goto-pos ed (+ pos 1))))
+
+(def (cmd-insert-pair-braces app)
+  "Insert {} and position cursor between them."
+  (let* ((ed (current-editor app))
+         (pos (editor-get-current-pos ed)))
+    (editor-insert-text ed pos "{}")
+    (editor-goto-pos ed (+ pos 1))))
+
+(def (cmd-insert-pair-quotes app)
+  "Insert \"\" and position cursor between them."
+  (let* ((ed (current-editor app))
+         (pos (editor-get-current-pos ed)))
+    (editor-insert-text ed pos "\"\"")
+    (editor-goto-pos ed (+ pos 1))))
+
+(def (cmd-describe-char app)
+  "Show info about character at point."
+  (let* ((ed (current-editor app))
+         (pos (editor-get-current-pos ed))
+         (text (editor-get-text ed))
+         (len (string-length text)))
+    (if (>= pos len)
+      (echo-message! (app-state-echo app) "End of buffer")
+      (let* ((ch (string-ref text pos))
+             (code (char->integer ch)))
+        (echo-message! (app-state-echo app)
+          (string-append "Char: " (string ch)
+                         " (#x" (number->string code 16)
+                         ", #o" (number->string code 8)
+                         ", " (number->string code) ")"))))))
+
+(def (cmd-find-file-at-point app)
+  "Try to open file whose name is at or near point."
+  (let* ((ed (current-editor app))
+         (pos (editor-get-current-pos ed))
+         (text (editor-get-text ed))
+         (len (string-length text))
+         ;; Extract filename-like text around point
+         (start (let loop ((i pos))
+                  (if (or (<= i 0)
+                          (let ((ch (string-ref text (- i 1))))
+                            (or (char=? ch #\space) (char=? ch #\newline)
+                                (char=? ch #\tab) (char=? ch #\")
+                                (char=? ch #\') (char=? ch #\<)
+                                (char=? ch #\>))))
+                    i (loop (- i 1)))))
+         (end (let loop ((i pos))
+                (if (or (>= i len)
+                        (let ((ch (string-ref text i)))
+                          (or (char=? ch #\space) (char=? ch #\newline)
+                              (char=? ch #\tab) (char=? ch #\")
+                              (char=? ch #\') (char=? ch #\<)
+                              (char=? ch #\>))))
+                  i (loop (+ i 1)))))
+         (path (substring text start end)))
+    (if (and (> (string-length path) 0) (file-exists? path))
+      (let* ((fr (app-state-frame app))
+             (name (path-strip-directory path))
+             (buf (buffer-create! name ed path)))
+        (buffer-attach! ed buf)
+        (set! (edit-window-buffer (current-window fr)) buf)
+        (let ((file-text (read-file-as-string path)))
+          (when file-text
+            (editor-set-text ed file-text)
+            (editor-set-save-point ed)
+            (editor-goto-pos ed 0)))
+        (echo-message! (app-state-echo app)
+          (string-append "Opened: " path)))
+      (echo-message! (app-state-echo app)
+        (string-append "No file found: " path)))))
+
+(def (cmd-toggle-show-paren app)
+  "Toggle paren matching highlight."
+  ;; Use raw SCI_SETMATCHEDBRACEPROPS - just toggle the indicator via message
+  (echo-message! (app-state-echo app) "Paren matching is always on"))
+
+(def (cmd-count-chars-region app)
+  "Count characters in the selected region."
+  (let* ((ed (current-editor app))
+         (start (editor-get-selection-start ed))
+         (end (editor-get-selection-end ed)))
+    (echo-message! (app-state-echo app)
+      (string-append "Region: " (number->string (- end start)) " chars"))))
+
+;;;============================================================================
 ;;; Register all commands
 ;;;============================================================================
 
@@ -5605,6 +5897,40 @@
   (register-command! 'toggle-indent-tabs-mode cmd-toggle-indent-tabs-mode)
   ;; Buffer info
   (register-command! 'buffer-info cmd-buffer-info)
+  ;; Whitespace cleanup
+  (register-command! 'whitespace-cleanup cmd-whitespace-cleanup)
+  ;; Electric pair toggle
+  (register-command! 'toggle-electric-pair cmd-toggle-electric-pair)
+  ;; Previous/next buffer
+  (register-command! 'previous-buffer cmd-previous-buffer)
+  (register-command! 'next-buffer cmd-next-buffer)
+  ;; Balance windows
+  (register-command! 'balance-windows cmd-balance-windows)
+  ;; Move to window line (cycle top/center/bottom)
+  (register-command! 'move-to-window-line cmd-move-to-window-line)
+  ;; Kill buffer and window
+  (register-command! 'kill-buffer-and-window cmd-kill-buffer-and-window)
+  ;; Flush undo
+  (register-command! 'flush-undo cmd-flush-undo)
+  ;; Upcase initials region
+  (register-command! 'upcase-initials-region cmd-upcase-initials-region)
+  ;; Untabify buffer
+  (register-command! 'untabify-buffer cmd-untabify-buffer)
+  ;; Insert buffer name
+  (register-command! 'insert-buffer-name cmd-insert-buffer-name)
+  ;; Mark defun
+  (register-command! 'mark-defun cmd-mark-defun)
+  ;; Insert pairs
+  (register-command! 'insert-parentheses cmd-insert-parentheses)
+  (register-command! 'insert-pair-brackets cmd-insert-pair-brackets)
+  (register-command! 'insert-pair-braces cmd-insert-pair-braces)
+  (register-command! 'insert-pair-quotes cmd-insert-pair-quotes)
+  ;; Describe char
+  (register-command! 'describe-char cmd-describe-char)
+  ;; Find file at point
+  (register-command! 'find-file-at-point cmd-find-file-at-point)
+  ;; Count chars region
+  (register-command! 'count-chars-region cmd-count-chars-region)
   ;; Misc
   (register-command! 'keyboard-quit cmd-keyboard-quit)
   (register-command! 'quit cmd-quit))

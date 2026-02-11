@@ -582,7 +582,54 @@
 
   ;; Enlarge/shrink window
   (keymap-bind! *ctrl-x-map* "^" 'enlarge-window)
-  (keymap-bind! *ctrl-x-map* "-" 'shrink-window))
+  (keymap-bind! *ctrl-x-map* "-" 'shrink-window)
+
+  ;; Whitespace cleanup
+  (keymap-bind! *ctrl-c-map* "c" 'whitespace-cleanup)  ; overrides copy-line
+
+  ;; Toggle electric pair (auto-pair brackets)
+  (keymap-bind! *ctrl-c-map* "Q" 'toggle-electric-pair)
+
+  ;; Previous/next buffer (C-x <left> / C-x <right>)
+  (keymap-bind! *ctrl-x-map* "<left>" 'previous-buffer)
+  (keymap-bind! *ctrl-x-map* "<right>" 'next-buffer)
+
+  ;; Balance windows
+  (keymap-bind! *ctrl-x-map* "+" 'balance-windows)
+
+  ;; Move to window line (M-r — cycle top/center/bottom)
+  (keymap-bind! *global-keymap* "M-r" 'move-to-window-line)
+
+  ;; Kill buffer and window (C-x 4 0)
+  (keymap-bind! *ctrl-x-4-map* "0" 'kill-buffer-and-window)
+
+  ;; Flush undo history
+  (keymap-bind! *ctrl-c-map* "/" 'flush-undo)
+
+  ;; Upcase initials (titlecase) region
+  (keymap-bind! *ctrl-c-map* "U" 'upcase-initials-region)
+
+  ;; Untabify buffer
+  (keymap-bind! *ctrl-c-map* "_" 'untabify-buffer)
+
+  ;; Insert buffer name at point
+  (keymap-bind! *ctrl-c-map* "%" 'insert-buffer-name)
+
+  ;; Mark defun
+  (keymap-bind! *ctrl-c-map* "y" 'mark-defun)
+
+  ;; Insert pairs
+  (keymap-bind! *ctrl-c-map* "(" 'insert-parentheses)
+  (keymap-bind! *ctrl-c-map* "[" 'insert-pair-brackets)
+
+  ;; Describe char at point
+  (keymap-bind! *ctrl-c-map* "," 'describe-char)
+
+  ;; Find file at point (C-c C-f to avoid overriding set-fill-column on C-c .)
+  (keymap-bind! *ctrl-c-map* "o" 'find-file-at-point)
+
+  ;; Count chars in region
+  (keymap-bind! *ctrl-c-map* "K" 'count-chars-region))
 
 ;;;============================================================================
 ;;; Echo state

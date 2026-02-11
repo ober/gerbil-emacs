@@ -579,7 +579,7 @@
       (check (keymap-lookup *ctrl-x-map* "C-p") => 'what-page)
       (check (keymap-lookup *ctrl-c-map* "l") => 'count-lines-region)
       ;; Copy line
-      (check (keymap-lookup *ctrl-c-map* "c") => 'copy-line))
+      (check (keymap-lookup *ctrl-c-map* "c") => 'whitespace-cleanup))
 
     (test-case "new keybindings: where-is, apropos, read-only, etc"
       ;; Help extensions
@@ -730,6 +730,41 @@
       ;; Enlarge/shrink
       (check (keymap-lookup *ctrl-x-map* "^") => 'enlarge-window)
       (check (keymap-lookup *ctrl-x-map* "-") => 'shrink-window))
+
+    (test-case "new keybindings: whitespace-cleanup, electric-pair, etc"
+      (setup-default-bindings!)
+      ;; Whitespace cleanup (overrides copy-line)
+      (check (keymap-lookup *ctrl-c-map* "c") => 'whitespace-cleanup)
+      ;; Toggle electric pair
+      (check (keymap-lookup *ctrl-c-map* "Q") => 'toggle-electric-pair)
+      ;; Previous/next buffer
+      (check (keymap-lookup *ctrl-x-map* "<left>") => 'previous-buffer)
+      (check (keymap-lookup *ctrl-x-map* "<right>") => 'next-buffer)
+      ;; Balance windows
+      (check (keymap-lookup *ctrl-x-map* "+") => 'balance-windows)
+      ;; Move to window line
+      (check (keymap-lookup *global-keymap* "M-r") => 'move-to-window-line)
+      ;; Kill buffer and window
+      (check (keymap-lookup *ctrl-x-4-map* "0") => 'kill-buffer-and-window)
+      ;; Flush undo
+      (check (keymap-lookup *ctrl-c-map* "/") => 'flush-undo)
+      ;; Upcase initials region
+      (check (keymap-lookup *ctrl-c-map* "U") => 'upcase-initials-region)
+      ;; Untabify buffer
+      (check (keymap-lookup *ctrl-c-map* "_") => 'untabify-buffer)
+      ;; Insert buffer name
+      (check (keymap-lookup *ctrl-c-map* "%") => 'insert-buffer-name)
+      ;; Mark defun
+      (check (keymap-lookup *ctrl-c-map* "y") => 'mark-defun)
+      ;; Insert pairs
+      (check (keymap-lookup *ctrl-c-map* "(") => 'insert-parentheses)
+      (check (keymap-lookup *ctrl-c-map* "[") => 'insert-pair-brackets)
+      ;; Describe char
+      (check (keymap-lookup *ctrl-c-map* ",") => 'describe-char)
+      ;; Find file at point
+      (check (keymap-lookup *ctrl-c-map* "o") => 'find-file-at-point)
+      ;; Count chars region
+      (check (keymap-lookup *ctrl-c-map* "K") => 'count-chars-region))
 
     ))
 
