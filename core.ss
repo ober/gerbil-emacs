@@ -698,14 +698,20 @@
   ;; Goto matching paren (M-g m)
   (keymap-bind! *meta-g-map* "m" 'goto-matching-paren)
 
-  ;; New commands (no keybinding — C-c map full, use M-x):
-  ;; sort-lines-case-fold, reverse-chars, replace-regexp,
-  ;; insert-file-contents, toggle-auto-revert, zap-up-to-char,
-  ;; quoted-insert, what-line-col, insert-current-date-iso,
-  ;; recenter-top, recenter-bottom, toggle-linum-mode,
-  ;; count-words-paragraph, keep-lines-region, flush-lines-region,
-  ;; insert-register-string, toggle-visible-bell, toggle-transient-mark,
-  ;; what-cursor-position (use C-x =), shell-command-on-region (use M-|)
+  ;; Backward kill sexp (M-g DEL)
+  (keymap-bind! *meta-g-map* "DEL" 'backward-kill-sexp)
+
+  ;; Goto percent (M-g %)
+  (keymap-bind! *meta-g-map* "%" 'goto-percent)
+
+  ;; All other new commands accessible via M-x:
+  ;; indent-region, unindent-region, copy-region-as-kill,
+  ;; append-to-buffer, toggle-show-trailing-whitespace,
+  ;; mark-whole-buffer, cycle-spacing, delete-horizontal-space-forward,
+  ;; toggle-debug-mode, insert-comment-separator, toggle-global-hl-line,
+  ;; insert-shebang, toggle-auto-indent, what-mode, show-buffer-size,
+  ;; insert-newline-below, insert-newline-above, duplicate-region,
+  ;; sort-lines-reverse, uniquify-lines, show-line-endings
   )
 
 ;;;============================================================================

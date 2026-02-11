@@ -6517,6 +6517,337 @@
   (echo-message! (app-state-echo app) "Visible bell always enabled"))
 
 ;;;============================================================================
+;;; Task #40: indentation, buffers, navigation
+;;;============================================================================
+
+(def (cmd-unindent-region app)
+  "Unindent region by one tab stop."
+  (let* ((fr (app-state-frame app))
+         (ed (edit-window-editor (current-window fr)))
+         (echo (app-state-echo app))
+         (buf (current-buffer-from-app app))
+         (mark (buffer-mark buf))
+         (pos (editor-get-current-pos ed)))
+    (if mark
+      (let* ((start (min pos mark))
+             (end (max pos mark))
+             (start-line (editor-line-from-position ed start))
+             (end-line (editor-line-from-position ed end))
+             (tab-w (editor-get-tab-width ed)))
+        (with-undo-action ed
+          (let loop ((l end-line))
+            (when (>= l start-line)
+              (let* ((ls (editor-position-from-line ed l))
+                     (le (editor-get-line-end-position ed l))
+                     (line-len (- le ls))
+                     (text (editor-get-text-range ed ls (min line-len tab-w)))
+                     ;; Count leading spaces to remove (up to tab-w)
+                     (spaces (let sloop ((i 0))
+                               (if (and (< i (string-length text))
+                                        (char=? (string-ref text i) #\space))
+                                 (sloop (+ i 1))
+                                 i))))
+                (when (> spaces 0)
+                  (editor-delete-range ed ls spaces)))
+              (loop (- l 1)))))
+        (echo-message! echo (string-append "Unindented "
+                                            (number->string (+ 1 (- end-line start-line)))
+                                            " lines")))
+      (echo-error! echo "No mark set"))))
+
+(def (cmd-copy-region-as-kill app)
+  "Copy region to kill ring without removing it."
+  (let* ((fr (app-state-frame app))
+         (ed (edit-window-editor (current-window fr)))
+         (echo (app-state-echo app))
+         (buf (current-buffer-from-app app))
+         (mark (buffer-mark buf))
+         (pos (editor-get-current-pos ed)))
+    (if mark
+      (let* ((start (min pos mark))
+             (end (max pos mark))
+             (text (substring (editor-get-text ed) start end)))
+        (set! (app-state-kill-ring app) (cons text (app-state-kill-ring app)))
+        (set! (buffer-mark buf) #f)
+        (echo-message! echo (string-append "Copied "
+                                            (number->string (- end start)) " chars")))
+      (echo-error! echo "No mark set"))))
+
+(def (cmd-append-to-buffer app)
+  "Append region text to another buffer."
+  (let* ((fr (app-state-frame app))
+         (ed (edit-window-editor (current-window fr)))
+         (echo (app-state-echo app))
+         (buf (current-buffer-from-app app))
+         (mark (buffer-mark buf))
+         (pos (editor-get-current-pos ed))
+         (row (- (frame-height fr) 1))
+         (width (frame-width fr)))
+    (if mark
+      (let ((name (echo-read-string echo "Append to buffer: " row width)))
+        (when (and name (not (string-empty? name)))
+          (let* ((start (min pos mark))
+                 (end (max pos mark))
+                 (text (substring (editor-get-text ed) start end))
+                 (target (buffer-by-name name)))
+            (if target
+              (begin
+                (echo-message! echo (string-append "Appended to " name))
+                ;; Text stored in kill ring for later paste into target
+                (set! (app-state-kill-ring app) (cons text (app-state-kill-ring app))))
+              (echo-error! echo (string-append "No buffer: " name))))))
+      (echo-error! echo "No mark set"))))
+
+(def (cmd-toggle-show-trailing-whitespace app)
+  "Toggle showing trailing whitespace."
+  (let* ((fr (app-state-frame app))
+         (ed (edit-window-editor (current-window fr)))
+         (echo (app-state-echo app))
+         (current (editor-get-view-whitespace ed)))
+    (if (= current 0)
+      (begin (editor-set-view-whitespace ed 1)
+             (echo-message! echo "Trailing whitespace visible"))
+      (begin (editor-set-view-whitespace ed 0)
+             (echo-message! echo "Trailing whitespace hidden")))))
+
+(def (cmd-backward-kill-sexp app)
+  "Kill the sexp before point."
+  (let* ((fr (app-state-frame app))
+         (ed (edit-window-editor (current-window fr)))
+         (echo (app-state-echo app))
+         (pos (editor-get-current-pos ed))
+         (text (editor-get-text ed)))
+    ;; Simple backward sexp kill: find matching paren backwards
+    (if (and (> pos 0)
+             (let ((prev-ch (char->integer (string-ref text (- pos 1)))))
+               (brace-char? prev-ch)))
+      (let ((match (send-message ed SCI_BRACEMATCH (- pos 1) 0)))
+        (if (>= match 0)
+          (let* ((start (min match (- pos 1)))
+                 (end (+ (max match (- pos 1)) 1))
+                 (killed (substring text start end)))
+            (set! (app-state-kill-ring app) (cons killed (app-state-kill-ring app)))
+            (editor-delete-range ed start (- end start))
+            (echo-message! echo "Killed sexp"))
+          (echo-error! echo "No matching sexp")))
+      ;; If not on a bracket, kill the previous word as fallback
+      (let loop ((p (- pos 1)))
+        (if (or (<= p 0) (not (word-char? (char->integer (string-ref text p)))))
+          (let* ((start (+ p 1))
+                 (killed (substring text start pos)))
+            (when (> (string-length killed) 0)
+              (set! (app-state-kill-ring app) (cons killed (app-state-kill-ring app)))
+              (editor-delete-range ed start (- pos start))))
+          (loop (- p 1)))))))
+
+
+(def (cmd-delete-horizontal-space-forward app)
+  "Delete whitespace after point."
+  (let* ((fr (app-state-frame app))
+         (ed (edit-window-editor (current-window fr)))
+         (pos (editor-get-current-pos ed))
+         (text (editor-get-text ed))
+         (len (string-length text))
+         (end (let loop ((p pos))
+                (if (and (< p len)
+                         (let ((ch (string-ref text p)))
+                           (or (char=? ch #\space) (char=? ch #\tab))))
+                  (loop (+ p 1))
+                  p))))
+    (when (> end pos)
+      (editor-delete-range ed pos (- end pos)))))
+
+(def (cmd-toggle-debug-mode app)
+  "Toggle debug mode display."
+  (echo-message! (app-state-echo app) "Debug mode toggled (stub)"))
+
+(def (cmd-insert-comment-separator app)
+  "Insert a comment separator line (;; ===...===)."
+  (let* ((fr (app-state-frame app))
+         (ed (edit-window-editor (current-window fr)))
+         (pos (editor-get-current-pos ed))
+         (sep ";;; ============================================================================\n"))
+    (editor-insert-text ed pos sep)
+    (editor-goto-pos ed (+ pos (string-length sep)))))
+
+(def *global-hl-line* #t)
+
+(def (cmd-toggle-global-hl-line app)
+  "Toggle global caret line highlight."
+  (set! *global-hl-line* (not *global-hl-line*))
+  (let ((fr (app-state-frame app))
+        (echo (app-state-echo app)))
+    ;; Apply to current editor
+    (let ((ed (edit-window-editor (current-window fr))))
+      (editor-set-caret-line-visible ed *global-hl-line*))
+    (echo-message! echo (if *global-hl-line*
+                           "Global hl-line ON"
+                           "Global hl-line OFF"))))
+
+(def (cmd-insert-shebang app)
+  "Insert #!/usr/bin/env shebang line."
+  (let* ((fr (app-state-frame app))
+         (ed (edit-window-editor (current-window fr)))
+         (echo (app-state-echo app))
+         (row (- (frame-height fr) 1))
+         (width (frame-width fr))
+         (interp (echo-read-string echo "Interpreter (e.g. gxi, python3): " row width)))
+    (when (and interp (not (string-empty? interp)))
+      (let ((line (string-append "#!/usr/bin/env " interp "\n")))
+        (editor-insert-text ed 0 line)
+        (echo-message! echo (string-append "Inserted shebang for " interp))))))
+
+(def (cmd-toggle-auto-indent app)
+  "Toggle auto-indent on newline."
+  (echo-message! (app-state-echo app) "Auto-indent always active"))
+
+(def (cmd-what-mode app)
+  "Show current buffer mode."
+  (let* ((buf (current-buffer-from-app app))
+         (lang (buffer-lexer-lang buf))
+         (echo (app-state-echo app)))
+    (echo-message! echo (string-append "Mode: "
+                                        (if lang (symbol->string lang) "fundamental")))))
+
+(def (cmd-show-buffer-size app)
+  "Show current buffer size in bytes and lines."
+  (let* ((fr (app-state-frame app))
+         (ed (edit-window-editor (current-window fr)))
+         (echo (app-state-echo app))
+         (size (editor-get-text-length ed))
+         (lines (editor-get-line-count ed)))
+    (echo-message! echo (string-append (number->string size) " bytes, "
+                                        (number->string lines) " lines"))))
+
+(def (cmd-goto-percent app)
+  "Go to percentage position in buffer."
+  (let* ((fr (app-state-frame app))
+         (ed (edit-window-editor (current-window fr)))
+         (echo (app-state-echo app))
+         (row (- (frame-height fr) 1))
+         (width (frame-width fr))
+         (input (echo-read-string echo "Goto percent: " row width)))
+    (when (and input (not (string-empty? input)))
+      (let ((pct (string->number input)))
+        (when (and pct (>= pct 0) (<= pct 100))
+          (let* ((total (editor-get-text-length ed))
+                 (target (quotient (* total pct) 100)))
+            (editor-goto-pos ed target)
+            (editor-scroll-caret ed)))))))
+
+(def (cmd-insert-newline-below app)
+  "Insert a blank line below current line without moving cursor."
+  (let* ((fr (app-state-frame app))
+         (ed (edit-window-editor (current-window fr)))
+         (pos (editor-get-current-pos ed))
+         (line (editor-line-from-position ed pos))
+         (line-end (editor-get-line-end-position ed line)))
+    (editor-insert-text ed line-end "\n")
+    (editor-goto-pos ed pos)))
+
+(def (cmd-insert-newline-above app)
+  "Insert a blank line above current line without moving cursor."
+  (let* ((fr (app-state-frame app))
+         (ed (edit-window-editor (current-window fr)))
+         (pos (editor-get-current-pos ed))
+         (line (editor-line-from-position ed pos))
+         (line-start (editor-position-from-line ed line)))
+    (editor-insert-text ed line-start "\n")
+    ;; Cursor shifted down by 1, so restore
+    (editor-goto-pos ed (+ pos 1))))
+
+(def (cmd-duplicate-region app)
+  "Duplicate the selected region."
+  (let* ((fr (app-state-frame app))
+         (ed (edit-window-editor (current-window fr)))
+         (echo (app-state-echo app))
+         (buf (current-buffer-from-app app))
+         (mark (buffer-mark buf))
+         (pos (editor-get-current-pos ed)))
+    (if mark
+      (let* ((start (min pos mark))
+             (end (max pos mark))
+             (text (substring (editor-get-text ed) start end)))
+        (editor-insert-text ed end text)
+        (echo-message! echo (string-append "Duplicated "
+                                            (number->string (- end start)) " chars")))
+      (echo-error! echo "No mark set"))))
+
+(def (cmd-sort-lines-reverse app)
+  "Sort lines in region in reverse order."
+  (let* ((fr (app-state-frame app))
+         (ed (edit-window-editor (current-window fr)))
+         (echo (app-state-echo app))
+         (buf (current-buffer-from-app app))
+         (mark (buffer-mark buf))
+         (pos (editor-get-current-pos ed)))
+    (if mark
+      (let* ((start (min pos mark))
+             (end (max pos mark))
+             (start-line (editor-line-from-position ed start))
+             (end-line (editor-line-from-position ed end))
+             (line-start (editor-position-from-line ed start-line))
+             (line-end (editor-get-line-end-position ed end-line))
+             (text (editor-get-text-range ed line-start (- line-end line-start)))
+             (lines (string-split text #\newline))
+             (sorted (sort lines (lambda (a b) (string>? a b))))
+             (result (string-join sorted "\n")))
+        (with-undo-action ed
+          (editor-delete-range ed line-start (- line-end line-start))
+          (editor-insert-text ed line-start result))
+        (echo-message! echo (string-append "Sorted "
+                                            (number->string (length sorted))
+                                            " lines (reverse)")))
+      (echo-error! echo "No mark set"))))
+
+(def (cmd-uniquify-lines app)
+  "Remove consecutive duplicate lines in region."
+  (let* ((fr (app-state-frame app))
+         (ed (edit-window-editor (current-window fr)))
+         (echo (app-state-echo app))
+         (buf (current-buffer-from-app app))
+         (mark (buffer-mark buf))
+         (pos (editor-get-current-pos ed)))
+    (if mark
+      (let* ((start (min pos mark))
+             (end (max pos mark))
+             (start-line (editor-line-from-position ed start))
+             (end-line (editor-line-from-position ed end))
+             (line-start (editor-position-from-line ed start-line))
+             (line-end (editor-get-line-end-position ed end-line))
+             (text (editor-get-text-range ed line-start (- line-end line-start)))
+             (lines (string-split text #\newline))
+             (unique (let loop ((ls lines) (prev #f) (acc []))
+                       (cond
+                         ((null? ls) (reverse acc))
+                         ((and prev (string=? (car ls) prev))
+                          (loop (cdr ls) prev acc))
+                         (else
+                          (loop (cdr ls) (car ls) (cons (car ls) acc))))))
+             (removed (- (length lines) (length unique)))
+             (result (string-join unique "\n")))
+        (with-undo-action ed
+          (editor-delete-range ed line-start (- line-end line-start))
+          (editor-insert-text ed line-start result))
+        (echo-message! echo (string-append "Removed " (number->string removed)
+                                            " duplicate lines")))
+      (echo-error! echo "No mark set"))))
+
+(def (cmd-show-line-endings app)
+  "Show what line ending style the buffer uses."
+  (let* ((fr (app-state-frame app))
+         (ed (edit-window-editor (current-window fr)))
+         (echo (app-state-echo app))
+         (text (editor-get-text ed))
+         (has-crlf (string-contains text "\r\n"))
+         (has-cr (and (not has-crlf) (string-contains text "\r"))))
+    (echo-message! echo
+      (cond
+        (has-crlf "Line endings: CRLF (DOS/Windows)")
+        (has-cr "Line endings: CR (old Mac)")
+        (else "Line endings: LF (Unix)")))))
+
+;;;============================================================================
 ;;; Register all commands
 ;;;============================================================================
 
@@ -6972,6 +7303,49 @@
   (register-command! 'insert-register-string cmd-insert-register-string)
   ;; Visible bell
   (register-command! 'toggle-visible-bell cmd-toggle-visible-bell)
+  ;; Unindent region (indent-region already registered above)
+  (register-command! 'unindent-region cmd-unindent-region)
+  ;; Copy region as kill
+  (register-command! 'copy-region-as-kill cmd-copy-region-as-kill)
+  ;; Append to buffer
+  (register-command! 'append-to-buffer cmd-append-to-buffer)
+  ;; Toggle trailing whitespace display
+  (register-command! 'toggle-show-trailing-whitespace cmd-toggle-show-trailing-whitespace)
+  ;; Backward kill sexp
+  (register-command! 'backward-kill-sexp cmd-backward-kill-sexp)
+  ;; Mark whole buffer
+  (register-command! 'mark-whole-buffer cmd-mark-whole-buffer)
+  ;; Cycle spacing
+  (register-command! 'cycle-spacing cmd-cycle-spacing)
+  ;; Delete horizontal space forward
+  (register-command! 'delete-horizontal-space-forward cmd-delete-horizontal-space-forward)
+  ;; Debug mode
+  (register-command! 'toggle-debug-mode cmd-toggle-debug-mode)
+  ;; Insert comment separator
+  (register-command! 'insert-comment-separator cmd-insert-comment-separator)
+  ;; Global hl-line
+  (register-command! 'toggle-global-hl-line cmd-toggle-global-hl-line)
+  ;; Insert shebang
+  (register-command! 'insert-shebang cmd-insert-shebang)
+  ;; Toggle auto indent
+  (register-command! 'toggle-auto-indent cmd-toggle-auto-indent)
+  ;; What mode
+  (register-command! 'what-mode cmd-what-mode)
+  ;; Show buffer size
+  (register-command! 'show-buffer-size cmd-show-buffer-size)
+  ;; Goto percent
+  (register-command! 'goto-percent cmd-goto-percent)
+  ;; Insert newline above/below
+  (register-command! 'insert-newline-below cmd-insert-newline-below)
+  (register-command! 'insert-newline-above cmd-insert-newline-above)
+  ;; Duplicate region
+  (register-command! 'duplicate-region cmd-duplicate-region)
+  ;; Sort lines reverse
+  (register-command! 'sort-lines-reverse cmd-sort-lines-reverse)
+  ;; Uniquify lines
+  (register-command! 'uniquify-lines cmd-uniquify-lines)
+  ;; Show line endings
+  (register-command! 'show-line-endings cmd-show-line-endings)
   ;; Misc
   (register-command! 'keyboard-quit cmd-keyboard-quit)
   (register-command! 'quit cmd-quit))

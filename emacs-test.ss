@@ -829,6 +829,17 @@
       (check (keymap-lookup *meta-g-map* "f") => 'forward-sexp)
       (check (keymap-lookup *meta-g-map* "b") => 'backward-sexp))
 
+    (test-case "new keybindings: backward-kill-sexp, goto-percent, etc"
+      ;; M-g DEL -> backward-kill-sexp
+      (check (keymap-lookup *meta-g-map* "DEL") => 'backward-kill-sexp)
+      ;; M-g % -> goto-percent
+      (check (keymap-lookup *meta-g-map* "%") => 'goto-percent)
+      ;; Verify existing M-g bindings still intact
+      (check (keymap-lookup *meta-g-map* "u") => 'backward-up-list)
+      (check (keymap-lookup *meta-g-map* "m") => 'goto-matching-paren)
+      (check (keymap-lookup *meta-g-map* "v") => 'scroll-other-window)
+      (check (keymap-lookup *meta-g-map* "V") => 'scroll-other-window-up))
+
     ))
 
 ;; Run tests when executed directly
