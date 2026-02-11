@@ -25,8 +25,9 @@
 ;;;============================================================================
 
 (defstruct qt-edit-window
-  (editor   ; QPlainTextEdit pointer
-   buffer)  ; buffer struct
+  (editor           ; QPlainTextEdit pointer
+   buffer           ; buffer struct
+   line-number-area) ; line-number-area pointer or #f
   transparent: #t)
 
 (defstruct qt-frame
@@ -60,7 +61,8 @@
    Returns the frame struct."
   (let* ((editor (qt-plain-text-edit-create parent: splitter))
          (buf (qt-buffer-create! buffer-scratch-name editor))
-         (win (make-qt-edit-window editor buf)))
+         (lna (qt-line-number-area-create editor))
+         (win (make-qt-edit-window editor buf lna)))
     (qt-plain-text-edit-set-document! editor (buffer-doc-pointer buf))
     (qt-splitter-add-widget! splitter editor)
     (make-qt-frame splitter (list win) 0 main-win)))
@@ -75,7 +77,8 @@
   (let* ((cur (qt-current-window fr))
          (buf (qt-edit-window-buffer cur))
          (new-ed (qt-plain-text-edit-create parent: (qt-frame-splitter fr)))
-         (new-win (make-qt-edit-window new-ed buf)))
+         (lna (qt-line-number-area-create new-ed))
+         (new-win (make-qt-edit-window new-ed buf lna)))
     (qt-buffer-attach! new-ed buf)
     (qt-splitter-add-widget! (qt-frame-splitter fr) new-ed)
     (set! (qt-frame-windows fr)
@@ -88,7 +91,8 @@
   (let* ((cur (qt-current-window fr))
          (buf (qt-edit-window-buffer cur))
          (new-ed (qt-plain-text-edit-create parent: (qt-frame-splitter fr)))
-         (new-win (make-qt-edit-window new-ed buf)))
+         (lna (qt-line-number-area-create new-ed))
+         (new-win (make-qt-edit-window new-ed buf lna)))
     (qt-buffer-attach! new-ed buf)
     (qt-splitter-add-widget! (qt-frame-splitter fr) new-ed)
     (set! (qt-frame-windows fr)

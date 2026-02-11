@@ -16,7 +16,8 @@
         :gerbil-emacs/shell
         :gerbil-emacs/qt/buffer
         :gerbil-emacs/qt/window
-        :gerbil-emacs/qt/echo)
+        :gerbil-emacs/qt/echo
+        :gerbil-emacs/qt/highlight)
 
 ;;;============================================================================
 ;;; Helpers
@@ -236,6 +237,7 @@
                   (qt-plain-text-edit-set-text! ed text)
                   (qt-text-document-set-modified! (buffer-doc-pointer buf) #f)
                   (qt-plain-text-edit-set-cursor-position! ed 0))))
+            (qt-setup-highlighting! app buf)
             (echo-message! echo (string-append "Opened: " filename))))))))
 
 (def (cmd-save-buffer app)
@@ -300,6 +302,8 @@
                     (qt-buffer-attach! ed other)
                     (set! (qt-edit-window-buffer (qt-current-window fr))
                           other))))
+              ;; Clean up syntax highlighter if applicable
+              (qt-remove-highlighting! buf)
               ;; Clean up dired entries if applicable
               (hash-remove! *dired-entries* buf)
               ;; Clean up REPL state if applicable
@@ -785,6 +789,62 @@
 ;;; Tab / indent
 ;;;============================================================================
 
+;;;----------------------------------------------------------------------------
+;;; Autocomplete support
+;;;----------------------------------------------------------------------------
+
+;; Per-editor completer
+(def *editor-completers* (make-hash-table))
+
+(def (word-char-for-complete? ch)
+  (or (char-alphabetic? ch) (char-numeric? ch)
+      (char=? ch #\_) (char=? ch #\-) (char=? ch #\!)
+      (char=? ch #\?) (char=? ch #\*) (char=? ch #\>)))
+
+(def (get-word-prefix ed)
+  "Get the word prefix before the cursor."
+  (let* ((pos (qt-plain-text-edit-cursor-position ed))
+         (text (qt-plain-text-edit-text ed)))
+    (let loop ((i (- pos 1)))
+      (if (or (< i 0) (not (word-char-for-complete? (string-ref text i))))
+        (if (< (+ i 1) pos)
+          (substring text (+ i 1) pos)
+          "")
+        (loop (- i 1))))))
+
+(def (collect-buffer-words text)
+  "Collect unique words from buffer text."
+  (let ((words (make-hash-table))
+        (len (string-length text)))
+    (let loop ((i 0))
+      (if (>= i len) (hash-keys words)
+        (if (word-char-for-complete? (string-ref text i))
+          ;; Start of a word
+          (let find-end ((j (+ i 1)))
+            (if (or (>= j len) (not (word-char-for-complete? (string-ref text j))))
+              (begin
+                (when (> (- j i) 1) ;; skip single-char words
+                  (hash-put! words (substring text i j) #t))
+                (loop j))
+              (find-end (+ j 1))))
+          (loop (+ i 1)))))))
+
+(def (get-or-create-completer! ed app)
+  "Get or create a completer for an editor."
+  (or (hash-get *editor-completers* ed)
+      (let ((c (qt-completer-create [])))
+        (qt-completer-set-case-sensitivity! c #f)
+        (qt-completer-set-widget! c ed)
+        ;; When completion accepted, insert the remaining text
+        (qt-on-completer-activated! c
+          (lambda (text)
+            (let ((prefix (get-word-prefix ed)))
+              (when (> (string-length text) (string-length prefix))
+                (qt-plain-text-edit-insert-text! ed
+                  (substring text (string-length prefix) (string-length text)))))))
+        (hash-put! *editor-completers* ed c)
+        c)))
+
 (def (cmd-indent-or-complete app)
   (let ((buf (current-qt-buffer app)))
     (cond
@@ -796,7 +856,29 @@
          (when (and rs (>= pos (repl-state-prompt-pos rs)))
            (qt-plain-text-edit-insert-text! ed "  "))))
       (else
-       (qt-plain-text-edit-insert-text! (current-qt-editor app) "  ")))))
+       (let* ((ed (current-qt-editor app))
+              (prefix (get-word-prefix ed)))
+         (if (string=? prefix "")
+           ;; No word prefix — just indent
+           (qt-plain-text-edit-insert-text! ed "  ")
+           ;; Have a prefix — show completions
+           (let* ((text (qt-plain-text-edit-text ed))
+                  (words (collect-buffer-words text))
+                  ;; Filter to matching words
+                  (matches (filter (lambda (w)
+                                     (and (> (string-length w) (string-length prefix))
+                                          (string-prefix? prefix w)))
+                                   words))
+                  (sorted (sort matches string<?)))
+             (if (null? sorted)
+               (qt-plain-text-edit-insert-text! ed "  ")
+               (let ((c (get-or-create-completer! ed app)))
+                 (qt-completer-set-model-strings! c sorted)
+                 (qt-completer-set-completion-prefix! c prefix)
+                 ;; Show popup at cursor position
+                 (let* ((pos (qt-plain-text-edit-cursor-position ed))
+                        (line (qt-plain-text-edit-cursor-line ed)))
+                   (qt-completer-complete-rect! c 0 0 200 20)))))))))))
 
 ;;;============================================================================
 ;;; Query replace
@@ -1018,6 +1100,7 @@
                           (qt-text-document-set-modified!
                             (buffer-doc-pointer new-buf) #f)
                           (qt-plain-text-edit-set-cursor-position! ed 0)))
+                      (qt-setup-highlighting! app new-buf)
                       (echo-message! (app-state-echo app)
                                      (string-append "Opened: "
                                                     full-path)))))))))))))
@@ -1088,6 +1171,43 @@
         (if error?
           (echo-error! echo result)
           (echo-message! echo result))))))
+
+;;;============================================================================
+;;; Zoom commands
+;;;============================================================================
+
+(def (cmd-zoom-in app)
+  (let* ((ed (current-qt-editor app))
+         (font (qt-widget-font ed))
+         (size (qt-font-point-size font)))
+    (qt-font-destroy! font)
+    (qt-widget-set-font-size! ed (+ size 1))))
+
+(def (cmd-zoom-out app)
+  (let* ((ed (current-qt-editor app))
+         (font (qt-widget-font ed))
+         (size (qt-font-point-size font)))
+    (qt-font-destroy! font)
+    (when (> size 6)
+      (qt-widget-set-font-size! ed (- size 1)))))
+
+;;;============================================================================
+;;; Toggle line numbers
+;;;============================================================================
+
+(def *line-numbers-visible* #t)
+
+(def (cmd-toggle-line-numbers app)
+  (set! *line-numbers-visible* (not *line-numbers-visible*))
+  (let ((fr (app-state-frame app)))
+    (for-each
+      (lambda (win)
+        (let ((lna (qt-edit-window-line-number-area win)))
+          (when lna
+            (qt-line-number-area-set-visible! lna *line-numbers-visible*))))
+      (qt-frame-windows fr)))
+  (echo-message! (app-state-echo app)
+    (if *line-numbers-visible* "Line numbers ON" "Line numbers OFF")))
 
 ;;;============================================================================
 ;;; Register all commands
@@ -1174,6 +1294,11 @@
   (register-command! 'end-of-defun cmd-end-of-defun)
   ;; Tab/indent
   (register-command! 'indent-or-complete cmd-indent-or-complete)
+  ;; Zoom
+  (register-command! 'zoom-in cmd-zoom-in)
+  (register-command! 'zoom-out cmd-zoom-out)
+  ;; Line numbers
+  (register-command! 'toggle-line-numbers cmd-toggle-line-numbers)
   ;; Misc
   (register-command! 'keyboard-quit cmd-keyboard-quit)
   (register-command! 'quit cmd-quit))

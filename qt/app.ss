@@ -14,7 +14,9 @@
         :gerbil-emacs/qt/window
         :gerbil-emacs/qt/modeline
         :gerbil-emacs/qt/echo
-        :gerbil-emacs/qt/commands)
+        :gerbil-emacs/qt/highlight
+        :gerbil-emacs/qt/commands
+        :gerbil-emacs/qt/menubar)
 
 ;;;============================================================================
 ;;; Qt Application
@@ -63,6 +65,9 @@
       ;; Set up keybindings and commands
       (setup-default-bindings!)
       (qt-register-all-commands!)
+
+      ;; Menu bar and toolbar
+      (qt-setup-menubar! app win)
 
       ;; Initial text in scratch buffer
       (let ((ed (qt-current-editor fr)))
@@ -130,6 +135,9 @@
                       (echo-error! (app-state-echo app)
                                    (string-append data " is undefined")))
                      ((ignore) (void)))  ;; bare modifier keys — do nothing
+                   ;; Update visual decorations (current-line + brace match)
+                   (qt-update-visual-decorations!
+                     (qt-current-editor (app-state-frame app)))
                    ;; Update modeline and echo after each key
                    (qt-modeline-update! app)
                    (qt-echo-draw! (app-state-echo app) echo-label))))))
@@ -228,4 +236,5 @@
           (when text
             (qt-plain-text-edit-set-text! ed text)
             (qt-text-document-set-modified! (buffer-doc-pointer buf) #f)
-            (qt-plain-text-edit-set-cursor-position! ed 0)))))))
+            (qt-plain-text-edit-set-cursor-position! ed 0))))
+      (qt-setup-highlighting! app buf))))
