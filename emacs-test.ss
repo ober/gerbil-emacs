@@ -491,6 +491,24 @@
         (check error? => #t)
         (check (string? result) => #t)))
 
+    (test-case "register keybindings"
+      (setup-default-bindings!)
+      (let ((rxr-map (keymap-lookup *ctrl-x-map* "r")))
+        (check (keymap-lookup rxr-map "s") => 'copy-to-register)
+        (check (keymap-lookup rxr-map "i") => 'insert-register)
+        (check (keymap-lookup rxr-map "SPC") => 'point-to-register)
+        (check (keymap-lookup rxr-map "j") => 'jump-to-register)))
+
+    (test-case "new keybindings: backward-kill-word, zap, goto-char"
+      (setup-default-bindings!)
+      (check (keymap-lookup *global-keymap* "M-DEL") => 'backward-kill-word)
+      (check (keymap-lookup *global-keymap* "M-z") => 'zap-to-char)
+      (check (keymap-lookup *meta-g-map* "c") => 'goto-char))
+
+    (test-case "app-state registers field"
+      (let ((app (new-app-state #f)))
+        (check (hash-table? (app-state-registers app)) => #t)))
+
     (test-case "repl subprocess lifecycle"
       (let ((rs (repl-start!)))
         ;; Verify state is initialized

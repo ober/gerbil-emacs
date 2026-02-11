@@ -2356,6 +2356,230 @@
             (string-append "Buffer gone: " buf-name)))))))
 
 ;;;============================================================================
+;;; Registers
+;;;============================================================================
+
+(def (cmd-copy-to-register app)
+  "Save region text to a register (C-x r s)."
+  (let* ((echo (app-state-echo app))
+         (fr (app-state-frame app))
+         (row (- (frame-height fr) 1))
+         (width (frame-width fr))
+         (input (echo-read-string echo "Copy to register: " row width)))
+    (when (and input (> (string-length input) 0))
+      (let* ((reg-char (string-ref input 0))
+             (ed (current-editor app))
+             (buf (current-buffer-from-app app))
+             (mark (buffer-mark buf)))
+        (if (not mark)
+          (echo-error! echo "No mark set")
+          (let* ((pos (editor-get-current-pos ed))
+                 (start (min pos mark))
+                 (end (max pos mark))
+                 (text (substring (editor-get-text ed) start end)))
+            (hash-put! (app-state-registers app) reg-char text)
+            (echo-message! echo
+              (string-append "Copied to register " (string reg-char)))))))))
+
+(def (cmd-insert-register app)
+  "Insert text from a register (C-x r i)."
+  (let* ((echo (app-state-echo app))
+         (fr (app-state-frame app))
+         (row (- (frame-height fr) 1))
+         (width (frame-width fr))
+         (input (echo-read-string echo "Insert register: " row width)))
+    (when (and input (> (string-length input) 0))
+      (let* ((reg-char (string-ref input 0))
+             (val (hash-get (app-state-registers app) reg-char)))
+        (cond
+          ((not val)
+           (echo-error! echo
+             (string-append "Register " (string reg-char) " is empty")))
+          ((string? val)
+           (let* ((ed (current-editor app))
+                  (pos (editor-get-current-pos ed)))
+             (editor-insert-text ed pos val)
+             (echo-message! echo
+               (string-append "Inserted from register " (string reg-char)))))
+          ;; Point register — jump instead
+          ((pair? val)
+           (let* ((buf-name (car val))
+                  (reg-pos (cdr val))
+                  (buf (buffer-by-name buf-name))
+                  (fr (app-state-frame app)))
+             (if buf
+               (let ((ed (current-editor app)))
+                 (buffer-attach! ed buf)
+                 (set! (edit-window-buffer (current-window fr)) buf)
+                 (editor-goto-pos ed reg-pos)
+                 (editor-scroll-caret ed)
+                 (echo-message! echo "Jumped to register"))
+               (echo-error! echo
+                 (string-append "Buffer gone: " buf-name))))))))))
+
+(def (cmd-point-to-register app)
+  "Save current position to a register (C-x r SPC)."
+  (let* ((echo (app-state-echo app))
+         (fr (app-state-frame app))
+         (row (- (frame-height fr) 1))
+         (width (frame-width fr))
+         (input (echo-read-string echo "Point to register: " row width)))
+    (when (and input (> (string-length input) 0))
+      (let* ((reg-char (string-ref input 0))
+             (ed (current-editor app))
+             (buf (current-buffer-from-app app))
+             (pos (editor-get-current-pos ed)))
+        (hash-put! (app-state-registers app) reg-char
+                   (cons (buffer-name buf) pos))
+        (echo-message! echo
+          (string-append "Position saved to register " (string reg-char)))))))
+
+(def (cmd-jump-to-register app)
+  "Jump to a position saved in a register (C-x r j)."
+  (let* ((echo (app-state-echo app))
+         (fr (app-state-frame app))
+         (row (- (frame-height fr) 1))
+         (width (frame-width fr))
+         (input (echo-read-string echo "Jump to register: " row width)))
+    (when (and input (> (string-length input) 0))
+      (let* ((reg-char (string-ref input 0))
+             (val (hash-get (app-state-registers app) reg-char)))
+        (cond
+          ((not val)
+           (echo-error! echo
+             (string-append "Register " (string reg-char) " is empty")))
+          ((pair? val)
+           (let* ((buf-name (car val))
+                  (pos (cdr val))
+                  (buf (buffer-by-name buf-name)))
+             (if buf
+               (let ((ed (current-editor app)))
+                 (buffer-attach! ed buf)
+                 (set! (edit-window-buffer (current-window fr)) buf)
+                 (editor-goto-pos ed pos)
+                 (editor-scroll-caret ed)
+                 (echo-message! echo "Jumped to register"))
+               (echo-error! echo
+                 (string-append "Buffer gone: " buf-name)))))
+          ((string? val)
+           ;; Text register — insert it
+           (let* ((ed (current-editor app))
+                  (pos (editor-get-current-pos ed)))
+             (editor-insert-text ed pos val)
+             (echo-message! echo
+               (string-append "Inserted from register " (string reg-char))))))))))
+
+;;;============================================================================
+;;; Backward kill word, zap to char, goto char
+;;;============================================================================
+
+(def (cmd-backward-kill-word app)
+  "Kill from point backward to the beginning of the previous word."
+  (let* ((ed (current-editor app))
+         (pos (editor-get-current-pos ed))
+         (text (editor-get-text ed)))
+    (when (> pos 0)
+      ;; Skip whitespace/non-word chars backward
+      (let skip-space ((i (- pos 1)))
+        (if (and (>= i 0) (not (word-char? (string-ref text i))))
+          (skip-space (- i 1))
+          ;; Now skip word chars backward
+          (let skip-word ((j i))
+            (if (and (>= j 0) (word-char? (string-ref text j)))
+              (skip-word (- j 1))
+              ;; j+1 is the start of the word
+              (let* ((start (+ j 1))
+                     (killed (substring text start pos)))
+                (when (> (string-length killed) 0)
+                  (set! (app-state-kill-ring app)
+                    (cons killed (app-state-kill-ring app)))
+                  (send-message ed SCI_DELETERANGE start (- pos start)))))))))))
+
+(def (cmd-zap-to-char app)
+  "Kill from point to the next occurrence of a character (inclusive)."
+  (let* ((echo (app-state-echo app))
+         (fr (app-state-frame app))
+         (row (- (frame-height fr) 1))
+         (width (frame-width fr))
+         (input (echo-read-string echo "Zap to char: " row width)))
+    (when (and input (> (string-length input) 0))
+      (let* ((target-char (string-ref input 0))
+             (ed (current-editor app))
+             (pos (editor-get-current-pos ed))
+             (len (editor-get-text-length ed))
+             ;; Search forward for the character
+             (found-pos
+               (let loop ((i pos))
+                 (cond
+                   ((>= i len) #f)
+                   ((let ((ch (send-message ed SCI_GETCHARAT i 0)))
+                      (= ch (char->integer target-char)))
+                    (+ i 1))  ; inclusive of the target char
+                   (else (loop (+ i 1)))))))
+        (if found-pos
+          (let ((text (substring (editor-get-text ed) pos found-pos)))
+            ;; Add to kill ring
+            (set! (app-state-kill-ring app)
+              (cons text (app-state-kill-ring app)))
+            ;; Delete the text
+            (send-message ed SCI_DELETERANGE pos (- found-pos pos)))
+          (echo-error! echo
+            (string-append "Character '" (string target-char) "' not found")))))))
+
+(def (cmd-goto-char app)
+  "Go to a specific character position in the buffer."
+  (let* ((echo (app-state-echo app))
+         (fr (app-state-frame app))
+         (row (- (frame-height fr) 1))
+         (width (frame-width fr))
+         (input (echo-read-string echo "Goto char: " row width)))
+    (when input
+      (let ((n (string->number input)))
+        (if n
+          (let ((ed (current-editor app)))
+            (editor-goto-pos ed (max 0 (inexact->exact (floor n))))
+            (editor-scroll-caret ed))
+          (echo-error! echo "Invalid position"))))))
+
+;;;============================================================================
+;;; Replace string (non-interactive)
+;;;============================================================================
+
+(def (cmd-replace-string app)
+  "Non-interactive replace: replace all occurrences of FROM with TO."
+  (let* ((echo (app-state-echo app))
+         (fr (app-state-frame app))
+         (row (- (frame-height fr) 1))
+         (width (frame-width fr))
+         (from-str (echo-read-string echo "Replace string: " row width)))
+    (when (and from-str (> (string-length from-str) 0))
+      (let ((to-str (echo-read-string echo
+                      (string-append "Replace \"" from-str "\" with: ")
+                      row width)))
+        (when to-str
+          (let* ((ed (current-editor app))
+                 (count 0))
+            (send-message ed SCI_BEGINUNDOACTION)
+            ;; Search from beginning
+            (send-message ed SCI_SETTARGETSTART 0 0)
+            (send-message ed SCI_SETTARGETEND (editor-get-text-length ed) 0)
+            (send-message ed SCI_SETSEARCHFLAGS 0 0)
+            (let loop ()
+              (let ((found (send-message/string ed SCI_SEARCHINTARGET from-str)))
+                (when (>= found 0)
+                  (send-message/string ed SCI_REPLACETARGET to-str)
+                  (set! count (+ count 1))
+                  ;; Set target for next search
+                  (let ((new-start (+ found (string-length to-str))))
+                    (send-message ed SCI_SETTARGETSTART new-start 0)
+                    (send-message ed SCI_SETTARGETEND (editor-get-text-length ed) 0)
+                    (loop)))))
+            (send-message ed SCI_ENDUNDOACTION)
+            (echo-message! echo
+              (string-append "Replaced " (number->string count)
+                             " occurrences"))))))))
+
+;;;============================================================================
 ;;; Register all commands
 ;;;============================================================================
 
@@ -2507,6 +2731,17 @@
   (register-command! 'call-last-kbd-macro cmd-call-last-kbd-macro)
   ;; Mark ring
   (register-command! 'pop-mark cmd-pop-mark)
+  ;; Registers
+  (register-command! 'copy-to-register cmd-copy-to-register)
+  (register-command! 'insert-register cmd-insert-register)
+  (register-command! 'point-to-register cmd-point-to-register)
+  (register-command! 'jump-to-register cmd-jump-to-register)
+  ;; Backward kill word, zap to char, goto char
+  (register-command! 'backward-kill-word cmd-backward-kill-word)
+  (register-command! 'zap-to-char cmd-zap-to-char)
+  (register-command! 'goto-char cmd-goto-char)
+  ;; Replace string (non-interactive)
+  (register-command! 'replace-string cmd-replace-string)
   ;; Misc
   (register-command! 'keyboard-quit cmd-keyboard-quit)
   (register-command! 'quit cmd-quit))

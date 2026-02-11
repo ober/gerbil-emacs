@@ -330,6 +330,21 @@
   ;; Mark ring
   (keymap-bind! *ctrl-c-map* "SPC" 'pop-mark)
 
+  ;; Registers (save/insert text, point to register)
+  (keymap-bind! *ctrl-x-r-map* "s" 'copy-to-register)
+  (keymap-bind! *ctrl-x-r-map* "i" 'insert-register)
+  (keymap-bind! *ctrl-x-r-map* "SPC" 'point-to-register)
+  (keymap-bind! *ctrl-x-r-map* "j" 'jump-to-register)
+
+  ;; Backward kill word
+  (keymap-bind! *global-keymap* "M-DEL" 'backward-kill-word)
+
+  ;; Zap to char
+  (keymap-bind! *global-keymap* "M-z" 'zap-to-char)
+
+  ;; Go to char position (M-g c)
+  (keymap-bind! *meta-g-map* "c" 'goto-char)
+
   ;; String insert
   (keymap-bind! *ctrl-c-map* "i" 'string-insert-file))
 
@@ -416,6 +431,7 @@
    macro-recording ; list or #f: list of (action . data) being recorded
    macro-last    ; list or #f: last recorded macro
    mark-ring     ; list of (buffer-name . position) for mark history
+   registers     ; hash-table: char -> string or (buffer-name . position)
    key-handler)  ; procedure or #f: (lambda (editor) ...) installs key handler on editor
   transparent: #t)
 
@@ -437,6 +453,7 @@
    #f                    ; macro-recording
    #f                    ; macro-last
    []                    ; mark-ring
+   (make-hash-table)     ; registers
    #f))                  ; key-handler
 
 ;;;============================================================================
