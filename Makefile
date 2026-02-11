@@ -1,8 +1,9 @@
-.PHONY: all build clean test install
+.PHONY: all build clean test install build-qt install-qt
 
-# gerbil-scintilla must be built first; point GERBIL_LOADPATH to it
+# Dependencies: gerbil-scintilla (TUI) and gerbil-qt (Qt) must be built first
 SCINTILLA_DIR = $(HOME)/mine/gerbil-scintilla
-export GERBIL_LOADPATH = $(SCINTILLA_DIR)/.gerbil/lib
+QT_DIR = $(HOME)/mine/gerbil-qt
+export GERBIL_LOADPATH = $(SCINTILLA_DIR)/.gerbil/lib:$(QT_DIR)/.gerbil/lib
 
 all: build
 
@@ -22,3 +23,7 @@ PREFIX ?= $(HOME)/.local
 install: build
 	mkdir -p $(PREFIX)/bin
 	cp .gerbil/bin/gerbil-emacs $(PREFIX)/bin/gerbil-emacs
+
+install-qt: build
+	mkdir -p $(PREFIX)/bin
+	cp .gerbil/bin/gerbil-emacs-qt $(PREFIX)/bin/gerbil-emacs-qt
