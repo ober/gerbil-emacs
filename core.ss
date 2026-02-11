@@ -379,7 +379,25 @@
   (keymap-bind! *ctrl-c-map* "w" 'widen)
 
   ;; String insert
-  (keymap-bind! *ctrl-c-map* "i" 'string-insert-file))
+  (keymap-bind! *ctrl-c-map* "i" 'string-insert-file)
+
+  ;; Rectangle: string-rectangle, open-rectangle
+  (keymap-bind! *ctrl-x-r-map* "t" 'string-rectangle)
+  (keymap-bind! *ctrl-x-r-map* "o" 'open-rectangle)
+
+  ;; Number lines, reverse region
+  (keymap-bind! *ctrl-c-map* "#" 'number-lines)
+  (keymap-bind! *ctrl-c-map* "r" 'reverse-region)
+
+  ;; Flush/keep lines
+  (keymap-bind! *meta-s-map* "f" 'flush-lines)
+  (keymap-bind! *meta-s-map* "k" 'keep-lines)
+
+  ;; Align regexp
+  (keymap-bind! *ctrl-c-map* "a" 'align-regexp)
+
+  ;; Sort fields
+  (keymap-bind! *ctrl-c-map* "s" 'sort-fields))
 
 ;;;============================================================================
 ;;; Echo state

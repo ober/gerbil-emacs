@@ -2872,6 +2872,303 @@
   (echo-error! (app-state-echo app) "Widen not supported in this build"))
 
 ;;;============================================================================
+;;; String rectangle, open rectangle
+;;;============================================================================
+
+(def (cmd-string-rectangle app)
+  "Replace rectangle region with a string on each line."
+  (let ((echo (app-state-echo app)))
+    (let-values (((start-line start-col end-line end-col) (get-region-lines app)))
+      (if (not start-line)
+        (echo-error! echo "No region (set mark first)")
+        (let* ((fr (app-state-frame app))
+               (row (- (frame-height fr) 1))
+               (width (frame-width fr))
+               (str (echo-read-string echo "String rectangle: " row width)))
+          (if (not str)
+            (echo-message! echo "Cancelled")
+            (let* ((ed (current-editor app))
+                   (left-col (min start-col end-col))
+                   (right-col (max start-col end-col)))
+              (with-undo-action ed
+                ;; Process lines from bottom to top to preserve positions
+                (let loop ((line end-line))
+                  (when (>= line start-line)
+                    (let* ((line-start (editor-position-from-line ed line))
+                           (line-text (editor-get-line ed line))
+                           (line-len (string-length (string-trim-right line-text #\newline)))
+                           (l (min left-col line-len))
+                           (r (min right-col line-len)))
+                      ;; Delete old rectangle portion and insert replacement
+                      (when (< l r)
+                        (editor-delete-range ed (+ line-start l) (- r l)))
+                      (editor-insert-text ed (+ line-start l) str))
+                    (loop (- line 1)))))
+              (set! (buffer-mark (current-buffer-from-app app)) #f)
+              (echo-message! echo "String rectangle done"))))))))
+
+(def (cmd-open-rectangle app)
+  "Insert blank space to fill the rectangle region."
+  (let ((echo (app-state-echo app)))
+    (let-values (((start-line start-col end-line end-col) (get-region-lines app)))
+      (if (not start-line)
+        (echo-error! echo "No region (set mark first)")
+        (let* ((ed (current-editor app))
+               (left-col (min start-col end-col))
+               (right-col (max start-col end-col))
+               (width (- right-col left-col)))
+          (when (> width 0)
+            (with-undo-action ed
+              ;; Insert spaces from bottom to top
+              (let loop ((line end-line))
+                (when (>= line start-line)
+                  (let* ((line-start (editor-position-from-line ed line))
+                         (line-text (editor-get-line ed line))
+                         (line-len (string-length (string-trim-right line-text #\newline)))
+                         (insert-pos (+ line-start (min left-col line-len))))
+                    ;; Pad if line is shorter than left-col
+                    (when (< line-len left-col)
+                      (editor-insert-text ed (+ line-start line-len)
+                        (make-string (- left-col line-len) #\space)))
+                    (editor-insert-text ed (+ line-start (min left-col line-len))
+                      (make-string width #\space)))
+                  (loop (- line 1))))))
+          (set! (buffer-mark (current-buffer-from-app app)) #f)
+          (echo-message! echo
+            (string-append "Opened rectangle (" (number->string width) " cols)")))))))
+
+;;;============================================================================
+;;; Number lines, reverse region
+;;;============================================================================
+
+(def (cmd-number-lines app)
+  "Number lines in the region (or whole buffer)."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app))
+         (buf (current-buffer-from-app app))
+         (mark (buffer-mark buf)))
+    (if mark
+      ;; Region
+      (let* ((pos (editor-get-current-pos ed))
+             (start (min mark pos))
+             (end (max mark pos))
+             (start-line (editor-line-from-position ed start))
+             (end-line (editor-line-from-position ed end))
+             (num-lines (+ (- end-line start-line) 1))
+             (width (string-length (number->string num-lines))))
+        (with-undo-action ed
+          ;; Insert from bottom to top to preserve positions
+          (let loop ((line end-line) (n num-lines))
+            (when (>= line start-line)
+              (let* ((line-start (editor-position-from-line ed line))
+                     (prefix (string-append
+                               (let ((s (number->string n)))
+                                 (string-append
+                                   (make-string (- width (string-length s)) #\space)
+                                   s))
+                               ": ")))
+                (editor-insert-text ed line-start prefix))
+              (loop (- line 1) (- n 1)))))
+        (set! (buffer-mark buf) #f)
+        (echo-message! echo
+          (string-append "Numbered " (number->string num-lines) " lines")))
+      ;; Whole buffer
+      (let* ((total (editor-get-line-count ed))
+             (width (string-length (number->string total))))
+        (with-undo-action ed
+          (let loop ((line (- total 1)) (n total))
+            (when (>= line 0)
+              (let* ((line-start (editor-position-from-line ed line))
+                     (prefix (string-append
+                               (let ((s (number->string n)))
+                                 (string-append
+                                   (make-string (- width (string-length s)) #\space)
+                                   s))
+                               ": ")))
+                (editor-insert-text ed line-start prefix))
+              (loop (- line 1) (- n 1)))))
+        (echo-message! echo
+          (string-append "Numbered " (number->string total) " lines"))))))
+
+(def (cmd-reverse-region app)
+  "Reverse the order of lines in the region (or whole buffer)."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app))
+         (buf (current-buffer-from-app app))
+         (mark (buffer-mark buf)))
+    (if mark
+      ;; Region
+      (let* ((pos (editor-get-current-pos ed))
+             (start (min mark pos))
+             (end (max mark pos))
+             (region (substring (editor-get-text ed) start end))
+             (lines (string-split region #\newline))
+             (reversed (reverse lines))
+             (result (string-join reversed "\n")))
+        (with-undo-action ed
+          (editor-delete-range ed start (- end start))
+          (editor-insert-text ed start result))
+        (set! (buffer-mark buf) #f)
+        (echo-message! echo
+          (string-append "Reversed " (number->string (length reversed)) " lines")))
+      ;; Whole buffer
+      (let* ((text (editor-get-text ed))
+             (lines (string-split text #\newline))
+             (reversed (reverse lines))
+             (result (string-join reversed "\n"))
+             (pos (editor-get-current-pos ed)))
+        (editor-set-text ed result)
+        (editor-goto-pos ed (min pos (editor-get-text-length ed)))
+        (echo-message! echo
+          (string-append "Reversed " (number->string (length reversed)) " lines"))))))
+
+;;;============================================================================
+;;; Flush lines, keep lines
+;;;============================================================================
+
+(def (cmd-flush-lines app)
+  "Delete lines matching a regexp pattern."
+  (let* ((echo (app-state-echo app))
+         (fr (app-state-frame app))
+         (row (- (frame-height fr) 1))
+         (width (frame-width fr))
+         (pattern (echo-read-string echo "Flush lines matching: " row width)))
+    (if (not pattern)
+      (echo-message! echo "Cancelled")
+      (let* ((ed (current-editor app))
+             (text (editor-get-text ed))
+             (lines (string-split text #\newline))
+             (original-count (length lines))
+             (kept (filter (lambda (line) (not (string-contains line pattern))) lines))
+             (removed (- original-count (length kept)))
+             (result (string-join kept "\n"))
+             (pos (editor-get-current-pos ed)))
+        (editor-set-text ed result)
+        (editor-goto-pos ed (min pos (editor-get-text-length ed)))
+        (echo-message! echo
+          (string-append "Flushed " (number->string removed) " lines"))))))
+
+(def (cmd-keep-lines app)
+  "Keep only lines matching a pattern."
+  (let* ((echo (app-state-echo app))
+         (fr (app-state-frame app))
+         (row (- (frame-height fr) 1))
+         (width (frame-width fr))
+         (pattern (echo-read-string echo "Keep lines matching: " row width)))
+    (if (not pattern)
+      (echo-message! echo "Cancelled")
+      (let* ((ed (current-editor app))
+             (text (editor-get-text ed))
+             (lines (string-split text #\newline))
+             (original-count (length lines))
+             (kept (filter (lambda (line) (string-contains line pattern)) lines))
+             (removed (- original-count (length kept)))
+             (result (string-join kept "\n"))
+             (pos (editor-get-current-pos ed)))
+        (editor-set-text ed result)
+        (editor-goto-pos ed (min pos (editor-get-text-length ed)))
+        (echo-message! echo
+          (string-append "Kept " (number->string (length kept))
+                         " lines, removed " (number->string removed)))))))
+
+;;;============================================================================
+;;; Align regexp
+;;;============================================================================
+
+(def (cmd-align-regexp app)
+  "Align lines on a substring pattern."
+  (let* ((echo (app-state-echo app))
+         (fr (app-state-frame app))
+         (row (- (frame-height fr) 1))
+         (width (frame-width fr))
+         (pattern (echo-read-string echo "Align on: " row width)))
+    (if (not pattern)
+      (echo-message! echo "Cancelled")
+      (let* ((ed (current-editor app))
+             (buf (current-buffer-from-app app))
+             (mark (buffer-mark buf))
+             (pos (editor-get-current-pos ed))
+             (text (editor-get-text ed)))
+        ;; Determine range
+        (let-values (((start end)
+                      (if mark
+                        (values (min mark pos) (max mark pos))
+                        (values 0 (string-length text)))))
+          (let* ((region (substring text start end))
+                 (lines (string-split region #\newline))
+                 ;; Find max column position of the pattern
+                 (positions (map (lambda (line)
+                                  (let ((idx (string-contains line pattern)))
+                                    (or idx -1)))
+                                lines))
+                 (max-col (apply max (cons 0 (filter (lambda (x) (>= x 0)) positions)))))
+            (if (= max-col 0)
+              (echo-error! echo (string-append "Pattern not found: " pattern))
+              (let* ((aligned
+                       (map (lambda (line)
+                              (let ((idx (string-contains line pattern)))
+                                (if idx
+                                  (string-append
+                                    (substring line 0 idx)
+                                    (make-string (- max-col idx) #\space)
+                                    (substring line idx (string-length line)))
+                                  line)))
+                            lines))
+                     (result (string-join aligned "\n")))
+                (with-undo-action ed
+                  (editor-delete-range ed start (- end start))
+                  (editor-insert-text ed start result))
+                (when mark (set! (buffer-mark buf) #f))
+                (echo-message! echo "Aligned")))))))))
+
+;;;============================================================================
+;;; Sort fields
+;;;============================================================================
+
+(def (cmd-sort-fields app)
+  "Sort lines by whitespace-delimited field number."
+  (let* ((echo (app-state-echo app))
+         (fr (app-state-frame app))
+         (row (- (frame-height fr) 1))
+         (width (frame-width fr))
+         (field-str (echo-read-string echo "Sort by field #: " row width)))
+    (if (not field-str)
+      (echo-message! echo "Cancelled")
+      (let ((field-num (string->number field-str)))
+        (if (not field-num)
+          (echo-error! echo "Invalid field number")
+          (let* ((ed (current-editor app))
+                 (buf (current-buffer-from-app app))
+                 (mark (buffer-mark buf))
+                 (pos (editor-get-current-pos ed))
+                 (text (editor-get-text ed)))
+            (let-values (((start end)
+                          (if mark
+                            (values (min mark pos) (max mark pos))
+                            (values 0 (string-length text)))))
+              (let* ((region (substring text start end))
+                     (lines (string-split region #\newline))
+                     (field-idx (- field-num 1))  ; 1-based to 0-based
+                     (get-field
+                       (lambda (line)
+                         (let ((fields (string-split line #\space)))
+                           ;; Filter out empty strings from split
+                           (let ((fs (filter (lambda (s) (not (string-empty? s))) fields)))
+                             (if (< field-idx (length fs))
+                               (list-ref fs field-idx)
+                               "")))))
+                     (sorted (sort lines
+                               (lambda (a b)
+                                 (string<? (get-field a) (get-field b)))))
+                     (result (string-join sorted "\n")))
+                (with-undo-action ed
+                  (editor-delete-range ed start (- end start))
+                  (editor-insert-text ed start result))
+                (when mark (set! (buffer-mark buf) #f))
+                (echo-message! echo
+                  (string-append "Sorted by field " field-str))))))))))
+
+;;;============================================================================
 ;;; Register all commands
 ;;;============================================================================
 
@@ -3054,6 +3351,19 @@
   ;; Narrow/widen
   (register-command! 'narrow-to-region cmd-narrow-to-region)
   (register-command! 'widen cmd-widen)
+  ;; String rectangle, open rectangle
+  (register-command! 'string-rectangle cmd-string-rectangle)
+  (register-command! 'open-rectangle cmd-open-rectangle)
+  ;; Number lines, reverse region
+  (register-command! 'number-lines cmd-number-lines)
+  (register-command! 'reverse-region cmd-reverse-region)
+  ;; Flush/keep lines
+  (register-command! 'flush-lines cmd-flush-lines)
+  (register-command! 'keep-lines cmd-keep-lines)
+  ;; Align
+  (register-command! 'align-regexp cmd-align-regexp)
+  ;; Sort fields
+  (register-command! 'sort-fields cmd-sort-fields)
   ;; Misc
   (register-command! 'keyboard-quit cmd-keyboard-quit)
   (register-command! 'quit cmd-quit))

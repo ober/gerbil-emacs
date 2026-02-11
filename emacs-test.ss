@@ -550,6 +550,20 @@
         ;; Clean shutdown
         (repl-stop! rs)))
 
+    (test-case "new keybindings: string-rect, number-lines, align, etc"
+      ;; Rectangle extensions
+      (check (keymap-lookup *ctrl-x-r-map* "t") => 'string-rectangle)
+      (check (keymap-lookup *ctrl-x-r-map* "o") => 'open-rectangle)
+      ;; Number lines, reverse region
+      (check (keymap-lookup *ctrl-c-map* "#") => 'number-lines)
+      (check (keymap-lookup *ctrl-c-map* "r") => 'reverse-region)
+      ;; Flush/keep lines
+      (check (keymap-lookup *meta-s-map* "f") => 'flush-lines)
+      (check (keymap-lookup *meta-s-map* "k") => 'keep-lines)
+      ;; Align, sort fields
+      (check (keymap-lookup *ctrl-c-map* "a") => 'align-regexp)
+      (check (keymap-lookup *ctrl-c-map* "s") => 'sort-fields))
+
     ))
 
 ;; Run tests when executed directly
