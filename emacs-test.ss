@@ -1,0 +1,174 @@
+;;; -*- Gerbil -*-
+;;; Tests for gerbil-emacs
+;;; Focus on pure logic (keymap, constants, helpers) since
+;;; editor operations require a live terminal.
+
+(import :std/test
+        :gerbil-scintilla/tui
+        :gerbil-emacs/keymap
+        :gerbil-emacs/buffer
+        :gerbil-emacs/echo)
+
+(export emacs-test)
+
+(def emacs-test
+  (test-suite "gerbil-emacs"
+
+    (test-case "key-event->string: Ctrl keys"
+      ;; C-a = key 0x01
+      (check (key-event->string (make-tui-event 1 0 #x01 0 0 0 0 0)) => "C-a")
+      ;; C-x = key 0x18
+      (check (key-event->string (make-tui-event 1 0 #x18 0 0 0 0 0)) => "C-x")
+      ;; C-g = key 0x07
+      (check (key-event->string (make-tui-event 1 0 #x07 0 0 0 0 0)) => "C-g")
+      ;; C-z = key 0x1A
+      (check (key-event->string (make-tui-event 1 0 #x1A 0 0 0 0 0)) => "C-z")
+      ;; C-@ / C-SPC = key 0, ch 0
+      (check (key-event->string (make-tui-event 1 0 0 0 0 0 0 0)) => "C-@"))
+
+    (test-case "key-event->string: special keys"
+      ;; ESC
+      (check (key-event->string (make-tui-event 1 0 #x1B 0 0 0 0 0)) => "ESC")
+      ;; DEL (backspace)
+      (check (key-event->string (make-tui-event 1 0 #x7F 0 0 0 0 0)) => "DEL")
+      ;; C-_ (C-/)
+      (check (key-event->string (make-tui-event 1 0 #x1F 0 0 0 0 0)) => "C-_")
+      ;; C-\
+      (check (key-event->string (make-tui-event 1 0 #x1C 0 0 0 0 0)) => "C-\\")
+      ;; Space
+      (check (key-event->string (make-tui-event 1 0 #x20 0 0 0 0 0)) => "SPC"))
+
+    (test-case "key-event->string: regular characters"
+      ;; 'a' = key 0, ch 97
+      (check (key-event->string (make-tui-event 1 0 0 97 0 0 0 0)) => "a")
+      ;; 'Z' = key 0, ch 90
+      (check (key-event->string (make-tui-event 1 0 0 90 0 0 0 0)) => "Z")
+      ;; '1' = key 0, ch 49
+      (check (key-event->string (make-tui-event 1 0 0 49 0 0 0 0)) => "1"))
+
+    (test-case "key-event->string: Alt/Meta"
+      ;; M-f = key 0, ch 102, mod TB_MOD_ALT
+      (check (key-event->string (make-tui-event 1 1 0 102 0 0 0 0)) => "M-f")
+      ;; M-< = key 0, ch 60, mod TB_MOD_ALT
+      (check (key-event->string (make-tui-event 1 1 0 60 0 0 0 0)) => "M-<")
+      ;; M-SPC = key 0x20, ch 0, mod TB_MOD_ALT
+      (check (key-event->string (make-tui-event 1 1 #x20 0 0 0 0 0)) => "M-SPC"))
+
+    (test-case "key-event->string: arrow and function keys"
+      (check (key-event->string (make-tui-event 1 0 TB_KEY_ARROW_UP 0 0 0 0 0))
+             => "<up>")
+      (check (key-event->string (make-tui-event 1 0 TB_KEY_ARROW_DOWN 0 0 0 0 0))
+             => "<down>")
+      (check (key-event->string (make-tui-event 1 0 TB_KEY_F1 0 0 0 0 0))
+             => "<f1>")
+      (check (key-event->string (make-tui-event 1 0 TB_KEY_HOME 0 0 0 0 0))
+             => "<home>")
+      (check (key-event->string (make-tui-event 1 0 TB_KEY_DELETE 0 0 0 0 0))
+             => "<delete>"))
+
+    (test-case "keymap: bind and lookup"
+      (let ((km (make-keymap)))
+        (keymap-bind! km "C-f" 'forward-char)
+        (keymap-bind! km "C-b" 'backward-char)
+        (check (keymap-lookup km "C-f") => 'forward-char)
+        (check (keymap-lookup km "C-b") => 'backward-char)
+        (check (keymap-lookup km "C-z") => #f)))
+
+    (test-case "keymap: nested keymaps for prefix keys"
+      (let ((outer (make-keymap))
+            (inner (make-keymap)))
+        (keymap-bind! inner "C-s" 'save-buffer)
+        (keymap-bind! outer "C-x" inner)
+        ;; Lookup C-x returns the inner keymap
+        (check (hash-table? (keymap-lookup outer "C-x")) => #t)
+        ;; Lookup C-s in inner keymap
+        (check (keymap-lookup inner "C-s") => 'save-buffer)))
+
+    (test-case "key-state: single key command"
+      (let ((km (make-keymap)))
+        (keymap-bind! km "C-f" 'forward-char)
+        (let ((state (make-key-state km [])))
+          ;; C-f event: key=0x06, ch=0, mod=0
+          (let-values (((action data new-state)
+                        (key-state-feed! state
+                          (make-tui-event 1 0 #x06 0 0 0 0 0))))
+            (check action => 'command)
+            (check data => 'forward-char)))))
+
+    (test-case "key-state: prefix key sequence"
+      (let ((outer (make-keymap))
+            (inner (make-keymap)))
+        (keymap-bind! inner "C-s" 'save-buffer)
+        (keymap-bind! outer "C-x" inner)
+        (let ((state (make-key-state outer [])))
+          ;; First key: C-x (key=0x18) -> prefix
+          (let-values (((action data new-state)
+                        (key-state-feed! state
+                          (make-tui-event 1 0 #x18 0 0 0 0 0))))
+            (check action => 'prefix)
+            ;; Second key: C-s (key=0x13) -> command
+            (let-values (((action2 data2 new-state2)
+                          (key-state-feed! new-state
+                            (make-tui-event 1 0 #x13 0 0 0 0 0))))
+              (check action2 => 'command)
+              (check data2 => 'save-buffer))))))
+
+    (test-case "key-state: self-insert for printable chars"
+      (let ((km (make-keymap)))
+        (let ((state (make-key-state km [])))
+          ;; 'a' = key=0, ch=97 -> self-insert
+          (let-values (((action data new-state)
+                        (key-state-feed! state
+                          (make-tui-event 1 0 0 97 0 0 0 0))))
+            (check action => 'self-insert)
+            (check data => 97)))))
+
+    (test-case "key-state: undefined key"
+      (let ((km (make-keymap)))
+        (let ((state (make-key-state km [])))
+          ;; C-z (key=0x1A) with no binding -> undefined
+          (let-values (((action data new-state)
+                        (key-state-feed! state
+                          (make-tui-event 1 0 #x1A 0 0 0 0 0))))
+            (check action => 'undefined)
+            (check data => "C-z")))))
+
+    (test-case "echo-state: messages"
+      (let ((echo (make-initial-echo-state)))
+        (check (echo-state-message echo) => #f)
+        (echo-message! echo "Hello")
+        (check (echo-state-message echo) => "Hello")
+        (check (echo-state-error? echo) => #f)
+        (echo-error! echo "Error!")
+        (check (echo-state-message echo) => "Error!")
+        (check (echo-state-error? echo) => #t)
+        (echo-clear! echo)
+        (check (echo-state-message echo) => #f)))
+
+    (test-case "default bindings setup"
+      (setup-default-bindings!)
+      ;; Check some bindings
+      (check (keymap-lookup *global-keymap* "C-f") => 'forward-char)
+      (check (keymap-lookup *global-keymap* "C-b") => 'backward-char)
+      (check (keymap-lookup *global-keymap* "C-n") => 'next-line)
+      (check (keymap-lookup *global-keymap* "C-p") => 'previous-line)
+      (check (keymap-lookup *global-keymap* "C-a") => 'beginning-of-line)
+      (check (keymap-lookup *global-keymap* "C-e") => 'end-of-line)
+      (check (keymap-lookup *global-keymap* "C-k") => 'kill-line)
+      (check (keymap-lookup *global-keymap* "C-y") => 'yank)
+      (check (keymap-lookup *global-keymap* "C-g") => 'keyboard-quit)
+      (check (keymap-lookup *global-keymap* "M-f") => 'forward-word)
+      (check (keymap-lookup *global-keymap* "M-b") => 'backward-word)
+      ;; C-x prefix is a keymap
+      (check (hash-table? (keymap-lookup *global-keymap* "C-x")) => #t)
+      ;; C-x C-s
+      (check (keymap-lookup *ctrl-x-map* "C-s") => 'save-buffer)
+      (check (keymap-lookup *ctrl-x-map* "C-c") => 'quit))
+
+    ))
+
+;; Run tests when executed directly
+(def main
+  (lambda args
+    (run-tests! emacs-test)
+    (test-report-summary!)))
