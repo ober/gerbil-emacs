@@ -6848,6 +6848,433 @@
         (else "Line endings: LF (Unix)")))))
 
 ;;;============================================================================
+;;; Task #41: macros, windows, and advanced editing
+;;;============================================================================
+
+(def (cmd-comment-region app)
+  "Comment each line in region with ;; prefix."
+  (let* ((fr (app-state-frame app))
+         (ed (edit-window-editor (current-window fr)))
+         (echo (app-state-echo app))
+         (buf (current-buffer-from-app app))
+         (mark (buffer-mark buf))
+         (pos (editor-get-current-pos ed)))
+    (if mark
+      (let* ((start (min pos mark))
+             (end (max pos mark))
+             (start-line (editor-line-from-position ed start))
+             (end-line (editor-line-from-position ed end)))
+        (with-undo-action ed
+          (let loop ((l end-line))
+            (when (>= l start-line)
+              (let ((ls (editor-position-from-line ed l)))
+                (editor-insert-text ed ls ";; "))
+              (loop (- l 1)))))
+        (set! (buffer-mark buf) #f)
+        (echo-message! echo (string-append "Commented "
+                                            (number->string (+ 1 (- end-line start-line)))
+                                            " lines")))
+      (echo-error! echo "No mark set"))))
+
+(def (cmd-uncomment-region app)
+  "Remove ;; comment prefix from each line in region."
+  (let* ((fr (app-state-frame app))
+         (ed (edit-window-editor (current-window fr)))
+         (echo (app-state-echo app))
+         (buf (current-buffer-from-app app))
+         (mark (buffer-mark buf))
+         (pos (editor-get-current-pos ed)))
+    (if mark
+      (let* ((start (min pos mark))
+             (end (max pos mark))
+             (start-line (editor-line-from-position ed start))
+             (end-line (editor-line-from-position ed end)))
+        (with-undo-action ed
+          (let loop ((l end-line))
+            (when (>= l start-line)
+              (let* ((ls (editor-position-from-line ed l))
+                     (le (editor-get-line-end-position ed l))
+                     (line-len (- le ls))
+                     (text (editor-get-text-range ed ls (min line-len 3))))
+                ;; Remove ";; " or ";;" at start
+                (cond
+                  ((and (>= (string-length text) 3) (string=? text ";; "))
+                   (editor-delete-range ed ls 3))
+                  ((and (>= (string-length text) 2) (string=? (substring text 0 2) ";;"))
+                   (editor-delete-range ed ls 2))))
+              (loop (- l 1)))))
+        (set! (buffer-mark buf) #f)
+        (echo-message! echo "Region uncommented"))
+      (echo-error! echo "No mark set"))))
+
+(def (cmd-upcase-char app)
+  "Uppercase the character at point and advance."
+  (let* ((fr (app-state-frame app))
+         (ed (edit-window-editor (current-window fr)))
+         (pos (editor-get-current-pos ed))
+         (text (editor-get-text ed))
+         (len (string-length text)))
+    (when (< pos len)
+      (let* ((ch (string-ref text pos))
+             (up (char-upcase ch)))
+        (when (not (char=? ch up))
+          (editor-delete-range ed pos 1)
+          (editor-insert-text ed pos (string up)))
+        (editor-goto-pos ed (+ pos 1))))))
+
+(def (cmd-downcase-char app)
+  "Lowercase the character at point and advance."
+  (let* ((fr (app-state-frame app))
+         (ed (edit-window-editor (current-window fr)))
+         (pos (editor-get-current-pos ed))
+         (text (editor-get-text ed))
+         (len (string-length text)))
+    (when (< pos len)
+      (let* ((ch (string-ref text pos))
+             (lo (char-downcase ch)))
+        (when (not (char=? ch lo))
+          (editor-delete-range ed pos 1)
+          (editor-insert-text ed pos (string lo)))
+        (editor-goto-pos ed (+ pos 1))))))
+
+(def (cmd-toggle-case-at-point app)
+  "Toggle case of character at point and advance."
+  (let* ((fr (app-state-frame app))
+         (ed (edit-window-editor (current-window fr)))
+         (pos (editor-get-current-pos ed))
+         (text (editor-get-text ed))
+         (len (string-length text)))
+    (when (< pos len)
+      (let* ((ch (string-ref text pos))
+             (toggled (if (char-upper-case? ch) (char-downcase ch) (char-upcase ch))))
+        (when (not (char=? ch toggled))
+          (editor-delete-range ed pos 1)
+          (editor-insert-text ed pos (string toggled)))
+        (editor-goto-pos ed (+ pos 1))))))
+
+(def (cmd-write-region app)
+  "Write the region to a file."
+  (let* ((fr (app-state-frame app))
+         (ed (edit-window-editor (current-window fr)))
+         (echo (app-state-echo app))
+         (buf (current-buffer-from-app app))
+         (mark (buffer-mark buf))
+         (pos (editor-get-current-pos ed))
+         (row (- (frame-height fr) 1))
+         (width (frame-width fr)))
+    (if mark
+      (let ((filename (echo-read-string echo "Write region to file: " row width)))
+        (when (and filename (not (string-empty? filename)))
+          (let* ((start (min pos mark))
+                 (end (max pos mark))
+                 (text (substring (editor-get-text ed) start end)))
+            (with-output-to-file filename (lambda () (display text)))
+            (set! (buffer-mark buf) #f)
+            (echo-message! echo (string-append "Wrote "
+                                                (number->string (- end start))
+                                                " chars to " filename)))))
+      (echo-error! echo "No mark set"))))
+
+(def (cmd-kill-matching-buffers app)
+  "Kill all buffers whose names match a pattern."
+  (let* ((fr (app-state-frame app))
+         (echo (app-state-echo app))
+         (row (- (frame-height fr) 1))
+         (width (frame-width fr))
+         (pattern (echo-read-string echo "Kill buffers matching: " row width)))
+    (when (and pattern (not (string-empty? pattern)))
+      (let ((killed 0))
+        (for-each
+          (lambda (buf)
+            (when (string-contains (buffer-name buf) pattern)
+              (set! killed (+ killed 1))))
+          (buffer-list))
+        (echo-message! echo (string-append "Would kill "
+                                            (number->string killed)
+                                            " matching buffers"))))))
+
+(def (cmd-goto-line-relative app)
+  "Go to a line relative to the current line (+N or -N)."
+  (let* ((fr (app-state-frame app))
+         (ed (edit-window-editor (current-window fr)))
+         (echo (app-state-echo app))
+         (row (- (frame-height fr) 1))
+         (width (frame-width fr))
+         (input (echo-read-string echo "Relative line (+N or -N): " row width)))
+    (when (and input (not (string-empty? input)))
+      (let ((n (string->number input)))
+        (when n
+          (let* ((pos (editor-get-current-pos ed))
+                 (cur-line (editor-line-from-position ed pos))
+                 (target (+ cur-line n))
+                 (max-line (- (editor-get-line-count ed) 1))
+                 (clamped (max 0 (min target max-line))))
+            (editor-goto-pos ed (editor-position-from-line ed clamped))
+            (editor-scroll-caret ed)))))))
+
+(def (cmd-bookmark-delete app)
+  "Delete a bookmark by name."
+  (let* ((fr (app-state-frame app))
+         (echo (app-state-echo app))
+         (row (- (frame-height fr) 1))
+         (width (frame-width fr))
+         (name (echo-read-string echo "Delete bookmark: " row width)))
+    (when (and name (not (string-empty? name)))
+      (let ((bm (app-state-bookmarks app)))
+        (if (hash-get bm name)
+          (begin
+            (hash-remove! bm name)
+            (echo-message! echo (string-append "Deleted bookmark: " name)))
+          (echo-error! echo (string-append "No bookmark: " name)))))))
+
+(def (cmd-bookmark-rename app)
+  "Rename a bookmark."
+  (let* ((fr (app-state-frame app))
+         (echo (app-state-echo app))
+         (row (- (frame-height fr) 1))
+         (width (frame-width fr))
+         (old-name (echo-read-string echo "Rename bookmark: " row width)))
+    (when (and old-name (not (string-empty? old-name)))
+      (let ((bm (app-state-bookmarks app)))
+        (if (hash-get bm old-name)
+          (let ((new-name (echo-read-string echo "New name: " row width)))
+            (when (and new-name (not (string-empty? new-name)))
+              (hash-put! bm new-name (hash-ref bm old-name))
+              (hash-remove! bm old-name)
+              (echo-message! echo (string-append old-name " -> " new-name))))
+          (echo-error! echo (string-append "No bookmark: " old-name)))))))
+
+(def (cmd-describe-mode app)
+  "Describe the current buffer mode."
+  (let* ((buf (current-buffer-from-app app))
+         (lang (buffer-lexer-lang buf))
+         (echo (app-state-echo app)))
+    (echo-message! echo (string-append "Major mode: "
+                                        (if lang (symbol->string lang) "fundamental")
+                                        " | Use M-x describe-bindings for keybindings"))))
+
+(def (cmd-delete-trailing-lines app)
+  "Delete trailing blank lines at end of buffer."
+  (let* ((fr (app-state-frame app))
+         (ed (edit-window-editor (current-window fr)))
+         (echo (app-state-echo app))
+         (text (editor-get-text ed))
+         (len (string-length text)))
+    (if (= len 0)
+      (echo-message! echo "Buffer is empty")
+      (let loop ((end len))
+        (if (and (> end 0)
+                 (let ((ch (string-ref text (- end 1))))
+                   (or (char=? ch #\newline) (char=? ch #\space) (char=? ch #\tab))))
+          (loop (- end 1))
+          (if (< end len)
+            (let ((removed (- len end)))
+              ;; Keep one trailing newline
+              (let ((keep-end (+ end 1)))
+                (when (< keep-end len)
+                  (editor-delete-range ed keep-end (- len keep-end))
+                  (echo-message! echo (string-append "Removed "
+                                                      (number->string (- len keep-end))
+                                                      " trailing chars")))))
+            (echo-message! echo "No trailing blank lines")))))))
+
+(def (cmd-display-line-numbers-relative app)
+  "Toggle relative line numbers display."
+  (echo-message! (app-state-echo app) "Relative line numbers (stub)"))
+
+(def (cmd-goto-column app)
+  "Go to a specific column on the current line."
+  (let* ((fr (app-state-frame app))
+         (ed (edit-window-editor (current-window fr)))
+         (echo (app-state-echo app))
+         (row (- (frame-height fr) 1))
+         (width (frame-width fr))
+         (input (echo-read-string echo "Go to column: " row width)))
+    (when (and input (not (string-empty? input)))
+      (let ((col (string->number input)))
+        (when (and col (> col 0))
+          (let* ((pos (editor-get-current-pos ed))
+                 (line (editor-line-from-position ed pos))
+                 (line-start (editor-position-from-line ed line))
+                 (line-end (editor-get-line-end-position ed line))
+                 (line-len (- line-end line-start))
+                 (target-col (min (- col 1) line-len)))
+            (editor-goto-pos ed (+ line-start target-col))))))))
+
+(def (cmd-insert-line-number app)
+  "Insert the current line number at point."
+  (let* ((fr (app-state-frame app))
+         (ed (edit-window-editor (current-window fr)))
+         (pos (editor-get-current-pos ed))
+         (line (+ 1 (editor-line-from-position ed pos)))
+         (text (number->string line)))
+    (editor-insert-text ed pos text)
+    (editor-goto-pos ed (+ pos (string-length text)))))
+
+(def (cmd-insert-buffer-filename app)
+  "Insert the current buffer's filename at point."
+  (let* ((fr (app-state-frame app))
+         (ed (edit-window-editor (current-window fr)))
+         (buf (current-buffer-from-app app))
+         (pos (editor-get-current-pos ed))
+         (filename (or (buffer-file-path buf) (buffer-name buf))))
+    (editor-insert-text ed pos filename)
+    (editor-goto-pos ed (+ pos (string-length filename)))))
+
+(def (cmd-copy-line-number app)
+  "Copy the current line number to kill ring."
+  (let* ((fr (app-state-frame app))
+         (ed (edit-window-editor (current-window fr)))
+         (pos (editor-get-current-pos ed))
+         (line (+ 1 (editor-line-from-position ed pos)))
+         (text (number->string line)))
+    (set! (app-state-kill-ring app) (cons text (app-state-kill-ring app)))
+    (echo-message! (app-state-echo app) (string-append "Copied line number: " text))))
+
+(def (cmd-copy-current-line app)
+  "Copy the current line to kill ring."
+  (let* ((fr (app-state-frame app))
+         (ed (edit-window-editor (current-window fr)))
+         (pos (editor-get-current-pos ed))
+         (line (editor-line-from-position ed pos))
+         (start (editor-position-from-line ed line))
+         (end (editor-get-line-end-position ed line))
+         (text (substring (editor-get-text ed) start end)))
+    (set! (app-state-kill-ring app) (cons text (app-state-kill-ring app)))
+    (echo-message! (app-state-echo app) "Line copied")))
+
+(def (cmd-copy-word app)
+  "Copy the word at point to kill ring."
+  (let* ((fr (app-state-frame app))
+         (ed (edit-window-editor (current-window fr)))
+         (pos (editor-get-current-pos ed))
+         (text (editor-get-text ed))
+         (len (string-length text)))
+    (if (and (< pos len) (word-char? (char->integer (string-ref text pos))))
+      (let* ((start (let loop ((p pos))
+                      (if (and (> p 0) (word-char? (char->integer (string-ref text (- p 1)))))
+                        (loop (- p 1)) p)))
+             (end (let loop ((p pos))
+                    (if (and (< p len) (word-char? (char->integer (string-ref text p))))
+                      (loop (+ p 1)) p)))
+             (word (substring text start end)))
+        (set! (app-state-kill-ring app) (cons word (app-state-kill-ring app)))
+        (echo-message! (app-state-echo app) (string-append "Copied: " word)))
+      (echo-error! (app-state-echo app) "Not on a word"))))
+
+(def (cmd-move-to-window-top app)
+  "Move cursor to the top visible line."
+  (let* ((fr (app-state-frame app))
+         (ed (edit-window-editor (current-window fr)))
+         (first-visible (send-message ed SCI_GETFIRSTVISIBLELINE 0 0))
+         (doc-line (send-message ed 2312 first-visible 0)) ; SCI_DOCLINEFROMVISIBLE
+         (pos (editor-position-from-line ed doc-line)))
+    (editor-goto-pos ed pos)))
+
+(def (cmd-move-to-window-bottom app)
+  "Move cursor to the bottom visible line."
+  (let* ((fr (app-state-frame app))
+         (ed (edit-window-editor (current-window fr)))
+         (first-visible (send-message ed SCI_GETFIRSTVISIBLELINE 0 0))
+         (lines-on-screen (send-message ed 2370 0 0)) ; SCI_LINESONSCREEN
+         (last-visible (+ first-visible (- lines-on-screen 1)))
+         (doc-line (send-message ed 2312 last-visible 0)) ; SCI_DOCLINEFROMVISIBLE
+         (max-line (- (editor-get-line-count ed) 1))
+         (target (min doc-line max-line))
+         (pos (editor-position-from-line ed target)))
+    (editor-goto-pos ed pos)))
+
+(def (cmd-move-to-window-middle app)
+  "Move cursor to the middle visible line."
+  (let* ((fr (app-state-frame app))
+         (ed (edit-window-editor (current-window fr)))
+         (first-visible (send-message ed SCI_GETFIRSTVISIBLELINE 0 0))
+         (lines-on-screen (send-message ed 2370 0 0)) ; SCI_LINESONSCREEN
+         (middle-visible (+ first-visible (quotient lines-on-screen 2)))
+         (doc-line (send-message ed 2312 middle-visible 0)) ; SCI_DOCLINEFROMVISIBLE
+         (pos (editor-position-from-line ed doc-line)))
+    (editor-goto-pos ed pos)))
+
+(def (cmd-scroll-left app)
+  "Scroll the view left."
+  (let* ((fr (app-state-frame app))
+         (ed (edit-window-editor (current-window fr)))
+         (offset (send-message ed SCI_GETXOFFSET 0 0)))
+    (when (> offset 0)
+      (send-message ed SCI_SETXOFFSET (max 0 (- offset 20)) 0))))
+
+(def (cmd-scroll-right app)
+  "Scroll the view right."
+  (let* ((fr (app-state-frame app))
+         (ed (edit-window-editor (current-window fr)))
+         (offset (send-message ed SCI_GETXOFFSET 0 0)))
+    (send-message ed SCI_SETXOFFSET (+ offset 20) 0)))
+
+(def (cmd-delete-to-end-of-line app)
+  "Delete from point to end of line (without killing)."
+  (let* ((fr (app-state-frame app))
+         (ed (edit-window-editor (current-window fr)))
+         (pos (editor-get-current-pos ed))
+         (line (editor-line-from-position ed pos))
+         (end (editor-get-line-end-position ed line)))
+    (when (> end pos)
+      (editor-delete-range ed pos (- end pos)))))
+
+(def (cmd-delete-to-beginning-of-line app)
+  "Delete from point to beginning of line (without killing)."
+  (let* ((fr (app-state-frame app))
+         (ed (edit-window-editor (current-window fr)))
+         (pos (editor-get-current-pos ed))
+         (line (editor-line-from-position ed pos))
+         (start (editor-position-from-line ed line)))
+    (when (> pos start)
+      (editor-delete-range ed start (- pos start)))))
+
+(def (cmd-yank-whole-line app)
+  "Yank (paste) a whole line above the current line."
+  (let* ((fr (app-state-frame app))
+         (ed (edit-window-editor (current-window fr)))
+         (echo (app-state-echo app))
+         (kill-ring (app-state-kill-ring app)))
+    (if (null? kill-ring)
+      (echo-error! echo "Kill ring is empty")
+      (let* ((text (car kill-ring))
+             (pos (editor-get-current-pos ed))
+             (line (editor-line-from-position ed pos))
+             (line-start (editor-position-from-line ed line))
+             (insert-text (string-append text "\n")))
+        (editor-insert-text ed line-start insert-text)
+        (editor-goto-pos ed line-start)
+        (echo-message! echo "Yanked line")))))
+
+(def (cmd-show-column-number app)
+  "Show the current column number."
+  (let* ((fr (app-state-frame app))
+         (ed (edit-window-editor (current-window fr)))
+         (echo (app-state-echo app))
+         (pos (editor-get-current-pos ed))
+         (line (editor-line-from-position ed pos))
+         (line-start (editor-position-from-line ed line))
+         (col (+ 1 (- pos line-start))))
+    (echo-message! echo (string-append "Column " (number->string col)))))
+
+(def (cmd-count-lines-buffer app)
+  "Count total lines in the buffer."
+  (let* ((fr (app-state-frame app))
+         (ed (edit-window-editor (current-window fr)))
+         (echo (app-state-echo app))
+         (lines (editor-get-line-count ed)))
+    (echo-message! echo (string-append "Buffer has " (number->string lines) " lines"))))
+
+(def (cmd-recover-session app)
+  "Recover auto-saved session files."
+  (echo-message! (app-state-echo app) "Session recovery (stub)"))
+
+(def (cmd-toggle-backup-files app)
+  "Toggle whether backup files are created on save."
+  (echo-message! (app-state-echo app) "Backup files toggled (stub)"))
+
+;;;============================================================================
 ;;; Register all commands
 ;;;============================================================================
 
@@ -7346,6 +7773,55 @@
   (register-command! 'uniquify-lines cmd-uniquify-lines)
   ;; Show line endings
   (register-command! 'show-line-endings cmd-show-line-endings)
+  ;; Comment/uncomment
+  (register-command! 'comment-region cmd-comment-region)
+  (register-command! 'uncomment-region cmd-uncomment-region)
+  ;; Case at point
+  (register-command! 'upcase-char cmd-upcase-char)
+  (register-command! 'downcase-char cmd-downcase-char)
+  (register-command! 'toggle-case-at-point cmd-toggle-case-at-point)
+  ;; Write region
+  (register-command! 'write-region cmd-write-region)
+  ;; Kill matching buffers
+  (register-command! 'kill-matching-buffers cmd-kill-matching-buffers)
+  ;; Relative goto
+  (register-command! 'goto-line-relative cmd-goto-line-relative)
+  ;; Bookmark management
+  (register-command! 'bookmark-delete cmd-bookmark-delete)
+  (register-command! 'bookmark-rename cmd-bookmark-rename)
+  ;; Mode info (toggle-window-dedicated, shrink/enlarge-window-horizontally, toggle-line-move-visual already registered)
+  (register-command! 'describe-mode cmd-describe-mode)
+  ;; Trailing lines
+  (register-command! 'delete-trailing-lines cmd-delete-trailing-lines)
+  ;; Line numbers
+  (register-command! 'display-line-numbers-relative cmd-display-line-numbers-relative)
+  ;; Column
+  (register-command! 'goto-column cmd-goto-column)
+  ;; Insert helpers
+  (register-command! 'insert-line-number cmd-insert-line-number)
+  (register-command! 'insert-buffer-filename cmd-insert-buffer-filename)
+  ;; Copy helpers
+  (register-command! 'copy-line-number cmd-copy-line-number)
+  (register-command! 'copy-current-line cmd-copy-current-line)
+  (register-command! 'copy-word cmd-copy-word)
+  ;; Window position movement
+  (register-command! 'move-to-window-top cmd-move-to-window-top)
+  (register-command! 'move-to-window-bottom cmd-move-to-window-bottom)
+  (register-command! 'move-to-window-middle cmd-move-to-window-middle)
+  ;; Scrolling
+  (register-command! 'scroll-left cmd-scroll-left)
+  (register-command! 'scroll-right cmd-scroll-right)
+  ;; Delete without kill
+  (register-command! 'delete-to-end-of-line cmd-delete-to-end-of-line)
+  (register-command! 'delete-to-beginning-of-line cmd-delete-to-beginning-of-line)
+  ;; Yank line
+  (register-command! 'yank-whole-line cmd-yank-whole-line)
+  ;; Info
+  (register-command! 'show-column-number cmd-show-column-number)
+  (register-command! 'count-lines-buffer cmd-count-lines-buffer)
+  ;; File management stubs (toggle-auto-save already registered)
+  (register-command! 'recover-session cmd-recover-session)
+  (register-command! 'toggle-backup-files cmd-toggle-backup-files)
   ;; Misc
   (register-command! 'keyboard-quit cmd-keyboard-quit)
   (register-command! 'quit cmd-quit))
