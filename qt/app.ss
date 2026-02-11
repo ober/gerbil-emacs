@@ -128,7 +128,8 @@
                                        (string-append prefix-str "-"))))
                      ((undefined)
                       (echo-error! (app-state-echo app)
-                                   (string-append data " is undefined"))))
+                                   (string-append data " is undefined")))
+                     ((ignore) (void)))  ;; bare modifier keys — do nothing
                    ;; Update modeline and echo after each key
                    (qt-modeline-update! app)
                    (qt-echo-draw! (app-state-echo app) echo-label))))))

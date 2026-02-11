@@ -16,12 +16,15 @@
 ;;;============================================================================
 
 (def (qt-key-event->string code mods text)
-  "Convert Qt key code + modifiers to Emacs key string."
-  (let ((ctrl? (not (zero? (bitwise-and mods QT_MOD_CTRL))))
-        (alt?  (not (zero? (bitwise-and mods QT_MOD_ALT))))
-        (shift? (not (zero? (bitwise-and mods QT_MOD_SHIFT)))))
-    (cond
-      ;; Function keys
+  "Convert Qt key code + modifiers to Emacs key string.
+   Returns #f for bare modifier keys (Shift, Ctrl, Alt, etc.) that should be ignored."
+  (if (and (>= code #x01000020) (<= code #x01000026))
+    #f  ;; Bare modifier keys — ignore
+    (let ((ctrl? (not (zero? (bitwise-and mods QT_MOD_CTRL))))
+          (alt?  (not (zero? (bitwise-and mods QT_MOD_ALT))))
+          (shift? (not (zero? (bitwise-and mods QT_MOD_SHIFT)))))
+      (cond
+        ;; Function keys
       ((= code QT_KEY_F1)  "<f1>")
       ((= code QT_KEY_F2)  "<f2>")
       ((= code QT_KEY_F3)  "<f3>")
@@ -81,7 +84,7 @@
        text)
       ;; Unknown key
       (else
-       (string-append "<key-" (number->string code) ">")))))
+       (string-append "<key-" (number->string code) ">"))))))
 
 ;;;============================================================================
 ;;; Qt key state machine — feeds Qt key events into keymap
@@ -90,8 +93,11 @@
 (def (qt-key-state-feed! state code mods text)
   "Feed a Qt key event into the keymap state machine.
    Returns (values action data new-state) — same protocol as TUI version."
-  (let* ((key-str (qt-key-event->string code mods text))
-         (binding (keymap-lookup (key-state-keymap state) key-str)))
+  (let ((key-str (qt-key-event->string code mods text)))
+    ;; Bare modifier keys return #f — ignore them
+    (if (not key-str)
+      (values 'ignore #f state)
+      (let ((binding (keymap-lookup (key-state-keymap state) key-str)))
     (cond
       ;; Sub-keymap -> enter prefix mode
       ((hash-table? binding)
@@ -111,4 +117,4 @@
        (values 'self-insert text (make-initial-key-state)))
       ;; No binding -> undefined
       (else
-       (values 'undefined key-str (make-initial-key-state))))))
+       (values 'undefined key-str (make-initial-key-state))))))))
