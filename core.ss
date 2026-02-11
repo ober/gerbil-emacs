@@ -221,8 +221,8 @@
   ;; Eshell (C-c e, since C-x e is call-last-kbd-macro)
   (keymap-bind! *ctrl-c-map* "e"   'eshell)
 
-  ;; Shell
-  (keymap-bind! *ctrl-x-map* "s"   'shell)
+  ;; Shell (C-c $ — C-x s is save-some-buffers)
+  (keymap-bind! *ctrl-c-map* "$"   'shell)
 
   ;; Redo
   (keymap-bind! *global-keymap* "M-_" 'redo)
@@ -458,7 +458,27 @@
 
   ;; Insert date, insert char
   (keymap-bind! *ctrl-c-map* "D" 'insert-date)
-  (keymap-bind! *ctrl-c-map* "8" 'insert-char))
+  (keymap-bind! *ctrl-c-map* "8" 'insert-char)
+
+  ;; Eval buffer/region
+  (keymap-bind! *ctrl-c-map* "E" 'eval-buffer)
+  (keymap-bind! *ctrl-c-map* "v" 'eval-region)
+
+  ;; Clone buffer, scratch
+  (keymap-bind! *ctrl-c-map* "b" 'clone-buffer)
+  (keymap-bind! *ctrl-c-map* "S" 'scratch-buffer)
+
+  ;; Save some buffers
+  (keymap-bind! *ctrl-x-map* "s" 'save-some-buffers)  ; overrides shell
+
+  ;; Revert quick
+  (keymap-bind! *ctrl-c-map* "R" 'revert-buffer-quick)
+
+  ;; Toggle highlighting
+  (keymap-bind! *ctrl-c-map* "f" 'toggle-highlighting)
+
+  ;; Display time
+  (keymap-bind! *ctrl-c-map* "T" 'display-time))
 
 ;;;============================================================================
 ;;; Echo state

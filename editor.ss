@@ -4030,6 +4030,162 @@
               (string-append "Inserted U+" input))))))))
 
 ;;;============================================================================
+;;; Eval buffer / eval region
+;;;============================================================================
+
+(def (cmd-eval-buffer app)
+  "Evaluate the entire buffer as a Gerbil expression."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app))
+         (text (editor-get-text ed)))
+    (let-values (((result error?) (eval-expression-string text)))
+      (if error?
+        (echo-error! echo (string-append "Error: " result))
+        (echo-message! echo (string-append "=> " result))))))
+
+(def (cmd-eval-region app)
+  "Evaluate the selected region as a Gerbil expression."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app))
+         (buf (current-buffer-from-app app))
+         (mark (buffer-mark buf)))
+    (if (not mark)
+      (echo-error! echo "No region (set mark first)")
+      (let* ((pos (editor-get-current-pos ed))
+             (start (min mark pos))
+             (end (max mark pos))
+             (region (substring (editor-get-text ed) start end)))
+        (let-values (((result error?) (eval-expression-string region)))
+          (set! (buffer-mark buf) #f)
+          (if error?
+            (echo-error! echo (string-append "Error: " result))
+            (echo-message! echo (string-append "=> " result))))))))
+
+;;;============================================================================
+;;; Clone buffer, scratch buffer
+;;;============================================================================
+
+(def (cmd-clone-buffer app)
+  "Create a copy of the current buffer."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app))
+         (fr (app-state-frame app))
+         (buf (current-buffer-from-app app))
+         (text (editor-get-text ed))
+         (new-name (string-append (buffer-name buf) "<clone>")))
+    (let ((new-buf (buffer-create! new-name ed #f)))
+      (buffer-attach! ed new-buf)
+      (set! (edit-window-buffer (current-window fr)) new-buf)
+      (editor-set-text ed text)
+      (editor-set-save-point ed)
+      (editor-goto-pos ed 0)
+      (echo-message! echo (string-append "Cloned to " new-name)))))
+
+(def (cmd-scratch-buffer app)
+  "Switch to the *scratch* buffer."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app))
+         (fr (app-state-frame app))
+         (buf (or (buffer-by-name buffer-scratch-name)
+                  (buffer-create! buffer-scratch-name ed #f))))
+    (buffer-attach! ed buf)
+    (set! (edit-window-buffer (current-window fr)) buf)
+    (echo-message! echo buffer-scratch-name)))
+
+;;;============================================================================
+;;; Save some buffers
+;;;============================================================================
+
+(def (cmd-save-some-buffers app)
+  "Save all modified buffers that have file paths."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app))
+         (fr (app-state-frame app))
+         (saved 0))
+    ;; Iterate over all windows and save their buffers if modified
+    (for-each
+      (lambda (win)
+        (let ((win-ed (edit-window-editor win))
+              (buf (edit-window-buffer win)))
+          (when (and (buffer-file-path buf)
+                     (buffer-modified buf))
+            (let ((text (editor-get-text win-ed)))
+              (write-string-to-file (buffer-file-path buf) text)
+              (editor-set-save-point win-ed)
+              (set! saved (+ saved 1))))))
+      (frame-windows fr))
+    (if (= saved 0)
+      (echo-message! echo "No buffers need saving")
+      (echo-message! echo
+        (string-append "Saved " (number->string saved) " buffer"
+                       (if (= saved 1) "" "s"))))))
+
+;;;============================================================================
+;;; Revert buffer quick (no confirmation)
+;;;============================================================================
+
+(def (cmd-revert-buffer-quick app)
+  "Revert buffer from disk without confirmation."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app))
+         (buf (current-buffer-from-app app))
+         (path (buffer-file-path buf)))
+    (if (not path)
+      (echo-error! echo "Buffer has no file to revert from")
+      (if (not (file-exists? path))
+        (echo-error! echo (string-append "File not found: " path))
+        (let ((text (read-file-as-string path)))
+          (editor-set-text ed text)
+          (editor-set-save-point ed)
+          (editor-goto-pos ed 0)
+          (echo-message! echo (string-append "Reverted " path)))))))
+
+;;;============================================================================
+;;; Toggle syntax highlighting
+;;;============================================================================
+
+(def (cmd-toggle-highlighting app)
+  "Toggle Gerbil syntax highlighting on the current buffer."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app))
+         (buf (current-buffer-from-app app)))
+    (if (buffer-lexer-lang buf)
+      (begin
+        ;; Turn off: clear lexer language, reset all styles to default
+        (set! (buffer-lexer-lang buf) #f)
+        (send-message ed SCI_STYLECLEARALL)
+        (echo-message! echo "Highlighting off"))
+      (begin
+        ;; Turn on: set lexer language, re-apply highlighting
+        (set! (buffer-lexer-lang buf) 'gerbil)
+        (setup-gerbil-highlighting! ed)
+        (echo-message! echo "Highlighting on")))))
+
+;;;============================================================================
+;;; Misc utility commands
+;;;============================================================================
+
+(def (cmd-view-lossage app)
+  "Display recent key sequences in *Lossage* buffer (stub)."
+  (echo-message! (app-state-echo app) "Lossage not yet tracked"))
+
+(def (cmd-display-time app)
+  "Display current time in echo area."
+  (let* ((proc (open-process
+                 (list path: "/bin/date"
+                       arguments: '("+%Y-%m-%d %H:%M:%S")
+                       stdout-redirection: #t)))
+         (output (read-line proc))
+         (status (process-status proc)))
+    (if (string? output)
+      (echo-message! (app-state-echo app) output)
+      (echo-error! (app-state-echo app) "Cannot get time"))))
+
+(def (cmd-pwd app)
+  "Display current working directory."
+  (echo-message! (app-state-echo app) (current-directory)))
+
+;;;============================================================================
 ;;; Register all commands
 ;;;============================================================================
 
@@ -4276,6 +4432,21 @@
   ;; Insert date, insert char
   (register-command! 'insert-date cmd-insert-date)
   (register-command! 'insert-char cmd-insert-char)
+  ;; Eval buffer/region
+  (register-command! 'eval-buffer cmd-eval-buffer)
+  (register-command! 'eval-region cmd-eval-region)
+  ;; Clone buffer, scratch
+  (register-command! 'clone-buffer cmd-clone-buffer)
+  (register-command! 'scratch-buffer cmd-scratch-buffer)
+  ;; Save some buffers
+  (register-command! 'save-some-buffers cmd-save-some-buffers)
+  ;; Revert quick
+  (register-command! 'revert-buffer-quick cmd-revert-buffer-quick)
+  ;; Highlighting toggle
+  (register-command! 'toggle-highlighting cmd-toggle-highlighting)
+  ;; Display time, pwd
+  (register-command! 'display-time cmd-display-time)
+  (register-command! 'pwd cmd-pwd)
   ;; Misc
   (register-command! 'keyboard-quit cmd-keyboard-quit)
   (register-command! 'quit cmd-quit))

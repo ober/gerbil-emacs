@@ -314,7 +314,7 @@
 
     (test-case "shell keybinding"
       (setup-default-bindings!)
-      (check (keymap-lookup *ctrl-x-map* "s") => 'shell))
+      (check (keymap-lookup *ctrl-c-map* "$") => 'shell))
 
     (test-case "new keybindings: redo, toggles, zoom, etc"
       (setup-default-bindings!)
@@ -633,6 +633,23 @@
       (check (keymap-lookup *meta-s-map* "g") => 'grep-buffer)
       (check (keymap-lookup *ctrl-c-map* "D") => 'insert-date)
       (check (keymap-lookup *ctrl-c-map* "8") => 'insert-char))
+
+    (test-case "new keybindings: eval-buffer, clone, scratch, save-some, etc"
+      (setup-default-bindings!)
+      ;; Eval buffer/region
+      (check (keymap-lookup *ctrl-c-map* "E") => 'eval-buffer)
+      (check (keymap-lookup *ctrl-c-map* "v") => 'eval-region)
+      ;; Clone buffer, scratch
+      (check (keymap-lookup *ctrl-c-map* "b") => 'clone-buffer)
+      (check (keymap-lookup *ctrl-c-map* "S") => 'scratch-buffer)
+      ;; Save some buffers (overrides old shell on C-x s)
+      (check (keymap-lookup *ctrl-x-map* "s") => 'save-some-buffers)
+      ;; Revert quick
+      (check (keymap-lookup *ctrl-c-map* "R") => 'revert-buffer-quick)
+      ;; Toggle highlighting
+      (check (keymap-lookup *ctrl-c-map* "f") => 'toggle-highlighting)
+      ;; Display time
+      (check (keymap-lookup *ctrl-c-map* "T") => 'display-time))
 
     ))
 
