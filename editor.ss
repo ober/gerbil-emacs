@@ -3169,6 +3169,262 @@
                   (string-append "Sorted by field " field-str))))))))))
 
 ;;;============================================================================
+;;; Mark word, mark paragraph, paragraph navigation
+;;;============================================================================
+
+(def (cmd-mark-word app)
+  "Set mark at end of next word (like M-@ in Emacs)."
+  (let* ((ed (current-editor app))
+         (buf (current-buffer-from-app app))
+         (pos (editor-get-current-pos ed))
+         (text (editor-get-text ed))
+         (len (string-length text)))
+    ;; Set mark at current position if not already set
+    (when (not (buffer-mark buf))
+      (set! (buffer-mark buf) pos))
+    ;; Find end of word from current pos
+    (let skip-nonword ((i pos))
+      (if (and (< i len) (not (word-char? (char->integer (string-ref text i)))))
+        (skip-nonword (+ i 1))
+        (let find-end ((j i))
+          (if (and (< j len) (word-char? (char->integer (string-ref text j))))
+            (find-end (+ j 1))
+            (begin
+              (editor-goto-pos ed j)
+              (echo-message! (app-state-echo app) "Mark word"))))))))
+
+(def (cmd-mark-paragraph app)
+  "Select the current paragraph (M-h)."
+  (let* ((ed (current-editor app))
+         (buf (current-buffer-from-app app))
+         (pos (editor-get-current-pos ed))
+         (text (editor-get-text ed))
+         (len (string-length text)))
+    ;; Find start of paragraph (search backward for blank line or BOF)
+    (let find-start ((i pos))
+      (let ((start
+              (cond
+                ((<= i 0) 0)
+                ;; Check if we're at start of a blank line
+                ((and (> i 1)
+                      (char=? (string-ref text (- i 1)) #\newline)
+                      (or (= i (string-length text))
+                          (char=? (string-ref text i) #\newline)))
+                 i)
+                (else (find-start (- i 1))))))
+        ;; Find end of paragraph (search forward for blank line or EOF)
+        (let find-end ((j pos))
+          (let ((end
+                  (cond
+                    ((>= j len) len)
+                    ;; Blank line = two consecutive newlines
+                    ((and (char=? (string-ref text j) #\newline)
+                          (< (+ j 1) len)
+                          (char=? (string-ref text (+ j 1)) #\newline))
+                     (+ j 1))
+                    (else (find-end (+ j 1))))))
+            (set! (buffer-mark buf) start)
+            (editor-goto-pos ed end)
+            (echo-message! (app-state-echo app) "Mark paragraph")))))))
+
+(def (cmd-forward-paragraph app)
+  "Move forward to end of next paragraph."
+  (let* ((ed (current-editor app))
+         (text (editor-get-text ed))
+         (pos (editor-get-current-pos ed))
+         (len (string-length text)))
+    ;; Skip any blank lines at point
+    (let skip-blank ((i pos))
+      (if (and (< i len)
+               (char=? (string-ref text i) #\newline))
+        (skip-blank (+ i 1))
+        ;; Now find next blank line or EOF
+        (let find-end ((j i))
+          (cond
+            ((>= j len) (editor-goto-pos ed len))
+            ((and (char=? (string-ref text j) #\newline)
+                  (< (+ j 1) len)
+                  (char=? (string-ref text (+ j 1)) #\newline))
+             (editor-goto-pos ed (+ j 1)))
+            (else (find-end (+ j 1)))))))))
+
+(def (cmd-backward-paragraph app)
+  "Move backward to start of previous paragraph."
+  (let* ((ed (current-editor app))
+         (text (editor-get-text ed))
+         (pos (editor-get-current-pos ed)))
+    ;; Skip any blank lines at point
+    (let skip-blank ((i (max 0 (- pos 1))))
+      (if (and (> i 0)
+               (char=? (string-ref text i) #\newline))
+        (skip-blank (- i 1))
+        ;; Now find previous blank line or BOF
+        (let find-start ((j i))
+          (cond
+            ((<= j 0) (editor-goto-pos ed 0))
+            ((and (char=? (string-ref text j) #\newline)
+                  (> j 0)
+                  (char=? (string-ref text (- j 1)) #\newline))
+             (editor-goto-pos ed (+ j 1)))
+            (else (find-start (- j 1)))))))))
+
+;;;============================================================================
+;;; Back to indentation, delete indentation
+;;;============================================================================
+
+(def (cmd-back-to-indentation app)
+  "Move to first non-whitespace character on current line (M-m)."
+  (let* ((ed (current-editor app))
+         (pos (editor-get-current-pos ed))
+         (line (editor-line-from-position ed pos))
+         (line-start (editor-position-from-line ed line))
+         (text (editor-get-text ed))
+         (len (string-length text)))
+    (let find-nonws ((i line-start))
+      (if (and (< i len)
+               (let ((ch (string-ref text i)))
+                 (and (not (char=? ch #\newline))
+                      (or (char=? ch #\space) (char=? ch #\tab)))))
+        (find-nonws (+ i 1))
+        (editor-goto-pos ed i)))))
+
+(def (cmd-delete-indentation app)
+  "Join current line with previous, removing indentation (M-^)."
+  (let* ((ed (current-editor app))
+         (pos (editor-get-current-pos ed))
+         (line (editor-line-from-position ed pos)))
+    (when (> line 0)
+      ;; Go to beginning of current line
+      (let* ((line-start (editor-position-from-line ed line))
+             (prev-end (editor-get-line-end-position ed (- line 1)))
+             (text (editor-get-text ed))
+             ;; Find end of whitespace at start of current line
+             (ws-end line-start))
+        (let skip ((i line-start))
+          (when (< i (string-length text))
+            (let ((ch (string-ref text i)))
+              (when (or (char=? ch #\space) (char=? ch #\tab))
+                (set! ws-end (+ i 1))
+                (skip (+ i 1))))))
+        ;; Delete from end of previous line through whitespace, insert space
+        (with-undo-action ed
+          (editor-delete-range ed prev-end (- ws-end prev-end))
+          (editor-insert-text ed prev-end " "))))))
+
+;;;============================================================================
+;;; Whitespace navigation/cleanup
+;;;============================================================================
+
+(def (cmd-cycle-spacing app)
+  "Cycle between: collapse whitespace to one space, remove all, restore original."
+  ;; Simplified: just collapse to single space (same as just-one-space)
+  (cmd-just-one-space app))
+
+(def (cmd-fixup-whitespace app)
+  "Fix up whitespace around point (collapse multiple spaces/tabs to one)."
+  (let* ((ed (current-editor app))
+         (pos (editor-get-current-pos ed))
+         (text (editor-get-text ed))
+         (len (string-length text)))
+    ;; Find whitespace range around point
+    (let find-start ((i (- pos 1)))
+      (let ((ws-start
+              (if (and (>= i 0)
+                       (let ((ch (string-ref text i)))
+                         (or (char=? ch #\space) (char=? ch #\tab))))
+                (find-start (- i 1))
+                (+ i 1))))
+        (let find-end ((j pos))
+          (let ((ws-end
+                  (if (and (< j len)
+                           (let ((ch (string-ref text j)))
+                             (or (char=? ch #\space) (char=? ch #\tab))))
+                    (find-end (+ j 1))
+                    j)))
+            (when (> (- ws-end ws-start) 1)
+              (with-undo-action ed
+                (editor-delete-range ed ws-start (- ws-end ws-start))
+                (editor-insert-text ed ws-start " ")))))))))
+
+;;;============================================================================
+;;; Misc navigation commands
+;;;============================================================================
+
+(def (cmd-exchange-point-and-mark app)
+  "Swap point and mark positions."
+  (let* ((ed (current-editor app))
+         (buf (current-buffer-from-app app))
+         (mark (buffer-mark buf)))
+    (if (not mark)
+      (echo-error! (app-state-echo app) "No mark set")
+      (let ((pos (editor-get-current-pos ed)))
+        (set! (buffer-mark buf) pos)
+        (editor-goto-pos ed mark)
+        (echo-message! (app-state-echo app) "Mark and point exchanged")))))
+
+(def (cmd-mark-whole-buffer app)
+  "Mark the whole buffer (C-x h already does select-all, this is an alias)."
+  (cmd-select-all app))
+
+(def (cmd-recenter-top-bottom app)
+  "Recenter display with point at center/top/bottom."
+  ;; Simplified: just recenter
+  (editor-scroll-caret (current-editor app)))
+
+(def (cmd-what-page app)
+  "Display what page and line the cursor is on."
+  (let* ((ed (current-editor app))
+         (pos (editor-get-current-pos ed))
+         (text (editor-get-text ed))
+         (line (editor-line-from-position ed pos))
+         ;; Count form feeds (page breaks) before point
+         (pages
+           (let loop ((i 0) (count 1))
+             (if (>= i pos) count
+               (if (char=? (string-ref text i) #\page)
+                 (loop (+ i 1) (+ count 1))
+                 (loop (+ i 1) count))))))
+    (echo-message! (app-state-echo app)
+      (string-append "Page " (number->string pages)
+                     ", Line " (number->string (+ line 1))))))
+
+(def (cmd-count-lines-region app)
+  "Count lines in the region."
+  (let* ((ed (current-editor app))
+         (buf (current-buffer-from-app app))
+         (mark (buffer-mark buf)))
+    (if (not mark)
+      (echo-error! (app-state-echo app) "No region")
+      (let* ((pos (editor-get-current-pos ed))
+             (start (min mark pos))
+             (end (max mark pos))
+             (start-line (editor-line-from-position ed start))
+             (end-line (editor-line-from-position ed end))
+             (lines (+ (- end-line start-line) 1))
+             (chars (- end start)))
+        (echo-message! (app-state-echo app)
+          (string-append "Region has " (number->string lines)
+                         " lines, " (number->string chars) " chars"))))))
+
+(def (cmd-copy-line app)
+  "Copy the current line to the kill ring without deleting."
+  (let* ((ed (current-editor app))
+         (pos (editor-get-current-pos ed))
+         (line (editor-line-from-position ed pos))
+         (line-start (editor-position-from-line ed line))
+         (line-end (editor-get-line-end-position ed line))
+         (text (editor-get-text ed))
+         (total (editor-get-line-count ed))
+         ;; Include newline if not last line
+         (end (if (< (+ line 1) total)
+                (editor-position-from-line ed (+ line 1))
+                line-end))
+         (line-text (substring text line-start end)))
+    (set! (app-state-kill-ring app)
+      (cons line-text (app-state-kill-ring app)))
+    (echo-message! (app-state-echo app) "Line copied")))
+
+;;;============================================================================
 ;;; Register all commands
 ;;;============================================================================
 
@@ -3364,6 +3620,23 @@
   (register-command! 'align-regexp cmd-align-regexp)
   ;; Sort fields
   (register-command! 'sort-fields cmd-sort-fields)
+  ;; Mark word, mark paragraph, paragraph nav
+  (register-command! 'mark-word cmd-mark-word)
+  (register-command! 'mark-paragraph cmd-mark-paragraph)
+  (register-command! 'forward-paragraph cmd-forward-paragraph)
+  (register-command! 'backward-paragraph cmd-backward-paragraph)
+  ;; Indentation nav
+  (register-command! 'back-to-indentation cmd-back-to-indentation)
+  (register-command! 'delete-indentation cmd-delete-indentation)
+  ;; Whitespace
+  (register-command! 'fixup-whitespace cmd-fixup-whitespace)
+  ;; Point/mark
+  (register-command! 'exchange-point-and-mark cmd-exchange-point-and-mark)
+  ;; Info commands
+  (register-command! 'what-page cmd-what-page)
+  (register-command! 'count-lines-region cmd-count-lines-region)
+  ;; Copy line
+  (register-command! 'copy-line cmd-copy-line)
   ;; Misc
   (register-command! 'keyboard-quit cmd-keyboard-quit)
   (register-command! 'quit cmd-quit))

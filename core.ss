@@ -289,7 +289,7 @@
   (keymap-bind! *global-keymap* "M-|" 'shell-command-on-region)
 
   ;; Sort lines in region
-  (keymap-bind! *global-keymap* "M-^" 'sort-lines)
+  (keymap-bind! *ctrl-c-map* "^" 'sort-lines)
 
   ;; Go to matching paren
   (keymap-bind! *ctrl-c-map* "p" 'goto-matching-paren)
@@ -397,7 +397,27 @@
   (keymap-bind! *ctrl-c-map* "a" 'align-regexp)
 
   ;; Sort fields
-  (keymap-bind! *ctrl-c-map* "s" 'sort-fields))
+  (keymap-bind! *ctrl-c-map* "s" 'sort-fields)
+
+  ;; Mark word, mark paragraph, paragraph navigation
+  (keymap-bind! *global-keymap* "M-@" 'mark-word)
+  (keymap-bind! *global-keymap* "M-h" 'mark-paragraph)
+  (keymap-bind! *global-keymap* "M-}" 'forward-paragraph)
+  (keymap-bind! *global-keymap* "M-{" 'backward-paragraph)
+
+  ;; Back to indentation, delete indentation
+  (keymap-bind! *global-keymap* "M-m" 'back-to-indentation)
+  (keymap-bind! *global-keymap* "M-^" 'delete-indentation)
+
+  ;; Exchange point and mark
+  (keymap-bind! *ctrl-x-map* "C-x" 'exchange-point-and-mark)
+
+  ;; Info
+  (keymap-bind! *ctrl-x-map* "C-p" 'what-page)
+  (keymap-bind! *ctrl-c-map* "l" 'count-lines-region)
+
+  ;; Copy line (C-c c)
+  (keymap-bind! *ctrl-c-map* "c" 'copy-line))
 
 ;;;============================================================================
 ;;; Echo state

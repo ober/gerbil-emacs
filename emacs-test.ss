@@ -412,7 +412,7 @@
         (check (keymap-lookup ms-map "o") => 'occur))
       (check (keymap-lookup *ctrl-x-map* "c") => 'compile)
       (check (keymap-lookup *global-keymap* "M-|") => 'shell-command-on-region)
-      (check (keymap-lookup *global-keymap* "M-^") => 'sort-lines))
+      (check (keymap-lookup *ctrl-c-map* "^") => 'sort-lines))
 
     (test-case "app-state new fields"
       ;; Test new app-state fields have correct defaults
@@ -563,6 +563,23 @@
       ;; Align, sort fields
       (check (keymap-lookup *ctrl-c-map* "a") => 'align-regexp)
       (check (keymap-lookup *ctrl-c-map* "s") => 'sort-fields))
+
+    (test-case "new keybindings: mark-word, paragraph, indentation, etc"
+      ;; Mark word, paragraph nav
+      (check (keymap-lookup *global-keymap* "M-@") => 'mark-word)
+      (check (keymap-lookup *global-keymap* "M-h") => 'mark-paragraph)
+      (check (keymap-lookup *global-keymap* "M-}") => 'forward-paragraph)
+      (check (keymap-lookup *global-keymap* "M-{") => 'backward-paragraph)
+      ;; Indentation
+      (check (keymap-lookup *global-keymap* "M-m") => 'back-to-indentation)
+      (check (keymap-lookup *global-keymap* "M-^") => 'delete-indentation)
+      ;; Exchange point and mark
+      (check (keymap-lookup *ctrl-x-map* "C-x") => 'exchange-point-and-mark)
+      ;; Info
+      (check (keymap-lookup *ctrl-x-map* "C-p") => 'what-page)
+      (check (keymap-lookup *ctrl-c-map* "l") => 'count-lines-region)
+      ;; Copy line
+      (check (keymap-lookup *ctrl-c-map* "c") => 'copy-line))
 
     ))
 
