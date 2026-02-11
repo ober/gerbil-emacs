@@ -629,7 +629,40 @@
   (keymap-bind! *ctrl-c-map* "o" 'find-file-at-point)
 
   ;; Count chars in region
-  (keymap-bind! *ctrl-c-map* "K" 'count-chars-region))
+  (keymap-bind! *ctrl-c-map* "K" 'count-chars-region)
+
+  ;; Count words in entire buffer
+  (keymap-bind! *ctrl-c-map* "+" 'count-words-buffer)
+
+  ;; Unfill paragraph
+  (keymap-bind! *ctrl-c-map* ";" 'unfill-paragraph)
+
+  ;; List registers
+  (keymap-bind! *ctrl-c-map* "@" 'list-registers)
+
+  ;; Show kill ring
+  (keymap-bind! *ctrl-c-map* "Y" 'show-kill-ring)
+
+  ;; Smart beginning of line (C-a override — goes to indentation first)
+  ;; Keep original C-a as beginning-of-line; use M-m for back-to-indentation
+  ;; Add C-c C-a won't work; instead use C-c `
+  (keymap-bind! *ctrl-c-map* "`" 'smart-beginning-of-line)
+
+  ;; What buffer
+  (keymap-bind! *ctrl-c-map* "~" 'what-buffer)
+
+  ;; Narrowing indicator
+  (keymap-bind! *ctrl-c-map* ":" 'toggle-narrowing-indicator)
+
+  ;; Insert file name/path
+  (keymap-bind! *ctrl-c-map* "&" 'insert-file-name)
+
+  ;; S-expression navigation (C-M-* style — use M-g prefix for accessibility)
+  (keymap-bind! *meta-g-map* "u" 'backward-up-list)
+  (keymap-bind! *meta-g-map* "d" 'forward-up-list)
+  (keymap-bind! *meta-g-map* "k" 'kill-sexp)
+  (keymap-bind! *meta-g-map* "f" 'forward-sexp)
+  (keymap-bind! *meta-g-map* "b" 'backward-sexp))
 
 ;;;============================================================================
 ;;; Echo state

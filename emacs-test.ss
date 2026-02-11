@@ -766,6 +766,31 @@
       ;; Count chars region
       (check (keymap-lookup *ctrl-c-map* "K") => 'count-chars-region))
 
+    (test-case "new keybindings: sexp nav, unfill, kill-ring, registers, etc"
+      (setup-default-bindings!)
+      ;; Count words buffer
+      (check (keymap-lookup *ctrl-c-map* "+") => 'count-words-buffer)
+      ;; Unfill paragraph
+      (check (keymap-lookup *ctrl-c-map* ";") => 'unfill-paragraph)
+      ;; List registers
+      (check (keymap-lookup *ctrl-c-map* "@") => 'list-registers)
+      ;; Show kill ring
+      (check (keymap-lookup *ctrl-c-map* "Y") => 'show-kill-ring)
+      ;; Smart beginning of line
+      (check (keymap-lookup *ctrl-c-map* "`") => 'smart-beginning-of-line)
+      ;; What buffer
+      (check (keymap-lookup *ctrl-c-map* "~") => 'what-buffer)
+      ;; Narrowing indicator
+      (check (keymap-lookup *ctrl-c-map* ":") => 'toggle-narrowing-indicator)
+      ;; Insert file name
+      (check (keymap-lookup *ctrl-c-map* "&") => 'insert-file-name)
+      ;; S-expression navigation
+      (check (keymap-lookup *meta-g-map* "u") => 'backward-up-list)
+      (check (keymap-lookup *meta-g-map* "d") => 'forward-up-list)
+      (check (keymap-lookup *meta-g-map* "k") => 'kill-sexp)
+      (check (keymap-lookup *meta-g-map* "f") => 'forward-sexp)
+      (check (keymap-lookup *meta-g-map* "b") => 'backward-sexp))
+
     ))
 
 ;; Run tests when executed directly
