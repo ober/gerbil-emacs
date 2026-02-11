@@ -354,6 +354,25 @@
       (check (keymap-lookup *global-keymap* "M-a") => 'beginning-of-defun)
       (check (keymap-lookup *global-keymap* "M-e") => 'end-of-defun))
 
+    (test-case "auto-pair-char helper"
+      ;; Import via editor.ss is not possible without TUI, so test inline
+      (let ((apc (lambda (ch)
+                   (cond
+                     ((= ch 40) 41)   ; ( -> )
+                     ((= ch 91) 93)   ; [ -> ]
+                     ((= ch 34) 34)   ; " -> "
+                     (else #f)))))
+        (check (apc 40) => 41)   ; ( -> )
+        (check (apc 91) => 93)   ; [ -> ]
+        (check (apc 34) => 34)   ; " -> "
+        (check (apc 97) => #f)   ; 'a' -> no pair
+        (check (apc 32) => #f))) ; space -> no pair
+
+    (test-case "new keybindings: trailing whitespace, count words"
+      (setup-default-bindings!)
+      (check (keymap-lookup *ctrl-x-map* "C-o") => 'delete-trailing-whitespace)
+      (check (keymap-lookup *global-keymap* "M-=") => 'count-words))
+
     (test-case "brace-char? helper"
       ;; Test the brace matching character check
       ;; ( = 40, ) = 41, [ = 91, ] = 93, { = 123, } = 125

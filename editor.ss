@@ -47,6 +47,15 @@
 ;;; Self-insert command
 ;;;============================================================================
 
+;; Auto-pair matching characters
+(def (auto-pair-char ch)
+  "Return the closing character for auto-pairing, or #f."
+  (cond
+    ((= ch 40) 41)   ; ( -> )
+    ((= ch 91) 93)   ; [ -> ]
+    ((= ch 34) 34)   ; " -> "
+    (else #f)))
+
 (def (cmd-self-insert! app ch)
   (let ((buf (current-buffer-from-app app)))
     (cond
@@ -70,7 +79,15 @@
          (when (and ss (>= pos (shell-state-prompt-pos ss)))
            (editor-send-key ed ch))))
       (else
-       (editor-send-key (current-editor app) ch)))))
+       (let* ((ed (current-editor app))
+              (close-ch (auto-pair-char ch)))
+         (if close-ch
+           ;; Auto-pair: insert both chars and place cursor between
+           (let ((pos (editor-get-current-pos ed)))
+             (editor-insert-text ed pos
+               (string (integer->char ch) (integer->char close-ch)))
+             (editor-goto-pos ed (+ pos 1)))
+           (editor-send-key ed ch)))))))
 
 ;;;============================================================================
 ;;; Navigation commands
@@ -133,6 +150,17 @@
           (editor-send-key ed SCK_BACK)))
       (editor-send-key (current-editor app) SCK_BACK))))
 
+(def (get-line-indent text line-start)
+  "Count leading whitespace chars starting at line-start in text."
+  (let ((len (string-length text)))
+    (let loop ((i line-start) (count 0))
+      (if (>= i len) count
+        (let ((ch (string-ref text i)))
+          (cond
+            ((char=? ch #\space) (loop (+ i 1) (+ count 1)))
+            ((char=? ch #\tab) (loop (+ i 1) (+ count 2)))
+            (else count)))))))
+
 (def (cmd-newline app)
   (let ((buf (current-buffer-from-app app)))
     (cond
@@ -140,7 +168,17 @@
       ((repl-buffer? buf)   (cmd-repl-send app))
       ((eshell-buffer? buf) (cmd-eshell-send app))
       ((shell-buffer? buf)  (cmd-shell-send app))
-      (else (editor-send-key (current-editor app) SCK_RETURN)))))
+      (else
+       ;; Electric indent: match previous line's indentation
+       (let* ((ed (current-editor app))
+              (pos (editor-get-current-pos ed))
+              (text (editor-get-text ed))
+              (line (editor-line-from-position ed pos))
+              (line-start (editor-position-from-line ed line))
+              (indent (get-line-indent text line-start))
+              (indent-str (make-string indent #\space)))
+         (editor-insert-text ed pos (string-append "\n" indent-str))
+         (editor-goto-pos ed (+ pos 1 indent)))))))
 
 (def (cmd-open-line app)
   (let* ((ed (current-editor app))
@@ -1186,6 +1224,46 @@
                      ", Column " (number->string col)))))
 
 ;;;============================================================================
+;;; Delete trailing whitespace
+;;;============================================================================
+
+(def (cmd-delete-trailing-whitespace app)
+  "Remove trailing whitespace from all lines."
+  (let* ((ed (current-editor app))
+         (text (editor-get-text ed))
+         (pos (editor-get-current-pos ed))
+         (lines (string-split text #\newline))
+         (cleaned (map (lambda (line) (string-trim-right line))
+                       lines))
+         (new-text (string-join cleaned "\n")))
+    (when (not (string=? text new-text))
+      (editor-set-text ed new-text)
+      (editor-goto-pos ed (min pos (editor-get-text-length ed)))
+      (echo-message! (app-state-echo app) "Trailing whitespace deleted"))))
+
+;;;============================================================================
+;;; Count words/lines
+;;;============================================================================
+
+(def (cmd-count-words app)
+  "Display word, line, and character counts for the buffer."
+  (let* ((ed (current-editor app))
+         (text (editor-get-text ed))
+         (chars (string-length text))
+         (lines (editor-get-line-count ed))
+         ;; Simple word count: count transitions from non-word to word chars
+         (words (let loop ((i 0) (in-word #f) (count 0))
+                  (if (>= i chars) count
+                    (let ((ch (string-ref text i)))
+                      (if (or (char-alphabetic? ch) (char-numeric? ch))
+                        (loop (+ i 1) #t (if in-word count (+ count 1)))
+                        (loop (+ i 1) #f count)))))))
+    (echo-message! (app-state-echo app)
+      (string-append "Lines: " (number->string lines)
+                     "  Words: " (number->string words)
+                     "  Chars: " (number->string chars)))))
+
+;;;============================================================================
 ;;; Misc commands
 ;;;============================================================================
 
@@ -1434,6 +1512,10 @@
   ;; Defun navigation
   (register-command! 'beginning-of-defun cmd-beginning-of-defun)
   (register-command! 'end-of-defun cmd-end-of-defun)
+  ;; Delete trailing whitespace
+  (register-command! 'delete-trailing-whitespace cmd-delete-trailing-whitespace)
+  ;; Count words
+  (register-command! 'count-words cmd-count-words)
   ;; Misc
   (register-command! 'keyboard-quit cmd-keyboard-quit)
   (register-command! 'quit cmd-quit))

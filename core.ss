@@ -251,7 +251,13 @@
 
   ;; Beginning/end of defun
   (keymap-bind! *global-keymap* "M-a" 'beginning-of-defun)
-  (keymap-bind! *global-keymap* "M-e" 'end-of-defun))
+  (keymap-bind! *global-keymap* "M-e" 'end-of-defun)
+
+  ;; Delete trailing whitespace
+  (keymap-bind! *ctrl-x-map* "C-o" 'delete-trailing-whitespace)
+
+  ;; Count words
+  (keymap-bind! *global-keymap* "M-=" 'count-words))
 
 ;;;============================================================================
 ;;; Echo state
