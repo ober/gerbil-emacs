@@ -28,7 +28,8 @@
    "-lstdc++ -lpthread"))
 
 (defbuild-script
-  `("keymap"
+  `("core"
+    "keymap"
     "buffer"
     "window"
     "modeline"

@@ -1,9 +1,8 @@
 ;;; -*- Gerbil -*-
-;;; Keybinding system for gerbil-emacs
+;;; TUI keybinding adapter for gerbil-emacs
 ;;;
-;;; Keymaps are hash tables mapping key-string -> symbol or sub-keymap.
-;;; Multi-key sequences (C-x C-s) use nested keymaps.
-;;; Key state machine tracks prefix accumulation.
+;;; Converts termbox key events to Emacs key strings.
+;;; Keymap data structures and bindings are in core.ss.
 
 (export
   key-event->string
@@ -18,23 +17,11 @@
   setup-default-bindings!)
 
 (import :std/sugar
-        :gerbil-scintilla/tui)
+        :gerbil-scintilla/tui
+        :gerbil-emacs/core)
 
 ;;;============================================================================
-;;; Keymap data structure
-;;;============================================================================
-
-(def (make-keymap)
-  (make-hash-table))
-
-(def (keymap-bind! km key-str value)
-  (hash-put! km key-str value))
-
-(def (keymap-lookup km key-str)
-  (hash-get km key-str))
-
-;;;============================================================================
-;;; Key event -> string conversion
+;;; Key event -> string conversion (TUI-specific)
 ;;;
 ;;; termbox_next delivers:
 ;;;   Regular char 'a':  key=0, ch=97, mod=0
@@ -112,20 +99,8 @@
          (string-append "<key-" (number->string key) ">"))))))
 
 ;;;============================================================================
-;;; Key state machine for multi-key sequences
+;;; TUI key state machine — feeds termbox events into keymap
 ;;;============================================================================
-
-(defstruct key-state
-  (keymap        ; current keymap to look up in
-   prefix-keys)  ; list of accumulated key strings (for echo display)
-  transparent: #t)
-
-;;; Global keymaps
-(def *global-keymap* (make-keymap))
-(def *ctrl-x-map*   (make-keymap))
-
-(def (make-initial-key-state)
-  (make-key-state *global-keymap* []))
 
 ;;; Feed a key event into the state machine.
 ;;; Returns: (values action data new-state)
@@ -151,73 +126,3 @@
       ;; No binding -> undefined
       (else
        (values 'undefined key-str (make-initial-key-state))))))
-
-;;;============================================================================
-;;; Default Emacs-like keybindings
-;;;============================================================================
-
-(def (setup-default-bindings!)
-  ;; C-x prefix
-  (keymap-bind! *global-keymap* "C-x" *ctrl-x-map*)
-
-  ;; Navigation
-  (keymap-bind! *global-keymap* "C-f" 'forward-char)
-  (keymap-bind! *global-keymap* "C-b" 'backward-char)
-  (keymap-bind! *global-keymap* "C-n" 'next-line)
-  (keymap-bind! *global-keymap* "C-p" 'previous-line)
-  (keymap-bind! *global-keymap* "C-a" 'beginning-of-line)
-  (keymap-bind! *global-keymap* "C-e" 'end-of-line)
-  (keymap-bind! *global-keymap* "C-v" 'scroll-down)
-  (keymap-bind! *global-keymap* "C-l" 'recenter)
-
-  ;; Arrow keys and navigation
-  (keymap-bind! *global-keymap* "<up>"     'previous-line)
-  (keymap-bind! *global-keymap* "<down>"   'next-line)
-  (keymap-bind! *global-keymap* "<left>"   'backward-char)
-  (keymap-bind! *global-keymap* "<right>"  'forward-char)
-  (keymap-bind! *global-keymap* "<home>"   'beginning-of-line)
-  (keymap-bind! *global-keymap* "<end>"    'end-of-line)
-  (keymap-bind! *global-keymap* "<prior>"  'scroll-up)
-  (keymap-bind! *global-keymap* "<next>"   'scroll-down)
-  (keymap-bind! *global-keymap* "<delete>" 'delete-char)
-
-  ;; Alt/Meta navigation
-  (keymap-bind! *global-keymap* "M-f" 'forward-word)
-  (keymap-bind! *global-keymap* "M-b" 'backward-word)
-  (keymap-bind! *global-keymap* "M-v" 'scroll-up)
-  (keymap-bind! *global-keymap* "M-<" 'beginning-of-buffer)
-  (keymap-bind! *global-keymap* "M->" 'end-of-buffer)
-
-  ;; Editing
-  (keymap-bind! *global-keymap* "C-d" 'delete-char)
-  (keymap-bind! *global-keymap* "DEL" 'backward-delete-char)
-  (keymap-bind! *global-keymap* "C-h" 'backward-delete-char)
-  (keymap-bind! *global-keymap* "C-k" 'kill-line)
-  (keymap-bind! *global-keymap* "C-y" 'yank)
-  (keymap-bind! *global-keymap* "C-w" 'kill-region)
-  (keymap-bind! *global-keymap* "M-w" 'copy-region)
-  (keymap-bind! *global-keymap* "C-_" 'undo)
-  (keymap-bind! *global-keymap* "C-m" 'newline)
-  (keymap-bind! *global-keymap* "C-j" 'newline)
-  (keymap-bind! *global-keymap* "C-o" 'open-line)
-
-  ;; Mark
-  (keymap-bind! *global-keymap* "C-@" 'set-mark)
-
-  ;; Search
-  (keymap-bind! *global-keymap* "C-s" 'search-forward)
-  (keymap-bind! *global-keymap* "C-r" 'search-backward)
-
-  ;; Misc
-  (keymap-bind! *global-keymap* "C-g" 'keyboard-quit)
-
-  ;; C-x commands
-  (keymap-bind! *ctrl-x-map* "C-s" 'save-buffer)
-  (keymap-bind! *ctrl-x-map* "C-f" 'find-file)
-  (keymap-bind! *ctrl-x-map* "C-c" 'quit)
-  (keymap-bind! *ctrl-x-map* "b"   'switch-buffer)
-  (keymap-bind! *ctrl-x-map* "k"   'kill-buffer-cmd)
-  (keymap-bind! *ctrl-x-map* "2"   'split-window)
-  (keymap-bind! *ctrl-x-map* "o"   'other-window)
-  (keymap-bind! *ctrl-x-map* "0"   'delete-window)
-  (keymap-bind! *ctrl-x-map* "1"   'delete-other-windows))

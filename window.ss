@@ -116,7 +116,7 @@
 ;;;============================================================================
 
 (def (frame-split! fr)
-  "Split: add a new window showing the same buffer."
+  "Split: add a new window showing the same buffer. Returns the new editor."
   (let* ((cur (current-window fr))
          (buf (edit-window-buffer cur))
          (new-ed (create-scintilla-editor))
@@ -124,7 +124,8 @@
     (buffer-attach! new-ed buf)
     (set! (frame-windows fr)
           (append (frame-windows fr) (list new-win)))
-    (frame-layout! fr)))
+    (frame-layout! fr)
+    new-ed))
 
 (def (frame-delete-window! fr)
   "Delete the current window (if more than one)."

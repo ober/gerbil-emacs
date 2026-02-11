@@ -1,8 +1,8 @@
 ;;; -*- Gerbil -*-
-;;; Editor commands and app state for gerbil-emacs
+;;; TUI editor commands and app state for gerbil-emacs
 ;;;
 ;;; All commands take an app-state parameter.
-;;; Commands are stored in a registry (hash table: symbol -> procedure).
+;;; App state, command registry, and file I/O helpers are in core.ss.
 
 (export
   (struct-out app-state)
@@ -17,34 +17,14 @@
 (import :std/sugar
         :gerbil-scintilla/constants
         :gerbil-scintilla/scintilla
+        :gerbil-scintilla/style
         :gerbil-scintilla/tui
+        :gerbil-emacs/core
         :gerbil-emacs/keymap
         :gerbil-emacs/buffer
         :gerbil-emacs/window
         :gerbil-emacs/modeline
         :gerbil-emacs/echo)
-
-;;;============================================================================
-;;; App state
-;;;============================================================================
-
-(defstruct app-state
-  (frame         ; frame struct
-   echo          ; echo-state struct
-   key-state     ; key-state struct
-   running       ; boolean
-   last-search   ; string or #f
-   kill-ring)    ; list of killed text strings
-  transparent: #t)
-
-(def (new-app-state frame)
-  (make-app-state
-   frame
-   (make-initial-echo-state)
-   (make-initial-key-state)
-   #t     ; running
-   #f     ; last-search
-   []))   ; kill-ring
 
 ;;;============================================================================
 ;;; Accessors
@@ -55,25 +35,6 @@
 
 (def (current-buffer-from-app app)
   (edit-window-buffer (current-window (app-state-frame app))))
-
-;;;============================================================================
-;;; Command registry
-;;;============================================================================
-
-(def *commands* (make-hash-table))
-
-(def (register-command! name proc)
-  (hash-put! *commands* name proc))
-
-(def (find-command name)
-  (hash-get *commands* name))
-
-(def (execute-command! app name)
-  (let ((cmd (find-command name)))
-    (if cmd
-      (cmd app)
-      (echo-error! (app-state-echo app)
-                   (string-append (symbol->string name) " is undefined")))))
 
 ;;;============================================================================
 ;;; Self-insert command
@@ -216,14 +177,6 @@
 ;;; File operations
 ;;;============================================================================
 
-(def (read-file-as-string path)
-  (call-with-input-file path
-    (lambda (port) (read-line port #f))))
-
-(def (write-string-to-file path str)
-  (call-with-output-file path
-    (lambda (port) (display str port))))
-
 (def (cmd-find-file app)
   (let* ((echo (app-state-echo app))
          (fr (app-state-frame app))
@@ -325,7 +278,12 @@
 ;;;============================================================================
 
 (def (cmd-split-window app)
-  (frame-split! (app-state-frame app)))
+  (let ((new-ed (frame-split! (app-state-frame app))))
+    ;; Apply dark theme to the new editor
+    (editor-style-set-foreground new-ed STYLE_DEFAULT #xd8d8d8)
+    (editor-style-set-background new-ed STYLE_DEFAULT #x181818)
+    (send-message new-ed SCI_STYLECLEARALL)
+    (editor-set-caret-foreground new-ed #xFFFFFF)))
 
 (def (cmd-other-window app)
   (frame-other-window! (app-state-frame app)))

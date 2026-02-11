@@ -38,9 +38,7 @@
                    (string-append info
                                   (make-string (- w (string-length info)) #\-))
                    (substring info 0 w)))
-         ;; Active window: white on black; inactive: dimmer
-         (fg (if is-current
-               (bitwise-ior TB_BLACK TB_BOLD)
-               TB_WHITE))
-         (bg (if is-current TB_WHITE TB_BLACK)))
+         ;; Active window: dark on light; inactive: dimmer
+         (fg (if is-current #x000000 #x808080))
+         (bg (if is-current #xd8d8d8 #x282828)))
     (tui-print! 0 y fg bg padded)))

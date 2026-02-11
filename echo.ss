@@ -1,8 +1,10 @@
 ;;; -*- Gerbil -*-
-;;; Echo area / minibuffer for gerbil-emacs
+;;; TUI echo area / minibuffer for gerbil-emacs
 ;;;
 ;;; The echo area occupies the last terminal row.
 ;;; It displays messages and handles simple line input for prompts.
+;;;
+;;; Echo state and message functions are in core.ss.
 
 (export
   (struct-out echo-state)
@@ -14,57 +16,30 @@
   echo-read-string)
 
 (import :std/sugar
-        :gerbil-scintilla/tui)
+        :gerbil-scintilla/tui
+        :gerbil-emacs/core)
 
 ;;;============================================================================
-;;; Echo state
-;;;============================================================================
-
-(defstruct echo-state
-  (message   ; string or #f
-   error?)   ; boolean: is message an error?
-  transparent: #t)
-
-(def (make-initial-echo-state)
-  (make-echo-state #f #f))
-
-;;;============================================================================
-;;; Message display
-;;;============================================================================
-
-(def (echo-message! echo msg)
-  (set! (echo-state-message echo) msg)
-  (set! (echo-state-error? echo) #f))
-
-(def (echo-error! echo msg)
-  (set! (echo-state-message echo) msg)
-  (set! (echo-state-error? echo) #t))
-
-(def (echo-clear! echo)
-  (set! (echo-state-message echo) #f)
-  (set! (echo-state-error? echo) #f))
-
-;;;============================================================================
-;;; Draw the echo area
+;;; Draw the echo area (TUI-specific)
 ;;;============================================================================
 
 (def (echo-draw! echo row width)
   "Draw the echo area at the given row."
-  ;; Clear the row
-  (tui-print! 0 row TB_DEFAULT TB_DEFAULT (make-string width #\space))
+  ;; Clear the row (dark background matching editor theme)
+  (tui-print! 0 row #xd8d8d8 #x181818 (make-string width #\space))
   ;; Draw message if any
   (let ((msg (echo-state-message echo)))
     (when msg
       (let ((fg (if (echo-state-error? echo)
-                  (bitwise-ior TB_RED TB_BOLD)
-                  TB_DEFAULT))
+                  #xff4040    ; bright red for errors
+                  #xd8d8d8)) ; light gray for normal messages
             (display-msg (if (> (string-length msg) width)
                            (substring msg 0 width)
                            msg)))
-        (tui-print! 0 row fg TB_DEFAULT display-msg)))))
+        (tui-print! 0 row fg #x181818 display-msg)))))
 
 ;;;============================================================================
-;;; Read a string from the user in the echo area
+;;; Read a string from the user in the echo area (TUI-specific)
 ;;; Runs a blocking sub-event-loop.
 ;;; Returns the input string, or #f if cancelled (C-g).
 ;;;============================================================================
@@ -75,8 +50,8 @@
     ;; Draw prompt + input
     (let* ((display-str (string-append prompt input))
            (display-len (string-length display-str)))
-      (tui-print! 0 row TB_DEFAULT TB_DEFAULT (make-string width #\space))
-      (tui-print! 0 row TB_DEFAULT TB_DEFAULT
+      (tui-print! 0 row #xd8d8d8 #x181818 (make-string width #\space))
+      (tui-print! 0 row #xd8d8d8 #x181818
                   (if (> display-len width)
                     (substring display-str 0 width)
                     display-str))

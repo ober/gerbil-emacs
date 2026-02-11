@@ -5,6 +5,7 @@
 
 (import :std/test
         :gerbil-scintilla/tui
+        :gerbil-emacs/core
         :gerbil-emacs/keymap
         :gerbil-emacs/buffer
         :gerbil-emacs/echo)

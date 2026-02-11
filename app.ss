@@ -6,6 +6,7 @@
 (import :std/sugar
         :gerbil-scintilla/constants
         :gerbil-scintilla/scintilla
+        :gerbil-scintilla/style
         :gerbil-scintilla/tui
         :gerbil-emacs/keymap
         :gerbil-emacs/buffer
@@ -23,7 +24,9 @@
   ;; Set up TUI
   (tui-init!)
   (tui-set-input-mode! (bitwise-ior TB_INPUT_ALT TB_INPUT_MOUSE))
-  (tui-set-output-mode! TB_OUTPUT_256)
+  (tui-set-output-mode! TB_OUTPUT_TRUECOLOR)
+  ;; Set terminal background to match editor dark theme
+  (tui-set-clear-attrs! #x00d8d8d8 #x00181818)
 
   ;; Set up keybindings and commands
   (setup-default-bindings!)
@@ -34,6 +37,10 @@
          (height (tui-height))
          (fr (frame-init! width height))
          (app (new-app-state fr)))
+
+    ;; Configure dark theme on all editors
+    (for-each (lambda (win) (setup-editor-theme! (edit-window-editor win)))
+              (frame-windows fr))
 
     ;; Set initial text in scratch buffer
     (let ((ed (current-editor app)))
@@ -75,20 +82,17 @@
                   (editor-poll-notifications (edit-window-editor win)))
                 (frame-windows (app-state-frame app)))
 
-      ;; Refresh all editors
-      (frame-refresh! (app-state-frame app))
-
-      ;; Draw modelines
+      ;; Draw modelines and echo area FIRST into the termbox buffer.
+      ;; This must happen before editor-refresh because Scintilla's
+      ;; Refresh() calls tb_present() internally.
       (draw-all-modelines! app)
-
-      ;; Draw echo area
       (let* ((fr (app-state-frame app))
              (echo-row (- (frame-height fr) 1))
              (width (frame-width fr)))
         (echo-draw! (app-state-echo app) echo-row width))
 
-      ;; Present to terminal
-      (tui-present!)
+      ;; Refresh all editors (paints editor content + calls tb_present)
+      (frame-refresh! (app-state-frame app))
 
       ;; Position cursor at caret in current window
       (position-cursor! app)
@@ -99,6 +103,19 @@
           (dispatch-event! app ev)))
 
       (loop))))
+
+;;;============================================================================
+;;; Editor theme (dark colors matching scintilla-termbox defaults)
+;;;============================================================================
+
+(def (setup-editor-theme! ed)
+  "Configure dark terminal theme for an editor."
+  ;; Default style: light gray on dark gray (matching semester.c reference)
+  (editor-style-set-foreground ed STYLE_DEFAULT #xd8d8d8)
+  (editor-style-set-background ed STYLE_DEFAULT #x181818)
+  (send-message ed SCI_STYLECLEARALL)  ; propagate to all styles
+  ;; White caret for visibility
+  (editor-set-caret-foreground ed #xFFFFFF))
 
 ;;;============================================================================
 ;;; Drawing helpers
@@ -119,12 +136,15 @@
          (win (current-window fr))
          (ed (edit-window-editor win))
          (pos (editor-get-current-pos ed))
-         (line (editor-line-from-position ed pos))
-         (col (editor-get-column ed pos))
-         (first-visible (editor-get-first-visible-line ed))
-         (screen-line (- line first-visible))
+         ;; Use POINTX/POINTY for screen-relative coordinates
+         ;; (accounts for margins, scroll, tab width)
+         (screen-x (send-message ed SCI_POINTXFROMPOSITION 0 pos))
+         (screen-y (send-message ed SCI_POINTYFROMPOSITION 0 pos))
+         (win-x (edit-window-x win))
          (win-y (edit-window-y win)))
-    (tui-set-cursor! col (+ win-y screen-line))))
+    (tui-set-cursor! (+ win-x screen-x) (+ win-y screen-y))
+    ;; Present to make cursor position visible immediately
+    (tui-present!)))
 
 ;;;============================================================================
 ;;; Event dispatch

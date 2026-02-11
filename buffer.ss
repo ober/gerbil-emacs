@@ -1,9 +1,11 @@
 ;;; -*- Gerbil -*-
-;;; Buffer management for gerbil-emacs
+;;; TUI buffer management for gerbil-emacs
 ;;;
 ;;; Each buffer owns a Scintilla document pointer (via SCI_CREATEDOCUMENT/
 ;;; SCI_ADDREFDOCUMENT/SCI_RELEASEDOCUMENT). Switching buffers calls
 ;;; SCI_SETDOCPOINTER on the editor widget.
+;;;
+;;; Buffer struct, list management, and constants are in core.ss.
 
 (export
   (struct-out buffer)
@@ -20,50 +22,11 @@
 
 (import :std/sugar
         :gerbil-scintilla/constants
-        :gerbil-scintilla/scintilla)
+        :gerbil-scintilla/scintilla
+        :gerbil-emacs/core)
 
 ;;;============================================================================
-;;; Buffer structure
-;;;============================================================================
-
-(defstruct buffer
-  (name        ; string: display name (e.g. "*scratch*", "foo.txt")
-   file-path   ; string or #f: file path if visiting a file
-   doc-pointer ; long: Scintilla document pointer
-   mark        ; integer or #f: mark position for region
-   modified    ; boolean
-   lexer-lang) ; symbol or #f: lexer language
-  transparent: #t)
-
-;;;============================================================================
-;;; Global buffer list
-;;;============================================================================
-
-(def *buffer-list* [])
-
-(def (buffer-list) *buffer-list*)
-
-(def (buffer-list-add! buf)
-  (set! *buffer-list* (cons buf *buffer-list*)))
-
-(def (buffer-list-remove! buf)
-  (set! *buffer-list*
-    (let loop ((bufs *buffer-list*) (acc []))
-      (cond
-        ((null? bufs) (reverse acc))
-        ((eq? (car bufs) buf) (loop (cdr bufs) acc))
-        (else (loop (cdr bufs) (cons (car bufs) acc)))))))
-
-(def (buffer-by-name name)
-  "Find a buffer by name. Returns #f if not found."
-  (let loop ((bufs *buffer-list*))
-    (cond
-      ((null? bufs) #f)
-      ((string=? (buffer-name (car bufs)) name) (car bufs))
-      (else (loop (cdr bufs))))))
-
-;;;============================================================================
-;;; Buffer creation
+;;; Buffer creation (Scintilla-specific)
 ;;;============================================================================
 
 (def (buffer-create! name editor (file-path #f))
@@ -83,7 +46,7 @@
       buf)))
 
 ;;;============================================================================
-;;; Buffer operations
+;;; Buffer operations (Scintilla-specific)
 ;;;============================================================================
 
 (def (buffer-kill! editor buf)
@@ -94,9 +57,3 @@
 (def (buffer-attach! editor buf)
   "Switch editor to display this buffer's document."
   (send-message editor SCI_SETDOCPOINTER 0 (buffer-doc-pointer buf)))
-
-;;;============================================================================
-;;; Constants
-;;;============================================================================
-
-(def buffer-scratch-name "*scratch*")
