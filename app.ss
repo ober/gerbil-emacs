@@ -228,8 +228,10 @@
            (send-message ed SCI_BRACEHIGHLIGHT (- pos 1) match)
            (send-message ed SCI_BRACEBADLIGHT (- pos 1) 0))))
       ;; No brace at cursor — clear highlights
+      ;; Note: Scintilla uses -1 to mean "no position", but FFI wants unsigned-long
+      ;; So we use the max unsigned value (equivalent to (uintptr_t)-1)
       (else
-       (send-message ed SCI_BRACEHIGHLIGHT -1 -1)))))
+       (send-message ed SCI_BRACEHIGHLIGHT #xFFFFFFFFFFFFFFFF #xFFFFFFFFFFFFFFFF)))))
 
 ;;;============================================================================
 ;;; Drawing helpers
