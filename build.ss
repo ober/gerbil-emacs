@@ -60,6 +60,7 @@
     "window"
     "modeline"
     "echo"
+    "editor-extra"
     "editor"
     "app"
     "emacs-test"

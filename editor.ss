@@ -34,7 +34,8 @@
         :gerbil-emacs/window
         :gerbil-emacs/modeline
         :gerbil-emacs/echo
-        :gerbil-emacs/highlight)
+        :gerbil-emacs/highlight
+        :gerbil-emacs/editor-extra)
 
 ;;;============================================================================
 ;;; Accessors
@@ -10017,6 +10018,7 @@
   "Open an ANSI terminal (same as shell command)."
   (cmd-shell app))
 
+
 ;;;============================================================================
 ;;; Register all commands
 ;;;============================================================================
@@ -10813,4 +10815,6 @@
   (register-command! 'ispell-buffer cmd-ispell-buffer)
   (register-command! 'ispell-region cmd-ispell-region)
   (register-command! 'term cmd-term)
-  (register-command! 'ansi-term cmd-ansi-term))
+  (register-command! 'ansi-term cmd-ansi-term)
+  ;; Task #46+ (in editor-extra.ss)
+  (register-extra-commands!))
