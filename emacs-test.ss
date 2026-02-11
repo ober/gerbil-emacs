@@ -707,6 +707,30 @@
       (check (keymap-lookup *ctrl-c-map* "4") => 'toggle-show-tabs)
       (check (keymap-lookup *ctrl-c-map* "6") => 'toggle-show-eol))
 
+    (test-case "new keybindings: copy-above, open-line-above, select, etc"
+      (setup-default-bindings!)
+      ;; Copy from above
+      (check (keymap-lookup *ctrl-c-map* "A") => 'copy-from-above)
+      ;; Open line above
+      (check (keymap-lookup *ctrl-c-map* "O") => 'open-line-above)
+      ;; Select line
+      (check (keymap-lookup *ctrl-c-map* "G") => 'select-line)
+      ;; Split line
+      (check (keymap-lookup *ctrl-c-map* "J") => 'split-line)
+      ;; Hippie expand
+      (check (keymap-lookup *global-keymap* "M-TAB") => 'hippie-expand)
+      ;; Swap buffers
+      (check (keymap-lookup *ctrl-c-map* "9") => 'swap-buffers)
+      ;; Tab width
+      (check (keymap-lookup *ctrl-c-map* "7") => 'cycle-tab-width)
+      ;; Indent tabs
+      (check (keymap-lookup *ctrl-c-map* "0") => 'toggle-indent-tabs-mode)
+      ;; Buffer info
+      (check (keymap-lookup *ctrl-c-map* "j") => 'buffer-info)
+      ;; Enlarge/shrink
+      (check (keymap-lookup *ctrl-x-map* "^") => 'enlarge-window)
+      (check (keymap-lookup *ctrl-x-map* "-") => 'shrink-window))
+
     ))
 
 ;; Run tests when executed directly

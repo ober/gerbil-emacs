@@ -551,7 +551,38 @@
 
   ;; Show tabs/eol
   (keymap-bind! *ctrl-c-map* "4" 'toggle-show-tabs)
-  (keymap-bind! *ctrl-c-map* "6" 'toggle-show-eol))
+  (keymap-bind! *ctrl-c-map* "6" 'toggle-show-eol)
+
+  ;; Copy from above/below
+  (keymap-bind! *ctrl-c-map* "A" 'copy-from-above)
+
+  ;; Open line above
+  (keymap-bind! *ctrl-c-map* "O" 'open-line-above)
+
+  ;; Select line
+  (keymap-bind! *ctrl-c-map* "G" 'select-line)
+
+  ;; Split line
+  (keymap-bind! *ctrl-c-map* "J" 'split-line)
+
+  ;; Hippie expand (M-TAB — alternative to M-/)
+  (keymap-bind! *global-keymap* "M-TAB" 'hippie-expand)
+
+  ;; Swap buffers between windows
+  (keymap-bind! *ctrl-c-map* "9" 'swap-buffers)
+
+  ;; Tab width cycle
+  (keymap-bind! *ctrl-c-map* "7" 'cycle-tab-width)
+
+  ;; Indent tabs mode
+  (keymap-bind! *ctrl-c-map* "0" 'toggle-indent-tabs-mode)
+
+  ;; Buffer info (C-c i)
+  (keymap-bind! *ctrl-c-map* "j" 'buffer-info)
+
+  ;; Enlarge/shrink window
+  (keymap-bind! *ctrl-x-map* "^" 'enlarge-window)
+  (keymap-bind! *ctrl-x-map* "-" 'shrink-window))
 
 ;;;============================================================================
 ;;; Echo state

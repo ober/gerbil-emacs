@@ -4965,6 +4965,304 @@
     (if *show-eol* "Show EOL on" "Show EOL off")))
 
 ;;;============================================================================
+;;; Copy from above/below line
+;;;============================================================================
+
+(def (cmd-copy-from-above app)
+  "Copy character from the line above at the same column."
+  (let* ((ed (current-editor app))
+         (pos (editor-get-current-pos ed))
+         (line (editor-line-from-position ed pos))
+         (col (- pos (editor-position-from-line ed line))))
+    (if (= line 0)
+      (echo-error! (app-state-echo app) "No line above")
+      (let* ((above-start (editor-position-from-line ed (- line 1)))
+             (above-end (editor-get-line-end-position ed (- line 1)))
+             (above-len (- above-end above-start)))
+        (if (>= col above-len)
+          (echo-error! (app-state-echo app) "Line above too short")
+          (let* ((text (editor-get-text ed))
+                 (ch (string (string-ref text (+ above-start col)))))
+            (editor-insert-text ed pos ch)))))))
+
+(def (cmd-copy-from-below app)
+  "Copy character from the line below at the same column."
+  (let* ((ed (current-editor app))
+         (pos (editor-get-current-pos ed))
+         (line (editor-line-from-position ed pos))
+         (total-lines (editor-get-line-count ed))
+         (col (- pos (editor-position-from-line ed line))))
+    (if (>= (+ line 1) total-lines)
+      (echo-error! (app-state-echo app) "No line below")
+      (let* ((below-start (editor-position-from-line ed (+ line 1)))
+             (below-end (editor-get-line-end-position ed (+ line 1)))
+             (below-len (- below-end below-start)))
+        (if (>= col below-len)
+          (echo-error! (app-state-echo app) "Line below too short")
+          (let* ((text (editor-get-text ed))
+                 (ch (string (string-ref text (+ below-start col)))))
+            (editor-insert-text ed pos ch)))))))
+
+;;;============================================================================
+;;; Open line above (like vim O)
+;;;============================================================================
+
+(def (cmd-open-line-above app)
+  "Insert a new line above the current line and move to it."
+  (let* ((ed (current-editor app))
+         (pos (editor-get-current-pos ed))
+         (line (editor-line-from-position ed pos))
+         (line-start (editor-position-from-line ed line)))
+    (with-undo-action ed
+      (editor-insert-text ed line-start "\n")
+      (editor-goto-pos ed line-start))))
+
+;;;============================================================================
+;;; Select current line
+;;;============================================================================
+
+(def (cmd-select-line app)
+  "Select the current line."
+  (let* ((ed (current-editor app))
+         (pos (editor-get-current-pos ed))
+         (line (editor-line-from-position ed pos))
+         (line-start (editor-position-from-line ed line))
+         (line-end (editor-get-line-end-position ed line))
+         (buf (current-buffer-from-app app)))
+    (set! (buffer-mark buf) line-start)
+    ;; Move to the start of the next line if possible
+    (let ((next-start (if (< (+ line 1) (editor-get-line-count ed))
+                        (editor-position-from-line ed (+ line 1))
+                        line-end)))
+      (editor-goto-pos ed next-start)
+      (echo-message! (app-state-echo app) "Line selected"))))
+
+;;;============================================================================
+;;; Split line (break line at point, keep indentation)
+;;;============================================================================
+
+(def (cmd-split-line app)
+  "Split line at point and indent continuation to same column."
+  (let* ((ed (current-editor app))
+         (pos (editor-get-current-pos ed))
+         (line (editor-line-from-position ed pos))
+         (line-start (editor-position-from-line ed line))
+         (col (- pos line-start))
+         (padding (make-string col #\space)))
+    (with-undo-action ed
+      (editor-insert-text ed pos (string-append "\n" padding)))))
+
+;;;============================================================================
+;;; Convert line endings
+;;;============================================================================
+
+(def (cmd-convert-to-unix app)
+  "Convert buffer line endings to Unix (LF)."
+  (let* ((ed (current-editor app))
+         (text (editor-get-text ed)))
+    ;; Remove CRs (convert CRLF -> LF and standalone CR -> LF)
+    (let loop ((i 0) (acc []))
+      (if (>= i (string-length text))
+        (let ((new-text (list->string (reverse acc))))
+          (unless (string=? text new-text)
+            (with-undo-action ed
+              (editor-set-text ed new-text))
+            (echo-message! (app-state-echo app) "Converted to Unix (LF)")))
+        (let ((ch (string-ref text i)))
+          (if (char=? ch #\return)
+            (loop (+ i 1) acc)
+            (loop (+ i 1) (cons ch acc))))))))
+
+(def (cmd-convert-to-dos app)
+  "Convert buffer line endings to DOS (CRLF)."
+  (let* ((ed (current-editor app))
+         (text (editor-get-text ed))
+         (lines (string-split text #\newline))
+         (new-text (string-join lines "\r\n")))
+    (unless (string=? text new-text)
+      (with-undo-action ed
+        (editor-set-text ed new-text))
+      (echo-message! (app-state-echo app) "Converted to DOS (CRLF)"))))
+
+;;;============================================================================
+;;; Enlarge/shrink window
+;;;============================================================================
+
+(def (cmd-enlarge-window app)
+  "Make current window taller (stub — adjusts height by 2 rows)."
+  (let* ((fr (app-state-frame app))
+         (win (current-window fr))
+         (h (edit-window-h win)))
+    (set! (edit-window-h win) (+ h 2))
+    (echo-message! (app-state-echo app) "Window enlarged")))
+
+(def (cmd-shrink-window app)
+  "Make current window shorter (stub — adjusts height by 2 rows)."
+  (let* ((fr (app-state-frame app))
+         (win (current-window fr))
+         (h (edit-window-h win)))
+    (when (> h 4)
+      (set! (edit-window-h win) (- h 2)))
+    (echo-message! (app-state-echo app) "Window shrunk")))
+
+;;;============================================================================
+;;; What buffer encoding
+;;;============================================================================
+
+(def (cmd-what-encoding app)
+  "Show the encoding of the current buffer."
+  ;; Scintilla uses UTF-8 (codepage 65001) by default
+  (echo-message! (app-state-echo app) "Encoding: UTF-8"))
+
+;;;============================================================================
+;;; Hippie expand (simple completion from buffer words)
+;;;============================================================================
+
+(def (cmd-hippie-expand app)
+  "Complete word at point from buffer contents (simple hippie-expand)."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app))
+         (pos (editor-get-current-pos ed))
+         (text (editor-get-text ed))
+         (len (string-length text)))
+    ;; Find prefix at point
+    (let* ((prefix-start
+             (let loop ((i (- pos 1)))
+               (if (or (< i 0)
+                       (let ((ch (string-ref text i)))
+                         (not (or (char-alphabetic? ch)
+                                  (char-numeric? ch)
+                                  (char=? ch #\_)
+                                  (char=? ch #\-)))))
+                 (+ i 1) (loop (- i 1)))))
+           (prefix (substring text prefix-start pos))
+           (plen (string-length prefix)))
+      (if (= plen 0)
+        (echo-message! echo "No prefix to complete")
+        ;; Scan buffer for words starting with prefix
+        (let ((candidates []))
+          (let loop ((i 0))
+            (when (< i len)
+              (let* ((wstart
+                       (let ws ((j i))
+                         (if (or (>= j len)
+                                 (let ((ch (string-ref text j)))
+                                   (or (char-alphabetic? ch)
+                                       (char-numeric? ch)
+                                       (char=? ch #\_)
+                                       (char=? ch #\-))))
+                           j
+                           (ws (+ j 1)))))
+                     (wend
+                       (let we ((j wstart))
+                         (if (or (>= j len)
+                                 (let ((ch (string-ref text j)))
+                                   (not (or (char-alphabetic? ch)
+                                            (char-numeric? ch)
+                                            (char=? ch #\_)
+                                            (char=? ch #\-)))))
+                           j
+                           (we (+ j 1))))))
+                (when (> wend wstart)
+                  (let ((word (substring text wstart wend)))
+                    (when (and (> (string-length word) plen)
+                               (string-prefix? prefix word)
+                               (not (= wstart prefix-start))
+                               (not (member word candidates)))
+                      (set! candidates (cons word candidates))))
+                  (loop wend))
+                (when (= wend wstart)
+                  (loop (+ wstart 1))))))
+          (if (null? candidates)
+            (echo-message! echo
+              (string-append "No completions for \"" prefix "\""))
+            ;; Insert first candidate
+            (let ((completion (car (reverse candidates))))
+              (with-undo-action ed
+                (editor-delete-range ed prefix-start plen)
+                (editor-insert-text ed prefix-start completion))
+              (editor-goto-pos ed (+ prefix-start (string-length completion)))
+              (echo-message! echo
+                (string-append completion
+                  (if (> (length candidates) 1)
+                    (string-append " [" (number->string (length candidates))
+                                   " candidates]")
+                    ""))))))))))
+
+;;;============================================================================
+;;; Swap buffers in windows
+;;;============================================================================
+
+(def (cmd-swap-buffers app)
+  "Swap buffers between current and next window."
+  (let* ((fr (app-state-frame app))
+         (wins (frame-windows fr)))
+    (if (< (length wins) 2)
+      (echo-error! (app-state-echo app) "Only one window")
+      (let* ((cur-idx (frame-current-idx fr))
+             (next-idx (modulo (+ cur-idx 1) (length wins)))
+             (cur-win (list-ref wins cur-idx))
+             (next-win (list-ref wins next-idx))
+             (cur-buf (edit-window-buffer cur-win))
+             (next-buf (edit-window-buffer next-win)))
+        ;; Swap the buffers
+        (buffer-attach! (edit-window-editor cur-win) next-buf)
+        (set! (edit-window-buffer cur-win) next-buf)
+        (buffer-attach! (edit-window-editor next-win) cur-buf)
+        (set! (edit-window-buffer next-win) cur-buf)
+        (echo-message! (app-state-echo app) "Buffers swapped")))))
+
+;;;============================================================================
+;;; Toggle tab-width between 2/4/8
+;;;============================================================================
+
+(def (cmd-cycle-tab-width app)
+  "Cycle tab width between 2, 4, and 8."
+  (let* ((ed (current-editor app))
+         (current (send-message ed SCI_GETTABWIDTH))
+         (next (cond
+                 ((= current 2) 4)
+                 ((= current 4) 8)
+                 (else 2))))
+    (send-message ed SCI_SETTABWIDTH next)
+    (echo-message! (app-state-echo app)
+      (string-append "Tab width: " (number->string next)))))
+
+;;;============================================================================
+;;; Toggle use tabs vs spaces
+;;;============================================================================
+
+(def (cmd-toggle-indent-tabs-mode app)
+  "Toggle between using tabs and spaces for indentation."
+  (let* ((ed (current-editor app))
+         (using-tabs (= 1 (send-message ed SCI_GETUSETABS))))
+    (send-message ed SCI_SETUSETABS (if using-tabs 0 1))
+    (echo-message! (app-state-echo app)
+      (if using-tabs
+        "Indent with spaces"
+        "Indent with tabs"))))
+
+;;;============================================================================
+;;; Print buffer info
+;;;============================================================================
+
+(def (cmd-buffer-info app)
+  "Show buffer name, file, and position info."
+  (let* ((ed (current-editor app))
+         (buf (current-buffer-from-app app))
+         (pos (editor-get-current-pos ed))
+         (line (+ 1 (editor-line-from-position ed pos)))
+         (col (+ 1 (- pos (editor-position-from-line ed (- line 1))))))
+    (echo-message! (app-state-echo app)
+      (string-append (buffer-name buf)
+                     " L" (number->string line)
+                     " C" (number->string col)
+                     " pos:" (number->string pos)
+                     (if (buffer-file-path buf)
+                       (string-append " " (buffer-file-path buf))
+                       "")))))
+
+;;;============================================================================
 ;;; Register all commands
 ;;;============================================================================
 
@@ -5281,6 +5579,32 @@
   ;; Show tabs/eol
   (register-command! 'toggle-show-tabs cmd-toggle-show-tabs)
   (register-command! 'toggle-show-eol cmd-toggle-show-eol)
+  ;; Copy from above/below
+  (register-command! 'copy-from-above cmd-copy-from-above)
+  (register-command! 'copy-from-below cmd-copy-from-below)
+  ;; Open line above
+  (register-command! 'open-line-above cmd-open-line-above)
+  ;; Select line
+  (register-command! 'select-line cmd-select-line)
+  ;; Split line
+  (register-command! 'split-line cmd-split-line)
+  ;; Line endings
+  (register-command! 'convert-to-unix cmd-convert-to-unix)
+  (register-command! 'convert-to-dos cmd-convert-to-dos)
+  ;; Window
+  (register-command! 'enlarge-window cmd-enlarge-window)
+  (register-command! 'shrink-window cmd-shrink-window)
+  ;; Encoding
+  (register-command! 'what-encoding cmd-what-encoding)
+  ;; Hippie expand
+  (register-command! 'hippie-expand cmd-hippie-expand)
+  ;; Swap buffers
+  (register-command! 'swap-buffers cmd-swap-buffers)
+  ;; Tab width
+  (register-command! 'cycle-tab-width cmd-cycle-tab-width)
+  (register-command! 'toggle-indent-tabs-mode cmd-toggle-indent-tabs-mode)
+  ;; Buffer info
+  (register-command! 'buffer-info cmd-buffer-info)
   ;; Misc
   (register-command! 'keyboard-quit cmd-keyboard-quit)
   (register-command! 'quit cmd-quit))
