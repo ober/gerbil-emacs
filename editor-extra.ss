@@ -2307,6 +2307,402 @@
   "Show ediff session registry (stub)."
   (echo-message! (app-state-echo app) "Ediff registry (stub)"))
 
+;; --- Task #49: elisp mode, scheme mode, regex builder, color picker, etc. ---
+
+;; Emacs Lisp mode helpers
+(def (cmd-emacs-lisp-mode app)
+  "Switch to Emacs Lisp mode (stub)."
+  (echo-message! (app-state-echo app) "Emacs Lisp mode (stub)"))
+
+(def (cmd-eval-last-sexp app)
+  "Evaluate the sexp before point."
+  (let* ((fr (app-state-frame app))
+         (win (current-window fr))
+         (ed (edit-window-editor win))
+         (pos (editor-get-current-pos ed))
+         (match (send-message ed SCI_BRACEMATCH (- pos 1) 0)))
+    (if (>= match 0)
+      (let* ((start (min match (- pos 1)))
+             (end (+ (max match (- pos 1)) 1))
+             (text (substring (editor-get-text ed) start end))
+             (result (with-exception-catcher
+                       (lambda (e) (with-output-to-string (lambda () (display-exception e))))
+                       (lambda ()
+                         (let ((val (eval (with-input-from-string text read))))
+                           (with-output-to-string (lambda () (write val))))))))
+        (echo-message! (app-state-echo app) result))
+      (echo-message! (app-state-echo app) "No sexp before point"))))
+
+(def (cmd-eval-defun app)
+  "Evaluate current top-level form (stub)."
+  (echo-message! (app-state-echo app) "Eval defun (stub)"))
+
+(def (cmd-eval-print-last-sexp app)
+  "Eval and print sexp before point into buffer."
+  (let* ((fr (app-state-frame app))
+         (win (current-window fr))
+         (ed (edit-window-editor win))
+         (pos (editor-get-current-pos ed))
+         (match (send-message ed SCI_BRACEMATCH (- pos 1) 0)))
+    (if (>= match 0)
+      (let* ((start (min match (- pos 1)))
+             (end (+ (max match (- pos 1)) 1))
+             (text (substring (editor-get-text ed) start end))
+             (result (with-exception-catcher
+                       (lambda (e) (with-output-to-string (lambda () (display-exception e))))
+                       (lambda ()
+                         (let ((val (eval (with-input-from-string text read))))
+                           (with-output-to-string (lambda () (write val))))))))
+        (editor-insert-text ed pos (string-append "\n;; => " result)))
+      (echo-message! (app-state-echo app) "No sexp before point"))))
+
+;; Scheme / Gerbil mode helpers
+(def (cmd-scheme-mode app)
+  "Switch to Scheme mode (stub)."
+  (echo-message! (app-state-echo app) "Scheme mode (stub)"))
+
+(def (cmd-gerbil-mode app)
+  "Switch to Gerbil mode (stub)."
+  (echo-message! (app-state-echo app) "Gerbil mode (stub)"))
+
+(def (cmd-run-scheme app)
+  "Run Scheme REPL (alias for repl command)."
+  (echo-message! (app-state-echo app) "Use C-x r to open REPL"))
+
+(def (cmd-scheme-send-region app)
+  "Send region to Scheme process (stub)."
+  (echo-message! (app-state-echo app) "Scheme: send region (stub)"))
+
+(def (cmd-scheme-send-buffer app)
+  "Send buffer to Scheme process (stub)."
+  (echo-message! (app-state-echo app) "Scheme: send buffer (stub)"))
+
+;; Regex builder
+(def (cmd-re-builder app)
+  "Open interactive regex builder (stub)."
+  (echo-message! (app-state-echo app) "Regex builder (stub)"))
+
+;; Color picker
+(def (cmd-list-colors-display app)
+  "Display list of named colors."
+  (let* ((fr (app-state-frame app))
+         (win (current-window fr))
+         (ed (edit-window-editor win))
+         (buf (buffer-create! "*Colors*" ed)))
+    (buffer-attach! ed buf)
+    (set! (edit-window-buffer win) buf)
+    (editor-set-text ed
+      (string-append
+        "Named Colors\n\n"
+        "black       #000000    white       #FFFFFF\n"
+        "red         #FF0000    green       #00FF00\n"
+        "blue        #0000FF    yellow      #FFFF00\n"
+        "cyan        #00FFFF    magenta     #FF00FF\n"
+        "gray        #808080    silver      #C0C0C0\n"
+        "maroon      #800000    olive       #808000\n"
+        "navy        #000080    purple      #800080\n"
+        "teal        #008080    aqua        #00FFFF\n"
+        "orange      #FFA500    pink        #FFC0CB\n"
+        "brown       #A52A2A    coral       #FF7F50\n"
+        "gold        #FFD700    khaki       #F0E68C\n"
+        "salmon      #FA8072    tomato      #FF6347\n"
+        "wheat       #F5DEB3    ivory       #FFFFF0\n"))
+    (editor-set-read-only ed #t)))
+
+;; IDO mode (Interactively Do Things)
+(def (cmd-ido-mode app)
+  "Toggle IDO mode (stub)."
+  (echo-message! (app-state-echo app) "IDO mode (stub)"))
+
+(def (cmd-ido-find-file app)
+  "Find file with IDO (stub)."
+  (echo-message! (app-state-echo app) "IDO find file (stub)"))
+
+(def (cmd-ido-switch-buffer app)
+  "Switch buffer with IDO (stub)."
+  (echo-message! (app-state-echo app) "IDO switch buffer (stub)"))
+
+;; Helm / Ivy / Vertico
+(def (cmd-helm-mode app)
+  "Toggle Helm mode (stub)."
+  (echo-message! (app-state-echo app) "Helm mode (stub)"))
+
+(def (cmd-ivy-mode app)
+  "Toggle Ivy mode (stub)."
+  (echo-message! (app-state-echo app) "Ivy mode (stub)"))
+
+(def (cmd-vertico-mode app)
+  "Toggle Vertico mode (stub)."
+  (echo-message! (app-state-echo app) "Vertico mode (stub)"))
+
+(def (cmd-consult-line app)
+  "Search buffer lines with consult (stub)."
+  (echo-message! (app-state-echo app) "Consult line (stub)"))
+
+(def (cmd-consult-grep app)
+  "Grep with consult (stub)."
+  (echo-message! (app-state-echo app) "Consult grep (stub)"))
+
+(def (cmd-consult-buffer app)
+  "Switch buffer with consult (stub)."
+  (echo-message! (app-state-echo app) "Consult buffer (stub)"))
+
+;; Company completion
+(def (cmd-company-mode app)
+  "Toggle company completion mode (stub)."
+  (echo-message! (app-state-echo app) "Company mode (stub)"))
+
+(def (cmd-company-complete app)
+  "Trigger company completion (stub)."
+  (echo-message! (app-state-echo app) "Company complete (stub)"))
+
+;; Flyspell extras
+(def (cmd-flyspell-buffer app)
+  "Flyspell-check entire buffer (stub)."
+  (echo-message! (app-state-echo app) "Flyspell buffer (stub)"))
+
+(def (cmd-flyspell-correct-word app)
+  "Correct misspelled word (stub)."
+  (echo-message! (app-state-echo app) "Flyspell correct (stub)"))
+
+;; Bibliography / citar
+(def (cmd-citar-insert-citation app)
+  "Insert citation (stub)."
+  (echo-message! (app-state-echo app) "Insert citation (stub)"))
+
+;; Docker
+(def (cmd-docker app)
+  "Docker management interface (stub)."
+  (echo-message! (app-state-echo app) "Docker (stub)"))
+
+(def (cmd-docker-containers app)
+  "List docker containers."
+  (let ((result (with-exception-catcher
+                  (lambda (e) "Docker not available")
+                  (lambda ()
+                    (let ((p (open-process
+                               (list path: "docker"
+                                     arguments: '("ps" "--format" "{{.Names}}\t{{.Status}}\t{{.Image}}")
+                                     stdin-redirection: #f stdout-redirection: #t
+                                     stderr-redirection: #t))))
+                      (let ((out (read-line p #f)))
+                        (process-status p)
+                        (or out "(no containers)")))))))
+    (let* ((fr (app-state-frame app))
+           (win (current-window fr))
+           (ed (edit-window-editor win))
+           (buf (buffer-create! "*Docker*" ed)))
+      (buffer-attach! ed buf)
+      (set! (edit-window-buffer win) buf)
+      (editor-set-text ed (string-append "Docker Containers\n\nName\tStatus\tImage\n" result "\n"))
+      (editor-set-read-only ed #t))))
+
+(def (cmd-docker-images app)
+  "List docker images (stub)."
+  (echo-message! (app-state-echo app) "Docker images (stub)"))
+
+;; Restclient
+(def (cmd-restclient-mode app)
+  "Toggle restclient mode (stub)."
+  (echo-message! (app-state-echo app) "Restclient mode (stub)"))
+
+(def (cmd-restclient-http-send app)
+  "Send HTTP request (stub)."
+  (echo-message! (app-state-echo app) "Restclient: send (stub)"))
+
+;; YAML mode
+(def (cmd-yaml-mode app)
+  "Toggle YAML mode (stub)."
+  (echo-message! (app-state-echo app) "YAML mode (stub)"))
+
+;; TOML mode
+(def (cmd-toml-mode app)
+  "Toggle TOML mode (stub)."
+  (echo-message! (app-state-echo app) "TOML mode (stub)"))
+
+;; Dockerfile mode
+(def (cmd-dockerfile-mode app)
+  "Toggle Dockerfile mode (stub)."
+  (echo-message! (app-state-echo app) "Dockerfile mode (stub)"))
+
+;; SQL mode
+(def (cmd-sql-mode app)
+  "Toggle SQL mode (stub)."
+  (echo-message! (app-state-echo app) "SQL mode (stub)"))
+
+(def (cmd-sql-connect app)
+  "Connect to SQL database (stub)."
+  (echo-message! (app-state-echo app) "SQL connect (stub)"))
+
+(def (cmd-sql-send-region app)
+  "Send SQL region to process (stub)."
+  (echo-message! (app-state-echo app) "SQL: send region (stub)"))
+
+;; Language modes
+(def (cmd-python-mode app)
+  "Toggle Python mode (stub)."
+  (echo-message! (app-state-echo app) "Python mode (stub)"))
+
+(def (cmd-c-mode app)
+  "Toggle C mode (stub)."
+  (echo-message! (app-state-echo app) "C mode (stub)"))
+
+(def (cmd-c++-mode app)
+  "Toggle C++ mode (stub)."
+  (echo-message! (app-state-echo app) "C++ mode (stub)"))
+
+(def (cmd-java-mode app)
+  "Toggle Java mode (stub)."
+  (echo-message! (app-state-echo app) "Java mode (stub)"))
+
+(def (cmd-rust-mode app)
+  "Toggle Rust mode (stub)."
+  (echo-message! (app-state-echo app) "Rust mode (stub)"))
+
+(def (cmd-go-mode app)
+  "Toggle Go mode (stub)."
+  (echo-message! (app-state-echo app) "Go mode (stub)"))
+
+(def (cmd-js-mode app)
+  "Toggle JavaScript mode (stub)."
+  (echo-message! (app-state-echo app) "JavaScript mode (stub)"))
+
+(def (cmd-typescript-mode app)
+  "Toggle TypeScript mode (stub)."
+  (echo-message! (app-state-echo app) "TypeScript mode (stub)"))
+
+(def (cmd-html-mode app)
+  "Toggle HTML mode (stub)."
+  (echo-message! (app-state-echo app) "HTML mode (stub)"))
+
+(def (cmd-css-mode app)
+  "Toggle CSS mode (stub)."
+  (echo-message! (app-state-echo app) "CSS mode (stub)"))
+
+(def (cmd-lua-mode app)
+  "Toggle Lua mode (stub)."
+  (echo-message! (app-state-echo app) "Lua mode (stub)"))
+
+(def (cmd-ruby-mode app)
+  "Toggle Ruby mode (stub)."
+  (echo-message! (app-state-echo app) "Ruby mode (stub)"))
+
+(def (cmd-shell-script-mode app)
+  "Toggle Shell Script mode (stub)."
+  (echo-message! (app-state-echo app) "Shell Script mode (stub)"))
+
+;; Prog mode / text mode
+(def (cmd-prog-mode app)
+  "Switch to programming mode (stub)."
+  (echo-message! (app-state-echo app) "Prog mode (stub)"))
+
+(def (cmd-text-mode app)
+  "Switch to text mode (stub)."
+  (echo-message! (app-state-echo app) "Text mode (stub)"))
+
+(def (cmd-fundamental-mode app)
+  "Switch to fundamental mode (stub)."
+  (echo-message! (app-state-echo app) "Fundamental mode (stub)"))
+
+;; Tab completion / completion-at-point
+(def (cmd-completion-at-point app)
+  "Complete symbol at point (stub)."
+  (echo-message! (app-state-echo app) "Completion at point (stub)"))
+
+;; Eldoc extras
+(def (cmd-eldoc-mode app)
+  "Toggle eldoc mode (stub)."
+  (echo-message! (app-state-echo app) "Eldoc mode (stub)"))
+
+;; Which-function extras
+(def (cmd-which-function-mode app)
+  "Toggle which-function mode (stub)."
+  (echo-message! (app-state-echo app) "Which-function mode (stub)"))
+
+;; Compilation
+(def (cmd-compilation-mode app)
+  "Switch to compilation mode (stub)."
+  (echo-message! (app-state-echo app) "Compilation mode (stub)"))
+
+;; GDB
+(def (cmd-gdb app)
+  "Start GDB debugger (stub)."
+  (echo-message! (app-state-echo app) "GDB (stub)"))
+
+(def (cmd-gud-break app)
+  "Set breakpoint at current line (stub)."
+  (echo-message! (app-state-echo app) "GUD: breakpoint (stub)"))
+
+(def (cmd-gud-remove app)
+  "Remove breakpoint (stub)."
+  (echo-message! (app-state-echo app) "GUD: remove breakpoint (stub)"))
+
+(def (cmd-gud-cont app)
+  "Continue execution in debugger (stub)."
+  (echo-message! (app-state-echo app) "GUD: continue (stub)"))
+
+(def (cmd-gud-next app)
+  "Step over in debugger (stub)."
+  (echo-message! (app-state-echo app) "GUD: next (stub)"))
+
+(def (cmd-gud-step app)
+  "Step into in debugger (stub)."
+  (echo-message! (app-state-echo app) "GUD: step (stub)"))
+
+;; Hippie expand
+(def (cmd-try-expand-dabbrev app)
+  "Try dabbrev expansion (stub)."
+  (echo-message! (app-state-echo app) "Try expand dabbrev (stub)"))
+
+;; Mode line helpers
+(def (cmd-toggle-mode-line app)
+  "Toggle mode line display (stub)."
+  (echo-message! (app-state-echo app) "Mode line toggled (stub)"))
+
+(def (cmd-mode-line-other-buffer app)
+  "Show other buffer info in mode line (stub)."
+  (echo-message! (app-state-echo app) "Mode line: other buffer (stub)"))
+
+;; Timer
+(def (cmd-run-with-timer app)
+  "Run function after delay (stub)."
+  (echo-message! (app-state-echo app) "Timer (stub)"))
+
+;; Global auto-revert
+(def (cmd-global-auto-revert-mode app)
+  "Toggle global auto-revert mode (stub)."
+  (echo-message! (app-state-echo app) "Global auto-revert mode (stub)"))
+
+;; Save place
+(def (cmd-save-place-mode app)
+  "Toggle save-place mode (stub)."
+  (echo-message! (app-state-echo app) "Save-place mode (stub)"))
+
+;; Winner mode
+(def (cmd-winner-mode app)
+  "Toggle winner mode (stub)."
+  (echo-message! (app-state-echo app) "Winner mode (stub)"))
+
+;; Whitespace toggle
+(def (cmd-global-whitespace-mode app)
+  "Toggle global whitespace mode (stub)."
+  (echo-message! (app-state-echo app) "Global whitespace mode (stub)"))
+
+;; Cursor type
+(def (cmd-blink-cursor-mode app)
+  "Toggle cursor blinking."
+  (let* ((fr (app-state-frame app))
+         (win (current-window fr))
+         (ed (edit-window-editor win))
+         (cur (send-message ed SCI_GETCARETPERIOD 0 0)))
+    (if (> cur 0)
+      (begin
+        (send-message ed SCI_SETCARETPERIOD 0 0)
+        (echo-message! (app-state-echo app) "Cursor blink: off"))
+      (begin
+        (send-message ed SCI_SETCARETPERIOD 500 0)
+        (echo-message! (app-state-echo app) "Cursor blink: on")))))
+
 
 ;;;============================================================================
 ;;; Register extra commands
@@ -2710,4 +3106,101 @@
   (register-command! 'proced-send-signal cmd-proced-send-signal)
   (register-command! 'proced-filter cmd-proced-filter)
   ;; Ediff extras
-  (register-command! 'ediff-show-registry cmd-ediff-show-registry))
+  (register-command! 'ediff-show-registry cmd-ediff-show-registry)
+  ;; Task #49: elisp, scheme, regex builder, color picker, etc.
+  ;; Emacs Lisp
+  (register-command! 'emacs-lisp-mode cmd-emacs-lisp-mode)
+  (register-command! 'eval-last-sexp cmd-eval-last-sexp)
+  (register-command! 'eval-defun cmd-eval-defun)
+  (register-command! 'eval-print-last-sexp cmd-eval-print-last-sexp)
+  ;; Scheme/Gerbil
+  (register-command! 'scheme-mode cmd-scheme-mode)
+  (register-command! 'gerbil-mode cmd-gerbil-mode)
+  (register-command! 'run-scheme cmd-run-scheme)
+  (register-command! 'scheme-send-region cmd-scheme-send-region)
+  (register-command! 'scheme-send-buffer cmd-scheme-send-buffer)
+  ;; Regex builder
+  (register-command! 're-builder cmd-re-builder)
+  ;; Colors
+  (register-command! 'list-colors-display cmd-list-colors-display)
+  ;; IDO
+  (register-command! 'ido-mode cmd-ido-mode)
+  (register-command! 'ido-find-file cmd-ido-find-file)
+  (register-command! 'ido-switch-buffer cmd-ido-switch-buffer)
+  ;; Helm/Ivy/Vertico
+  (register-command! 'helm-mode cmd-helm-mode)
+  (register-command! 'ivy-mode cmd-ivy-mode)
+  (register-command! 'vertico-mode cmd-vertico-mode)
+  (register-command! 'consult-line cmd-consult-line)
+  (register-command! 'consult-grep cmd-consult-grep)
+  (register-command! 'consult-buffer cmd-consult-buffer)
+  ;; Company
+  (register-command! 'company-mode cmd-company-mode)
+  (register-command! 'company-complete cmd-company-complete)
+  ;; Flyspell extras
+  (register-command! 'flyspell-buffer cmd-flyspell-buffer)
+  (register-command! 'flyspell-correct-word cmd-flyspell-correct-word)
+  ;; Bibliography
+  (register-command! 'citar-insert-citation cmd-citar-insert-citation)
+  ;; Docker
+  (register-command! 'docker cmd-docker)
+  (register-command! 'docker-containers cmd-docker-containers)
+  (register-command! 'docker-images cmd-docker-images)
+  ;; Restclient
+  (register-command! 'restclient-mode cmd-restclient-mode)
+  (register-command! 'restclient-http-send cmd-restclient-http-send)
+  ;; Config file modes
+  (register-command! 'yaml-mode cmd-yaml-mode)
+  (register-command! 'toml-mode cmd-toml-mode)
+  (register-command! 'dockerfile-mode cmd-dockerfile-mode)
+  ;; SQL
+  (register-command! 'sql-mode cmd-sql-mode)
+  (register-command! 'sql-connect cmd-sql-connect)
+  (register-command! 'sql-send-region cmd-sql-send-region)
+  ;; Language modes
+  (register-command! 'python-mode cmd-python-mode)
+  (register-command! 'c-mode cmd-c-mode)
+  (register-command! 'c++-mode cmd-c++-mode)
+  (register-command! 'java-mode cmd-java-mode)
+  (register-command! 'rust-mode cmd-rust-mode)
+  (register-command! 'go-mode cmd-go-mode)
+  (register-command! 'js-mode cmd-js-mode)
+  (register-command! 'typescript-mode cmd-typescript-mode)
+  (register-command! 'html-mode cmd-html-mode)
+  (register-command! 'css-mode cmd-css-mode)
+  (register-command! 'lua-mode cmd-lua-mode)
+  (register-command! 'ruby-mode cmd-ruby-mode)
+  (register-command! 'shell-script-mode cmd-shell-script-mode)
+  ;; Generic modes
+  (register-command! 'prog-mode cmd-prog-mode)
+  (register-command! 'text-mode cmd-text-mode)
+  (register-command! 'fundamental-mode cmd-fundamental-mode)
+  ;; Completion
+  (register-command! 'completion-at-point cmd-completion-at-point)
+  ;; Eldoc
+  (register-command! 'eldoc-mode cmd-eldoc-mode)
+  ;; Which-function
+  (register-command! 'which-function-mode cmd-which-function-mode)
+  ;; Compilation
+  (register-command! 'compilation-mode cmd-compilation-mode)
+  ;; GDB/GUD
+  (register-command! 'gdb cmd-gdb)
+  (register-command! 'gud-break cmd-gud-break)
+  (register-command! 'gud-remove cmd-gud-remove)
+  (register-command! 'gud-cont cmd-gud-cont)
+  (register-command! 'gud-next cmd-gud-next)
+  (register-command! 'gud-step cmd-gud-step)
+  ;; Hippie expand
+  (register-command! 'try-expand-dabbrev cmd-try-expand-dabbrev)
+  ;; Mode line
+  (register-command! 'toggle-mode-line cmd-toggle-mode-line)
+  (register-command! 'mode-line-other-buffer cmd-mode-line-other-buffer)
+  ;; Timer
+  (register-command! 'run-with-timer cmd-run-with-timer)
+  ;; Global modes
+  (register-command! 'global-auto-revert-mode cmd-global-auto-revert-mode)
+  (register-command! 'save-place-mode cmd-save-place-mode)
+  (register-command! 'winner-mode cmd-winner-mode)
+  (register-command! 'global-whitespace-mode cmd-global-whitespace-mode)
+  ;; Cursor
+  (register-command! 'blink-cursor-mode cmd-blink-cursor-mode))
