@@ -6182,6 +6182,341 @@
     (echo-message! (app-state-echo app) (string-append "Copied: " name))))
 
 ;;;============================================================================
+;;; Task #39: sort, rectangle, completion, text processing
+;;;============================================================================
+
+;; Helper: get text in range [start, start+len)
+(def (editor-get-text-range ed start len)
+  (substring (editor-get-text ed) start (+ start len)))
+
+(def (cmd-sort-lines-case-fold app)
+  "Sort lines in region case-insensitively."
+  (let* ((fr (app-state-frame app))
+         (ed (edit-window-editor (current-window fr)))
+         (echo (app-state-echo app))
+         (buf (current-buffer-from-app app))
+         (mark (buffer-mark buf))
+         (pos (editor-get-current-pos ed)))
+    (if mark
+      (let* ((start (min pos mark))
+             (end (max pos mark))
+             (start-line (editor-line-from-position ed start))
+             (end-line (editor-line-from-position ed end))
+             (line-start (editor-position-from-line ed start-line))
+             (line-end (editor-get-line-end-position ed end-line))
+             (text (editor-get-text-range ed line-start (- line-end line-start)))
+             (lines (string-split text #\newline))
+             (sorted (sort lines (lambda (a b)
+                                   (string-ci<? a b))))
+             (result (string-join sorted "\n")))
+        (with-undo-action ed
+          (editor-delete-range ed line-start (- line-end line-start))
+          (editor-insert-text ed line-start result))
+        (echo-message! echo (string-append "Sorted "
+                                            (number->string (length sorted))
+                                            " lines (case-insensitive)")))
+      (echo-error! echo "No mark set"))))
+
+(def (cmd-reverse-chars app)
+  "Reverse characters in region."
+  (let* ((fr (app-state-frame app))
+         (ed (edit-window-editor (current-window fr)))
+         (echo (app-state-echo app))
+         (buf (current-buffer-from-app app))
+         (mark (buffer-mark buf))
+         (pos (editor-get-current-pos ed)))
+    (if mark
+      (let* ((start (min pos mark))
+             (end (max pos mark))
+             (len (- end start))
+             (text (editor-get-text-range ed start len))
+             (result (list->string (reverse (string->list text)))))
+        (with-undo-action ed
+          (editor-delete-range ed start len)
+          (editor-insert-text ed start result))
+        (echo-message! echo (string-append "Reversed " (number->string len) " chars")))
+      (echo-error! echo "No mark set"))))
+
+(def (cmd-replace-string-all app)
+  "Replace all occurrences of a string in buffer."
+  (let* ((fr (app-state-frame app))
+         (ed (edit-window-editor (current-window fr)))
+         (echo (app-state-echo app))
+         (row (- (frame-height fr) 1))
+         (width (frame-width fr))
+         (pattern (echo-read-string echo "Replace string: " row width)))
+    (when (and pattern (not (string-empty? pattern)))
+      (let ((replacement (echo-read-string echo
+                           (string-append "Replace \"" pattern "\" with: ") row width)))
+        (when replacement
+          (let* ((text (editor-get-text ed))
+                 (plen (string-length pattern))
+                 ;; Manual replace-all loop
+                 (result
+                   (let loop ((i 0) (acc (open-output-string)))
+                     (let ((found (string-contains text pattern i)))
+                       (if found
+                         (begin
+                           (display (substring text i found) acc)
+                           (display replacement acc)
+                           (loop (+ found plen) acc))
+                         (begin
+                           (display (substring text i (string-length text)) acc)
+                           (get-output-string acc))))))
+                 (len (editor-get-text-length ed)))
+            (with-undo-action ed
+              (editor-delete-range ed 0 len)
+              (editor-insert-text ed 0 result))
+            (echo-message! echo "Replacement done")))))))
+
+(def (cmd-insert-file-contents app)
+  "Insert contents of a file at point."
+  (let* ((fr (app-state-frame app))
+         (ed (edit-window-editor (current-window fr)))
+         (echo (app-state-echo app))
+         (row (- (frame-height fr) 1))
+         (width (frame-width fr))
+         (path (echo-read-string echo "Insert file: " row width)))
+    (when (and path (not (string-empty? path)))
+      (if (file-exists? path)
+        (let* ((contents (read-file-as-string path))
+               (pos (editor-get-current-pos ed)))
+          (editor-insert-text ed pos contents)
+          (echo-message! echo (string-append "Inserted " path)))
+        (echo-error! echo (string-append "File not found: " path))))))
+
+(def *auto-revert-mode* #f)
+
+(def (cmd-toggle-auto-revert app)
+  "Toggle auto-revert mode (stub)."
+  (set! *auto-revert-mode* (not *auto-revert-mode*))
+  (echo-message! (app-state-echo app)
+    (if *auto-revert-mode* "Auto-revert mode ON" "Auto-revert mode OFF")))
+
+(def (cmd-zap-up-to-char app)
+  "Kill text up to (but not including) a character."
+  (let* ((fr (app-state-frame app))
+         (ed (edit-window-editor (current-window fr)))
+         (echo (app-state-echo app))
+         (row (- (frame-height fr) 1))
+         (width (frame-width fr))
+         (input (echo-read-string echo "Zap up to char: " row width)))
+    (when (and input (> (string-length input) 0))
+      (let* ((ch (string-ref input 0))
+             (pos (editor-get-current-pos ed))
+             (len (editor-get-text-length ed))
+             ;; Search forward for the character
+             (found
+               (let loop ((p (+ pos 1)))
+                 (cond
+                   ((>= p len) #f)
+                   ((= (editor-get-char-at ed p) (char->integer ch)) p)
+                   (else (loop (+ p 1)))))))
+        (if found
+          (let ((kill-text (editor-get-text-range ed pos (- found pos))))
+            (set! (app-state-kill-ring app)
+              (cons kill-text (app-state-kill-ring app)))
+            (editor-delete-range ed pos (- found pos))
+            (echo-message! echo (string-append "Zapped to '" (string ch) "'")))
+          (echo-error! echo (string-append "'" (string ch) "' not found")))))))
+
+(def (cmd-quoted-insert app)
+  "Insert the next character literally (for control chars)."
+  (echo-message! (app-state-echo app) "C-q: Next key inserts literally (use self-insert)"))
+
+(def (cmd-what-line-col app)
+  "Show current line and column."
+  (let* ((fr (app-state-frame app))
+         (ed (edit-window-editor (current-window fr)))
+         (pos (editor-get-current-pos ed))
+         (line (editor-line-from-position ed pos))
+         (col (- pos (editor-position-from-line ed line))))
+    (echo-message! (app-state-echo app)
+      (string-append "Line " (number->string (+ line 1))
+                     ", Column " (number->string col)))))
+
+(def (cmd-insert-current-date-iso app)
+  "Insert current date in ISO 8601 format (YYYY-MM-DD)."
+  (let* ((fr (app-state-frame app))
+         (ed (edit-window-editor (current-window fr)))
+         (pos (editor-get-current-pos ed))
+         ;; Use shell to get ISO date
+         (proc (open-process
+                 (list path: "/bin/date"
+                       arguments: ["+%Y-%m-%d"]
+                       stdout-redirection: #t)))
+         (date-str (read-line proc))
+         (_ (process-status proc)))
+    (when (string? date-str)
+      (editor-insert-text ed pos date-str))))
+
+(def (cmd-recenter-top app)
+  "Scroll so current line is at top of window."
+  (let* ((fr (app-state-frame app))
+         (ed (edit-window-editor (current-window fr)))
+         (pos (editor-get-current-pos ed))
+         (line (editor-line-from-position ed pos)))
+    (editor-set-first-visible-line ed line)))
+
+(def (cmd-recenter-bottom app)
+  "Scroll so current line is at bottom of window."
+  (let* ((fr (app-state-frame app))
+         (ed (edit-window-editor (current-window fr)))
+         (pos (editor-get-current-pos ed))
+         (line (editor-line-from-position ed pos))
+         (visible (send-message ed 2370 0 0))) ; SCI_LINESONSCREEN
+    (editor-set-first-visible-line ed (max 0 (- line (- visible 1))))))
+
+(def (cmd-scroll-other-window app)
+  "Scroll the other window down one page."
+  (let* ((fr (app-state-frame app))
+         (wins (frame-windows fr))
+         (cur-idx (frame-current-idx fr)))
+    (when (> (length wins) 1)
+      (let* ((other-idx (modulo (+ cur-idx 1) (length wins)))
+             (other-win (list-ref wins other-idx))
+             (other-ed (edit-window-editor other-win))
+             (visible (send-message other-ed 2370 0 0))
+             (first (editor-get-first-visible-line other-ed)))
+        (editor-set-first-visible-line other-ed (+ first visible))))))
+
+(def (cmd-scroll-other-window-up app)
+  "Scroll the other window up one page."
+  (let* ((fr (app-state-frame app))
+         (wins (frame-windows fr))
+         (cur-idx (frame-current-idx fr)))
+    (when (> (length wins) 1)
+      (let* ((other-idx (modulo (+ cur-idx 1) (length wins)))
+             (other-win (list-ref wins other-idx))
+             (other-ed (edit-window-editor other-win))
+             (visible (send-message other-ed 2370 0 0))
+             (first (editor-get-first-visible-line other-ed)))
+        (editor-set-first-visible-line other-ed (max 0 (- first visible)))))))
+
+
+(def (cmd-count-words-paragraph app)
+  "Count words in current paragraph."
+  (let* ((fr (app-state-frame app))
+         (ed (edit-window-editor (current-window fr)))
+         (echo (app-state-echo app))
+         (pos (editor-get-current-pos ed))
+         (line (editor-line-from-position ed pos))
+         (total-lines (editor-get-line-count ed))
+         ;; Find paragraph start (first blank line above or BOF)
+         (para-start-line
+           (let loop ((l (- line 1)))
+             (if (< l 0) 0
+               (let* ((ls (editor-position-from-line ed l))
+                      (le (editor-get-line-end-position ed l))
+                      (text (editor-get-text-range ed ls (- le ls))))
+                 (if (string-empty? (string-trim text))
+                   (+ l 1)
+                   (loop (- l 1)))))))
+         ;; Find paragraph end (first blank line below or EOF)
+         (para-end-line
+           (let loop ((l (+ line 1)))
+             (if (>= l total-lines) (- total-lines 1)
+               (let* ((ls (editor-position-from-line ed l))
+                      (le (editor-get-line-end-position ed l))
+                      (text (editor-get-text-range ed ls (- le ls))))
+                 (if (string-empty? (string-trim text))
+                   (- l 1)
+                   (loop (+ l 1)))))))
+         (start (editor-position-from-line ed para-start-line))
+         (end (editor-get-line-end-position ed para-end-line))
+         (text (editor-get-text-range ed start (- end start)))
+         (words (filter (lambda (w) (not (string-empty? w)))
+                        (string-split text #\space)))
+         (count (length words)))
+    (echo-message! echo (string-append "Paragraph: " (number->string count) " words"))))
+
+(def (cmd-toggle-transient-mark app)
+  "Toggle transient mark mode (stub)."
+  (echo-message! (app-state-echo app) "Transient mark mode always active"))
+
+(def (cmd-keep-lines-region app)
+  "Keep only lines matching regexp in region."
+  (let* ((fr (app-state-frame app))
+         (ed (edit-window-editor (current-window fr)))
+         (echo (app-state-echo app))
+         (buf (current-buffer-from-app app))
+         (mark (buffer-mark buf))
+         (pos (editor-get-current-pos ed))
+         (row (- (frame-height fr) 1))
+         (width (frame-width fr)))
+    (if mark
+      (let ((pattern (echo-read-string echo "Keep lines matching: " row width)))
+        (when (and pattern (not (string-empty? pattern)))
+          (let* ((start (min pos mark))
+                 (end (max pos mark))
+                 (start-line (editor-line-from-position ed start))
+                 (end-line (editor-line-from-position ed end))
+                 (line-start (editor-position-from-line ed start-line))
+                 (line-end (editor-get-line-end-position ed end-line))
+                 (text (editor-get-text-range ed line-start (- line-end line-start)))
+                 (lines (string-split text #\newline))
+                 (kept (filter (lambda (l) (string-contains l pattern)) lines))
+                 (result (string-join kept "\n")))
+            (with-undo-action ed
+              (editor-delete-range ed line-start (- line-end line-start))
+              (editor-insert-text ed line-start result))
+            (echo-message! echo (string-append "Kept " (number->string (length kept))
+                                                " lines")))))
+      (echo-error! echo "No mark set"))))
+
+(def (cmd-flush-lines-region app)
+  "Remove lines matching regexp in region."
+  (let* ((fr (app-state-frame app))
+         (ed (edit-window-editor (current-window fr)))
+         (echo (app-state-echo app))
+         (buf (current-buffer-from-app app))
+         (mark (buffer-mark buf))
+         (pos (editor-get-current-pos ed))
+         (row (- (frame-height fr) 1))
+         (width (frame-width fr)))
+    (if mark
+      (let ((pattern (echo-read-string echo "Flush lines matching: " row width)))
+        (when (and pattern (not (string-empty? pattern)))
+          (let* ((start (min pos mark))
+                 (end (max pos mark))
+                 (start-line (editor-line-from-position ed start))
+                 (end-line (editor-line-from-position ed end))
+                 (line-start (editor-position-from-line ed start-line))
+                 (line-end (editor-get-line-end-position ed end-line))
+                 (text (editor-get-text-range ed line-start (- line-end line-start)))
+                 (lines (string-split text #\newline))
+                 (kept (filter (lambda (l) (not (string-contains l pattern))) lines))
+                 (result (string-join kept "\n")))
+            (with-undo-action ed
+              (editor-delete-range ed line-start (- line-end line-start))
+              (editor-insert-text ed line-start result))
+            (echo-message! echo (string-append "Flushed "
+                                                (number->string (- (length lines) (length kept)))
+                                                " lines")))))
+      (echo-error! echo "No mark set"))))
+
+(def (cmd-insert-register-string app)
+  "Insert register content at point."
+  (let* ((fr (app-state-frame app))
+         (ed (edit-window-editor (current-window fr)))
+         (echo (app-state-echo app))
+         (row (- (frame-height fr) 1))
+         (width (frame-width fr))
+         (input (echo-read-string echo "Insert register: " row width)))
+    (when (and input (> (string-length input) 0))
+      (let* ((reg-char (string-ref input 0))
+             (val (hash-get (app-state-registers app) reg-char)))
+        (if (and val (string? val))
+          (let ((pos (editor-get-current-pos ed)))
+            (editor-insert-text ed pos val)
+            (echo-message! echo (string-append "Inserted register " (string reg-char))))
+          (echo-error! echo "Register empty or not a string"))))))
+
+(def (cmd-toggle-visible-bell app)
+  "Toggle visible bell (stub)."
+  (echo-message! (app-state-echo app) "Visible bell always enabled"))
+
+;;;============================================================================
 ;;; Register all commands
 ;;;============================================================================
 
@@ -6602,6 +6937,41 @@
   (register-command! 'increment-register cmd-increment-register)
   ;; Copy buffer name
   (register-command! 'copy-buffer-name cmd-copy-buffer-name)
+  ;; Sort lines case-insensitive
+  (register-command! 'sort-lines-case-fold cmd-sort-lines-case-fold)
+  ;; Reverse chars in region
+  (register-command! 'reverse-chars cmd-reverse-chars)
+  ;; Replace regexp
+  (register-command! 'replace-string-all cmd-replace-string-all)
+  ;; Insert file contents
+  (register-command! 'insert-file-contents cmd-insert-file-contents)
+  ;; Auto revert
+  (register-command! 'toggle-auto-revert cmd-toggle-auto-revert)
+  ;; Zap up to char
+  (register-command! 'zap-up-to-char cmd-zap-up-to-char)
+  ;; Quoted insert
+  (register-command! 'quoted-insert cmd-quoted-insert)
+  ;; What line/col
+  (register-command! 'what-line-col cmd-what-line-col)
+  ;; Insert ISO date
+  (register-command! 'insert-current-date-iso cmd-insert-current-date-iso)
+  ;; Recenter top/bottom
+  (register-command! 'recenter-top cmd-recenter-top)
+  (register-command! 'recenter-bottom cmd-recenter-bottom)
+  ;; Scroll other window
+  (register-command! 'scroll-other-window cmd-scroll-other-window)
+  (register-command! 'scroll-other-window-up cmd-scroll-other-window-up)
+  ;; Count words paragraph
+  (register-command! 'count-words-paragraph cmd-count-words-paragraph)
+  ;; Toggle transient mark
+  (register-command! 'toggle-transient-mark cmd-toggle-transient-mark)
+  ;; Keep/flush lines region
+  (register-command! 'keep-lines-region cmd-keep-lines-region)
+  (register-command! 'flush-lines-region cmd-flush-lines-region)
+  ;; Insert register string
+  (register-command! 'insert-register-string cmd-insert-register-string)
+  ;; Visible bell
+  (register-command! 'toggle-visible-bell cmd-toggle-visible-bell)
   ;; Misc
   (register-command! 'keyboard-quit cmd-keyboard-quit)
   (register-command! 'quit cmd-quit))

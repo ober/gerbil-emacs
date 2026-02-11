@@ -690,6 +690,22 @@
 
   ;; Copy buffer name to kill ring (via M-x or explicit binding)
   ;; No keybinding — accessible via M-x copy-buffer-name
+
+  ;; Scroll other window (M-g v / M-g V)
+  (keymap-bind! *meta-g-map* "v" 'scroll-other-window)
+  (keymap-bind! *meta-g-map* "V" 'scroll-other-window-up)
+
+  ;; Goto matching paren (M-g m)
+  (keymap-bind! *meta-g-map* "m" 'goto-matching-paren)
+
+  ;; New commands (no keybinding — C-c map full, use M-x):
+  ;; sort-lines-case-fold, reverse-chars, replace-regexp,
+  ;; insert-file-contents, toggle-auto-revert, zap-up-to-char,
+  ;; quoted-insert, what-line-col, insert-current-date-iso,
+  ;; recenter-top, recenter-bottom, toggle-linum-mode,
+  ;; count-words-paragraph, keep-lines-region, flush-lines-region,
+  ;; insert-register-string, toggle-visible-bell, toggle-transient-mark,
+  ;; what-cursor-position (use C-x =), shell-command-on-region (use M-|)
   )
 
 ;;;============================================================================

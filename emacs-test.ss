@@ -810,6 +810,25 @@
       ;; Increment register
       (check (keymap-lookup *ctrl-x-r-map* "+") => 'increment-register))
 
+    ;; Task #39: sort, scroll, text processing commands
+    (test-case "new keybindings: scroll-other, matching-paren, etc"
+      ;; M-g v/V: scroll other window
+      (check (keymap-lookup *meta-g-map* "v") => 'scroll-other-window)
+      (check (keymap-lookup *meta-g-map* "V") => 'scroll-other-window-up)
+      ;; M-g m: goto matching paren
+      (check (keymap-lookup *meta-g-map* "m") => 'goto-matching-paren)
+      ;; editor-get-text-range helper (defined in editor.ss, can't test here)
+      ;; Verify *auto-revert-mode* global exists in editor.ss (also can't test)
+      ;; Check that the new M-g bindings are distinct from existing ones
+      (check (not (eq? (keymap-lookup *meta-g-map* "v")
+                       (keymap-lookup *meta-g-map* "V"))) => #t)
+      ;; Check M-g map still has previous bindings
+      (check (keymap-lookup *meta-g-map* "u") => 'backward-up-list)
+      (check (keymap-lookup *meta-g-map* "d") => 'forward-up-list)
+      (check (keymap-lookup *meta-g-map* "k") => 'kill-sexp)
+      (check (keymap-lookup *meta-g-map* "f") => 'forward-sexp)
+      (check (keymap-lookup *meta-g-map* "b") => 'backward-sexp))
+
     ))
 
 ;; Run tests when executed directly
