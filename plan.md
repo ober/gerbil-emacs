@@ -5,11 +5,15 @@
 - Basic editing, navigation, window splitting, file/buffer management
 - Dired directory browser
 - REPL buffer (gxi subprocess) and M-: eval-expression
-- 18 test cases, 72 checks passing
+- Syntax highlighting for 20+ languages (Gerbil, Python, Rust, Go, etc.)
+- Image viewing (Qt backend, with zoom controls)
+- Auto-save and backup file support
+- Shell (external $SHELL) and Eshell (built-in Gerbil shell) modes
+- 67 test cases, 360 checks passing
 
 ---
 
-## Phase 1: Gerbil Syntax Highlighting
+## Phase 1: Gerbil Syntax Highlighting ✅ COMPLETED
 
 ### Goal
 Minimum viable syntax highlighting for `.ss` / `.scm` files using colors from `gerbil-mode.el`.
@@ -70,30 +74,21 @@ Scintilla has a built-in Lisp lexer (`SCLEX_LISP` / `SCE_LISP_*` styles).
 
 ---
 
-## Phase 2: Image Viewing (Qt only)
+## Phase 2: Image Viewing (Qt only) ✅ COMPLETED
 
 ### Goal
 Open image files (PNG, JPG, GIF, BMP) in a read-only buffer with the image displayed.
 
-### Approach (Qt)
-- Detect image files by extension in `qt-open-file!`
-- Create a QLabel with `qt-pixmap-load` + `qt-label-set-pixmap!`
-- Support zoom with `qt-pixmap-scaled`
-- Keybindings: `+`/`-` for zoom, `0` for fit-to-window
-
-### Available APIs
-- `qt-pixmap-load` — Load image from file
-- `qt-pixmap-scaled` — Scale with aspect ratio
-- `qt-label-set-pixmap!` — Display in label
-- `qt-pixmap-width`, `qt-pixmap-height` — Get dimensions
-
-### Files
-- `qt/commands.ss` — Add `cmd-view-image`, integrate into file opening
-- `qt/window.ss` — May need image-specific window type
+### Implementation
+- `qt/image.ss` — Image detection and viewing dialog
+- `qt/app.ss` — Integrates image detection into `qt-open-file!`
+- Supports: PNG, JPG, JPEG, GIF, BMP, WEBP, SVG, ICO, TIFF
+- Zoom controls: +/- buttons and keyboard, Fit (0), 100% (1)
+- Scrollable view for large images
 
 ---
 
-## Phase 3: Terminal Mode
+## Phase 3: Terminal Mode ✅ COMPLETED
 
 ### Goal
 Run `$SHELL` (bash/zsh) in a buffer, supporting ANSI escape codes, like `M-x shell` in Emacs.
@@ -146,7 +141,7 @@ More complex — Scintilla doesn't natively handle terminal escape codes.
 
 ---
 
-## Phase 4: Eshell (Gerbil Shell)
+## Phase 4: Eshell (Gerbil Shell) ✅ COMPLETED
 
 ### Goal
 Emacs eshell equivalent: a shell implemented in Gerbil with built-in commands, pipeline support, and Gerbil expression evaluation.
@@ -208,82 +203,92 @@ gerbil> ls -la | (lambda (line) (string-contains line ".ss"))
 
 ---
 
-## Phase 5: Enhanced Emacs Features
+## Phase 5: Enhanced Emacs Features ✅ MOSTLY COMPLETED
 
-### 5a. M-x Command Execution
+### 5a. M-x Command Execution ✅
 - Echo area prompt showing all available commands
 - Tab completion for command names
 - `M-x` bound to command execution
 
-### 5b. Goto Line
+### 5b. Goto Line ✅
 - `M-g g` — Prompt for line number, jump to it
 - Show current line/column in modeline
 
-### 5c. Replace String
+### 5c. Replace String ✅
 - `M-%` — Interactive search and replace
 - Query replace: y/n/!/q for each match
 
-### 5d. Rectangle Operations
+### 5d. Rectangle Operations ✅
 - `C-x r k` — Kill rectangle
 - `C-x r y` — Yank rectangle
 - `C-x r o` — Open (insert space) rectangle
 
 ### 5e. Multiple Cursors / Repeat
-- `C-u N command` — Repeat command N times
-- Universal argument support
+- `C-u N command` — Repeat command N times (stub)
+- Universal argument support (stub)
 
-### 5f. Auto-save and Backup
-- Timer-based auto-save to `#filename#`
-- Backup files as `filename~`
+### 5f. Auto-save and Backup ✅
+- Timer-based auto-save to `#filename#` (Qt backend, 30s interval)
+- Backup files as `filename~` (created on first save)
+- Auto-save file removed after successful save
 
-### 5g. Help System
+### 5g. Help System ✅
 - `C-h k` — Describe key binding
 - `C-h f` — Describe command
 - `C-h b` — List all bindings
 
-### 5h. Buffer List (ibuffer)
+### 5h. Buffer List (ibuffer) ✅
 - `C-x C-b` — Show buffer list in a buffer
 - Navigate and switch buffers from the list
 
 ---
 
-## Phase 6: Advanced Features
+## Phase 6: Advanced Features ✅ MOSTLY COMPLETED
 
-### 6a. Completion Framework
-- In-buffer completion with popup
+### 6a. Completion Framework ✅
+- In-buffer completion with popup (Qt backend)
 - File path completion in find-file
 - Buffer name completion
 
-### 6b. Parenthesis Matching
+### 6b. Parenthesis Matching ✅
+- Highlight matching parens for Scheme editing
+- Visual brace matching in Qt backend
+
+### 6b. Parenthesis Matching ✅
 - Highlight matching parens for Scheme editing
 - Jump to matching paren with `C-M-f` / `C-M-b`
 
-### 6c. Line Numbers
+### 6c. Line Numbers ✅
 - Toggle line number display
-- Relative line numbers mode
+- Relative line numbers mode (stub)
 
 ### 6d. Undo Tree
-- Visualize undo history
-- Branch between undo states
+- Visualize undo history (not implemented)
+- Branch between undo states (not implemented)
 
 ---
 
-## Implementation Order
+## Implementation Status
 
-Priority-ordered, each phase builds on the previous:
-
-1. **Phase 1a: TUI Syntax Highlighting** — Scintilla lexer for Gerbil
-2. **Phase 5b: Goto Line** — Quick win, useful for development
-3. **Phase 5a: M-x** — Command discovery
-4. **Phase 4: Eshell** — Built-in shell (no external deps needed)
-5. **Phase 3: Terminal Mode** — External shell support
-6. **Phase 1b: Qt Syntax Highlighting** — Requires gerbil-qt additions
-7. **Phase 2: Image Viewing** — Qt pixmap display
-8. **Phase 5c: Replace String** — Interactive replace
-9. **Phase 5h: Buffer List** — ibuffer
-10. **Phase 6b: Paren Matching** — Scheme editing essential
-11. **Phase 5g: Help System** — Self-documenting
-12. Remaining Phase 5 and 6 items
+| Phase | Status |
+|-------|--------|
+| Phase 1a: TUI Syntax Highlighting | ✅ Completed |
+| Phase 1b: Qt Syntax Highlighting | ✅ Completed (20+ languages) |
+| Phase 2: Image Viewing | ✅ Completed |
+| Phase 3: Terminal Mode | ✅ Completed |
+| Phase 4: Eshell | ✅ Completed |
+| Phase 5a: M-x | ✅ Completed |
+| Phase 5b: Goto Line | ✅ Completed |
+| Phase 5c: Replace String | ✅ Completed |
+| Phase 5d: Rectangle Ops | ✅ Completed |
+| Phase 5e: Universal Argument | 🔸 Stub |
+| Phase 5f: Auto-save/Backup | ✅ Completed |
+| Phase 5g: Help System | ✅ Completed |
+| Phase 5h: Buffer List | ✅ Completed |
+| Phase 6a: Completion | ✅ Completed |
+| Phase 6b: Paren Matching | ✅ Completed |
+| Phase 6c: Line Numbers | ✅ Completed |
+| Phase 6d: Undo Tree | ❌ Not implemented |
 
 ---
 

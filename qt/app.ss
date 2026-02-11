@@ -15,12 +15,19 @@
         :gerbil-emacs/qt/modeline
         :gerbil-emacs/qt/echo
         :gerbil-emacs/qt/highlight
+        :gerbil-emacs/qt/image
         :gerbil-emacs/qt/commands
         :gerbil-emacs/qt/menubar)
 
 ;;;============================================================================
 ;;; Qt Application
 ;;;============================================================================
+
+;; Auto-save path: #filename# (Emacs convention)
+(def (qt-make-auto-save-path path)
+  (let* ((dir (path-directory path))
+         (name (path-strip-directory path)))
+    (path-expand (string-append "#" name "#") dir)))
 
 (def (qt-main . args)
   (with-qt-app qt-app
@@ -199,6 +206,33 @@
               (buffer-list))))
         (qt-timer-start! repl-timer 50))
 
+      ;; Auto-save timer (every 30 seconds)
+      (let ((auto-save-timer (qt-timer-create)))
+        (qt-on-timeout! auto-save-timer
+          (lambda ()
+            (for-each
+              (lambda (buf)
+                (let ((path (buffer-file-path buf)))
+                  ;; Only auto-save file-visiting buffers that are modified
+                  (when (and path
+                             (buffer-doc-pointer buf)
+                             (qt-text-document-modified? (buffer-doc-pointer buf)))
+                    ;; Find a window showing this buffer to get the text
+                    (let loop ((wins (qt-frame-windows fr)))
+                      (when (pair? wins)
+                        (if (eq? (qt-edit-window-buffer (car wins)) buf)
+                          (let* ((ed (qt-edit-window-editor (car wins)))
+                                 (text (qt-plain-text-edit-text ed))
+                                 (auto-path (qt-make-auto-save-path path)))
+                            (with-catch
+                              (lambda (e) #f)  ; Ignore auto-save errors
+                              (lambda ()
+                                (call-with-output-file auto-path
+                                  (lambda (port) (display text port))))))
+                          (loop (cdr wins))))))))
+              (buffer-list))))
+        (qt-timer-start! auto-save-timer 30000))
+
       ;; Open files from command line
       (for-each (lambda (file) (qt-open-file! app file)) args)
 
@@ -219,22 +253,28 @@
 ;;;============================================================================
 
 (def (qt-open-file! app filename)
-  "Open a file or directory in a new buffer."
-  (if (and (file-exists? filename)
-           (eq? 'directory (file-info-type (file-info filename))))
-    ;; Open as dired
-    (dired-open-directory! app filename)
-    ;; Open as regular file
-    (let* ((name (path-strip-directory filename))
-           (fr (app-state-frame app))
-           (ed (qt-current-editor fr))
-           (buf (qt-buffer-create! name ed filename)))
-      (qt-buffer-attach! ed buf)
-      (set! (qt-edit-window-buffer (qt-current-window fr)) buf)
-      (when (file-exists? filename)
-        (let ((text (read-file-as-string filename)))
-          (when text
-            (qt-plain-text-edit-set-text! ed text)
-            (qt-text-document-set-modified! (buffer-doc-pointer buf) #f)
-            (qt-plain-text-edit-set-cursor-position! ed 0))))
-      (qt-setup-highlighting! app buf))))
+  "Open a file or directory in a new buffer, or view an image."
+  (cond
+    ;; Directory -> dired
+    ((and (file-exists? filename)
+          (eq? 'directory (file-info-type (file-info filename))))
+     (dired-open-directory! app filename))
+    ;; Image file -> image viewer dialog
+    ((image-file? filename)
+     (let ((main-win (qt-frame-main-win (app-state-frame app))))
+       (qt-view-image! app main-win filename)))
+    ;; Regular file -> text buffer
+    (else
+     (let* ((name (path-strip-directory filename))
+            (fr (app-state-frame app))
+            (ed (qt-current-editor fr))
+            (buf (qt-buffer-create! name ed filename)))
+       (qt-buffer-attach! ed buf)
+       (set! (qt-edit-window-buffer (qt-current-window fr)) buf)
+       (when (file-exists? filename)
+         (let ((text (read-file-as-string filename)))
+           (when text
+             (qt-plain-text-edit-set-text! ed text)
+             (qt-text-document-set-modified! (buffer-doc-pointer buf) #f)
+             (qt-plain-text-edit-set-cursor-position! ed 0))))
+       (qt-setup-highlighting! app buf)))))

@@ -55,6 +55,12 @@
          (width (frame-width fr)))
     (echo-read-string echo prompt row width)))
 
+;; Auto-save path: #filename# (Emacs convention)
+(def (make-auto-save-path path)
+  (let* ((dir (path-directory path))
+         (name (path-strip-directory path)))
+    (path-expand (string-append "#" name "#") dir)))
+
 ;;;============================================================================
 ;;; Self-insert command
 ;;;============================================================================
@@ -326,9 +332,21 @@
     (if path
       ;; Save to existing path
       (begin
+        ;; Create backup file if original exists and hasn't been backed up yet
+        (when (and (file-exists? path) (not (buffer-backup-done? buf)))
+          (let ((backup-path (string-append path "~")))
+            (with-catch
+              (lambda (e) #f)  ; Ignore backup errors
+              (lambda ()
+                (copy-file path backup-path)
+                (set! (buffer-backup-done? buf) #t)))))
         (let ((text (editor-get-text ed)))
           (write-string-to-file path text)
           (editor-set-save-point ed)
+          ;; Remove auto-save file if it exists
+          (let ((auto-save-path (make-auto-save-path path)))
+            (when (file-exists? auto-save-path)
+              (delete-file auto-save-path)))
           (echo-message! echo (string-append "Wrote " path))))
       ;; No path: prompt for one
       (let* ((fr (app-state-frame app))

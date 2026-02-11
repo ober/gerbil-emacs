@@ -32,7 +32,7 @@
 (def (buffer-create! name editor (file-path #f))
   "Create a new buffer with a fresh Scintilla document."
   (let* ((doc (send-message editor SCI_CREATEDOCUMENT 0 0))
-         (buf (make-buffer name file-path doc #f #f #f)))
+         (buf (make-buffer name file-path doc #f #f #f #f)))
     (buffer-list-add! buf)
     buf))
 
@@ -41,7 +41,7 @@
    Adds a reference so the buffer owns the document independently."
   (let ((doc (send-message editor SCI_GETDOCPOINTER)))
     (send-message editor SCI_ADDREFDOCUMENT 0 doc)
-    (let ((buf (make-buffer name #f doc #f #f #f)))
+    (let ((buf (make-buffer name #f doc #f #f #f #f)))
       (buffer-list-add! buf)
       buf)))
 

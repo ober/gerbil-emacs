@@ -926,3 +926,39 @@
           (else (void)))))
     ;; 4. Apply all accumulated selections
     (qt-extra-selections-apply! ed)))
+
+;;;============================================================================
+;;; Search result highlighting
+;;;============================================================================
+
+;; Track whether search highlights are currently active
+(def *search-highlight-active* #f)
+
+;; Search match colors (orange background)
+(def search-fg-r #x00) (def search-fg-g #x00) (def search-fg-b #x00)
+(def search-bg-r #xff) (def search-bg-g #xcc) (def search-bg-b #x00)
+
+(def (qt-highlight-search-matches! ed pattern)
+  "Highlight all occurrences of pattern in the editor."
+  (when (and pattern (> (string-length pattern) 0))
+    (let* ((text (qt-plain-text-edit-text ed))
+           (len (string-length text))
+           (pat-len (string-length pattern)))
+      ;; Find all occurrences
+      (let loop ((i 0))
+        (when (< (+ i pat-len) len)
+          (let ((found (string-contains text pattern i)))
+            (when found
+              (qt-extra-selection-add-range! ed found pat-len
+                search-fg-r search-fg-g search-fg-b
+                search-bg-r search-bg-g search-bg-b bold: #f)
+              (loop (+ found 1))))))
+      (qt-extra-selections-apply! ed)
+      (set! *search-highlight-active* #t))))
+
+(def (qt-clear-search-highlights! ed)
+  "Clear search highlights from the editor."
+  (when *search-highlight-active*
+    (qt-extra-selections-clear! ed)
+    (qt-extra-selections-apply! ed)
+    (set! *search-highlight-active* #f)))

@@ -216,7 +216,7 @@
         (check error? => #f)))
 
     (test-case "repl-buffer? predicate"
-      (let ((buf (make-buffer "*test*" #f #f #f #f #f)))
+      (let ((buf (make-buffer "*test*" #f #f #f #f #f #f)))
         (check (repl-buffer? buf) => #f)
         (set! (buffer-lexer-lang buf) 'repl)
         (check (repl-buffer? buf) => #t)
@@ -224,7 +224,7 @@
         (check (repl-buffer? buf) => #f)))
 
     (test-case "eshell-buffer? predicate"
-      (let ((buf (make-buffer "*test*" #f #f #f #f #f)))
+      (let ((buf (make-buffer "*test*" #f #f #f #f #f #f)))
         (check (eshell-buffer? buf) => #f)
         (set! (buffer-lexer-lang buf) 'eshell)
         (check (eshell-buffer? buf) => #t)))
@@ -281,7 +281,7 @@
       (check (keymap-lookup *ctrl-c-map* "e") => 'eshell))
 
     (test-case "shell-buffer? predicate"
-      (let ((buf (make-buffer "*test*" #f #f #f #f #f)))
+      (let ((buf (make-buffer "*test*" #f #f #f #f #f #f)))
         (check (shell-buffer? buf) => #f)
         (set! (buffer-lexer-lang buf) 'shell)
         (check (shell-buffer? buf) => #t)))

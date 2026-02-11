@@ -783,7 +783,8 @@
    doc-pointer ; backend-specific document handle (Scintilla doc ptr or QTextDocument*)
    mark        ; integer or #f: mark position for region
    modified    ; boolean
-   lexer-lang) ; symbol or #f: lexer language
+   lexer-lang  ; symbol or #f: lexer language
+   backup-done?) ; boolean: whether backup file was created this session
   transparent: #t)
 
 (def *buffer-list* [])
