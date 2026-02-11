@@ -291,6 +291,12 @@
     (when (app-state-key-handler app)
       ((app-state-key-handler app) new-ed))))
 
+(def (cmd-split-window-right app)
+  (let ((new-ed (qt-frame-split-right! (app-state-frame app))))
+    ;; Install key handler on the new editor
+    (when (app-state-key-handler app)
+      ((app-state-key-handler app) new-ed))))
+
 (def (cmd-other-window app)
   (qt-frame-other-window! (app-state-frame app)))
 
@@ -474,6 +480,7 @@
   (register-command! 'kill-buffer-cmd cmd-kill-buffer-cmd)
   ;; Window
   (register-command! 'split-window cmd-split-window)
+  (register-command! 'split-window-right cmd-split-window-right)
   (register-command! 'other-window cmd-other-window)
   (register-command! 'delete-window cmd-delete-window)
   (register-command! 'delete-other-windows cmd-delete-other-windows)

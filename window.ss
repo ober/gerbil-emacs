@@ -18,9 +18,11 @@
   frame-layout!
   frame-refresh!
   frame-split!
+  frame-split-right!
   frame-delete-window!
   frame-delete-other-windows!
-  frame-other-window!)
+  frame-other-window!
+  frame-draw-dividers!)
 
 (import :std/sugar
         :gerbil-scintilla/scintilla
@@ -38,10 +40,11 @@
   transparent: #t)
 
 (defstruct frame
-  (windows      ; list of edit-window
-   current-idx  ; index of active window
-   width        ; terminal width
-   height)      ; terminal height
+  (windows        ; list of edit-window
+   current-idx    ; index of active window
+   width          ; terminal width
+   height         ; terminal height
+   split-direction) ; 'vertical (stacked) or 'horizontal (side-by-side)
   transparent: #t)
 
 ;;;============================================================================
@@ -61,7 +64,7 @@
          (ed (create-scintilla-editor width: width height: edit-h))
          (buf (buffer-create-from-editor! buffer-scratch-name ed))
          (win (make-edit-window ed buf 0 0 width (- height 1))))
-    (make-frame (list win) 0 width height)))
+    (make-frame (list win) 0 width height 'vertical)))
 
 (def (frame-shutdown! fr)
   "Destroy all editors in the frame."
@@ -73,6 +76,11 @@
 ;;;============================================================================
 
 (def (frame-layout! fr)
+  (if (eq? (frame-split-direction fr) 'horizontal)
+    (frame-layout-horizontal! fr)
+    (frame-layout-vertical! fr)))
+
+(def (frame-layout-vertical! fr)
   (let* ((width (frame-width fr))
          (height (frame-height fr))
          (windows (frame-windows fr))
@@ -92,6 +100,32 @@
           (editor-resize (edit-window-editor win) width edit-h)
           (editor-move (edit-window-editor win) 0 y)
           (loop (cdr wins) (+ y h) (+ i 1)))))))
+
+(def (frame-layout-horizontal! fr)
+  "Side-by-side layout: each window gets a share of the width."
+  (let* ((width (frame-width fr))
+         (height (frame-height fr))
+         (windows (frame-windows fr))
+         (n (length windows))
+         (win-h (- height 1))          ; 1 row for echo area
+         (edit-h (max 1 (- win-h 1)))  ; 1 row for modeline per window
+         ;; n-1 divider columns between windows
+         (dividers (max 0 (- n 1)))
+         (avail-w (- width dividers))
+         (per-win (quotient avail-w n))
+         (extra (remainder avail-w n)))
+    (let loop ((wins windows) (x 0) (i 0))
+      (when (pair? wins)
+        (let* ((win (car wins))
+               (w (+ per-win (if (< i extra) 1 0))))
+          (set! (edit-window-x win) x)
+          (set! (edit-window-y win) 0)
+          (set! (edit-window-w win) w)
+          (set! (edit-window-h win) win-h)
+          (editor-resize (edit-window-editor win) w edit-h)
+          (editor-move (edit-window-editor win) x 0)
+          ;; Skip past window width + 1 divider column
+          (loop (cdr wins) (+ x w 1) (+ i 1)))))))
 
 ;;;============================================================================
 ;;; Resize (terminal size changed)
@@ -116,7 +150,21 @@
 ;;;============================================================================
 
 (def (frame-split! fr)
-  "Split: add a new window showing the same buffer. Returns the new editor."
+  "Split vertically: add a new window below. Returns the new editor."
+  (set! (frame-split-direction fr) 'vertical)
+  (let* ((cur (current-window fr))
+         (buf (edit-window-buffer cur))
+         (new-ed (create-scintilla-editor))
+         (new-win (make-edit-window new-ed buf 0 0 0 0)))
+    (buffer-attach! new-ed buf)
+    (set! (frame-windows fr)
+          (append (frame-windows fr) (list new-win)))
+    (frame-layout! fr)
+    new-ed))
+
+(def (frame-split-right! fr)
+  "Split horizontally: add a new window to the right. Returns the new editor."
+  (set! (frame-split-direction fr) 'horizontal)
   (let* ((cur (current-window fr))
          (buf (edit-window-buffer cur))
          (new-ed (create-scintilla-editor))
@@ -165,3 +213,26 @@
       ((null? l) (reverse acc))
       ((= i idx) (append (reverse acc) (cdr l)))
       (else (loop (cdr l) (+ i 1) (cons (car l) acc))))))
+
+;;;============================================================================
+;;; Divider drawing (for horizontal splits)
+;;;============================================================================
+
+(def (frame-draw-dividers! fr)
+  "Draw vertical divider lines between side-by-side windows."
+  (when (eq? (frame-split-direction fr) 'horizontal)
+    (let* ((windows (frame-windows fr))
+           (height (- (frame-height fr) 1))  ; don't draw over echo area
+           (fg #x808080)
+           (bg #x181818))
+      ;; Draw a vertical line at x = (window-x + window-w) for each window
+      ;; except the last one
+      (let loop ((wins windows))
+        (when (and (pair? wins) (pair? (cdr wins)))
+          (let ((x (+ (edit-window-x (car wins))
+                       (edit-window-w (car wins)))))
+            (let yloop ((y 0))
+              (when (< y height)
+                (tui-change-cell! x y (char->integer #\│) fg bg)
+                (yloop (+ y 1)))))
+          (loop (cdr wins)))))))

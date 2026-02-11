@@ -82,10 +82,11 @@
                   (editor-poll-notifications (edit-window-editor win)))
                 (frame-windows (app-state-frame app)))
 
-      ;; Draw modelines and echo area FIRST into the termbox buffer.
+      ;; Draw modelines, dividers, and echo area FIRST into the termbox buffer.
       ;; This must happen before editor-refresh because Scintilla's
       ;; Refresh() calls tb_present() internally.
       (draw-all-modelines! app)
+      (frame-draw-dividers! (app-state-frame app))
       (let* ((fr (app-state-frame app))
              (echo-row (- (frame-height fr) 1))
              (width (frame-width fr)))

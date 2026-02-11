@@ -152,7 +152,8 @@
   (keymap-bind! *ctrl-x-map* "2"   'split-window)
   (keymap-bind! *ctrl-x-map* "o"   'other-window)
   (keymap-bind! *ctrl-x-map* "0"   'delete-window)
-  (keymap-bind! *ctrl-x-map* "1"   'delete-other-windows))
+  (keymap-bind! *ctrl-x-map* "1"   'delete-other-windows)
+  (keymap-bind! *ctrl-x-map* "3"   'split-window-right))
 
 ;;;============================================================================
 ;;; Echo state

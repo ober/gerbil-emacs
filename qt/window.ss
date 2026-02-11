@@ -10,6 +10,7 @@
         qt-current-buffer
         qt-frame-init!
         qt-frame-split!
+        qt-frame-split-right!
         qt-frame-delete-window!
         qt-frame-delete-other-windows!
         qt-frame-other-window!)
@@ -69,7 +70,21 @@
 ;;;============================================================================
 
 (def (qt-frame-split! fr)
-  "Split: add a new window showing the same buffer. Returns the new editor."
+  "Split vertically: add a new window below. Returns the new editor."
+  (qt-splitter-set-orientation! (qt-frame-splitter fr) QT_VERTICAL)
+  (let* ((cur (qt-current-window fr))
+         (buf (qt-edit-window-buffer cur))
+         (new-ed (qt-plain-text-edit-create parent: (qt-frame-splitter fr)))
+         (new-win (make-qt-edit-window new-ed buf)))
+    (qt-buffer-attach! new-ed buf)
+    (qt-splitter-add-widget! (qt-frame-splitter fr) new-ed)
+    (set! (qt-frame-windows fr)
+          (append (qt-frame-windows fr) (list new-win)))
+    new-ed))
+
+(def (qt-frame-split-right! fr)
+  "Split horizontally: add a new window to the right. Returns the new editor."
+  (qt-splitter-set-orientation! (qt-frame-splitter fr) QT_HORIZONTAL)
   (let* ((cur (qt-current-window fr))
          (buf (qt-edit-window-buffer cur))
          (new-ed (qt-plain-text-edit-create parent: (qt-frame-splitter fr)))
