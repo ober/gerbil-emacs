@@ -144,21 +144,122 @@
   "View diary entries (stub)."
   (echo-message! (app-state-echo app) "No diary entries"))
 
-;; EWW browser stubs
+;; EWW browser - text-mode web browser using curl + html2text
+;; Maintains history for back/forward navigation
+
+(def *eww-history* '())        ; list of URLs visited
+(def *eww-history-idx* 0)      ; current position in history
+(def *eww-current-url* #f)     ; currently displayed URL
+
+(def (eww-fetch-url url)
+  "Fetch URL content and convert to text. Returns text or #f."
+  (with-exception-catcher
+    (lambda (e) #f)
+    (lambda ()
+      (let* ((proc (open-process
+                     (list path: "curl"
+                           arguments: (list "-sL" "-A" "Mozilla/5.0" url)
+                           stdin-redirection: #f
+                           stdout-redirection: #t
+                           stderr-redirection: #f)))
+             (html (read-line proc #f)))
+        (process-status proc)
+        (if (not html)
+          #f
+          ;; Try to convert HTML to text using various tools
+          (let* ((text-proc (open-process
+                              (list path: "lynx"
+                                    arguments: (list "-dump" "-stdin")
+                                    stdin-redirection: #t
+                                    stdout-redirection: #t
+                                    stderr-redirection: #f))))
+            (display html text-proc)
+            (close-output-port text-proc)
+            (let ((text (read-line text-proc #f)))
+              (process-status text-proc)
+              (or text html))))))))
+
+(def (eww-display-page app url content)
+  "Display web content in EWW buffer."
+  (let* ((fr (app-state-frame app))
+         (win (current-window fr))
+         (ed (edit-window-editor win))
+         (buf (or (buffer-by-name "*EWW*")
+                  (buffer-create! "*EWW*" ed)))
+         (text (string-append "URL: " url "\n"
+                             (make-string 60 #\-) "\n\n"
+                             (or content "Failed to fetch page")
+                             "\n\n[q: quit, g: goto URL, b: back, f: forward]")))
+    (buffer-attach! ed buf)
+    (set! (edit-window-buffer win) buf)
+    (editor-set-text ed text)
+    (editor-goto-pos ed 0)
+    (set! *eww-current-url* url)))
+
 (def (cmd-eww app)
-  "Open EWW web browser (stub)."
-  (let ((url (app-read-string app "URL: ")))
+  "Open EWW web browser."
+  (let* ((echo (app-state-echo app))
+         (fr (app-state-frame app))
+         (row (- (frame-height fr) 1))
+         (width (frame-width fr))
+         (url (echo-read-string echo "URL: " row width)))
     (when (and url (not (string-empty? url)))
-      (echo-message! (app-state-echo app)
-        (string-append "EWW not available. URL: " url)))))
+      ;; Add http:// if no protocol
+      (let ((full-url (if (or (string-prefix? "http://" url)
+                              (string-prefix? "https://" url))
+                        url
+                        (string-append "https://" url))))
+        (echo-message! echo (string-append "Fetching: " full-url))
+        (let ((content (eww-fetch-url full-url)))
+          (if content
+            (begin
+              ;; Update history
+              (set! *eww-history* (cons full-url *eww-history*))
+              (set! *eww-history-idx* 0)
+              (eww-display-page app full-url content))
+            (echo-error! echo "Failed to fetch URL")))))))
 
 (def (cmd-eww-browse-url app)
-  "Browse URL with EWW (stub)."
+  "Browse URL with EWW."
   (cmd-eww app))
 
 (def (cmd-browse-url-at-point app)
-  "Browse URL at point (stub)."
-  (echo-message! (app-state-echo app) "browse-url-at-point (stub)"))
+  "Browse URL at point."
+  (let* ((fr (app-state-frame app))
+         (win (current-window fr))
+         (ed (edit-window-editor win))
+         (pos (editor-get-current-pos ed))
+         (text (editor-get-text ed))
+         (echo (app-state-echo app)))
+    ;; Find URL-like text around point
+    (let loop ((start pos))
+      (if (or (< start 0) (char-whitespace? (string-ref text start)))
+        (let find-end ((end (+ pos 1)))
+          (if (or (>= end (string-length text))
+                  (char-whitespace? (string-ref text end)))
+            ;; Extract potential URL
+            (let* ((url-text (substring text (+ start 1) end)))
+              (if (or (string-prefix? "http://" url-text)
+                      (string-prefix? "https://" url-text)
+                      (string-contains url-text ".com")
+                      (string-contains url-text ".org")
+                      (string-contains url-text ".net"))
+                (begin
+                  (echo-message! echo (string-append "Opening: " url-text))
+                  ;; Use xdg-open or browser
+                  (with-exception-catcher
+                    (lambda (e) (echo-error! echo "Failed to open URL"))
+                    (lambda ()
+                      (let ((proc (open-process
+                                    (list path: "xdg-open"
+                                          arguments: (list url-text)
+                                          stdin-redirection: #f
+                                          stdout-redirection: #f
+                                          stderr-redirection: #f))))
+                        (echo-message! echo "Opened in browser")))))
+                (echo-message! echo "No URL at point")))
+            (find-end (+ end 1))))
+        (loop (- start 1))))))
 
 ;; Windmove
 (def (cmd-windmove-left app)
@@ -3135,24 +3236,75 @@
 
 ;; EWW web browser operations
 (def (cmd-eww-back app)
-  "Go back in EWW history (stub)."
-  (echo-message! (app-state-echo app) "EWW: back (stub)"))
+  "Go back in EWW history."
+  (let ((echo (app-state-echo app)))
+    (if (>= (+ *eww-history-idx* 1) (length *eww-history*))
+      (echo-message! echo "No previous page")
+      (let* ((new-idx (+ *eww-history-idx* 1))
+             (url (list-ref *eww-history* new-idx)))
+        (set! *eww-history-idx* new-idx)
+        (let ((content (eww-fetch-url url)))
+          (if content
+            (eww-display-page app url content)
+            (echo-error! echo "Failed to fetch page")))))))
 
 (def (cmd-eww-forward app)
-  "Go forward in EWW history (stub)."
-  (echo-message! (app-state-echo app) "EWW: forward (stub)"))
+  "Go forward in EWW history."
+  (let ((echo (app-state-echo app)))
+    (if (<= *eww-history-idx* 0)
+      (echo-message! echo "No next page")
+      (let* ((new-idx (- *eww-history-idx* 1))
+             (url (list-ref *eww-history* new-idx)))
+        (set! *eww-history-idx* new-idx)
+        (let ((content (eww-fetch-url url)))
+          (if content
+            (eww-display-page app url content)
+            (echo-error! echo "Failed to fetch page")))))))
 
 (def (cmd-eww-reload app)
-  "Reload current EWW page (stub)."
-  (echo-message! (app-state-echo app) "EWW: reload (stub)"))
+  "Reload current EWW page."
+  (let ((echo (app-state-echo app)))
+    (if (not *eww-current-url*)
+      (echo-message! echo "No page to reload")
+      (begin
+        (echo-message! echo (string-append "Reloading: " *eww-current-url*))
+        (let ((content (eww-fetch-url *eww-current-url*)))
+          (if content
+            (eww-display-page app *eww-current-url* content)
+            (echo-error! echo "Failed to reload page")))))))
 
 (def (cmd-eww-download app)
-  "Download URL in EWW (stub)."
-  (echo-message! (app-state-echo app) "EWW: download (stub)"))
+  "Download file from URL."
+  (let* ((echo (app-state-echo app))
+         (fr (app-state-frame app))
+         (row (- (frame-height fr) 1))
+         (width (frame-width fr))
+         (url (echo-read-string echo "Download URL: " row width)))
+    (when (and url (not (string-empty? url)))
+      (let ((filename (path-strip-directory url)))
+        (echo-message! echo (string-append "Downloading: " filename))
+        (with-exception-catcher
+          (lambda (e) (echo-error! echo "Download failed"))
+          (lambda ()
+            (let ((proc (open-process
+                          (list path: "curl"
+                                arguments: (list "-sLO" url)
+                                stdin-redirection: #f
+                                stdout-redirection: #t
+                                stderr-redirection: #t))))
+              (process-status proc)
+              (echo-message! echo (string-append "Downloaded: " filename)))))))))
 
 (def (cmd-eww-copy-page-url app)
-  "Copy current EWW page URL (stub)."
-  (echo-message! (app-state-echo app) "EWW: URL copied (stub)"))
+  "Copy current EWW page URL to kill ring."
+  (let ((echo (app-state-echo app)))
+    (if (not *eww-current-url*)
+      (echo-message! echo "No URL to copy")
+      (begin
+        ;; Add to kill ring
+        (let ((kill-ring (app-state-kill-ring app)))
+          (set! (app-state-kill-ring app) (cons *eww-current-url* kill-ring)))
+        (echo-message! echo (string-append "Copied: " *eww-current-url*))))))
 
 ;; EMMS (Emacs Multimedia System) stubs
 (def (cmd-emms app)
