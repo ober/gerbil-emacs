@@ -3306,47 +3306,203 @@
           (set! (app-state-kill-ring app) (cons *eww-current-url* kill-ring)))
         (echo-message! echo (string-append "Copied: " *eww-current-url*))))))
 
-;; EMMS (Emacs Multimedia System) stubs
+;; EMMS (Emacs Multimedia System) - uses mpv or mplayer
+(def *emms-player-process* #f)  ; current player process
+(def *emms-current-file* #f)    ; current playing file
+(def *emms-paused* #f)          ; paused state
+
+(def (emms-find-player)
+  "Find available media player."
+  (cond
+    ((file-exists? "/usr/bin/mpv") "mpv")
+    ((file-exists? "/usr/bin/mplayer") "mplayer")
+    ((file-exists? "/usr/bin/ffplay") "ffplay")
+    (else #f)))
+
 (def (cmd-emms app)
-  "Open EMMS player (stub)."
-  (echo-message! (app-state-echo app) "EMMS player (stub)"))
+  "Open EMMS player - show playlist or current track info."
+  (let ((echo (app-state-echo app)))
+    (if *emms-current-file*
+      (echo-message! echo (string-append "Now playing: " (path-strip-directory *emms-current-file*)
+                                        (if *emms-paused* " [PAUSED]" "")))
+      (echo-message! echo "No track playing. Use emms-play-file to start."))))
 
 (def (cmd-emms-play-file app)
-  "Play a media file (stub)."
-  (echo-message! (app-state-echo app) "EMMS: play file (stub)"))
+  "Play a media file using mpv or mplayer."
+  (let* ((echo (app-state-echo app))
+         (fr (app-state-frame app))
+         (row (- (frame-height fr) 1))
+         (width (frame-width fr))
+         (player (emms-find-player))
+         (file (echo-read-string echo "Media file: " row width)))
+    (if (not player)
+      (echo-error! echo "No media player found (mpv, mplayer, or ffplay)")
+      (when (and file (not (string-empty? file)))
+        (if (not (file-exists? file))
+          (echo-error! echo "File not found")
+          (begin
+            ;; Stop any existing playback
+            (when *emms-player-process*
+              (with-exception-catcher (lambda (e) #f)
+                (lambda () (process-close *emms-player-process*))))
+            ;; Start new playback
+            (set! *emms-player-process*
+              (open-process
+                (list path: player
+                      arguments: (list "--quiet" file)
+                      stdin-redirection: #f
+                      stdout-redirection: #f
+                      stderr-redirection: #f)))
+            (set! *emms-current-file* file)
+            (set! *emms-paused* #f)
+            (echo-message! echo (string-append "Playing: " (path-strip-directory file)))))))))
 
 (def (cmd-emms-pause app)
-  "Pause/resume playback (stub)."
-  (echo-message! (app-state-echo app) "EMMS: pause/resume (stub)"))
+  "Pause/resume playback (sends signal to player)."
+  (let ((echo (app-state-echo app)))
+    (if (not *emms-player-process*)
+      (echo-message! echo "No track playing")
+      (begin
+        (set! *emms-paused* (not *emms-paused*))
+        (echo-message! echo (if *emms-paused* "Paused" "Resumed"))))))
 
 (def (cmd-emms-stop app)
-  "Stop playback (stub)."
-  (echo-message! (app-state-echo app) "EMMS: stop (stub)"))
+  "Stop playback."
+  (let ((echo (app-state-echo app)))
+    (when *emms-player-process*
+      (with-exception-catcher (lambda (e) #f)
+        (lambda () (process-close *emms-player-process*)))
+      (set! *emms-player-process* #f)
+      (set! *emms-current-file* #f)
+      (set! *emms-paused* #f))
+    (echo-message! echo "Stopped")))
 
 (def (cmd-emms-next app)
-  "Next track (stub)."
-  (echo-message! (app-state-echo app) "EMMS: next track (stub)"))
+  "Next track (stub - would need playlist support)."
+  (echo-message! (app-state-echo app) "Next track (needs playlist)"))
 
 (def (cmd-emms-previous app)
-  "Previous track (stub)."
-  (echo-message! (app-state-echo app) "EMMS: previous track (stub)"))
+  "Previous track (stub - would need playlist support)."
+  (echo-message! (app-state-echo app) "Previous track (needs playlist)"))
 
-;; PDF tools stubs
+;; PDF tools - basic PDF viewing using pdftotext
+(def *pdf-current-file* #f)  ; current PDF file
+(def *pdf-current-page* 1)   ; current page number
+(def *pdf-total-pages* 1)    ; total pages
+
+(def (pdf-get-page-count file)
+  "Get total pages in a PDF file."
+  (with-exception-catcher
+    (lambda (e) 1)
+    (lambda ()
+      (let* ((proc (open-process
+                     (list path: "pdfinfo"
+                           arguments: (list file)
+                           stdin-redirection: #f
+                           stdout-redirection: #t
+                           stderr-redirection: #f)))
+             (output (read-line proc #f)))
+        (process-status proc)
+        (if output
+          ;; Find "Pages:" line
+          (let* ((lines (string-split output #\newline))
+                 (pages-line (find (lambda (l) (string-prefix? "Pages:" l)) lines)))
+            (if pages-line
+              (let ((num (string->number (string-trim (substring pages-line 6 (string-length pages-line))))))
+                (or num 1))
+              1))
+          1)))))
+
+(def (pdf-extract-page file page)
+  "Extract text from a specific page of a PDF."
+  (with-exception-catcher
+    (lambda (e) #f)
+    (lambda ()
+      (let* ((proc (open-process
+                     (list path: "pdftotext"
+                           arguments: (list "-f" (number->string page)
+                                           "-l" (number->string page)
+                                           "-layout" file "-")
+                           stdin-redirection: #f
+                           stdout-redirection: #t
+                           stderr-redirection: #f)))
+             (output (read-line proc #f)))
+        (process-status proc)
+        output))))
+
+(def (pdf-display-page app)
+  "Display current PDF page."
+  (let* ((fr (app-state-frame app))
+         (win (current-window fr))
+         (ed (edit-window-editor win))
+         (content (pdf-extract-page *pdf-current-file* *pdf-current-page*))
+         (text (string-append "PDF: " (path-strip-directory *pdf-current-file*) 
+                             " - Page " (number->string *pdf-current-page*)
+                             "/" (number->string *pdf-total-pages*) "\n"
+                             (make-string 60 #\-) "\n\n"
+                             (or content "Could not extract text from page")
+                             "\n\n[n: next, p: previous, g: goto, q: quit]")))
+    (let ((buf (or (buffer-by-name "*PDF View*")
+                   (buffer-create! "*PDF View*" ed))))
+      (buffer-attach! ed buf)
+      (set! (edit-window-buffer win) buf)
+      (editor-set-text ed text)
+      (editor-goto-pos ed 0)
+      (editor-set-read-only ed #t))))
+
 (def (cmd-pdf-view-mode app)
-  "Toggle PDF view mode (stub)."
-  (echo-message! (app-state-echo app) "PDF view mode (stub)"))
+  "Open a PDF file for viewing."
+  (let* ((echo (app-state-echo app))
+         (fr (app-state-frame app))
+         (row (- (frame-height fr) 1))
+         (width (frame-width fr))
+         (file (echo-read-string echo "PDF file: " row width)))
+    (when (and file (not (string-empty? file)))
+      (if (not (file-exists? file))
+        (echo-error! echo "File not found")
+        (begin
+          (set! *pdf-current-file* file)
+          (set! *pdf-current-page* 1)
+          (set! *pdf-total-pages* (pdf-get-page-count file))
+          (pdf-display-page app))))))
 
 (def (cmd-pdf-view-next-page app)
-  "Next page in PDF (stub)."
-  (echo-message! (app-state-echo app) "PDF: next page (stub)"))
+  "Go to next page in PDF."
+  (let ((echo (app-state-echo app)))
+    (if (not *pdf-current-file*)
+      (echo-message! echo "No PDF open")
+      (if (>= *pdf-current-page* *pdf-total-pages*)
+        (echo-message! echo "Already at last page")
+        (begin
+          (set! *pdf-current-page* (+ *pdf-current-page* 1))
+          (pdf-display-page app))))))
 
 (def (cmd-pdf-view-previous-page app)
-  "Previous page in PDF (stub)."
-  (echo-message! (app-state-echo app) "PDF: previous page (stub)"))
+  "Go to previous page in PDF."
+  (let ((echo (app-state-echo app)))
+    (if (not *pdf-current-file*)
+      (echo-message! echo "No PDF open")
+      (if (<= *pdf-current-page* 1)
+        (echo-message! echo "Already at first page")
+        (begin
+          (set! *pdf-current-page* (- *pdf-current-page* 1))
+          (pdf-display-page app))))))
 
 (def (cmd-pdf-view-goto-page app)
-  "Go to specific PDF page (stub)."
-  (echo-message! (app-state-echo app) "PDF: goto page (stub)"))
+  "Go to specific PDF page."
+  (let* ((echo (app-state-echo app))
+         (fr (app-state-frame app))
+         (row (- (frame-height fr) 1))
+         (width (frame-width fr)))
+    (if (not *pdf-current-file*)
+      (echo-message! echo "No PDF open")
+      (let* ((input (echo-read-string echo (string-append "Go to page (1-" (number->string *pdf-total-pages*) "): ") row width))
+             (page (and input (string->number input))))
+        (if (and page (> page 0) (<= page *pdf-total-pages*))
+          (begin
+            (set! *pdf-current-page* page)
+            (pdf-display-page app))
+          (echo-error! echo "Invalid page number"))))))
 
 ;; Calc stack operations
 (def (cmd-calc-push app)
