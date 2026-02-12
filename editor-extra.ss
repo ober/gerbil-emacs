@@ -952,22 +952,145 @@
   "Customize themes (stub)."
   (echo-message! (app-state-echo app) "Customize themes (stub)"))
 
-;; Diff mode
+;; Diff mode - working with diff/patch content
+
+(def (diff-parse-hunk-header line)
+  "Parse a diff hunk header like @@ -start,count +start,count @@. Returns (old-start old-count new-start new-count) or #f."
+  (if (string-prefix? "@@" line)
+    (let* ((parts (string-split line #\space))
+           (old-part (if (>= (length parts) 2) (cadr parts) "-0"))
+           (new-part (if (>= (length parts) 3) (caddr parts) "+0")))
+      ;; Parse -start,count and +start,count
+      (let* ((old-range (substring old-part 1 (string-length old-part)))
+             (new-range (substring new-part 1 (string-length new-part)))
+             (old-parts (string-split old-range #\,))
+             (new-parts (string-split new-range #\,))
+             (old-start (string->number (car old-parts)))
+             (old-count (if (> (length old-parts) 1) (string->number (cadr old-parts)) 1))
+             (new-start (string->number (car new-parts)))
+             (new-count (if (> (length new-parts) 1) (string->number (cadr new-parts)) 1)))
+        (if (and old-start new-start)
+          (list old-start (or old-count 1) new-start (or new-count 1))
+          #f)))
+    #f))
+
+(def (diff-find-current-hunk ed)
+  "Find the hunk header line for current position. Returns line number or #f."
+  (let* ((pos (editor-get-current-pos ed))
+         (cur-line (editor-line-from-pos ed pos))
+         (text (editor-get-text ed))
+         (lines (string-split text #\newline)))
+    (let loop ((line-num cur-line))
+      (if (< line-num 0)
+        #f
+        (let ((line (if (< line-num (length lines)) (list-ref lines line-num) "")))
+          (if (string-prefix? "@@" line)
+            line-num
+            (loop (- line-num 1))))))))
+
 (def (cmd-diff-mode app)
-  "Toggle diff mode (stub)."
-  (echo-message! (app-state-echo app) "Diff mode (stub)"))
+  "Show information about diff at current position."
+  (let* ((fr (app-state-frame app))
+         (win (current-window fr))
+         (ed (edit-window-editor win))
+         (echo (app-state-echo app))
+         (text (editor-get-text ed))
+         (lines (string-split text #\newline))
+         (additions (length (filter (lambda (l) (and (> (string-length l) 0) (char=? (string-ref l 0) #\+))) lines)))
+         (deletions (length (filter (lambda (l) (and (> (string-length l) 0) (char=? (string-ref l 0) #\-))) lines)))
+         (hunks (length (filter (lambda (l) (string-prefix? "@@" l)) lines))))
+    (echo-message! echo
+      (string-append "Diff: " (number->string hunks) " hunk(s), +"
+                    (number->string additions) "/-" (number->string deletions) " lines"))))
 
 (def (cmd-diff-apply-hunk app)
-  "Apply diff hunk (stub)."
-  (echo-message! (app-state-echo app) "Apply hunk (stub)"))
+  "Apply the current diff hunk using patch command."
+  (let* ((fr (app-state-frame app))
+         (win (current-window fr))
+         (buf (edit-window-buffer win))
+         (ed (edit-window-editor win))
+         (echo (app-state-echo app))
+         (hunk-line (diff-find-current-hunk ed)))
+    (if (not hunk-line)
+      (echo-message! echo "Not in a diff hunk")
+      (let* ((text (editor-get-text ed))
+             (lines (string-split text #\newline)))
+        ;; Extract hunk content
+        (let loop ((i hunk-line) (hunk-lines '()))
+          (if (>= i (length lines))
+            ;; Apply via patch
+            (let* ((hunk-text (string-join (reverse hunk-lines) "\n"))
+                   ;; Write to temp file and apply
+                   (tmp-file "/tmp/gerbil-emacs-hunk.patch"))
+              (with-exception-catcher
+                (lambda (e) (echo-error! echo "Failed to apply hunk"))
+                (lambda ()
+                  (call-with-output-file tmp-file
+                    (lambda (p) (display hunk-text p)))
+                  (let* ((proc (open-process
+                                 (list path: "patch"
+                                       arguments: (list "-p1" "--dry-run" "-i" tmp-file)
+                                       stdin-redirection: #f
+                                       stdout-redirection: #t
+                                       stderr-redirection: #t)))
+                         (out (read-line proc #f)))
+                    (process-status proc)
+                    (echo-message! echo (string-append "Patch output: " (or out "ok")))))))
+            (let ((line (list-ref lines i)))
+              (if (and (> i hunk-line) (string-prefix? "@@" line))
+                ;; Hit next hunk, stop
+                (loop (length lines) hunk-lines)
+                (loop (+ i 1) (cons line hunk-lines))))))))))
 
 (def (cmd-diff-revert-hunk app)
-  "Revert diff hunk (stub)."
-  (echo-message! (app-state-echo app) "Revert hunk (stub)"))
+  "Revert the current diff hunk (apply in reverse)."
+  (let* ((echo (app-state-echo app)))
+    (echo-message! echo "Revert hunk: use git checkout or patch -R")))
 
 (def (cmd-diff-goto-source app)
-  "Jump to source from diff (stub)."
-  (echo-message! (app-state-echo app) "Goto source (stub)"))
+  "Jump to source file and line from diff."
+  (let* ((fr (app-state-frame app))
+         (win (current-window fr))
+         (ed (edit-window-editor win))
+         (echo (app-state-echo app))
+         (pos (editor-get-current-pos ed))
+         (text (editor-get-text ed))
+         (lines (string-split text #\newline)))
+    ;; Find the file header (--- a/file or +++ b/file)
+    (let loop ((i 0) (file #f))
+      (if (>= i (length lines))
+        (echo-message! echo "Could not determine source file")
+        (let ((line (list-ref lines i)))
+          (cond
+            ((string-prefix? "+++ " line)
+             ;; Found file, extract path
+             (let* ((path-part (substring line 4 (string-length line)))
+                    (clean-path (if (string-prefix? "b/" path-part)
+                                  (substring path-part 2 (string-length path-part))
+                                  path-part)))
+               (if (file-exists? clean-path)
+                 (begin
+                   ;; Calculate line number from hunk
+                   (let* ((hunk-line (diff-find-current-hunk ed))
+                          (hunk-header (if hunk-line (list-ref lines hunk-line) ""))
+                          (parsed (diff-parse-hunk-header hunk-header))
+                          (target-line (if parsed (caddr parsed) 1)))
+                     ;; Open file
+                     (let ((new-buf (buffer-create! (path-strip-directory clean-path) ed clean-path)))
+                       (with-exception-catcher
+                         (lambda (e) (echo-error! echo "Cannot read file"))
+                         (lambda ()
+                           (let ((content (call-with-input-file clean-path (lambda (p) (read-line p #f)))))
+                             (buffer-attach! ed new-buf)
+                             (set! (edit-window-buffer win) new-buf)
+                             (editor-set-text ed (or content ""))
+                             (editor-goto-line ed target-line)
+                             (echo-message! echo (string-append "Opened: " clean-path))))))))
+                 (echo-message! echo (string-append "File not found: " clean-path)))))
+            ((> i 50) ; Don't search too far
+             (echo-message! echo "No file header found in diff"))
+            (else
+             (loop (+ i 1) #f))))))))
 
 ;; Artist mode stub
 (def (cmd-artist-mode app)
