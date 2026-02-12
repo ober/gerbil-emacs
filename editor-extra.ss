@@ -2579,12 +2579,66 @@
 
 ;; Calendar extras
 (def (cmd-calendar-goto-date app)
-  "Go to specific date in calendar (stub)."
-  (echo-message! (app-state-echo app) "Calendar goto date (stub)"))
+  "Show calendar for a specific month/year."
+  (let* ((echo (app-state-echo app))
+         (fr (app-state-frame app))
+         (row (- (frame-height fr) 1))
+         (width (frame-width fr))
+         (input (echo-read-string echo "Month/Year (MM/YYYY or YYYY-MM): " row width)))
+    (when (and input (not (string-empty? input)))
+      (let* ((parts (or (string-split input #\/)
+                       (string-split input #\-)))
+             (month (if (>= (length parts) 1) (string->number (car parts)) #f))
+             (year (if (>= (length parts) 2) (string->number (cadr parts)) #f)))
+        ;; Handle YYYY-MM format
+        (when (and month (> month 1900))
+          (let ((tmp month))
+            (set! month year)
+            (set! year tmp)))
+        (if (and month year (> month 0) (<= month 12) (> year 1900))
+          (let* ((cal-text (with-exception-catcher
+                            (lambda (e) "Calendar not available")
+                            (lambda ()
+                              (let ((p (open-process
+                                         (list path: "cal"
+                                               arguments: (list (number->string month)
+                                                               (number->string year))
+                                               stdin-redirection: #f stdout-redirection: #t
+                                               stderr-redirection: #f))))
+                                (let ((out (read-line p #f)))
+                                  (process-status p)
+                                  (or out "Error")))))))
+            (open-output-buffer app "*Calendar*" cal-text))
+          (echo-error! echo "Invalid date format"))))))
 
 (def (cmd-calendar-holidays app)
-  "Show holidays (stub)."
-  (echo-message! (app-state-echo app) "Holidays (stub)"))
+  "Show US holidays for the current year."
+  (let* ((year (with-exception-catcher
+                 (lambda (e) 2024)
+                 (lambda ()
+                   (let* ((p (open-process
+                               (list path: "date"
+                                     arguments: '("+%Y")
+                                     stdin-redirection: #f stdout-redirection: #t
+                                     stderr-redirection: #f)))
+                          (out (read-line p)))
+                     (process-status p)
+                     (or (string->number (string-trim out)) 2024)))))
+         (holidays (string-append
+                     "US Holidays for " (number->string year) "\n"
+                     (make-string 40 #\=) "\n\n"
+                     "January 1      - New Year's Day\n"
+                     "January 15*    - Martin Luther King Jr. Day (3rd Monday)\n"
+                     "February 19*   - Presidents' Day (3rd Monday)\n"
+                     "May 27*        - Memorial Day (Last Monday)\n"
+                     "July 4         - Independence Day\n"
+                     "September 2*   - Labor Day (1st Monday)\n"
+                     "October 14*    - Columbus Day (2nd Monday)\n"
+                     "November 11    - Veterans Day\n"
+                     "November 28*   - Thanksgiving (4th Thursday)\n"
+                     "December 25    - Christmas Day\n\n"
+                     "* Date varies by year\n")))
+    (open-output-buffer app "*Holidays*" holidays)))
 
 ;; ERC/IRC
 (def (cmd-erc app)
