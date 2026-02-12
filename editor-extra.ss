@@ -2933,22 +2933,223 @@
   "Contract selection region (stub)."
   (echo-message! (app-state-echo app) "Contract region (stub)"))
 
-;; Smartparens
+;; Smartparens - structural editing for s-expressions
+;; These commands manipulate parentheses around expressions
+
+(def (sp-find-enclosing-paren ed pos open-char close-char)
+  "Find the position of the enclosing open paren before pos."
+  (let ((text (editor-get-text ed)))
+    (let loop ((i (- pos 1)) (depth 0))
+      (if (< i 0)
+        #f
+        (let ((ch (string-ref text i)))
+          (cond
+            ((char=? ch close-char) (loop (- i 1) (+ depth 1)))
+            ((char=? ch open-char)
+             (if (= depth 0) i (loop (- i 1) (- depth 1))))
+            (else (loop (- i 1) depth))))))))
+
+(def (sp-find-matching-close ed pos open-char close-char)
+  "Find the position of the matching close paren after pos."
+  (let* ((text (editor-get-text ed))
+         (len (string-length text)))
+    (let loop ((i pos) (depth 1))
+      (if (>= i len)
+        #f
+        (let ((ch (string-ref text i)))
+          (cond
+            ((char=? ch open-char) (loop (+ i 1) (+ depth 1)))
+            ((char=? ch close-char)
+             (if (= depth 1) i (loop (+ i 1) (- depth 1))))
+            (else (loop (+ i 1) depth))))))))
+
+(def (sp-find-sexp-end ed pos)
+  "Find the end of the sexp starting at or after pos."
+  (let* ((text (editor-get-text ed))
+         (len (string-length text)))
+    ;; Skip whitespace
+    (let skip ((i pos))
+      (if (>= i len)
+        #f
+        (let ((ch (string-ref text i)))
+          (cond
+            ((char-whitespace? ch) (skip (+ i 1)))
+            ((char=? ch #\() (sp-find-matching-close ed (+ i 1) #\( #\)))
+            ((char=? ch #\[) (sp-find-matching-close ed (+ i 1) #\[ #\]))
+            ((char=? ch #\{) (sp-find-matching-close ed (+ i 1) #\{ #\}))
+            ;; Symbol/atom - find end
+            (else
+             (let find-end ((j i))
+               (if (>= j len)
+                 (- j 1)
+                 (let ((c (string-ref text j)))
+                   (if (or (char-whitespace? c)
+                           (memv c '(#\( #\) #\[ #\] #\{ #\})))
+                     (- j 1)
+                     (find-end (+ j 1)))))))))))))
+
 (def (cmd-sp-forward-slurp-sexp app)
-  "Smartparens forward slurp (stub)."
-  (echo-message! (app-state-echo app) "SP: forward slurp (stub)"))
+  "Slurp the next sexp into the current list. (|a b) c -> (|a b c)"
+  (let* ((fr (app-state-frame app))
+         (win (current-window fr))
+         (ed (edit-window-editor win))
+         (pos (editor-get-current-pos ed))
+         (text (editor-get-text ed))
+         (echo (app-state-echo app)))
+    ;; Find the closing paren of enclosing list
+    (let ((open-pos (sp-find-enclosing-paren ed pos #\( #\))))
+      (if (not open-pos)
+        (echo-message! echo "Not inside a list")
+        (let ((close-pos (sp-find-matching-close ed (+ open-pos 1) #\( #\))))
+          (if (not close-pos)
+            (echo-message! echo "Unbalanced parens")
+            ;; Find the next sexp after the close paren
+            (let ((next-end (sp-find-sexp-end ed (+ close-pos 1))))
+              (if (not next-end)
+                (echo-message! echo "Nothing to slurp")
+                (begin
+                  ;; Delete the close paren
+                  (editor-set-selection ed close-pos (+ close-pos 1))
+                  (editor-replace-selection ed "")
+                  ;; Insert close paren after the slurped sexp
+                  (editor-insert-text ed next-end ")")
+                  (echo-message! echo "Slurped forward"))))))))))
 
 (def (cmd-sp-forward-barf-sexp app)
-  "Smartparens forward barf (stub)."
-  (echo-message! (app-state-echo app) "SP: forward barf (stub)"))
+  "Barf the last sexp out of the current list. (a b| c) -> (a b|) c"
+  (let* ((fr (app-state-frame app))
+         (win (current-window fr))
+         (ed (edit-window-editor win))
+         (pos (editor-get-current-pos ed))
+         (text (editor-get-text ed))
+         (echo (app-state-echo app)))
+    (let ((open-pos (sp-find-enclosing-paren ed pos #\( #\))))
+      (if (not open-pos)
+        (echo-message! echo "Not inside a list")
+        (let ((close-pos (sp-find-matching-close ed (+ open-pos 1) #\( #\))))
+          (if (not close-pos)
+            (echo-message! echo "Unbalanced parens")
+            ;; Find the last sexp before the close paren
+            (let loop ((i (- close-pos 1)))
+              (if (<= i open-pos)
+                (echo-message! echo "Nothing to barf")
+                (let ((ch (string-ref text i)))
+                  (cond
+                    ((char-whitespace? ch) (loop (- i 1)))
+                    (else
+                     ;; Found end of last sexp, find its start
+                     (let find-start ((j i))
+                       (if (<= j open-pos)
+                         (echo-message! echo "Nothing to barf")
+                         (let ((c (string-ref text j)))
+                           (cond
+                             ((char=? c #\))
+                              (let ((match (sp-find-enclosing-paren ed (+ j 1) #\( #\))))
+                                (if match
+                                  (begin
+                                    ;; Delete close paren, insert before sexp
+                                    (editor-set-selection ed close-pos (+ close-pos 1))
+                                    (editor-replace-selection ed "")
+                                    (editor-insert-text ed match ")")
+                                    (echo-message! echo "Barfed forward"))
+                                  (echo-message! echo "Parse error"))))
+                             ((char-whitespace? c) (find-start (- j 1)))
+                             (else
+                              ;; At end of atom, scan back
+                              (let scan-atom ((k j))
+                                (if (<= k open-pos)
+                                  (begin
+                                    (editor-set-selection ed close-pos (+ close-pos 1))
+                                    (editor-replace-selection ed "")
+                                    (editor-insert-text ed (+ open-pos 1) ")")
+                                    (echo-message! echo "Barfed forward"))
+                                  (let ((cc (string-ref text k)))
+                                    (if (or (char-whitespace? cc)
+                                            (memv cc '(#\( #\))))
+                                      (begin
+                                        (editor-set-selection ed close-pos (+ close-pos 1))
+                                        (editor-replace-selection ed "")
+                                        (editor-insert-text ed (+ k 1) ")")
+                                        (echo-message! echo "Barfed forward"))
+                                      (scan-atom (- k 1)))))))))))))))))))))
 
 (def (cmd-sp-backward-slurp-sexp app)
-  "Smartparens backward slurp (stub)."
-  (echo-message! (app-state-echo app) "SP: backward slurp (stub)"))
+  "Slurp the previous sexp into the current list. a (|b c) -> (a |b c)"
+  (let* ((fr (app-state-frame app))
+         (win (current-window fr))
+         (ed (edit-window-editor win))
+         (pos (editor-get-current-pos ed))
+         (text (editor-get-text ed))
+         (echo (app-state-echo app)))
+    (let ((open-pos (sp-find-enclosing-paren ed pos #\( #\))))
+      (if (not open-pos)
+        (echo-message! echo "Not inside a list")
+        ;; Find the sexp before the open paren
+        (let find-prev ((i (- open-pos 1)))
+          (if (< i 0)
+            (echo-message! echo "Nothing to slurp")
+            (let ((ch (string-ref text i)))
+              (cond
+                ((char-whitespace? ch) (find-prev (- i 1)))
+                ((char=? ch #\))
+                 ;; End of sexp, find its start
+                 (let ((match (sp-find-enclosing-paren ed (+ i 1) #\( #\))))
+                   (if match
+                     (begin
+                       ;; Delete the open paren, insert before the sexp
+                       (editor-set-selection ed open-pos (+ open-pos 1))
+                       (editor-replace-selection ed "")
+                       (editor-insert-text ed match "(")
+                       (echo-message! echo "Slurped backward"))
+                     (echo-message! echo "Parse error"))))
+                (else
+                 ;; Atom, find its start
+                 (let scan-back ((j i))
+                   (if (< j 0)
+                     (begin
+                       (editor-set-selection ed open-pos (+ open-pos 1))
+                       (editor-replace-selection ed "")
+                       (editor-insert-text ed 0 "(")
+                       (echo-message! echo "Slurped backward"))
+                     (let ((c (string-ref text j)))
+                       (if (or (char-whitespace? c)
+                               (memv c '(#\( #\))))
+                         (begin
+                           (editor-set-selection ed open-pos (+ open-pos 1))
+                           (editor-replace-selection ed "")
+                           (editor-insert-text ed (+ j 1) "(")
+                           (echo-message! echo "Slurped backward"))
+                         (scan-back (- j 1)))))))))))))))
 
 (def (cmd-sp-backward-barf-sexp app)
-  "Smartparens backward barf (stub)."
-  (echo-message! (app-state-echo app) "SP: backward barf (stub)"))
+  "Barf the first sexp out of the current list. (a |b c) -> a (|b c)"
+  (let* ((fr (app-state-frame app))
+         (win (current-window fr))
+         (ed (edit-window-editor win))
+         (pos (editor-get-current-pos ed))
+         (text (editor-get-text ed))
+         (echo (app-state-echo app)))
+    (let ((open-pos (sp-find-enclosing-paren ed pos #\( #\))))
+      (if (not open-pos)
+        (echo-message! echo "Not inside a list")
+        ;; Find the first sexp after the open paren
+        (let find-first ((i (+ open-pos 1)))
+          (if (>= i (string-length text))
+            (echo-message! echo "Nothing to barf")
+            (let ((ch (string-ref text i)))
+              (cond
+                ((char-whitespace? ch) (find-first (+ i 1)))
+                (else
+                 ;; Found start of first sexp, find its end
+                 (let ((sexp-end (sp-find-sexp-end ed i)))
+                   (if (not sexp-end)
+                     (echo-message! echo "Parse error")
+                     (begin
+                       ;; Delete open paren, insert after first sexp
+                       (editor-set-selection ed open-pos (+ open-pos 1))
+                       (editor-replace-selection ed "")
+                       (editor-insert-text ed sexp-end "(")
+                       (echo-message! echo "Barfed backward")))))))))))))
 
 ;; Project.el - project detection and navigation
 ;; Projects are detected by presence of .git, .hg, .svn, or project markers
