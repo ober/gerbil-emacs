@@ -3523,27 +3523,213 @@
   "Swap top two calc stack items (stub)."
   (echo-message! (app-state-echo app) "Calc: swap (stub)"))
 
-;; Ace-jump / Avy navigation
+;; Ace-jump / Avy navigation - quick cursor movement
+;; Simplified implementation: searches for matches in visible text and jumps
+
+(def (avy-find-all-matches ed char-or-pattern)
+  "Find all positions matching char or pattern in editor text."
+  (let* ((text (editor-get-text ed))
+         (len (string-length text))
+         (pattern (if (char? char-or-pattern) 
+                    (string char-or-pattern) 
+                    char-or-pattern)))
+    (let loop ((i 0) (matches '()))
+      (if (>= i len)
+        (reverse matches)
+        (if (and (< (+ i (string-length pattern)) len)
+                 (string-ci=? (substring text i (+ i (string-length pattern))) pattern))
+          (loop (+ i 1) (cons i matches))
+          (loop (+ i 1) matches))))))
+
 (def (cmd-avy-goto-char app)
-  "Jump to character (stub)."
-  (echo-message! (app-state-echo app) "Avy: goto char (stub)"))
+  "Jump to character - prompts for char, finds all occurrences, jumps to selected one."
+  (let* ((echo (app-state-echo app))
+         (fr (app-state-frame app))
+         (win (current-window fr))
+         (ed (edit-window-editor win))
+         (row (- (frame-height fr) 1))
+         (width (frame-width fr))
+         (input (echo-read-string echo "Jump to char: " row width)))
+    (when (and input (> (string-length input) 0))
+      (let* ((ch (string-ref input 0))
+             (matches (avy-find-all-matches ed ch)))
+        (if (null? matches)
+          (echo-message! echo "No matches found")
+          (if (= (length matches) 1)
+            ;; Single match - jump directly
+            (begin
+              (editor-goto-pos ed (car matches))
+              (echo-message! echo "Jumped!"))
+            ;; Multiple matches - jump to first for now
+            (begin
+              (editor-goto-pos ed (car matches))
+              (echo-message! echo (string-append "Jumped to first of " 
+                                                (number->string (length matches)) 
+                                                " matches (use search for more)")))))))))
 
 (def (cmd-avy-goto-word app)
-  "Jump to word (stub)."
-  (echo-message! (app-state-echo app) "Avy: goto word (stub)"))
+  "Jump to word - prompts for word prefix, finds matches, jumps."
+  (let* ((echo (app-state-echo app))
+         (fr (app-state-frame app))
+         (win (current-window fr))
+         (ed (edit-window-editor win))
+         (row (- (frame-height fr) 1))
+         (width (frame-width fr))
+         (prefix (echo-read-string echo "Jump to word starting with: " row width)))
+    (when (and prefix (not (string-empty? prefix)))
+      ;; Find word boundaries and match prefix
+      (let* ((text (editor-get-text ed))
+             (len (string-length text))
+             (plen (string-length prefix)))
+        (let loop ((i 0) (in-word #f) (matches '()))
+          (if (>= i len)
+            (if (null? matches)
+              (echo-message! echo "No matching words found")
+              (begin
+                (editor-goto-pos ed (car (reverse matches)))
+                (echo-message! echo (string-append "Jumped to first of "
+                                                  (number->string (length matches)) " matches"))))
+            (let ((ch (string-ref text i)))
+              (cond
+                ((and (not in-word) (char-alphabetic? ch))
+                 ;; Word start - check prefix
+                 (if (and (<= (+ i plen) len)
+                          (string-ci=? (substring text i (+ i plen)) prefix))
+                   (loop (+ i 1) #t (cons i matches))
+                   (loop (+ i 1) #t matches)))
+                ((and in-word (not (char-alphabetic? ch)))
+                 (loop (+ i 1) #f matches))
+                (else
+                 (loop (+ i 1) in-word matches))))))))))
 
 (def (cmd-avy-goto-line app)
-  "Jump to line (stub)."
-  (echo-message! (app-state-echo app) "Avy: goto line (stub)"))
+  "Jump to line - prompts for line number."
+  (let* ((echo (app-state-echo app))
+         (fr (app-state-frame app))
+         (win (current-window fr))
+         (ed (edit-window-editor win))
+         (row (- (frame-height fr) 1))
+         (width (frame-width fr))
+         (input (echo-read-string echo "Jump to line: " row width)))
+    (when (and input (not (string-empty? input)))
+      (let ((line (string->number input)))
+        (if (and line (> line 0))
+          (begin
+            (editor-goto-line ed line)
+            (echo-message! echo (string-append "Line " (number->string line))))
+          (echo-error! echo "Invalid line number"))))))
 
-;; Expand-region
+;; Expand-region - progressively expand selection
+;; Expansion order: word -> symbol -> quotes -> parens -> line -> paragraph
+
+(def *expand-region-history* '())  ; stack of (start . end) for contract
+
+(def (expand-find-word ed pos text)
+  "Find word boundaries around pos."
+  (let* ((len (string-length text))
+         (start (let loop ((i pos))
+                  (if (or (< i 0)
+                          (not (or (char-alphabetic? (string-ref text i))
+                                   (char-numeric? (string-ref text i))
+                                   (char=? (string-ref text i) #\_))))
+                    (+ i 1)
+                    (loop (- i 1)))))
+         (end (let loop ((i pos))
+                (if (or (>= i len)
+                        (not (or (char-alphabetic? (string-ref text i))
+                                 (char-numeric? (string-ref text i))
+                                 (char=? (string-ref text i) #\_))))
+                  i
+                  (loop (+ i 1))))))
+    (if (< start end) (cons start end) #f)))
+
+(def (expand-find-quotes ed pos text)
+  "Find enclosing quotes around pos."
+  (let* ((len (string-length text))
+         ;; Look backwards for opening quote
+         (start (let loop ((i (- pos 1)))
+                  (if (< i 0)
+                    #f
+                    (let ((ch (string-ref text i)))
+                      (if (memv ch '(#\" #\' #\`))
+                        i
+                        (loop (- i 1)))))))
+         ;; Look forwards for closing quote
+         (end (and start
+                   (let ((quote-char (string-ref text start)))
+                     (let loop ((i (+ pos 1)))
+                       (if (>= i len)
+                         #f
+                         (let ((ch (string-ref text i)))
+                           (if (char=? ch quote-char)
+                             (+ i 1)
+                             (loop (+ i 1))))))))))
+    (if (and start end) (cons start end) #f)))
+
+(def (expand-find-parens ed pos text)
+  "Find enclosing parens around pos."
+  (let ((open (sp-find-enclosing-paren ed pos #\( #\))))
+    (if open
+      (let ((close (sp-find-matching-close ed (+ open 1) #\( #\))))
+        (if close (cons open (+ close 1)) #f))
+      #f)))
+
+(def (expand-find-line ed pos text)
+  "Find line boundaries around pos."
+  (let* ((len (string-length text))
+         (start (let loop ((i pos))
+                  (if (or (< i 0) (char=? (string-ref text i) #\newline))
+                    (+ i 1)
+                    (loop (- i 1)))))
+         (end (let loop ((i pos))
+                (if (or (>= i len) (char=? (string-ref text i) #\newline))
+                  i
+                  (loop (+ i 1))))))
+    (cons start end)))
+
 (def (cmd-expand-region app)
-  "Expand selection region (stub)."
-  (echo-message! (app-state-echo app) "Expand region (stub)"))
+  "Expand selection region progressively."
+  (let* ((fr (app-state-frame app))
+         (win (current-window fr))
+         (ed (edit-window-editor win))
+         (echo (app-state-echo app))
+         (pos (editor-get-current-pos ed))
+         (sel-start (editor-get-selection-start ed))
+         (sel-end (editor-get-selection-end ed))
+         (text (editor-get-text ed)))
+    ;; Save current selection for contract
+    (when (not (= sel-start sel-end))
+      (set! *expand-region-history* (cons (cons sel-start sel-end) *expand-region-history*)))
+    ;; Try expanding in order
+    (let ((current-size (- sel-end sel-start)))
+      (let try-expand ((expansions (list 
+                                     (expand-find-word ed pos text)
+                                     (expand-find-quotes ed pos text)
+                                     (expand-find-parens ed pos text)
+                                     (expand-find-line ed pos text))))
+        (if (null? expansions)
+          (echo-message! echo "Cannot expand further")
+          (let ((exp (car expansions)))
+            (if (and exp (> (- (cdr exp) (car exp)) current-size))
+              (begin
+                (editor-set-selection ed (car exp) (cdr exp))
+                (echo-message! echo "Expanded"))
+              (try-expand (cdr expansions)))))))))
 
 (def (cmd-contract-region app)
-  "Contract selection region (stub)."
-  (echo-message! (app-state-echo app) "Contract region (stub)"))
+  "Contract selection to previous size."
+  (let ((echo (app-state-echo app))
+        (fr (app-state-frame app))
+        (win (current-window fr))
+        (ed (edit-window-editor win)))
+    (if (null? *expand-region-history*)
+      (begin
+        (editor-set-selection ed (editor-get-current-pos ed) (editor-get-current-pos ed))
+        (echo-message! echo "Selection cleared"))
+      (let ((prev (car *expand-region-history*)))
+        (set! *expand-region-history* (cdr *expand-region-history*))
+        (editor-set-selection ed (car prev) (cdr prev))
+        (echo-message! echo "Contracted")))))
 
 ;; Smartparens - structural editing for s-expressions
 ;; These commands manipulate parentheses around expressions
