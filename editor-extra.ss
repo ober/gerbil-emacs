@@ -1679,13 +1679,127 @@
     (editor-insert-text ed (editor-get-current-pos ed) "- ")))
 
 ;; Auto-insert templates
+;; Templates for common file types
+
+(def *auto-insert-enabled* #t)
+
+(def (auto-insert-get-template ext filename)
+  "Get template content for a file extension."
+  (let ((base (path-strip-extension filename)))
+    (cond
+      ((member ext '(".ss" ".scm"))
+       (string-append ";;; -*- Gerbil -*-\n"
+                      ";;; " filename "\n"
+                      ";;;\n\n"
+                      "(export )\n\n"
+                      "(import :std/sugar)\n\n"
+                      ";;;============================================================================\n\n"))
+      ((member ext '(".py"))
+       (string-append "#!/usr/bin/env python3\n"
+                      "\"\"\"" filename "\n\n"
+                      "Description here.\n"
+                      "\"\"\"\n\n"
+                      "def main():\n"
+                      "    pass\n\n"
+                      "if __name__ == '__main__':\n"
+                      "    main()\n"))
+      ((member ext '(".sh" ".bash"))
+       (string-append "#!/bin/bash\n"
+                      "# " filename "\n"
+                      "# Description here.\n\n"
+                      "set -euo pipefail\n\n"))
+      ((member ext '(".c"))
+       (string-append "/*\n"
+                      " * " filename "\n"
+                      " * Description here.\n"
+                      " */\n\n"
+                      "#include <stdio.h>\n"
+                      "#include <stdlib.h>\n\n"
+                      "int main(int argc, char *argv[]) {\n"
+                      "    return 0;\n"
+                      "}\n"))
+      ((member ext '(".h"))
+       (let ((guard (string-append (string-upcase base) "_H")))
+         (string-append "#ifndef " guard "\n"
+                        "#define " guard "\n\n"
+                        "/* " filename " */\n\n"
+                        "#endif /* " guard " */\n")))
+      ((member ext '(".go"))
+       (string-append "// " filename "\n"
+                      "package main\n\n"
+                      "func main() {\n"
+                      "}\n"))
+      ((member ext '(".rs"))
+       (string-append "// " filename "\n\n"
+                      "fn main() {\n"
+                      "    println!(\"Hello, world!\");\n"
+                      "}\n"))
+      ((member ext '(".js" ".mjs"))
+       (string-append "// " filename "\n"
+                      "'use strict';\n\n"
+                      "function main() {\n"
+                      "}\n\n"
+                      "main();\n"))
+      ((member ext '(".html"))
+       (string-append "<!DOCTYPE html>\n"
+                      "<html lang=\"en\">\n"
+                      "<head>\n"
+                      "    <meta charset=\"UTF-8\">\n"
+                      "    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n"
+                      "    <title>" base "</title>\n"
+                      "</head>\n"
+                      "<body>\n"
+                      "    \n"
+                      "</body>\n"
+                      "</html>\n"))
+      ((member ext '(".css"))
+       (string-append "/* " filename " */\n\n"
+                      "* {\n"
+                      "    box-sizing: border-box;\n"
+                      "}\n\n"
+                      "body {\n"
+                      "    margin: 0;\n"
+                      "    padding: 0;\n"
+                      "}\n"))
+      ((member ext '(".md"))
+       (string-append "# " base "\n\n"
+                      "## Overview\n\n"
+                      "Description here.\n\n"
+                      "## Usage\n\n"
+                      "```\n"
+                      "example\n"
+                      "```\n"))
+      ((member ext '(".json"))
+       "{\n}\n")
+      ((member ext '(".yaml" ".yml"))
+       (string-append "# " filename "\n---\n\n"))
+      (else #f))))
+
 (def (cmd-auto-insert app)
-  "Insert file template based on file extension (stub)."
-  (echo-message! (app-state-echo app) "Auto-insert (stub)"))
+  "Insert file template based on file extension."
+  (let* ((fr (app-state-frame app))
+         (win (current-window fr))
+         (buf (edit-window-buffer win))
+         (file (and buf (buffer-file-path buf)))
+         (ed (edit-window-editor win))
+         (echo (app-state-echo app)))
+    (if (not file)
+      (echo-message! echo "Buffer has no associated file")
+      (let* ((ext (path-extension file))
+             (filename (path-strip-directory file))
+             (template (auto-insert-get-template ext filename)))
+        (if (not template)
+          (echo-message! echo (string-append "No template for " ext " files"))
+          (begin
+            (editor-set-text ed template)
+            (editor-goto-pos ed (string-length template))
+            (echo-message! echo (string-append "Inserted template for " ext))))))))
 
 (def (cmd-auto-insert-mode app)
-  "Toggle auto-insert mode (stub)."
-  (echo-message! (app-state-echo app) "Auto-insert mode toggled (stub)"))
+  "Toggle auto-insert mode."
+  (set! *auto-insert-enabled* (not *auto-insert-enabled*))
+  (echo-message! (app-state-echo app)
+    (if *auto-insert-enabled* "Auto-insert enabled" "Auto-insert disabled")))
 
 ;; Text scale (font size)
 (def (cmd-text-scale-increase app)
