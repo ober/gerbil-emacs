@@ -853,7 +853,9 @@
    last-command  ; symbol or #f: name of last executed command
    prefix-arg    ; any: current prefix argument (#f, integer, or list for C-u)
    prefix-digit-mode? ; boolean: are we currently collecting digit arguments?
-   key-handler)  ; procedure or #f: (lambda (editor) ...) installs key handler on editor
+   key-handler   ; procedure or #f: (lambda (editor) ...) installs key handler on editor
+   winner-history      ; list of window configs: ((num-windows current-idx buffers) ...)
+   winner-history-idx) ; integer: current position in winner-history for redo
   transparent: #t)
 
 (def (new-app-state frame)
@@ -878,7 +880,9 @@
    #f                    ; last-command
    #f                    ; prefix-arg
    #f                    ; prefix-digit-mode?
-   #f))                  ; key-handler
+   #f                    ; key-handler
+   []                    ; winner-history
+   0))                   ; winner-history-idx
 
 (def (get-prefix-arg app (default 1))
   "Get the numeric value of the current prefix argument."

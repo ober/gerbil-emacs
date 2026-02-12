@@ -3,7 +3,8 @@
 ;;;
 ;;; Split from editor.ss due to Gerbil compiler limits on module size.
 
-(export register-extra-commands!)
+(export register-extra-commands!
+        winner-save-config!)
 
 (import :std/sugar
         :std/sort
@@ -195,14 +196,113 @@
   "Move to window below (same as windmove-right in vertical layout)."
   (cmd-windmove-right app))
 
-;; Winner mode (window configuration undo/redo stubs)
+;; Winner mode (window configuration undo/redo)
+;; Saves/restores: number of windows, current window index, buffer names per window
+
+(def *winner-max-history* 50) ; Max configs to remember
+
+(def (winner-save-config! app)
+  "Save current window configuration to winner history."
+  (let* ((fr (app-state-frame app))
+         (wins (frame-windows fr))
+         (num-wins (length wins))
+         (current-idx (frame-current-idx fr))
+         (buffers (map (lambda (w)
+                         (let ((buf (edit-window-buffer w)))
+                           (if buf (buffer-name buf) "*scratch*")))
+                       wins))
+         (config (list num-wins current-idx buffers))
+         (history (app-state-winner-history app)))
+    ;; Don't save duplicate consecutive configs
+    (unless (and (not (null? history))
+                 (equal? config (car history)))
+      ;; Truncate future (redo) history when adding new config
+      (let ((idx (app-state-winner-history-idx app)))
+        (when (> idx 0)
+          (set! history (list-tail history idx))
+          (set! (app-state-winner-history-idx app) 0)))
+      ;; Add new config, limit size
+      (let ((new-history (cons config history)))
+        (set! (app-state-winner-history app)
+          (if (> (length new-history) *winner-max-history*)
+            (take new-history *winner-max-history*)
+            new-history))))))
+
+(def (winner-restore-config! app config)
+  "Restore a window configuration from winner history."
+  (let* ((target-num-wins (car config))
+         (target-idx (cadr config))
+         (target-buffers (caddr config))
+         (fr (app-state-frame app))
+         (current-wins (length (frame-windows fr))))
+    ;; Adjust number of windows
+    (cond
+      ((> target-num-wins current-wins)
+       ;; Need more windows - split
+       (let loop ((n (- target-num-wins current-wins)))
+         (when (> n 0)
+           (frame-split! fr)
+           (loop (- n 1)))))
+      ((< target-num-wins current-wins)
+       ;; Need fewer windows - delete extras
+       (let loop ((n (- current-wins target-num-wins)))
+         (when (and (> n 0) (> (length (frame-windows fr)) 1))
+           (frame-delete-window! fr (frame-current-idx fr))
+           (loop (- n 1))))))
+    ;; Set current window index
+    (let ((max-idx (- (length (frame-windows fr)) 1)))
+      (set! (frame-current-idx fr) (min target-idx max-idx)))
+    ;; Restore buffers to windows (by name)
+    (let ((wins (frame-windows fr)))
+      (for-each
+        (lambda (win buf-name)
+          (let ((buf (buffer-by-name buf-name)))
+            (when buf
+              (let ((ed (edit-window-editor win)))
+                (buffer-attach! ed buf)
+                (set! (edit-window-buffer win) buf)))))
+        wins
+        (take target-buffers (length wins))))
+    ;; Relayout
+    (frame-layout! fr)))
+
 (def (cmd-winner-undo app)
-  "Undo window configuration change (stub)."
-  (echo-message! (app-state-echo app) "Winner undo (stub)"))
+  "Undo window configuration change - restore previous window layout."
+  (let* ((history (app-state-winner-history app))
+         (idx (app-state-winner-history-idx app))
+         (echo (app-state-echo app)))
+    (if (>= (+ idx 1) (length history))
+      (echo-message! echo "No earlier window configuration")
+      (begin
+        ;; Save current config first if at index 0
+        (when (= idx 0)
+          (winner-save-config! app))
+        ;; Move back in history
+        (let ((new-idx (+ idx 1)))
+          (set! (app-state-winner-history-idx app) new-idx)
+          (let ((config (list-ref (app-state-winner-history app) new-idx)))
+            (winner-restore-config! app config)
+            (echo-message! echo
+              (string-append "Winner: restored config "
+                            (number->string (- (length history) new-idx))
+                            "/" (number->string (length history))))))))))
 
 (def (cmd-winner-redo app)
-  "Redo window configuration change (stub)."
-  (echo-message! (app-state-echo app) "Winner redo (stub)"))
+  "Redo window configuration change - restore next window layout."
+  (let* ((idx (app-state-winner-history-idx app))
+         (echo (app-state-echo app)))
+    (if (<= idx 0)
+      (echo-message! echo "No later window configuration")
+      (begin
+        (let ((new-idx (- idx 1)))
+          (set! (app-state-winner-history-idx app) new-idx)
+          (let* ((history (app-state-winner-history app))
+                 (config (list-ref history new-idx)))
+            (winner-restore-config! app config)
+            (echo-message! echo
+              (string-append "Winner: restored config "
+                            (number->string (- (length history) new-idx))
+                            "/" (number->string (length history))))))))))
 
 ;; Tab-bar commands
 (def (cmd-tab-new app)
@@ -2680,8 +2780,10 @@
 
 ;; Winner mode
 (def (cmd-winner-mode app)
-  "Toggle winner mode (stub)."
-  (echo-message! (app-state-echo app) "Winner mode (stub)"))
+  "Toggle winner mode. Winner mode is always enabled; this command reports status."
+  (let ((history-len (length (app-state-winner-history app))))
+    (echo-message! (app-state-echo app)
+      (string-append "Winner mode enabled. History: " (number->string history-len) " configs"))))
 
 ;; Whitespace toggle
 (def (cmd-global-whitespace-mode app)
@@ -3128,8 +3230,8 @@
   (echo-message! (app-state-echo app) "Recentf mode: toggle (stub)"))
 
 (def (cmd-winner-undo-2 app)
-  "Winner undo alternative binding (stub)."
-  (echo-message! (app-state-echo app) "Winner: undo (stub)"))
+  "Winner undo alternative binding."
+  (cmd-winner-undo app)))
 
 (def (cmd-global-subword-mode app)
   "Toggle global subword-mode (CamelCase navigation) (stub)."
