@@ -1352,26 +1352,203 @@
 
 ;; --- Task #47: xref, ibuffer, which-key, markdown, auto-insert, and more ---
 
-;; Xref cross-reference navigation
+;; Xref cross-reference navigation using grep
+;; History stack for navigation
+
+(def *xref-history* '())     ; list of (file line col) for back navigation
+(def *xref-forward* '())     ; list of (file line col) for forward navigation
+
+(def (xref-push-location! app)
+  "Save current location to xref history."
+  (let* ((fr (app-state-frame app))
+         (win (current-window fr))
+         (buf (edit-window-buffer win))
+         (ed (edit-window-editor win))
+         (file (and buf (buffer-file-path buf)))
+         (line (editor-line-from-pos ed (editor-get-current-pos ed)))
+         (col 0))
+    (when file
+      (set! *xref-history* (cons (list file line col) *xref-history*))
+      (set! *xref-forward* '()))))
+
+(def (xref-get-symbol-at-point app)
+  "Get the symbol at point."
+  (let* ((fr (app-state-frame app))
+         (win (current-window fr))
+         (ed (edit-window-editor win)))
+    (let-values (((start end) (word-bounds-at ed (editor-get-current-pos ed))))
+      (if start
+        (let ((text (editor-get-text ed)))
+          (substring text start end))
+        #f))))
+
+(def (xref-grep-for-pattern pattern dir definition?)
+  "Search for pattern using grep. Returns list of (file line text)."
+  (with-exception-catcher
+    (lambda (e) '())
+    (lambda ()
+      (let* ((grep-pattern (if definition?
+                             ;; Look for definition patterns
+                             (string-append "(def[a-z]*\\s+" pattern "\\b|"
+                                           pattern "\\s*[=:]|"
+                                           "function\\s+" pattern "\\b|"
+                                           "class\\s+" pattern "\\b)")
+                             ;; Look for any occurrence
+                             (string-append "\\b" pattern "\\b")))
+             (proc (open-process
+                     (list path: "grep"
+                           arguments: (list "-rn" "-E" grep-pattern dir
+                                           "--include=*.ss" "--include=*.scm"
+                                           "--include=*.py" "--include=*.js"
+                                           "--include=*.go" "--include=*.rs"
+                                           "--include=*.c" "--include=*.h"
+                                           "--include=*.cpp" "--include=*.hpp")
+                           stdin-redirection: #f
+                           stdout-redirection: #t
+                           stderr-redirection: #f)))
+             (output (read-line proc #f)))
+        (process-status proc)
+        (if (not output)
+          '()
+          (let ((lines (string-split output #\newline)))
+            (filter-map
+              (lambda (line)
+                (let ((parts (string-split line #\:)))
+                  (if (>= (length parts) 3)
+                    (let ((file (car parts))
+                          (line-num (string->number (cadr parts)))
+                          (text (string-join (cddr parts) ":")))
+                      (and line-num (list file line-num (string-trim text))))
+                    #f)))
+              lines)))))))
+
+(def (xref-show-results app results title symbol)
+  "Show xref results in a buffer."
+  (if (null? results)
+    (echo-message! (app-state-echo app) (string-append "No results for: " symbol))
+    (if (= (length results) 1)
+      ;; Single result - jump directly
+      (let* ((result (car results))
+             (file (car result))
+             (line (cadr result)))
+        (xref-push-location! app)
+        (xref-goto-location app file line)
+        (echo-message! (app-state-echo app) (string-append "Found: " symbol)))
+      ;; Multiple results - show in buffer
+      (let* ((fr (app-state-frame app))
+             (win (current-window fr))
+             (ed (edit-window-editor win))
+             (buf (buffer-create! (string-append "*xref: " symbol "*") ed))
+             (text (string-append title "\n\n"
+                     (string-join
+                       (map (lambda (r)
+                              (string-append (car r) ":" (number->string (cadr r)) ": " (caddr r)))
+                            results)
+                       "\n")
+                     "\n\nPress Enter on a line to jump to that location.")))
+        (xref-push-location! app)
+        (buffer-attach! ed buf)
+        (set! (edit-window-buffer win) buf)
+        (editor-set-text ed text)
+        (editor-goto-pos ed 0)
+        (editor-set-read-only ed #t)))))
+
+(def (xref-goto-location app file line)
+  "Jump to a file and line."
+  (let* ((fr (app-state-frame app))
+         (win (current-window fr))
+         (ed (edit-window-editor win)))
+    ;; Open the file
+    (when (file-exists? file)
+      (let* ((name (path-strip-directory file))
+             (buf (or (buffer-by-name name)
+                      (buffer-create! name ed file)))
+             (text (call-with-input-file file (lambda (p) (read-line p #f)))))
+        (buffer-attach! ed buf)
+        (set! (edit-window-buffer win) buf)
+        (set! (buffer-file-path buf) file)
+        (editor-set-text ed (or text ""))
+        (editor-goto-line ed line)))))
+
 (def (cmd-xref-find-definitions app)
-  "Find definitions of symbol at point (stub)."
-  (echo-message! (app-state-echo app) "Xref: find definitions (stub)"))
+  "Find definitions of symbol at point using grep."
+  (let ((symbol (xref-get-symbol-at-point app))
+        (echo (app-state-echo app)))
+    (if (not symbol)
+      (echo-message! echo "No symbol at point")
+      (let* ((fr (app-state-frame app))
+             (win (current-window fr))
+             (buf (edit-window-buffer win))
+             (file (and buf (buffer-file-path buf)))
+             (dir (if file (path-directory file) (current-directory)))
+             (results (xref-grep-for-pattern symbol dir #t)))
+        (xref-show-results app results
+          (string-append "Definitions of: " symbol) symbol)))))
 
 (def (cmd-xref-find-references app)
-  "Find references to symbol at point (stub)."
-  (echo-message! (app-state-echo app) "Xref: find references (stub)"))
+  "Find references to symbol at point using grep."
+  (let ((symbol (xref-get-symbol-at-point app))
+        (echo (app-state-echo app)))
+    (if (not symbol)
+      (echo-message! echo "No symbol at point")
+      (let* ((fr (app-state-frame app))
+             (win (current-window fr))
+             (buf (edit-window-buffer win))
+             (file (and buf (buffer-file-path buf)))
+             (dir (if file (path-directory file) (current-directory)))
+             (results (xref-grep-for-pattern symbol dir #f)))
+        (xref-show-results app results
+          (string-append "References to: " symbol) symbol)))))
 
 (def (cmd-xref-find-apropos app)
-  "Find symbols matching pattern (stub)."
-  (echo-message! (app-state-echo app) "Xref: find apropos (stub)"))
+  "Find symbols matching prompted pattern."
+  (let* ((echo (app-state-echo app))
+         (fr (app-state-frame app))
+         (row (- (frame-height fr) 1))
+         (width (frame-width fr))
+         (pattern (echo-read-string echo "Find symbol matching: " row width)))
+    (when (and pattern (not (string-empty? pattern)))
+      (let* ((win (current-window fr))
+             (buf (edit-window-buffer win))
+             (file (and buf (buffer-file-path buf)))
+             (dir (if file (path-directory file) (current-directory)))
+             (results (xref-grep-for-pattern pattern dir #f)))
+        (xref-show-results app results
+          (string-append "Symbols matching: " pattern) pattern)))))
 
 (def (cmd-xref-go-back app)
-  "Pop back to previous xref location (stub)."
-  (echo-message! (app-state-echo app) "Xref: go back (stub)"))
+  "Go back to previous xref location."
+  (let ((echo (app-state-echo app)))
+    (if (null? *xref-history*)
+      (echo-message! echo "No xref history")
+      (let* ((loc (car *xref-history*))
+             (file (car loc))
+             (line (cadr loc)))
+        ;; Save current position for forward
+        (let* ((fr (app-state-frame app))
+               (win (current-window fr))
+               (buf (edit-window-buffer win))
+               (ed (edit-window-editor win))
+               (cur-file (and buf (buffer-file-path buf)))
+               (cur-line (editor-line-from-pos ed (editor-get-current-pos ed))))
+          (when cur-file
+            (set! *xref-forward* (cons (list cur-file cur-line 0) *xref-forward*))))
+        (set! *xref-history* (cdr *xref-history*))
+        (xref-goto-location app file line)
+        (echo-message! echo "Xref: back")))))
 
 (def (cmd-xref-go-forward app)
-  "Go forward in xref history (stub)."
-  (echo-message! (app-state-echo app) "Xref: go forward (stub)"))
+  "Go forward in xref history."
+  (let ((echo (app-state-echo app)))
+    (if (null? *xref-forward*)
+      (echo-message! echo "No forward xref history")
+      (let* ((loc (car *xref-forward*))
+             (file (car loc))
+             (line (cadr loc)))
+        (xref-push-location! app)
+        (set! *xref-forward* (cdr *xref-forward*))
+        (xref-goto-location app file line)
+        (echo-message! echo "Xref: forward")))))
 
 ;; Ibuffer - advanced buffer management
 (def (cmd-ibuffer app)
