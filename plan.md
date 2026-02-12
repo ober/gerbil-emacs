@@ -13,6 +13,159 @@
 
 ---
 
+## ⚠️ Implementation Audit (2026-02-12)
+
+### Summary
+A detailed code review revealed that while core features marked as "completed" are genuinely
+implemented, the codebase contains **~850 stub functions** that only display "(stub)" messages.
+These stubs provide command registration and keybindings but NO actual functionality.
+
+### Stub Count by File
+| File | Stub Count | Notes |
+|------|------------|-------|
+| `editor.ss` | 98 | Various toggles, modes, and minor features |
+| `editor-extra.ss` | 750 | Major feature categories (see below) |
+
+### Features That Are STUBS (Not Implemented)
+
+#### Org-mode (12 stubs)
+- `org-mode`, `org-todo`, `org-schedule`, `org-deadline`, `org-agenda`
+- `org-export`, `org-table-create`, `org-link`, `org-store-link`
+- `org-open-at-point`, `org-cycle`, `org-shift-tab`
+
+#### Smartparens / Paredit (6+ stubs)
+- `sp-forward-slurp-sexp`, `sp-forward-barf-sexp`
+- `sp-backward-slurp-sexp`, `sp-backward-barf-sexp`
+- `paredit-raise-sexp`, `paredit-wrap-round`
+
+#### Multiple Cursors (4 stubs)
+- `mc/mark-next-like-this`, `mc/mark-previous-like-this`
+- `mc/mark-all-like-this`, `mc/edit-lines`
+
+#### LSP Support (6 stubs)
+- `lsp-find-declaration`, `lsp-find-implementation`
+- `lsp-rename`, `lsp-format-buffer`
+- `lsp-execute-code-action`, `lsp-describe-thing-at-point`
+
+#### DAP (Debug Adapter Protocol) (6 stubs)
+- `dap-debug`, `dap-breakpoint-toggle`, `dap-continue`
+- `dap-next`, `dap-step-in`, `dap-step-out`
+
+#### Xref / Navigation (5 stubs)
+- `xref-find-definitions`, `xref-find-references`
+- `xref-find-apropos`, `xref-go-back`, `xref-go-forward`
+
+#### Flycheck (4 stubs)
+- `flycheck-mode`, `flycheck-next-error`
+- `flycheck-previous-error`, `flycheck-list-errors`
+
+#### Spell Checking (8+ stubs)
+- `flyspell-mode`, `flyspell-buffer`, `flyspell-correct-word`
+- `flyspell-auto-correct-word`, `flyspell-goto-next-error`
+- `ispell-word`, `ispell-buffer`, `ispell-region`
+
+#### Package Management (4 stubs)
+- `package-list-packages`, `package-install`
+- `package-delete`, `package-refresh-contents`
+
+#### Tabs (6 stubs)
+- `tab-new`, `tab-close`, `tab-next`, `tab-previous`
+- `tab-rename`, `tab-move`
+
+#### Winner Mode (2 stubs)
+- `winner-undo`, `winner-redo`
+
+#### EWW Browser (8 stubs)
+- `eww`, `eww-browse-url`, `browse-url-at-point`
+- `eww-back-url`, `eww-forward-url`, `eww-reload`
+- `eww-download`, `eww-copy-page-url`
+
+#### Mail / News (3 stubs)
+- `compose-mail`, `rmail`, `gnus`
+
+#### Customize / Themes (6+ stubs)
+- `customize-group`, `customize-variable`, `customize-themes`
+- `load-theme`, `disable-theme`, `describe-theme`
+
+#### Project.el (5 stubs)
+- `project-switch-project`, `project-find-regexp`
+- `project-shell`, `project-dired`, `project-eshell`
+
+#### Treemacs / Speedbar (3 stubs)
+- `treemacs`, `treemacs-find-file`, `speedbar`
+
+#### Diff / Ediff (6 stubs)
+- `diff-mode`, `diff-apply-hunk`, `diff-revert-hunk`, `diff-goto-source`
+- `ediff-files`, `ediff-regions-linewise`, `ediff-merge-files`
+
+#### Modern Completion (Vertico/Consult/etc) (12+ stubs)
+- `vertico-mode`, `consult-line`, `consult-grep`, `consult-buffer`
+- `corfu-mode`, `orderless-mode`, `marginalia-mode`
+- `embark-act`, `embark-dwim`, `cape-dabbrev`, `cape-file`
+
+#### Programming Modes (15+ stubs)
+- `python-mode`, `c-mode`, `c++-mode`, `java-mode`
+- `rust-mode`, `go-mode`, `js-mode`, `typescript-mode`
+- `html-mode`, `css-mode`, `lua-mode`, `ruby-mode`, `sh-mode`
+- `scheme-mode`, `gerbil-mode`, `emacs-lisp-mode`
+
+#### Debugger (GUD/GDB) (6 stubs)
+- `gdb`, `gud-break`, `gud-remove`, `gud-cont`, `gud-next`, `gud-step`
+
+#### Snippets (3 stubs)
+- `yas-insert-snippet`, `yas-new-snippet`, `yas-visit-snippet-file`
+
+#### Git Gutter (5 stubs)
+- `git-gutter-mode`, `git-gutter:next-hunk`, `git-gutter:previous-hunk`
+- `git-gutter:revert-hunk`, `git-gutter:stage-hunk`
+
+#### AI/Copilot (4 stubs)
+- `copilot-mode`, `copilot-accept-completion`, `copilot-next-completion`
+- `gptel`, `gptel-send`
+
+#### And Many More...
+- Abbreviations (abbrev-mode, define-abbrev, etc.)
+- Auto-insert templates
+- Artist mode (ASCII drawing)
+- Calendar/diary beyond basic display
+- Docker integration
+- Evil/Meow modal editing
+- Folding (origami, hs-minor-mode)
+- Games (tetris, snake, dunnet, etc.)
+- EMMS (media player)
+- PDF viewing
+- Printing
+- SLIME/SLY
+- TRAMP (remote editing)
+- Undo-tree visualization
+- Wgrep (editable grep)
+- And ~600 more toggle/mode commands
+
+### Features That ARE Fully Implemented
+
+| Feature | Implementation | Files |
+|---------|----------------|-------|
+| Syntax highlighting | Full Scintilla lexer + Qt highlighter | `highlight.ss`, `qt/highlight.ss` |
+| Image viewing | Full Qt dialog with zoom | `qt/image.ss` |
+| Shell mode | Full subprocess with ANSI stripping | `shell.ss`, `qt/commands.ss` |
+| Eshell | 18+ builtins, pipelines, Gerbil eval | `eshell.ss` |
+| M-x execute-command | Full with completion | `editor.ss` |
+| Goto line | Full implementation | `editor.ss` |
+| Query replace | Full y/n/!/q support | `editor.ss` |
+| Rectangle ops | kill/yank/open/string-rectangle | `editor.ss` |
+| Universal argument | C-u, C-u C-u, digit args | `editor.ss` |
+| Auto-save | 30s timer, #file# naming | `editor.ss`, `qt/app.ss` |
+| Help system | describe-key/command/bindings | `editor.ss` |
+| Buffer list | Full buffer list display | `editor.ss` |
+| Completion (Qt) | QCompleter integration | `qt/commands.ss` |
+| Goto matching paren | Full brace matching | `editor.ss` |
+| Line numbers | Toggle display | `editor.ss` |
+| Dired | Directory browsing, navigation | `editor.ss`, `qt/commands.ss` |
+| REPL | Full gxi subprocess | `repl.ss` |
+| Window splitting | Horizontal split, other-window | `window.ss`, `qt/window.ss` |
+
+---
+
 ## Phase 1: Gerbil Syntax Highlighting ✅ COMPLETED
 
 ### Goal
@@ -224,8 +377,9 @@ gerbil> ls -la | (lambda (line) (string-contains line ".ss"))
 - `C-x r o` — Open (insert space) rectangle
 
 ### 5e. Multiple Cursors / Repeat
-- `C-u N command` — Repeat command N times (stub)
-- Universal argument support (stub)
+- ❌ Multiple cursors (STUB - 4 functions)
+- ✅ `C-u N command` — Repeat command N times (IMPLEMENTED)
+- ✅ Universal argument support: digits and negative prefixes (IMPLEMENTED)
 
 ### 5f. Auto-save and Backup ✅
 - Timer-based auto-save to `#filename#` (Qt backend, 30s interval)
@@ -259,36 +413,53 @@ gerbil> ls -la | (lambda (line) (string-contains line ".ss"))
 - Jump to matching paren with `C-M-f` / `C-M-b`
 
 ### 6c. Line Numbers ✅
-- Toggle line number display
-- Relative line numbers mode (stub)
+- ✅ Toggle line number display (IMPLEMENTED)
+- ❌ Relative line numbers mode (STUB)
 
-### 6d. Undo Tree
-- Visualize undo history (not implemented)
-- Branch between undo states (not implemented)
+### 6d. Undo Tree ❌ STUB
+- ❌ Visualize undo history (STUB)
+- ❌ Branch between undo states (STUB)
 
 ---
 
 ## Implementation Status
 
-| Phase | Status |
-|-------|--------|
-| Phase 1a: TUI Syntax Highlighting | ✅ Completed |
-| Phase 1b: Qt Syntax Highlighting | ✅ Completed (20+ languages) |
-| Phase 2: Image Viewing | ✅ Completed |
-| Phase 3: Terminal Mode | ✅ Completed |
-| Phase 4: Eshell | ✅ Completed |
-| Phase 5a: M-x | ✅ Completed |
-| Phase 5b: Goto Line | ✅ Completed |
-| Phase 5c: Replace String | ✅ Completed |
-| Phase 5d: Rectangle Ops | ✅ Completed |
-| Phase 5e: Universal Argument | 🔸 Stub |
-| Phase 5f: Auto-save/Backup | ✅ Completed |
-| Phase 5g: Help System | ✅ Completed |
-| Phase 5h: Buffer List | ✅ Completed |
-| Phase 6a: Completion | ✅ Completed |
-| Phase 6b: Paren Matching | ✅ Completed |
-| Phase 6c: Line Numbers | ✅ Completed |
-| Phase 6d: Undo Tree | ❌ Not implemented |
+| Phase | Status | Notes |
+|-------|--------|-------|
+| Phase 1a: TUI Syntax Highlighting | ✅ Completed | Full Scintilla lexer |
+| Phase 1b: Qt Syntax Highlighting | ✅ Completed | 20+ languages |
+| Phase 2: Image Viewing | ✅ Completed | Qt only, with zoom |
+| Phase 3: Terminal Mode | ✅ Completed | Shell subprocess |
+| Phase 4: Eshell | ✅ Completed | 18+ builtins |
+| Phase 5a: M-x | ✅ Completed | With completion |
+| Phase 5b: Goto Line | ✅ Completed | |
+| Phase 5c: Replace String | ✅ Completed | Interactive y/n/!/q |
+| Phase 5d: Rectangle Ops | ✅ Completed | kill/yank/open/string |
+| Phase 5e: Universal Argument | ✅ Completed | C-u N, digit args |
+| Phase 5f: Auto-save/Backup | ✅ Completed | 30s timer |
+| Phase 5g: Help System | ✅ Completed | describe-key/command |
+| Phase 5h: Buffer List | ✅ Completed | |
+| Phase 6a: Completion | ✅ Completed | Qt QCompleter |
+| Phase 6b: Paren Matching | ✅ Completed | |
+| Phase 6c: Line Numbers | ✅ Completed | Toggle only |
+| Phase 6d: Undo Tree | ❌ Stub | Display only |
+
+### Stub Categories (NOT Implemented)
+
+| Category | Stub Count | Priority |
+|----------|------------|----------|
+| Org-mode | 12 | Low (complex) |
+| LSP/DAP | 12 | High (useful) |
+| Smartparens/Paredit | 6 | Medium |
+| Multiple Cursors | 4 | Medium |
+| Flycheck | 4 | High |
+| Spell checking | 8 | Medium |
+| Git gutter | 5 | Medium |
+| Mode toggles | ~100 | Low (mostly display) |
+| Programming modes | 15 | Low (syntax only) |
+| Modern completion | 12 | Medium |
+| Other features | ~600 | Varies |
+| **TOTAL** | **~850** | |
 
 ---
 
