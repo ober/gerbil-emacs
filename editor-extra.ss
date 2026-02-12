@@ -2692,26 +2692,147 @@
   "Smartparens backward barf (stub)."
   (echo-message! (app-state-echo app) "SP: backward barf (stub)"))
 
-;; Project.el extras
+;; Project.el - project detection and navigation
+;; Projects are detected by presence of .git, .hg, .svn, or project markers
+
+(def *project-markers* '(".git" ".hg" ".svn" ".project" "Makefile" "package.json" 
+                         "Cargo.toml" "go.mod" "build.ss" "gerbil.pkg"))
+(def *project-history* '()) ; list of project roots
+
+(def (project-find-root dir)
+  "Find project root by looking for project markers. Returns root or #f."
+  (let loop ((d (path-normalize dir)))
+    (if (or (string=? d "/") (string=? d ""))
+      #f
+      (if (ormap (lambda (marker)
+                   (let ((path (path-expand marker d)))
+                     (or (file-exists? path)
+                         (directory-exists? path))))
+                 *project-markers*)
+        d
+        (loop (path-directory d))))))
+
+(def (project-current app)
+  "Get current project root based on current buffer's file."
+  (let* ((fr (app-state-frame app))
+         (win (current-window fr))
+         (buf (edit-window-buffer win))
+         (file (and buf (buffer-file-path buf))))
+    (if file
+      (project-find-root (path-directory file))
+      (project-find-root (current-directory)))))
+
 (def (cmd-project-switch-project app)
-  "Switch to another project (stub)."
-  (echo-message! (app-state-echo app) "Switch project (stub)"))
+  "Switch to another project from history or prompt for directory."
+  (let* ((echo (app-state-echo app))
+         (fr (app-state-frame app))
+         (row (- (frame-height fr) 1))
+         (width (frame-width fr)))
+    (if (null? *project-history*)
+      ;; No history - prompt for directory
+      (let ((dir (echo-read-string echo "Project directory: " row width)))
+        (when (and dir (directory-exists? dir))
+          (let ((root (project-find-root dir)))
+            (if root
+              (begin
+                (set! *project-history* (cons root (delete root *project-history*)))
+                (current-directory root)
+                (echo-message! echo (string-append "Project: " root)))
+              (echo-message! echo "No project found at that location")))))
+      ;; Show project history
+      (let* ((win (current-window fr))
+             (ed (edit-window-editor win))
+             (buf (buffer-create! "*Projects*" ed))
+             (text (string-append "Known projects:\n\n"
+                     (string-join
+                       (map (lambda (p) (string-append "  " p)) *project-history*)
+                       "\n")
+                     "\n\nPress Enter on a line to switch to that project.")))
+        (buffer-attach! ed buf)
+        (set! (edit-window-buffer win) buf)
+        (editor-set-text ed text)
+        (editor-goto-pos ed 0)
+        (editor-set-read-only ed #t)))))
 
 (def (cmd-project-find-regexp app)
-  "Find regexp in project files (stub)."
-  (echo-message! (app-state-echo app) "Project: find regexp (stub)"))
+  "Find regexp in project files using grep."
+  (let* ((echo (app-state-echo app))
+         (root (project-current app))
+         (fr (app-state-frame app))
+         (row (- (frame-height fr) 1))
+         (width (frame-width fr)))
+    (if (not root)
+      (echo-message! echo "Not in a project")
+      (let ((pattern (echo-read-string echo "Project grep: " row width)))
+        (when (and pattern (not (string-empty? pattern)))
+          (with-exception-catcher
+            (lambda (e) (echo-error! echo "grep failed"))
+            (lambda ()
+              (let* ((proc (open-process
+                             (list path: "grep"
+                                   arguments: (list "-rn" pattern root
+                                                   "--include=*.ss" "--include=*.scm"
+                                                   "--include=*.py" "--include=*.js"
+                                                   "--include=*.go" "--include=*.rs"
+                                                   "--include=*.c" "--include=*.h"
+                                                   "--include=*.cpp" "--include=*.hpp"
+                                                   "--include=*.md" "--include=*.txt")
+                                   stdin-redirection: #f
+                                   stdout-redirection: #t
+                                   stderr-redirection: #f
+                                   directory: root)))
+                     (output (read-line proc #f)))
+                (process-status proc)
+                (let* ((win (current-window fr))
+                       (ed (edit-window-editor win))
+                       (buf (buffer-create! (string-append "*Project grep: " pattern "*") ed))
+                       (text (if output
+                               (string-append "Project grep results for: " pattern "\n\n" output)
+                               "No matches found.")))
+                  (buffer-attach! ed buf)
+                  (set! (edit-window-buffer win) buf)
+                  (editor-set-text ed text)
+                  (editor-goto-pos ed 0)
+                  (editor-set-read-only ed #t))))))))))
 
 (def (cmd-project-shell app)
-  "Open shell in project root (stub)."
-  (echo-message! (app-state-echo app) "Project: shell (stub)"))
+  "Open shell in project root."
+  (let* ((echo (app-state-echo app))
+         (root (project-current app)))
+    (if (not root)
+      (echo-message! echo "Not in a project")
+      (begin
+        (current-directory root)
+        ;; Add to project history
+        (set! *project-history* (cons root (delete root *project-history*)))
+        ;; Open shell
+        (cmd-shell app)
+        (echo-message! echo (string-append "Shell in project: " root))))))
 
 (def (cmd-project-dired app)
-  "Open dired at project root (stub)."
-  (echo-message! (app-state-echo app) "Project: dired (stub)"))
+  "Open dired at project root."
+  (let* ((echo (app-state-echo app))
+         (root (project-current app)))
+    (if (not root)
+      (echo-message! echo "Not in a project")
+      (begin
+        ;; Add to project history  
+        (set! *project-history* (cons root (delete root *project-history*)))
+        (dired-open-directory! app root)))))
 
 (def (cmd-project-eshell app)
-  "Open eshell in project root (stub)."
-  (echo-message! (app-state-echo app) "Project: eshell (stub)"))
+  "Open eshell in project root."
+  (let* ((echo (app-state-echo app))
+         (root (project-current app)))
+    (if (not root)
+      (echo-message! echo "Not in a project")
+      (begin
+        (current-directory root)
+        ;; Add to project history
+        (set! *project-history* (cons root (delete root *project-history*)))
+        ;; Open eshell
+        (cmd-eshell app)
+        (echo-message! echo (string-append "Eshell in project: " root))))))
 
 ;; JSON formatting
 (def (cmd-json-pretty-print app)
