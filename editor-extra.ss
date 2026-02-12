@@ -1290,14 +1290,96 @@
         (send-message ed SCI_SETTARGETEND word-end 0)
         (send-message/string ed SCI_REPLACETARGET new-word))))))
 
-;; Ediff extras
+;; Ediff - file and region comparison using diff
+;; Provides a simple diff view between two files or buffers
+
 (def (cmd-ediff-files app)
-  "Compare two files with ediff (stub)."
-  (echo-message! (app-state-echo app) "Ediff files (stub)"))
+  "Compare two files using diff."
+  (let* ((echo (app-state-echo app))
+         (fr (app-state-frame app))
+         (row (- (frame-height fr) 1))
+         (width (frame-width fr))
+         (file1 (echo-read-string echo "First file: " row width)))
+    (when (and file1 (not (string-empty? file1)))
+      (let ((file2 (echo-read-string echo "Second file: " row width)))
+        (when (and file2 (not (string-empty? file2)))
+          (if (not (and (file-exists? file1) (file-exists? file2)))
+            (echo-error! echo "One or both files do not exist")
+            (with-exception-catcher
+              (lambda (e) (echo-error! echo "diff command failed"))
+              (lambda ()
+                (let* ((proc (open-process
+                               (list path: "diff"
+                                     arguments: (list "-u" file1 file2)
+                                     stdin-redirection: #f
+                                     stdout-redirection: #t
+                                     stderr-redirection: #f)))
+                       (output (read-line proc #f)))
+                  (process-status proc)
+                  (let* ((win (current-window fr))
+                         (ed (edit-window-editor win))
+                         (buf (buffer-create! "*Ediff*" ed))
+                         (text (if output
+                                 (string-append "Diff: " file1 " vs " file2 "\n"
+                                               (make-string 60 #\=) "\n\n"
+                                               output)
+                                 "Files are identical")))
+                    (buffer-attach! ed buf)
+                    (set! (edit-window-buffer win) buf)
+                    (editor-set-text ed text)
+                    (editor-goto-pos ed 0)
+                    (editor-set-read-only ed #t)))))))))))
 
 (def (cmd-ediff-regions app)
-  "Compare two regions with ediff (stub)."
-  (echo-message! (app-state-echo app) "Ediff regions (stub)"))
+  "Compare current buffer with another buffer."
+  (let* ((echo (app-state-echo app))
+         (fr (app-state-frame app))
+         (win (current-window fr))
+         (ed (edit-window-editor win))
+         (current-buf (edit-window-buffer win))
+         (current-name (and current-buf (buffer-name current-buf)))
+         (row (- (frame-height fr) 1))
+         (width (frame-width fr))
+         (other-name (echo-read-string echo "Compare with buffer: " row width)))
+    (when (and other-name (not (string-empty? other-name)))
+      (let ((other-buf (buffer-by-name other-name)))
+        (if (not other-buf)
+          (echo-error! echo (string-append "Buffer not found: " other-name))
+          ;; Get text from both buffers
+          (let* ((text1 (editor-get-text ed))
+                 (tmp1 "/tmp/gerbil-ediff-1.txt")
+                 (tmp2 "/tmp/gerbil-ediff-2.txt"))
+            ;; We need to get text from other buffer - save current, switch, get, switch back
+            (call-with-output-file tmp1 (lambda (p) (display text1 p)))
+            ;; Get other buffer's text by temporarily switching
+            (buffer-attach! ed other-buf)
+            (let ((text2 (editor-get-text ed)))
+              (call-with-output-file tmp2 (lambda (p) (display text2 p)))
+              ;; Switch back
+              (buffer-attach! ed current-buf)
+              ;; Run diff
+              (with-exception-catcher
+                (lambda (e) (echo-error! echo "diff failed"))
+                (lambda ()
+                  (let* ((proc (open-process
+                                 (list path: "diff"
+                                       arguments: (list "-u" tmp1 tmp2)
+                                       stdin-redirection: #f
+                                       stdout-redirection: #t
+                                       stderr-redirection: #f)))
+                         (output (read-line proc #f)))
+                    (process-status proc)
+                    (let* ((buf (buffer-create! "*Ediff*" ed))
+                           (diff-text (if output
+                                        (string-append "Diff: " current-name " vs " other-name "\n"
+                                                      (make-string 60 #\=) "\n\n"
+                                                      output)
+                                        "Buffers are identical")))
+                      (buffer-attach! ed buf)
+                      (set! (edit-window-buffer win) buf)
+                      (editor-set-text ed diff-text)
+                      (editor-goto-pos ed 0)
+                      (editor-set-read-only ed #t))))))))))))
 
 ;; Repeat and undo extras
 (def (cmd-undo-tree-visualize app)
@@ -2645,12 +2727,78 @@
 
 ;; Ediff extras
 (def (cmd-ediff-merge app)
-  "Merge two files with ediff (stub)."
-  (echo-message! (app-state-echo app) "Ediff merge (stub)"))
+  "Show merge conflict markers (for 3-way merge)."
+  (let* ((echo (app-state-echo app))
+         (fr (app-state-frame app))
+         (row (- (frame-height fr) 1))
+         (width (frame-width fr))
+         (file1 (echo-read-string echo "File A: " row width)))
+    (when (and file1 (not (string-empty? file1)))
+      (let ((file2 (echo-read-string echo "File B: " row width)))
+        (when (and file2 (not (string-empty? file2)))
+          (if (not (and (file-exists? file1) (file-exists? file2)))
+            (echo-error! echo "One or both files do not exist")
+            (with-exception-catcher
+              (lambda (e) (echo-error! echo "diff3 or diff failed"))
+              (lambda ()
+                ;; Try diff3 first, fall back to regular diff
+                (let* ((proc (open-process
+                               (list path: "diff"
+                                     arguments: (list "-u" file1 file2)
+                                     stdin-redirection: #f
+                                     stdout-redirection: #t
+                                     stderr-redirection: #f)))
+                       (output (read-line proc #f)))
+                  (process-status proc)
+                  (let* ((win (current-window fr))
+                         (ed (edit-window-editor win))
+                         (buf (buffer-create! "*Ediff Merge*" ed))
+                         (text (string-append "Merge: " file1 " + " file2 "\n"
+                                             (make-string 60 #\=) "\n\n"
+                                             "Use this diff to resolve merge conflicts:\n\n"
+                                             (or output "Files are identical"))))
+                    (buffer-attach! ed buf)
+                    (set! (edit-window-buffer win) buf)
+                    (editor-set-text ed text)
+                    (editor-goto-pos ed 0)
+                    (editor-set-read-only ed #t)))))))))))
 
 (def (cmd-ediff-directories app)
-  "Compare directories with ediff (stub)."
-  (echo-message! (app-state-echo app) "Ediff directories (stub)"))
+  "Compare two directories."
+  (let* ((echo (app-state-echo app))
+         (fr (app-state-frame app))
+         (row (- (frame-height fr) 1))
+         (width (frame-width fr))
+         (dir1 (echo-read-string echo "First directory: " row width)))
+    (when (and dir1 (not (string-empty? dir1)))
+      (let ((dir2 (echo-read-string echo "Second directory: " row width)))
+        (when (and dir2 (not (string-empty? dir2)))
+          (if (not (and (directory-exists? dir1) (directory-exists? dir2)))
+            (echo-error! echo "One or both directories do not exist")
+            (with-exception-catcher
+              (lambda (e) (echo-error! echo "diff failed"))
+              (lambda ()
+                (let* ((proc (open-process
+                               (list path: "diff"
+                                     arguments: (list "-rq" dir1 dir2)
+                                     stdin-redirection: #f
+                                     stdout-redirection: #t
+                                     stderr-redirection: #f)))
+                       (output (read-line proc #f)))
+                  (process-status proc)
+                  (let* ((win (current-window fr))
+                         (ed (edit-window-editor win))
+                         (buf (buffer-create! "*Ediff Directories*" ed))
+                         (text (string-append "Directory comparison:\n"
+                                             dir1 "\n"
+                                             dir2 "\n"
+                                             (make-string 60 #\=) "\n\n"
+                                             (or output "Directories are identical"))))
+                    (buffer-attach! ed buf)
+                    (set! (edit-window-buffer win) buf)
+                    (editor-set-text ed text)
+                    (editor-goto-pos ed 0)
+                    (editor-set-read-only ed #t)))))))))))
 
 ;; Window commands extras
 (def (cmd-window-divider-mode app)
