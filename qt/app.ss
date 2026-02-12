@@ -102,31 +102,54 @@
                         (echo-clear! (app-state-echo app)))
                       (execute-command! app data))
                      ((self-insert)
-                      (let ((cur-buf (qt-current-buffer (app-state-frame app))))
+                      (when (app-state-macro-recording app)
+                        (set! (app-state-macro-recording app)
+                          (cons (cons 'self-insert data)
+                                (app-state-macro-recording app))))
+                      ;; Handle self-insert directly here for Qt
+                      (let* ((buf (qt-current-buffer (app-state-frame app)))
+                             (ed (qt-current-editor (app-state-frame app)))
+                             (ch (integer->char data))
+                             (close-ch (and *auto-pair-mode* (auto-pair-char ch)))
+                             (n (get-prefix-arg app))) ; Get prefix arg
                         (cond
                           ;; Suppress in dired buffers
-                          ((dired-buffer? cur-buf) (void))
+                          ((dired-buffer? buf) (void))
                           ;; In REPL buffers, only allow after the prompt
-                          ((repl-buffer? cur-buf)
-                           (let* ((ed (qt-current-editor (app-state-frame app)))
-                                  (pos (qt-plain-text-edit-cursor-position ed))
-                                  (rs (hash-get *repl-state* cur-buf)))
+                          ((repl-buffer? buf)
+                           (let* ((pos (qt-plain-text-edit-cursor-position ed))
+                                  (rs (hash-get *repl-state* buf)))
                              (when (and rs (>= pos (repl-state-prompt-pos rs)))
-                               (qt-plain-text-edit-insert-text! ed data))))
-                          ;; Eshell: always allow typing
-                          ((eshell-buffer? cur-buf)
-                           (qt-plain-text-edit-insert-text!
-                             (qt-current-editor (app-state-frame app)) data))
+                               (let loop ((i 0))
+                                 (when (< i n)
+                                   (qt-plain-text-edit-insert-text! ed (string ch))
+                                   (loop (+ i 1)))))))
+                          ;; Eshell: allow typing after the last prompt
+                          ((eshell-buffer? buf)
+                           (let loop ((i 0))
+                             (when (< i n)
+                               (qt-plain-text-edit-insert-text! ed (string ch))
+                               (loop (+ i 1)))))
                           ;; Shell: only after prompt-pos
-                          ((shell-buffer? cur-buf)
-                           (let* ((ed (qt-current-editor (app-state-frame app)))
-                                  (pos (qt-plain-text-edit-cursor-position ed))
-                                  (ss (hash-get *shell-state* cur-buf)))
+                          ((shell-buffer? buf)
+                           (let* ((pos (qt-plain-text-edit-cursor-position ed))
+                                  (ss (hash-get *shell-state* buf)))
                              (when (and ss (>= pos (shell-state-prompt-pos ss)))
-                               (qt-plain-text-edit-insert-text! ed data))))
+                               (let loop ((i 0))
+                                 (when (< i n)
+                                   (qt-plain-text-edit-insert-text! ed (string ch))
+                                   (loop (+ i 1)))))))
                           (else
-                           (qt-plain-text-edit-insert-text!
-                             (qt-current-editor (app-state-frame app)) data)))))
+                           (if (and close-ch (= n 1)) ; Only auto-pair if n=1
+                             ;; Auto-pair: insert both chars and place cursor between
+                             (let ((pos (qt-plain-text-edit-cursor-position ed)))
+                               (qt-plain-text-edit-insert-text! ed (string ch close-ch))
+                               (qt-plain-text-edit-set-cursor-position! ed (+ pos 1)))
+                             ;; Insert character n times
+                             (let ((str (make-string n ch)))
+                               (qt-plain-text-edit-insert-text! ed str))))))
+                      (set! (app-state-prefix-arg app) #f)
+                       (set! (app-state-prefix-digit-mode? app) #f)) ; Reset prefix arg
                      ((prefix)
                       (let ((prefix-str
                              (let loop ((keys (key-state-prefix-keys new-state))

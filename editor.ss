@@ -98,30 +98,46 @@
            (editor-send-key ed ch))))
       (else
        (let* ((ed (current-editor app))
-              (close-ch (and *auto-pair-mode* (auto-pair-char ch))))
-         (if close-ch
+              (close-ch (and *auto-pair-mode* (auto-pair-char ch)))
+              (n (get-prefix-arg app))) ; Get prefix arg
+
+         (if (and close-ch (= n 1)) ; Only auto-pair if n=1
            ;; Auto-pair: insert both chars and place cursor between
            (let ((pos (editor-get-current-pos ed)))
              (editor-insert-text ed pos
                (string (integer->char ch) (integer->char close-ch)))
              (editor-goto-pos ed (+ pos 1)))
-           (editor-send-key ed ch)))))))
+           ;; Insert character n times
+           (let ((str (make-string n (integer->char ch))))
+             (editor-insert-text ed (editor-get-current-pos ed) str)))))))
 
 ;;;============================================================================
 ;;; Navigation commands
 ;;;============================================================================
 
 (def (cmd-forward-char app)
-  (editor-send-key (current-editor app) SCK_RIGHT))
+  (let ((n (get-prefix-arg app)) (ed (current-editor app)))
+    (if (>= n 0)
+      (let loop ((i 0)) (when (< i n) (editor-send-key ed SCK_RIGHT) (loop (+ i 1))))
+      (let loop ((i 0)) (when (< i (- n)) (editor-send-key ed SCK_LEFT) (loop (+ i 1)))))))
 
 (def (cmd-backward-char app)
-  (editor-send-key (current-editor app) SCK_LEFT))
+  (let ((n (get-prefix-arg app)) (ed (current-editor app)))
+    (if (>= n 0)
+      (let loop ((i 0)) (when (< i n) (editor-send-key ed SCK_LEFT) (loop (+ i 1))))
+      (let loop ((i 0)) (when (< i (- n)) (editor-send-key ed SCK_RIGHT) (loop (+ i 1)))))))
 
 (def (cmd-next-line app)
-  (editor-send-key (current-editor app) SCK_DOWN))
+  (let ((n (get-prefix-arg app)) (ed (current-editor app)))
+    (if (>= n 0)
+      (let loop ((i 0)) (when (< i n) (editor-send-key ed SCK_DOWN) (loop (+ i 1))))
+      (let loop ((i 0)) (when (< i (- n)) (editor-send-key ed SCK_UP) (loop (+ i 1)))))))
 
 (def (cmd-previous-line app)
-  (editor-send-key (current-editor app) SCK_UP))
+  (let ((n (get-prefix-arg app)) (ed (current-editor app)))
+    (if (>= n 0)
+      (let loop ((i 0)) (when (< i n) (editor-send-key ed SCK_UP) (loop (+ i 1))))
+      (let loop ((i 0)) (when (< i (- n)) (editor-send-key ed SCK_DOWN) (loop (+ i 1)))))))
 
 (def (cmd-beginning-of-line app)
   (editor-send-key (current-editor app) SCK_HOME))
@@ -130,10 +146,16 @@
   (editor-send-key (current-editor app) SCK_END))
 
 (def (cmd-forward-word app)
-  (editor-send-key (current-editor app) SCK_RIGHT ctrl: #t))
+  (let ((n (get-prefix-arg app)) (ed (current-editor app)))
+    (if (>= n 0)
+      (let loop ((i 0)) (when (< i n) (editor-send-key ed SCK_RIGHT ctrl: #t) (loop (+ i 1))))
+      (let loop ((i 0)) (when (< i (- n)) (editor-send-key ed SCK_LEFT ctrl: #t) (loop (+ i 1)))))))
 
 (def (cmd-backward-word app)
-  (editor-send-key (current-editor app) SCK_LEFT ctrl: #t))
+  (let ((n (get-prefix-arg app)) (ed (current-editor app)))
+    (if (>= n 0)
+      (let loop ((i 0)) (when (< i n) (editor-send-key ed SCK_LEFT ctrl: #t) (loop (+ i 1))))
+      (let loop ((i 0)) (when (< i (- n)) (editor-send-key ed SCK_RIGHT ctrl: #t) (loop (+ i 1)))))))
 
 (def (cmd-beginning-of-buffer app)
   (editor-send-key (current-editor app) SCK_HOME ctrl: #t))
@@ -2708,10 +2730,18 @@
 
 (def (cmd-repeat app)
   "Repeat the last command."
-  (let ((last (app-state-last-command app)))
-    (if (and last (not (eq? last 'repeat)))
-      (execute-command! app last)
-      (echo-error! (app-state-echo app) "No command to repeat"))))
+  (let* ((last (app-state-last-command app))
+         (count (abs (get-prefix-arg app))))
+    (cond
+     ((or (not last) (eq? last 'repeat))
+      (echo-error! (app-state-echo app) "No command to repeat"))
+     ((= count 0)
+      (echo-error! (app-state-echo app) "Repeat count must be positive"))
+     (else
+      (let loop ((i 0))
+        (when (< i count)
+          (execute-command! app last)
+          (loop (+ i 1))))))))
 
 ;;;============================================================================
 ;;; Next/previous error (placeholder — navigate search results)
@@ -3596,8 +3626,55 @@
 ;;;============================================================================
 
 (def (cmd-universal-argument app)
-  "Universal argument (stub — displays message only)."
-  (echo-message! (app-state-echo app) "C-u prefix not yet supported"))
+  "Universal argument (C-u). Sets or increments the prefix argument."
+  (let ((current (app-state-prefix-arg app)))
+    (cond
+     ((not current)
+      (set! (app-state-prefix-arg app) '(4)))
+     ((list? current)
+      (set! (app-state-prefix-arg app) (list (* 4 (car current)))))
+     (else
+      ;; If it was a number (e.g. from M-5), C-u resets it to (4)
+      (set! (app-state-prefix-arg app) '(4))))
+    (echo-message! (app-state-echo app)
+                   (string-append "C-u"
+                                  (let ((val (car (app-state-prefix-arg app))))
+                                    (if (= val 4) "" (string-append " " (number->string val))))
+                                  "-"))))
+
+(def (cmd-digit-argument app digit)
+  "Digit argument (M-0 to M-9). Builds a numeric prefix argument."
+  (let ((current (app-state-prefix-arg app)))
+    (cond
+     ((number? current)
+      (set! (app-state-prefix-arg app) (+ (* current 10) digit)))
+     ((eq? current '-)
+      (set! (app-state-prefix-arg app) (- digit)))
+     (else
+      (set! (app-state-prefix-arg app) digit)))
+    (set! (app-state-prefix-digit-mode? app) #t)
+    (echo-message! (app-state-echo app)
+                   (string-append "Arg: " (if (eq? (app-state-prefix-arg app) '-)
+                                            "-"
+                                            (number->string (app-state-prefix-arg app)))))))
+
+(def (cmd-negative-argument app)
+  "Negative argument (M--). Starts a negative numeric prefix argument."
+  (set! (app-state-prefix-arg app) '-)
+  (set! (app-state-prefix-digit-mode? app) #t)
+  (echo-message! (app-state-echo app) "Arg: -"))
+
+;; Individual digit argument commands for registry
+(def (cmd-digit-argument-0 app) (cmd-digit-argument app 0))
+(def (cmd-digit-argument-1 app) (cmd-digit-argument app 1))
+(def (cmd-digit-argument-2 app) (cmd-digit-argument app 2))
+(def (cmd-digit-argument-3 app) (cmd-digit-argument app 3))
+(def (cmd-digit-argument-4 app) (cmd-digit-argument app 4))
+(def (cmd-digit-argument-5 app) (cmd-digit-argument app 5))
+(def (cmd-digit-argument-6 app) (cmd-digit-argument app 6))
+(def (cmd-digit-argument-7 app) (cmd-digit-argument app 7))
+(def (cmd-digit-argument-8 app) (cmd-digit-argument app 8))
+(def (cmd-digit-argument-9 app) (cmd-digit-argument app 9))
 
 ;;;============================================================================
 ;;; Text transforms: tabify, untabify, base64, rot13
@@ -10015,16 +10092,170 @@
 ;; --- Spell checking ---
 
 (def (cmd-ispell-word app)
-  "Check spelling of word at point (stub)."
-  (echo-message! (app-state-echo app) "Spell check word (stub)"))
+  "Check spelling of word at point using aspell."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app)))
+    (let-values (((start end) (word-at-point ed)))
+      (if (not start)
+        (echo-message! echo "No word at point")
+        (let* ((text (editor-get-text ed))
+               (word (substring text start end)))
+          ;; Run aspell to check the word
+          (with-exception-catcher
+            (lambda (e) (echo-error! echo "aspell not available"))
+            (lambda ()
+              (let* ((proc (open-process
+                             (list path: "aspell"
+                                   arguments: (list "-a")
+                                   stdin-redirection: #t
+                                   stdout-redirection: #t
+                                   stderr-redirection: #f)))
+                     (_ (display (string-append word "\n") proc))
+                     (_ (force-output proc))
+                     (_ (close-output-port proc))
+                     ;; Read aspell output - first line is version, second is result
+                     (version-line (read-line proc))
+                     (result-line (read-line proc)))
+                (close-input-port proc)
+                (process-status proc)
+                (cond
+                  ((eof-object? result-line)
+                   (echo-message! echo "Spell check failed"))
+                  ((string-prefix? "*" result-line)
+                   (echo-message! echo (string-append "\"" word "\" is correct")))
+                  ((string-prefix? "&" result-line)
+                   ;; Misspelled with suggestions: & word count offset: suggestion1, suggestion2, ...
+                   (let* ((colon-pos (string-index result-line #\:))
+                          (suggestions (if colon-pos
+                                         (string-trim (substring result-line (+ colon-pos 1)
+                                                                 (string-length result-line)))
+                                         "none")))
+                     (echo-message! echo (string-append "\"" word "\" misspelled. Try: " suggestions))))
+                  ((string-prefix? "#" result-line)
+                   ;; Misspelled with no suggestions
+                   (echo-message! echo (string-append "\"" word "\" misspelled, no suggestions")))
+                  (else
+                   (echo-message! echo (string-append "\"" word "\" is correct"))))))))))))
+
+(def (ispell-extract-words text)
+  "Extract words (alphabetic sequences) from text."
+  (let loop ((i 0) (words '()) (word-start #f))
+    (if (>= i (string-length text))
+      (if word-start
+        (reverse (cons (substring text word-start i) words))
+        (reverse words))
+      (let ((ch (string-ref text i)))
+        (cond
+          ((char-alphabetic? ch)
+           (if word-start
+             (loop (+ i 1) words word-start)
+             (loop (+ i 1) words i)))
+          (word-start
+           (loop (+ i 1) (cons (substring text word-start i) words) #f))
+          (else
+           (loop (+ i 1) words #f)))))))
 
 (def (cmd-ispell-buffer app)
-  "Check spelling of entire buffer (stub)."
-  (echo-message! (app-state-echo app) "Spell check buffer (stub)"))
+  "Check spelling of entire buffer using aspell, report misspelled words."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app))
+         (text (editor-get-text ed))
+         (words (ispell-extract-words text)))
+    (if (null? words)
+      (echo-message! echo "No words in buffer")
+      (with-exception-catcher
+        (lambda (e) (echo-error! echo "aspell not available"))
+        (lambda ()
+          (let* ((proc (open-process
+                         (list path: "aspell"
+                               arguments: (list "-a")
+                               stdin-redirection: #t
+                               stdout-redirection: #t
+                               stderr-redirection: #f))))
+            ;; Send all words
+            (for-each (lambda (w) (display (string-append w "\n") proc)) words)
+            (force-output proc)
+            (close-output-port proc)
+            ;; Read results
+            (let loop ((misspelled '()) (first? #t))
+              (let ((line (read-line proc)))
+                (cond
+                  ((eof-object? line)
+                   (close-input-port proc)
+                   (process-status proc)
+                   (if (null? misspelled)
+                     (echo-message! echo "No misspellings found")
+                     (let* ((unique (let remove-dups ((lst (reverse misspelled)) (seen '()))
+                                      (cond ((null? lst) (reverse seen))
+                                            ((member (car lst) seen) (remove-dups (cdr lst) seen))
+                                            (else (remove-dups (cdr lst) (cons (car lst) seen))))))
+                            (count (length unique))
+                            (shown (if (> count 5)
+                                     (string-append (string-join (take unique 5) ", ") "...")
+                                     (string-join unique ", "))))
+                       (echo-message! echo
+                         (string-append (number->string count) " misspelling(s): " shown)))))
+                  (first?
+                   ;; Skip version line
+                   (loop misspelled #f))
+                  ((string-prefix? "&" line)
+                   ;; Misspelled: extract word (format: & word ...)
+                   (let* ((parts (string-split line #\space))
+                          (word (if (> (length parts) 1) (cadr parts) "?")))
+                     (loop (cons word misspelled) #f)))
+                  ((string-prefix? "#" line)
+                   ;; Misspelled with no suggestions
+                   (let* ((parts (string-split line #\space))
+                          (word (if (> (length parts) 1) (cadr parts) "?")))
+                     (loop (cons word misspelled) #f)))
+                  (else
+                   (loop misspelled #f)))))))))))
 
 (def (cmd-ispell-region app)
-  "Check spelling of region (stub)."
-  (echo-message! (app-state-echo app) "Spell check region (stub)"))
+  "Check spelling of region using aspell."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app))
+         (mark-pos (app-state-mark-pos app)))
+    (if (not mark-pos)
+      (echo-message! echo "No region set (use C-SPC to set mark)")
+      (let* ((pos (editor-get-current-pos ed))
+             (start (min pos mark-pos))
+             (end (max pos mark-pos))
+             (text (editor-get-text ed))
+             (region (substring text start (min end (string-length text))))
+             (words (ispell-extract-words region)))
+        (if (null? words)
+          (echo-message! echo "No words in region")
+          (with-exception-catcher
+            (lambda (e) (echo-error! echo "aspell not available"))
+            (lambda ()
+              (let* ((proc (open-process
+                             (list path: "aspell"
+                                   arguments: (list "-a")
+                                   stdin-redirection: #t
+                                   stdout-redirection: #t
+                                   stderr-redirection: #f))))
+                (for-each (lambda (w) (display (string-append w "\n") proc)) words)
+                (force-output proc)
+                (close-output-port proc)
+                (let loop ((misspelled '()) (first? #t))
+                  (let ((line (read-line proc)))
+                    (cond
+                      ((eof-object? line)
+                       (close-input-port proc)
+                       (process-status proc)
+                       (if (null? misspelled)
+                         (echo-message! echo "Region: no misspellings")
+                         (echo-message! echo
+                           (string-append "Region: " (number->string (length misspelled))
+                                          " misspelling(s)"))))
+                      (first? (loop misspelled #f))
+                      ((or (string-prefix? "&" line) (string-prefix? "#" line))
+                       (let* ((parts (string-split line #\space))
+                              (word (if (> (length parts) 1) (cadr parts) "?")))
+                         (loop (cons word misspelled) #f)))
+                      (else (loop misspelled #f)))))))))))))
+
 
 ;; --- Process management ---
 
@@ -10259,8 +10490,19 @@
   ;; Other-window
   (register-command! 'switch-buffer-other-window cmd-switch-buffer-other-window)
   (register-command! 'find-file-other-window cmd-find-file-other-window)
-  ;; Universal argument (stub)
+  ;; Universal argument
   (register-command! 'universal-argument cmd-universal-argument)
+  (register-command! 'negative-argument cmd-negative-argument)
+  (register-command! 'digit-argument-0 cmd-digit-argument-0)
+  (register-command! 'digit-argument-1 cmd-digit-argument-1)
+  (register-command! 'digit-argument-2 cmd-digit-argument-2)
+  (register-command! 'digit-argument-3 cmd-digit-argument-3)
+  (register-command! 'digit-argument-4 cmd-digit-argument-4)
+  (register-command! 'digit-argument-5 cmd-digit-argument-5)
+  (register-command! 'digit-argument-6 cmd-digit-argument-6)
+  (register-command! 'digit-argument-7 cmd-digit-argument-7)
+  (register-command! 'digit-argument-8 cmd-digit-argument-8)
+  (register-command! 'digit-argument-9 cmd-digit-argument-9)
   ;; Text transforms
   (register-command! 'tabify cmd-tabify)
   (register-command! 'untabify cmd-untabify)

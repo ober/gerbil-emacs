@@ -262,6 +262,25 @@
     ;; Present to make cursor position visible immediately
     (tui-present!)))
 
+(def (digit-key-code? code)
+  (and (>= code (char->integer #\0))
+       (<= code (char->integer #\9))))
+
+(def (handle-prefix-digit-or-sign! app code)
+  "Consume digit or '-' keys while building a prefix argument."
+  (let ((prefix (app-state-prefix-arg app)))
+    (cond
+     ((and (list? prefix) (= code (char->integer #\-)))
+      (cmd-negative-argument app)
+      #t)
+     ((and (digit-key-code? code)
+           (or (list? prefix)
+               (eq? prefix '-)
+               (app-state-prefix-digit-mode? app)))
+      (cmd-digit-argument app (- code (char->integer #\0)))
+      #t)
+     (else #f))))
+
 ;;;============================================================================
 ;;; Event dispatch
 ;;;============================================================================
@@ -339,12 +358,17 @@
            (echo-message! (app-state-echo app)
                           (string-append prefix-str "-"))))
         ((self-insert)
-         ;; Record macro step
-         (when (app-state-macro-recording app)
-           (set! (app-state-macro-recording app)
-             (cons (cons 'self-insert data)
-                   (app-state-macro-recording app))))
-         (cmd-self-insert! app data))
+         (if (handle-prefix-digit-or-sign! app data)
+           (void)
+           (begin
+             ;; Record macro step
+             (when (app-state-macro-recording app)
+               (set! (app-state-macro-recording app)
+                 (cons (cons 'self-insert data)
+                       (app-state-macro-recording app))))
+             (cmd-self-insert! app data)
+             (set! (app-state-prefix-arg app) #f)
+             (set! (app-state-prefix-digit-mode? app) #f))))
         ((undefined)
          (echo-error! (app-state-echo app)
                       (string-append data " is undefined")))))))

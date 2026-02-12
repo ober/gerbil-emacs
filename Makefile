@@ -9,7 +9,7 @@ all: build
 
 build:
 	chmod +x build.ss
-	gerbil build
+	LD_LIBRARY_PATH=$(OPENSSL_RPATH) gerbil build
 	patchelf --set-rpath $(OPENSSL_RPATH) .gerbil/bin/gerbil-emacs
 	patchelf --set-rpath $(OPENSSL_RPATH):$(QT_SHIM_RPATH) .gerbil/bin/gerbil-emacs-qt
 

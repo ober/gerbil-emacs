@@ -27,6 +27,7 @@
   ;; App state
   (struct-out app-state)
   new-app-state
+  get-prefix-arg
 
   ;; Command registry
   register-command!
@@ -165,6 +166,22 @@
   ;; Search
   (keymap-bind! *global-keymap* "C-s" 'search-forward)
   (keymap-bind! *global-keymap* "C-r" 'search-backward)
+
+  ;; Universal argument
+  (keymap-bind! *global-keymap* "C-u" 'universal-argument)
+
+  ;; Digit arguments
+  (keymap-bind! *global-keymap* "M-0" 'digit-argument-0)
+  (keymap-bind! *global-keymap* "M-1" 'digit-argument-1)
+  (keymap-bind! *global-keymap* "M-2" 'digit-argument-2)
+  (keymap-bind! *global-keymap* "M-3" 'digit-argument-3)
+  (keymap-bind! *global-keymap* "M-4" 'digit-argument-4)
+  (keymap-bind! *global-keymap* "M-5" 'digit-argument-5)
+  (keymap-bind! *global-keymap* "M-6" 'digit-argument-6)
+  (keymap-bind! *global-keymap* "M-7" 'digit-argument-7)
+  (keymap-bind! *global-keymap* "M-8" 'digit-argument-8)
+  (keymap-bind! *global-keymap* "M-9" 'digit-argument-9)
+  (keymap-bind! *global-keymap* "M--" 'negative-argument)
 
   ;; Misc
   (keymap-bind! *global-keymap* "C-g" 'keyboard-quit)
@@ -307,7 +324,6 @@
 
   ;; Downcase/upcase region
   (keymap-bind! *ctrl-x-map* "C-l" 'downcase-region)
-  (keymap-bind! *ctrl-x-map* "C-u" 'upcase-region)
 
   ;; Shell command
   (keymap-bind! *global-keymap* "M-!" 'shell-command)
@@ -835,6 +851,8 @@
    mark-ring     ; list of (buffer-name . position) for mark history
    registers     ; hash-table: char -> string or (buffer-name . position)
    last-command  ; symbol or #f: name of last executed command
+   prefix-arg    ; any: current prefix argument (#f, integer, or list for C-u)
+   prefix-digit-mode? ; boolean: are we currently collecting digit arguments?
    key-handler)  ; procedure or #f: (lambda (editor) ...) installs key handler on editor
   transparent: #t)
 
@@ -858,7 +876,19 @@
    []                    ; mark-ring
    (make-hash-table)     ; registers
    #f                    ; last-command
+   #f                    ; prefix-arg
+   #f                    ; prefix-digit-mode?
    #f))                  ; key-handler
+
+(def (get-prefix-arg app (default 1))
+  "Get the numeric value of the current prefix argument."
+  (let ((arg (app-state-prefix-arg app)))
+    (cond
+     ((not arg) default)
+     ((number? arg) arg)
+     ((list? arg) (car arg))
+     ((eq? arg '-) -1)
+     (else default))))
 
 ;;;============================================================================
 ;;; Command registry
@@ -880,9 +910,15 @@
     (if cmd
       (begin
         (set! (app-state-last-command app) name)
-        (cmd app))
+        (cmd app)
+        ;; Reset prefix-arg unless the command was a prefix-building command
+        (unless (memq name '(universal-argument digit-argument-0 digit-argument-1 digit-argument-2
+                            digit-argument-3 digit-argument-4 digit-argument-5 digit-argument-6
+                            digit-argument-7 digit-argument-8 digit-argument-9 negative-argument))
+          (set! (app-state-prefix-arg app) #f)
+          (set! (app-state-prefix-digit-mode? app) #f))))
       (echo-error! (app-state-echo app)
-                   (string-append (symbol->string name) " is undefined")))))
+                   (string-append (symbol->string name) " is undefined"))))
 
 ;;;============================================================================
 ;;; Shared helpers
