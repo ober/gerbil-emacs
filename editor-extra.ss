@@ -772,22 +772,155 @@
   "Go to next flyspell error (stub)."
   (echo-message! (app-state-echo app) "Next flyspell error (stub)"))
 
-;; Multiple cursors stubs
+;; Multiple cursors - simulated via sequential replacement
+;; True multiple cursors require deep editor integration; this provides
+;; the most common use case: replacing all occurrences of selection
+
+(def *mc-selection* #f) ; current selection being marked
+(def *mc-positions* '()) ; list of (start . end) positions found
+(def *mc-position-idx* 0) ; current position index
+
+(def (mc-get-selection app)
+  "Get the currently selected text, or word at point if no selection."
+  (let* ((fr (app-state-frame app))
+         (win (current-window fr))
+         (ed (edit-window-editor win))
+         (sel-start (editor-get-selection-start ed))
+         (sel-end (editor-get-selection-end ed)))
+    (if (= sel-start sel-end)
+      ;; No selection - get word at point
+      (let-values (((start end) (word-bounds-at ed (editor-get-current-pos ed))))
+        (if start
+          (let ((text (editor-get-text ed)))
+            (substring text start end))
+          #f))
+      ;; Have selection
+      (let ((text (editor-get-text ed)))
+        (substring text sel-start sel-end)))))
+
+(def (mc-find-all-positions ed pattern)
+  "Find all positions of pattern in editor text."
+  (let* ((text (editor-get-text ed))
+         (len (string-length pattern))
+         (text-len (string-length text)))
+    (let loop ((i 0) (positions '()))
+      (if (> (+ i len) text-len)
+        (reverse positions)
+        (if (string=? (substring text i (+ i len)) pattern)
+          (loop (+ i len) (cons (cons i (+ i len)) positions))
+          (loop (+ i 1) positions))))))
+
 (def (cmd-mc-mark-next-like-this app)
-  "Add cursor at next occurrence of selection (stub)."
-  (echo-message! (app-state-echo app) "Multiple cursors: mark next (stub)"))
+  "Find and highlight next occurrence of selection/word. Use repeatedly to mark more."
+  (let* ((echo (app-state-echo app))
+         (fr (app-state-frame app))
+         (win (current-window fr))
+         (ed (edit-window-editor win)))
+    ;; Get or initialize selection
+    (when (not *mc-selection*)
+      (set! *mc-selection* (mc-get-selection app))
+      (set! *mc-positions* (if *mc-selection* (mc-find-all-positions ed *mc-selection*) '()))
+      (set! *mc-position-idx* 0))
+    
+    (if (or (not *mc-selection*) (null? *mc-positions*))
+      (echo-message! echo "No matches found")
+      (let* ((new-idx (modulo (+ *mc-position-idx* 1) (length *mc-positions*)))
+             (pos (list-ref *mc-positions* new-idx))
+             (start (car pos))
+             (end (cdr pos)))
+        (set! *mc-position-idx* new-idx)
+        (editor-goto-pos ed start)
+        (editor-set-selection ed start end)
+        (echo-message! echo (string-append "Match " (number->string (+ new-idx 1))
+                                          "/" (number->string (length *mc-positions*))
+                                          " of \"" *mc-selection* "\""))))))
 
 (def (cmd-mc-mark-previous-like-this app)
-  "Add cursor at previous occurrence of selection (stub)."
-  (echo-message! (app-state-echo app) "Multiple cursors: mark previous (stub)"))
+  "Find and highlight previous occurrence of selection/word."
+  (let* ((echo (app-state-echo app))
+         (fr (app-state-frame app))
+         (win (current-window fr))
+         (ed (edit-window-editor win)))
+    (when (not *mc-selection*)
+      (set! *mc-selection* (mc-get-selection app))
+      (set! *mc-positions* (if *mc-selection* (mc-find-all-positions ed *mc-selection*) '()))
+      (set! *mc-position-idx* 0))
+    
+    (if (or (not *mc-selection*) (null? *mc-positions*))
+      (echo-message! echo "No matches found")
+      (let* ((new-idx (modulo (- *mc-position-idx* 1) (length *mc-positions*)))
+             (pos (list-ref *mc-positions* new-idx))
+             (start (car pos))
+             (end (cdr pos)))
+        (set! *mc-position-idx* new-idx)
+        (editor-goto-pos ed start)
+        (editor-set-selection ed start end)
+        (echo-message! echo (string-append "Match " (number->string (+ new-idx 1))
+                                          "/" (number->string (length *mc-positions*))
+                                          " of \"" *mc-selection* "\""))))))
 
 (def (cmd-mc-mark-all-like-this app)
-  "Add cursors at all occurrences of selection (stub)."
-  (echo-message! (app-state-echo app) "Multiple cursors: mark all (stub)"))
+  "Replace all occurrences of selection with prompted text (simulates multi-cursor edit)."
+  (let* ((echo (app-state-echo app))
+         (fr (app-state-frame app))
+         (win (current-window fr))
+         (ed (edit-window-editor win))
+         (selection (mc-get-selection app)))
+    (if (not selection)
+      (echo-message! echo "No selection or word at point")
+      (let ((positions (mc-find-all-positions ed selection)))
+        (if (null? positions)
+          (echo-message! echo "No matches found")
+          (let* ((row (- (frame-height fr) 1))
+                 (width (frame-width fr))
+                 (replacement (echo-read-string echo 
+                                (string-append "Replace all (" (number->string (length positions)) 
+                                              " matches) with: ")
+                                row width)))
+            (when (and replacement (not (string-empty? replacement)))
+              ;; Replace from end to start to preserve positions
+              (let ((sorted-positions (sort positions (lambda (a b) (> (car a) (car b))))))
+                (for-each
+                  (lambda (pos)
+                    (editor-set-selection ed (car pos) (cdr pos))
+                    (editor-replace-selection ed replacement))
+                  sorted-positions)
+                (echo-message! echo (string-append "Replaced " (number->string (length positions))
+                                                  " occurrences"))))))))))
 
 (def (cmd-mc-edit-lines app)
-  "Add cursor to each line in selection (stub)."
-  (echo-message! (app-state-echo app) "Multiple cursors: edit lines (stub)"))
+  "Apply the same edit to each line in selection."
+  (let* ((echo (app-state-echo app))
+         (fr (app-state-frame app))
+         (win (current-window fr))
+         (ed (edit-window-editor win))
+         (mark-pos (app-state-mark-pos app)))
+    (if (not mark-pos)
+      (echo-message! echo "No region (set mark first with C-SPC)")
+      (let* ((pos (editor-get-current-pos ed))
+             (start (min pos mark-pos))
+             (end (max pos mark-pos))
+             (text (editor-get-text ed))
+             (region (substring text start (min end (string-length text))))
+             (lines (string-split region #\newline))
+             (num-lines (length lines))
+             (row (- (frame-height fr) 1))
+             (width (frame-width fr)))
+        (let ((prefix (echo-read-string echo 
+                        (string-append "Prepend to " (number->string num-lines) " lines: ")
+                        row width)))
+          (when prefix
+            (let* ((new-lines (map (lambda (line) (string-append prefix line)) lines))
+                   (new-text (string-join new-lines "\n")))
+              (editor-set-selection ed start end)
+              (editor-replace-selection ed new-text)
+              (echo-message! echo (string-append "Prepended to " (number->string num-lines) " lines")))))))))
+
+;; Clear mc state on other commands
+(def (mc-clear-state!)
+  (set! *mc-selection* #f)
+  (set! *mc-positions* '())
+  (set! *mc-position-idx* 0))
 
 ;; Package management stubs
 (def (cmd-package-list-packages app)
