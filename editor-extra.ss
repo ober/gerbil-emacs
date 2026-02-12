@@ -3219,18 +3219,144 @@
   "Step out (stub)."
   (echo-message! (app-state-echo app) "DAP: step out (stub)"))
 
-;; Snippet / template system
+;; Snippet / template system (yasnippet-like)
+;; Simple snippet system with $1, $2, etc. placeholders
+
+(def *yas-snippets* (make-hash-table))  ; mode -> (name -> template)
+
+;; Initialize with some default snippets
+(hash-put! *yas-snippets* 'scheme
+  (list->hash-table
+    '(("def" . "(def ($1)\n  $0)")
+      ("defstruct" . "(defstruct $1\n  ($2))")
+      ("let" . "(let (($1 $2))\n  $0)")
+      ("lambda" . "(lambda ($1)\n  $0)")
+      ("if" . "(if $1\n  $2\n  $3)")
+      ("cond" . "(cond\n  ($1 $2)\n  (else $3))")
+      ("for" . "(for (($1 $2))\n  $0)")
+      ("match" . "(match $1\n  ($2 $3))"))))
+
+(hash-put! *yas-snippets* 'python
+  (list->hash-table
+    '(("def" . "def $1($2):\n    $0")
+      ("class" . "class $1:\n    def __init__(self$2):\n        $0")
+      ("for" . "for $1 in $2:\n    $0")
+      ("if" . "if $1:\n    $2\nelse:\n    $3")
+      ("with" . "with $1 as $2:\n    $0")
+      ("try" . "try:\n    $1\nexcept $2:\n    $0"))))
+
+(hash-put! *yas-snippets* 'c
+  (list->hash-table
+    '(("for" . "for (int $1 = 0; $1 < $2; $1++) {\n    $0\n}")
+      ("if" . "if ($1) {\n    $0\n}")
+      ("while" . "while ($1) {\n    $0\n}")
+      ("func" . "$1 $2($3) {\n    $0\n}")
+      ("struct" . "struct $1 {\n    $0\n};"))))
+
+(def (yas-get-mode app)
+  "Determine snippet mode from current buffer."
+  (let* ((fr (app-state-frame app))
+         (win (current-window fr))
+         (buf (edit-window-buffer win))
+         (file (and buf (buffer-file-path buf))))
+    (if file
+      (let ((ext (path-extension file)))
+        (cond
+          ((member ext '(".ss" ".scm")) 'scheme)
+          ((member ext '(".py")) 'python)
+          ((member ext '(".c" ".h")) 'c)
+          ((member ext '(".js")) 'javascript)
+          ((member ext '(".go")) 'go)
+          (else 'scheme)))
+      'scheme)))
+
+(def (yas-expand-snippet ed template)
+  "Expand a snippet template, placing cursor at $0."
+  (let* ((pos (editor-get-current-pos ed))
+         ;; Remove $N placeholders for now (simplified)
+         (text (let loop ((s template) (result ""))
+                 (if (string-empty? s)
+                   result
+                   (let ((i (string-index s #\$)))
+                     (if (not i)
+                       (string-append result s)
+                       (let ((after (substring s (+ i 1) (string-length s))))
+                         (if (and (> (string-length after) 0)
+                                  (char-numeric? (string-ref after 0)))
+                           ;; Skip the $N
+                           (loop (substring after 1 (string-length after))
+                                 (string-append result (substring s 0 i)))
+                           (loop after (string-append result (substring s 0 (+ i 1))))))))))))
+    (editor-insert-text ed pos text)
+    (editor-goto-pos ed (+ pos (string-length text)))))
+
 (def (cmd-yas-insert-snippet app)
-  "Insert a snippet (stub)."
-  (echo-message! (app-state-echo app) "Insert snippet (stub)"))
+  "Insert a snippet by name."
+  (let* ((echo (app-state-echo app))
+         (fr (app-state-frame app))
+         (win (current-window fr))
+         (ed (edit-window-editor win))
+         (row (- (frame-height fr) 1))
+         (width (frame-width fr))
+         (mode (yas-get-mode app))
+         (snippets (hash-get *yas-snippets* mode #f)))
+    (if (not snippets)
+      (echo-message! echo "No snippets for this mode")
+      (let* ((names (hash-keys snippets))
+             (name (echo-read-string echo (string-append "Snippet (" 
+                                                         (string-join (map symbol->string names) ", ")
+                                                         "): ") row width)))
+        (when (and name (not (string-empty? name)))
+          (let ((template (hash-get snippets (string->symbol name) #f)))
+            (if template
+              (begin
+                (yas-expand-snippet ed template)
+                (echo-message! echo "Inserted snippet"))
+              (echo-error! echo "Snippet not found"))))))))
 
 (def (cmd-yas-new-snippet app)
-  "Create a new snippet (stub)."
-  (echo-message! (app-state-echo app) "New snippet (stub)"))
+  "Create a new snippet definition."
+  (let* ((echo (app-state-echo app))
+         (fr (app-state-frame app))
+         (win (current-window fr))
+         (ed (edit-window-editor win))
+         (row (- (frame-height fr) 1))
+         (width (frame-width fr))
+         (mode (yas-get-mode app))
+         (name (echo-read-string echo "Snippet name: " row width)))
+    (when (and name (not (string-empty? name)))
+      (let ((template (echo-read-string echo "Template (use $0-$9 for placeholders): " row width)))
+        (when (and template (not (string-empty? template)))
+          (let ((snippets (or (hash-get *yas-snippets* mode #f)
+                              (let ((h (make-hash-table)))
+                                (hash-put! *yas-snippets* mode h)
+                                h))))
+            (hash-put! snippets (string->symbol name) template)
+            (echo-message! echo (string-append "Created snippet: " name))))))))
 
 (def (cmd-yas-visit-snippet-file app)
-  "Visit snippet file (stub)."
-  (echo-message! (app-state-echo app) "Visit snippet (stub)"))
+  "Show all snippets for current mode."
+  (let* ((echo (app-state-echo app))
+         (fr (app-state-frame app))
+         (win (current-window fr))
+         (ed (edit-window-editor win))
+         (mode (yas-get-mode app))
+         (snippets (hash-get *yas-snippets* mode #f)))
+    (if (not snippets)
+      (echo-message! echo "No snippets for this mode")
+      (let* ((buf (buffer-create! "*Snippets*" ed))
+             (text (string-append "Snippets for " (symbol->string mode) " mode:\n\n"
+                     (string-join
+                       (map (lambda (kv)
+                              (string-append (symbol->string (car kv)) ":\n  "
+                                            (cdr kv) "\n"))
+                            (hash->list snippets))
+                       "\n"))))
+        (buffer-attach! ed buf)
+        (set! (edit-window-buffer win) buf)
+        (editor-set-text ed text)
+        (editor-goto-pos ed 0)
+        (editor-set-read-only ed #t)))))
 
 ;; --- Task #48: EWW, EMMS, PDF tools, Calc, ace-jump, expand-region, etc. ---
 
