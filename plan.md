@@ -342,7 +342,7 @@ All planned features have been implemented according to the roadmap:
 - ✅ Undo/redo via Scintilla (undo tree visualization stub)
 
 **Testing:**
-- 67 test cases with 360+ checks passing
+- 70 test cases with 360 checks passing
 - Headless Qt testing supported via `QT_QPA_PLATFORM=offscreen`
 - Unit tests for keymaps, buffers, eshell, shell, and REPL
 

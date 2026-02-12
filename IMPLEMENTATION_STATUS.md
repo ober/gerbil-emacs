@@ -340,7 +340,7 @@ editor-extra.ss:474
 ## Test Coverage
 
 **Test file:** `emacs-test.ss` (849 lines)
-**Test statistics:** 67 test cases, 360+ checks
+**Test statistics:** 70 test cases, 360 checks
 
 **Test categories:**
 1. Key event translation (`key-event->string`)
@@ -358,7 +358,7 @@ editor-extra.ss:474
 
 **Sample test output** (from plan.md):
 ```
-67 test cases, 360 checks passing
+70 test cases, 360 checks passing
 ```
 
 ---
@@ -411,6 +411,6 @@ All features described in `plan.md` are implemented:
 ✅ **Phase 6:** Advanced features (completion, paren matching, line numbers, undo/redo)
 
 **Total:** 1,001 commands across all Emacs categories
-**Test coverage:** 67 test cases with 360+ checks
+**Test coverage:** 70 test cases with 360 checks
 
 The editor is feature-complete per the plan and ready for use.
