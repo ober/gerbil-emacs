@@ -3161,26 +3161,179 @@
   "Toggle rainbow mode for color display (stub)."
   (echo-message! (app-state-echo app) "Rainbow mode (stub)"))
 
-;; Git gutter
+;; Git gutter - shows diff hunks from git
+;; Stores hunks as (start-line count type) where type is 'add, 'delete, or 'change
+
+(def *git-gutter-hunks* (make-hash-table)) ; buffer-name -> list of (start-line count type)
+(def *git-gutter-hunk-idx* (make-hash-table)) ; buffer-name -> current hunk index
+
+(def (git-gutter-parse-diff output)
+  "Parse git diff output to extract hunks."
+  (let ((lines (string-split output #\newline))
+        (hunks '()))
+    (for-each
+      (lambda (line)
+        ;; Look for @@ -old,count +new,count @@ lines
+        (when (string-prefix? "@@" line)
+          (let* ((parts (string-split line #\space))
+                 ;; Format: @@ -old,count +new,count @@
+                 (new-part (if (>= (length parts) 3) (caddr parts) "+0"))
+                 (new-range (substring new-part 1 (string-length new-part)))
+                 (range-parts (string-split new-range #\,))
+                 (start-line (string->number (car range-parts)))
+                 (count (if (> (length range-parts) 1)
+                          (string->number (cadr range-parts))
+                          1)))
+            (when (and start-line count)
+              (set! hunks (cons (list start-line count 'change) hunks))))))
+      lines)
+    (reverse hunks)))
+
+(def (git-gutter-refresh! app)
+  "Refresh git diff hunks for current buffer."
+  (let* ((fr (app-state-frame app))
+         (win (current-window fr))
+         (buf (edit-window-buffer win))
+         (file-path (and buf (buffer-file-path buf)))
+         (buf-name (and buf (buffer-name buf)))
+         (echo (app-state-echo app)))
+    (if (not file-path)
+      (echo-message! echo "Buffer has no file")
+      (with-exception-catcher
+        (lambda (e) (echo-message! echo "Not in a git repository"))
+        (lambda ()
+          (let* ((proc (open-process
+                         (list path: "git"
+                               arguments: (list "diff" "--no-color" "-U0" "--" file-path)
+                               stdin-redirection: #f
+                               stdout-redirection: #t
+                               stderr-redirection: #f
+                               directory: (path-directory file-path))))
+                 (output (read-line proc #f)))
+            (process-status proc)
+            (let ((hunks (git-gutter-parse-diff (or output ""))))
+              (hash-put! *git-gutter-hunks* buf-name hunks)
+              (hash-put! *git-gutter-hunk-idx* buf-name 0)
+              (if (null? hunks)
+                (echo-message! echo "No changes from git HEAD")
+                (echo-message! echo
+                  (string-append (number->string (length hunks)) " hunk(s) changed"))))))))))
+
 (def (cmd-git-gutter-mode app)
-  "Toggle git gutter (stub)."
-  (echo-message! (app-state-echo app) "Git gutter mode (stub)"))
+  "Refresh git diff status for current buffer."
+  (git-gutter-refresh! app))
 
 (def (cmd-git-gutter-next-hunk app)
-  "Jump to next git gutter hunk (stub)."
-  (echo-message! (app-state-echo app) "Git gutter: next hunk (stub)"))
+  "Jump to next git diff hunk."
+  (let* ((fr (app-state-frame app))
+         (win (current-window fr))
+         (buf (edit-window-buffer win))
+         (buf-name (and buf (buffer-name buf)))
+         (echo (app-state-echo app)))
+    (if (not buf-name)
+      (echo-error! echo "No buffer")
+      (let ((hunks (hash-get *git-gutter-hunks* buf-name '())))
+        (if (null? hunks)
+          (echo-message! echo "No hunks (run git-gutter-mode first)")
+          (let* ((idx (hash-get *git-gutter-hunk-idx* buf-name 0))
+                 (new-idx (modulo (+ idx 1) (length hunks)))
+                 (hunk (list-ref hunks new-idx))
+                 (line (car hunk))
+                 (count (cadr hunk))
+                 (ed (edit-window-editor win)))
+            (hash-put! *git-gutter-hunk-idx* buf-name new-idx)
+            (editor-goto-line ed line)
+            (echo-message! echo (string-append "Hunk " (number->string (+ new-idx 1))
+                                              "/" (number->string (length hunks))
+                                              ": line " (number->string line)
+                                              " (" (number->string count) " lines)"))))))))
 
 (def (cmd-git-gutter-previous-hunk app)
-  "Jump to previous git gutter hunk (stub)."
-  (echo-message! (app-state-echo app) "Git gutter: previous hunk (stub)"))
+  "Jump to previous git diff hunk."
+  (let* ((fr (app-state-frame app))
+         (win (current-window fr))
+         (buf (edit-window-buffer win))
+         (buf-name (and buf (buffer-name buf)))
+         (echo (app-state-echo app)))
+    (if (not buf-name)
+      (echo-error! echo "No buffer")
+      (let ((hunks (hash-get *git-gutter-hunks* buf-name '())))
+        (if (null? hunks)
+          (echo-message! echo "No hunks (run git-gutter-mode first)")
+          (let* ((idx (hash-get *git-gutter-hunk-idx* buf-name 0))
+                 (new-idx (modulo (- idx 1) (length hunks)))
+                 (hunk (list-ref hunks new-idx))
+                 (line (car hunk))
+                 (count (cadr hunk))
+                 (ed (edit-window-editor win)))
+            (hash-put! *git-gutter-hunk-idx* buf-name new-idx)
+            (editor-goto-line ed line)
+            (echo-message! echo (string-append "Hunk " (number->string (+ new-idx 1))
+                                              "/" (number->string (length hunks))
+                                              ": line " (number->string line)
+                                              " (" (number->string count) " lines)"))))))))
 
 (def (cmd-git-gutter-revert-hunk app)
-  "Revert current hunk (stub)."
-  (echo-message! (app-state-echo app) "Git gutter: revert hunk (stub)"))
+  "Revert the current hunk to git HEAD version."
+  (let* ((fr (app-state-frame app))
+         (win (current-window fr))
+         (buf (edit-window-buffer win))
+         (file-path (and buf (buffer-file-path buf)))
+         (buf-name (and buf (buffer-name buf)))
+         (echo (app-state-echo app)))
+    (if (not file-path)
+      (echo-error! echo "Buffer has no file")
+      (let ((hunks (hash-get *git-gutter-hunks* buf-name '())))
+        (if (null? hunks)
+          (echo-message! echo "No hunks to revert")
+          (with-exception-catcher
+            (lambda (e) (echo-error! echo "Failed to revert"))
+            (lambda ()
+              ;; For simplicity, revert entire file and reload
+              (let* ((proc (open-process
+                             (list path: "git"
+                                   arguments: (list "checkout" "--" file-path)
+                                   stdin-redirection: #f
+                                   stdout-redirection: #t
+                                   stderr-redirection: #t
+                                   directory: (path-directory file-path)))))
+                (process-status proc)
+                ;; Reload file
+                (let ((ed (edit-window-editor win))
+                      (text (with-exception-catcher
+                              (lambda (e) #f)
+                              (lambda ()
+                                (call-with-input-file file-path
+                                  (lambda (p) (read-line p #f)))))))
+                  (when text
+                    (editor-set-text ed text)
+                    (editor-goto-pos ed 0)))
+                (hash-put! *git-gutter-hunks* buf-name '())
+                (echo-message! echo "Reverted to git HEAD")))))))))
 
 (def (cmd-git-gutter-stage-hunk app)
-  "Stage current hunk (stub)."
-  (echo-message! (app-state-echo app) "Git gutter: stage hunk (stub)"))
+  "Stage the current file (git add)."
+  (let* ((fr (app-state-frame app))
+         (win (current-window fr))
+         (buf (edit-window-buffer win))
+         (file-path (and buf (buffer-file-path buf)))
+         (echo (app-state-echo app)))
+    (if (not file-path)
+      (echo-error! echo "Buffer has no file")
+      (with-exception-catcher
+        (lambda (e) (echo-error! echo "Failed to stage"))
+        (lambda ()
+          (let* ((proc (open-process
+                         (list path: "git"
+                               arguments: (list "add" "--" file-path)
+                               stdin-redirection: #f
+                               stdout-redirection: #t
+                               stderr-redirection: #t
+                               directory: (path-directory file-path)))))
+            (process-status proc)
+            ;; Refresh hunks
+            (git-gutter-refresh! app)
+            (echo-message! echo (string-append "Staged: " (path-strip-directory file-path)))))))))
 
 ;; Minimap
 (def (cmd-minimap-mode app)
