@@ -1925,14 +1925,104 @@
             (editor-goto-pos ed 0)
             (editor-set-read-only ed #t)))))))
 
-;; Treemacs / file explorer
+;; Treemacs / file explorer - simple tree-view of directory structure
+;; Uses a dedicated buffer showing directory tree
+
+(def *treemacs-root* #f) ; current tree root directory
+(def *treemacs-expanded* (make-hash-table)) ; path -> #t if expanded
+
+(def (treemacs-get-entries dir depth)
+  "Get directory entries with indentation."
+  (with-exception-catcher
+    (lambda (e) '())
+    (lambda ()
+      (let* ((entries (directory-files dir))
+             (sorted (sort entries string<?))
+             (indent (make-string (* depth 2) #\space)))
+        (apply append
+          (map (lambda (name)
+                 (let* ((path (path-expand name dir))
+                        (is-dir (directory-exists? path))
+                        (expanded (and is-dir (hash-get *treemacs-expanded* path #f)))
+                        (prefix (if is-dir
+                                  (if expanded "▼ " "▶ ")
+                                  "  ")))
+                   (cons (list (string-append indent prefix name) path is-dir)
+                         (if (and is-dir expanded)
+                           (treemacs-get-entries path (+ depth 1))
+                           '()))))
+               sorted))))))
+
+(def (treemacs-render app root)
+  "Render the tree view in a buffer."
+  (let* ((fr (app-state-frame app))
+         (win (current-window fr))
+         (ed (edit-window-editor win))
+         (buf (or (buffer-by-name "*Treemacs*")
+                  (buffer-create! "*Treemacs*" ed)))
+         (entries (cons (list (string-append "▼ " root) root #t)
+                       (treemacs-get-entries root 1)))
+         (lines (map car entries)))
+    (buffer-attach! ed buf)
+    (set! (edit-window-buffer win) buf)
+    (editor-set-text ed (string-append "Treemacs: " root "\n"
+                                       (make-string 40 #\-)
+                                       "\n"
+                                       (string-join lines "\n")
+                                       "\n\n[Enter: open/toggle, q: quit]"))
+    (editor-goto-line ed 3)
+    (editor-set-read-only ed #t)
+    ;; Store entries for navigation
+    (set! (buffer-lexer-lang buf) (list 'treemacs entries))))
+
 (def (cmd-treemacs app)
-  "Toggle treemacs file explorer (stub)."
-  (echo-message! (app-state-echo app) "Treemacs (stub)"))
+  "Toggle treemacs file explorer."
+  (let* ((echo (app-state-echo app))
+         (fr (app-state-frame app))
+         (win (current-window fr))
+         (buf (edit-window-buffer win)))
+    ;; If already in treemacs, close it
+    (if (and buf (string=? (buffer-name buf) "*Treemacs*"))
+      (begin
+        ;; Switch back to previous buffer or scratch
+        (let ((other (find (lambda (b) (not (string=? (buffer-name b) "*Treemacs*")))
+                          (buffer-list))))
+          (when other
+            (buffer-attach! (edit-window-editor win) other)
+            (set! (edit-window-buffer win) other)))
+        (echo-message! echo "Treemacs closed"))
+      ;; Open treemacs
+      (let ((root (or *treemacs-root*
+                      (let ((file (and buf (buffer-file-path buf))))
+                        (if file
+                          (or (project-find-root (path-directory file))
+                              (path-directory file))
+                          (current-directory))))))
+        (set! *treemacs-root* root)
+        (treemacs-render app root)
+        (echo-message! echo "Treemacs opened")))))
 
 (def (cmd-treemacs-find-file app)
-  "Find current file in treemacs (stub)."
-  (echo-message! (app-state-echo app) "Treemacs: find file (stub)"))
+  "Find current file in treemacs and expand to it."
+  (let* ((echo (app-state-echo app))
+         (fr (app-state-frame app))
+         (win (current-window fr))
+         (buf (edit-window-buffer win))
+         (file (and buf (buffer-file-path buf))))
+    (if (not file)
+      (echo-message! echo "Current buffer has no file")
+      (let* ((root (or *treemacs-root*
+                       (project-find-root (path-directory file))
+                       (path-directory file))))
+        (set! *treemacs-root* root)
+        ;; Expand all parent directories
+        (let loop ((dir (path-directory file)))
+          (when (and dir (string-prefix? root dir))
+            (hash-put! *treemacs-expanded* dir #t)
+            (unless (string=? dir root)
+              (loop (path-directory dir)))))
+        (treemacs-render app root)
+        (echo-message! echo (string-append "Found: " (path-strip-directory file)))))))
 
 ;; Magit-like git operations
 (def (cmd-magit-status app)
