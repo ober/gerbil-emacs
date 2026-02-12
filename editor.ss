@@ -9748,27 +9748,78 @@
         (editor-set-text ed result)))))
 
 ;; --- Abbrev mode ---
+;; Global abbreviation table
+
+(def *abbrev-table* (make-hash-table)) ; abbrev -> expansion
+(def *abbrev-mode-enabled* #t)
 
 (def (cmd-abbrev-mode app)
-  "Toggle abbrev mode (stub)."
-  (echo-message! (app-state-echo app) "Abbrev mode toggled (stub)"))
+  "Toggle abbrev mode."
+  (set! *abbrev-mode-enabled* (not *abbrev-mode-enabled*))
+  (echo-message! (app-state-echo app)
+    (if *abbrev-mode-enabled* "Abbrev mode enabled" "Abbrev mode disabled")))
 
 (def (cmd-define-abbrev app)
-  "Define a new abbreviation (stub)."
+  "Define a new abbreviation."
   (let ((abbrev (app-read-string app "Abbrev: ")))
     (when (and abbrev (not (string-empty? abbrev)))
       (let ((expansion (app-read-string app "Expansion: ")))
         (when (and expansion (not (string-empty? expansion)))
+          (hash-put! *abbrev-table* abbrev expansion)
           (echo-message! (app-state-echo app)
-                         (string-append "Defined: " abbrev " -> " expansion " (stub)")))))))
+                         (string-append "Defined: " abbrev " -> " expansion)))))))
+
+(def (abbrev-word-before-point ed)
+  "Get the word immediately before point for abbreviation lookup."
+  (let* ((pos (editor-get-current-pos ed))
+         (text (editor-get-text ed)))
+    (if (<= pos 0)
+      (values #f #f)
+      (let loop ((i (- pos 1)) (end pos))
+        (if (< i 0)
+          (values 0 end)
+          (let ((ch (string-ref text i)))
+            (if (or (char-alphabetic? ch) (char-numeric? ch))
+              (loop (- i 1) end)
+              (if (= (+ i 1) end)
+                (values #f #f)
+                (values (+ i 1) end)))))))))
 
 (def (cmd-expand-abbrev app)
-  "Expand abbreviation at point (stub)."
-  (echo-message! (app-state-echo app) "No abbrev to expand (stub)"))
+  "Expand abbreviation at point."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app)))
+    (let-values (((start end) (abbrev-word-before-point ed)))
+      (if (not start)
+        (echo-message! echo "No word to expand")
+        (let* ((text (editor-get-text ed))
+               (word (substring text start end))
+               (expansion (hash-get *abbrev-table* word #f)))
+          (if (not expansion)
+            (echo-message! echo (string-append "No abbrev for \"" word "\""))
+            (begin
+              ;; Delete the abbreviation
+              (editor-goto-pos ed start)
+              (editor-set-selection ed start end)
+              (editor-replace-selection ed "")
+              ;; Insert the expansion
+              (editor-insert-text ed start expansion)
+              (editor-goto-pos ed (+ start (string-length expansion)))
+              (echo-message! echo (string-append "Expanded: " word " -> " expansion)))))))))
 
 (def (cmd-list-abbrevs app)
-  "List all abbreviations (stub)."
-  (open-output-buffer app "*Abbrevs*" "No abbreviations defined (stub)."))
+  "List all abbreviations."
+  (let* ((abbrevs (hash->list *abbrev-table*))
+         (text (if (null? abbrevs)
+                 "No abbreviations defined.\n\nUse M-x define-abbrev to add abbreviations."
+                 (string-append "Abbreviations:\n\n"
+                   (string-join
+                     (map (lambda (pair)
+                            (string-append "  " (car pair) " -> " (cdr pair)))
+                          (sort abbrevs (lambda (a b) (string<? (car a) (car b)))))
+                     "\n")
+                   "\n\nUse M-x define-abbrev to add more."))))
+    (open-output-buffer app "*Abbrevs*" text)))
 
 ;; --- Completion ---
 
