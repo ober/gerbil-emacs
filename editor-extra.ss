@@ -1072,8 +1072,41 @@
         (send-message ed SCI_DELETERANGE open-pos 1)))))
 
 (def (cmd-paredit-raise-sexp app)
-  "Raise sexp - replace parent with child sexp (stub)."
-  (echo-message! (app-state-echo app) "Paredit raise (stub)"))
+  "Raise sexp - replace parent list with sexp at point."
+  (let* ((fr (app-state-frame app))
+         (win (current-window fr))
+         (ed (edit-window-editor win))
+         (pos (editor-get-current-pos ed))
+         (text (editor-get-text ed))
+         (echo (app-state-echo app)))
+    ;; Find enclosing list
+    (let ((open-pos (sp-find-enclosing-paren ed pos #\( #\))))
+      (if (not open-pos)
+        (echo-message! echo "Not inside a list")
+        (let ((close-pos (sp-find-matching-close ed (+ open-pos 1) #\( #\))))
+          (if (not close-pos)
+            (echo-message! echo "Unbalanced parens")
+            ;; Find sexp at point
+            (let loop ((i pos))
+              (if (>= i (string-length text))
+                (echo-message! echo "No sexp at point")
+                (let ((ch (string-ref text i)))
+                  (cond
+                    ((char-whitespace? ch) (loop (+ i 1)))
+                    (else
+                     ;; Found start of sexp, get its content
+                     (let* ((sexp-end (sp-find-sexp-end ed i))
+                            (sexp-text (if sexp-end
+                                         (substring text i (+ sexp-end 1))
+                                         #f)))
+                       (if (not sexp-text)
+                         (echo-message! echo "Could not parse sexp")
+                         (begin
+                           ;; Replace parent list with sexp
+                           (editor-set-selection ed open-pos (+ close-pos 1))
+                           (editor-replace-selection ed sexp-text)
+                           (editor-goto-pos ed open-pos)
+                           (echo-message! echo "Raised sexp")))))))))))))))
 
 ;; Tramp-like remote editing
 (def (cmd-find-file-ssh app)
