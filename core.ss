@@ -855,7 +855,9 @@
    prefix-digit-mode? ; boolean: are we currently collecting digit arguments?
    key-handler   ; procedure or #f: (lambda (editor) ...) installs key handler on editor
    winner-history      ; list of window configs: ((num-windows current-idx buffers) ...)
-   winner-history-idx) ; integer: current position in winner-history for redo
+   winner-history-idx  ; integer: current position in winner-history for redo
+   tabs                ; list of tabs: ((name buffer-names current-idx) ...)
+   current-tab-idx)    ; integer: current tab index
   transparent: #t)
 
 (def (new-app-state frame)
@@ -882,7 +884,9 @@
    #f                    ; prefix-digit-mode?
    #f                    ; key-handler
    []                    ; winner-history
-   0))                   ; winner-history-idx
+   0                     ; winner-history-idx
+   (list (list "Tab 1" '("*scratch*") 0)) ; tabs - initial tab
+   0))                   ; current-tab-idx
 
 (def (get-prefix-arg app (default 1))
   "Get the numeric value of the current prefix argument."

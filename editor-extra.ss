@@ -305,29 +305,169 @@
                             "/" (number->string (length history))))))))))
 
 ;; Tab-bar commands
+;; Tabs store: (name buffer-names window-idx)
+;; Each tab remembers which buffers were open and which window was active
+
+(def (tab-save-current! app)
+  "Save current window state to current tab."
+  (let* ((tabs (app-state-tabs app))
+         (idx (app-state-current-tab-idx app))
+         (fr (app-state-frame app))
+         (wins (frame-windows fr))
+         (buffers (map (lambda (w)
+                         (let ((buf (edit-window-buffer w)))
+                           (if buf (buffer-name buf) "*scratch*")))
+                       wins))
+         (win-idx (frame-current-idx fr)))
+    (when (< idx (length tabs))
+      (let* ((old-tab (list-ref tabs idx))
+             (name (car old-tab))
+             (new-tab (list name buffers win-idx)))
+        (set! (app-state-tabs app)
+          (append (take tabs idx)
+                  (list new-tab)
+                  (if (< (+ idx 1) (length tabs))
+                    (list-tail tabs (+ idx 1))
+                    '())))))))
+
+(def (tab-restore! app tab)
+  "Restore window state from a tab."
+  (let* ((name (car tab))
+         (buffers (cadr tab))
+         (win-idx (caddr tab))
+         (fr (app-state-frame app))
+         (wins (frame-windows fr)))
+    ;; Restore buffers to windows
+    (for-each
+      (lambda (win buf-name)
+        (let ((buf (buffer-by-name buf-name)))
+          (when buf
+            (let ((ed (edit-window-editor win)))
+              (buffer-attach! ed buf)
+              (set! (edit-window-buffer win) buf)))))
+      wins
+      (take buffers (min (length buffers) (length wins))))
+    ;; Set current window
+    (let ((max-idx (- (length wins) 1)))
+      (set! (frame-current-idx fr) (min win-idx max-idx)))))
+
 (def (cmd-tab-new app)
-  "Create a new tab (stub)."
-  (echo-message! (app-state-echo app) "New tab (stub)"))
+  "Create a new tab with current buffer."
+  (let* ((echo (app-state-echo app))
+         (tabs (app-state-tabs app))
+         (fr (app-state-frame app))
+         (win (current-window fr))
+         (buf (edit-window-buffer win))
+         (buf-name (if buf (buffer-name buf) "*scratch*"))
+         (new-tab-num (+ (length tabs) 1))
+         (new-tab-name (string-append "Tab " (number->string new-tab-num)))
+         (new-tab (list new-tab-name (list buf-name) 0)))
+    ;; Save current tab state first
+    (tab-save-current! app)
+    ;; Add new tab
+    (set! (app-state-tabs app) (append tabs (list new-tab)))
+    (set! (app-state-current-tab-idx app) (- (length (app-state-tabs app)) 1))
+    (echo-message! echo (string-append "Created " new-tab-name))))
 
 (def (cmd-tab-close app)
-  "Close current tab (stub)."
-  (echo-message! (app-state-echo app) "Tab closed (stub)"))
+  "Close current tab."
+  (let* ((echo (app-state-echo app))
+         (tabs (app-state-tabs app))
+         (idx (app-state-current-tab-idx app)))
+    (if (<= (length tabs) 1)
+      (echo-message! echo "Cannot close last tab")
+      (let* ((tab-name (car (list-ref tabs idx)))
+             (new-tabs (append (take tabs idx)
+                               (if (< (+ idx 1) (length tabs))
+                                 (list-tail tabs (+ idx 1))
+                                 '())))
+             (new-idx (min idx (- (length new-tabs) 1))))
+        (set! (app-state-tabs app) new-tabs)
+        (set! (app-state-current-tab-idx app) new-idx)
+        ;; Restore the now-current tab
+        (tab-restore! app (list-ref new-tabs new-idx))
+        (echo-message! echo (string-append "Closed " tab-name))))))
 
 (def (cmd-tab-next app)
-  "Switch to next tab (stub)."
-  (echo-message! (app-state-echo app) "Next tab (stub)"))
+  "Switch to next tab."
+  (let* ((echo (app-state-echo app))
+         (tabs (app-state-tabs app))
+         (idx (app-state-current-tab-idx app)))
+    (if (<= (length tabs) 1)
+      (echo-message! echo "Only one tab")
+      (begin
+        ;; Save current tab state
+        (tab-save-current! app)
+        ;; Switch to next
+        (let ((new-idx (modulo (+ idx 1) (length tabs))))
+          (set! (app-state-current-tab-idx app) new-idx)
+          (let ((tab (list-ref tabs new-idx)))
+            (tab-restore! app tab)
+            (echo-message! echo (string-append "Tab: " (car tab)
+                                              " [" (number->string (+ new-idx 1))
+                                              "/" (number->string (length tabs)) "]"))))))))
 
 (def (cmd-tab-previous app)
-  "Switch to previous tab (stub)."
-  (echo-message! (app-state-echo app) "Previous tab (stub)"))
+  "Switch to previous tab."
+  (let* ((echo (app-state-echo app))
+         (tabs (app-state-tabs app))
+         (idx (app-state-current-tab-idx app)))
+    (if (<= (length tabs) 1)
+      (echo-message! echo "Only one tab")
+      (begin
+        ;; Save current tab state
+        (tab-save-current! app)
+        ;; Switch to previous
+        (let ((new-idx (modulo (- idx 1) (length tabs))))
+          (set! (app-state-current-tab-idx app) new-idx)
+          (let ((tab (list-ref tabs new-idx)))
+            (tab-restore! app tab)
+            (echo-message! echo (string-append "Tab: " (car tab)
+                                              " [" (number->string (+ new-idx 1))
+                                              "/" (number->string (length tabs)) "]"))))))))
 
 (def (cmd-tab-rename app)
-  "Rename current tab (stub)."
-  (echo-message! (app-state-echo app) "Tab renamed (stub)"))
+  "Rename current tab."
+  (let* ((echo (app-state-echo app))
+         (fr (app-state-frame app))
+         (row (- (frame-height fr) 1))
+         (width (frame-width fr))
+         (tabs (app-state-tabs app))
+         (idx (app-state-current-tab-idx app))
+         (old-name (car (list-ref tabs idx)))
+         (new-name (echo-read-string echo "Rename tab to: " row width)))
+    (when (and new-name (not (string=? new-name "")))
+      (let* ((old-tab (list-ref tabs idx))
+             (new-tab (cons new-name (cdr old-tab))))
+        (set! (app-state-tabs app)
+          (append (take tabs idx)
+                  (list new-tab)
+                  (if (< (+ idx 1) (length tabs))
+                    (list-tail tabs (+ idx 1))
+                    '())))
+        (echo-message! echo (string-append "Renamed to: " new-name))))))
 
 (def (cmd-tab-move app)
-  "Move current tab (stub)."
-  (echo-message! (app-state-echo app) "Tab moved (stub)"))
+  "Move current tab left or right (with prefix arg for direction)."
+  (let* ((echo (app-state-echo app))
+         (tabs (app-state-tabs app))
+         (idx (app-state-current-tab-idx app))
+         (n (get-prefix-arg app 1)))
+    (if (<= (length tabs) 1)
+      (echo-message! echo "Only one tab")
+      (let* ((new-idx (modulo (+ idx n) (length tabs)))
+             (tab (list-ref tabs idx))
+             (tabs-without (append (take tabs idx)
+                                   (if (< (+ idx 1) (length tabs))
+                                     (list-tail tabs (+ idx 1))
+                                     '())))
+             (new-tabs (append (take tabs-without new-idx)
+                               (list tab)
+                               (list-tail tabs-without new-idx))))
+        (set! (app-state-tabs app) new-tabs)
+        (set! (app-state-current-tab-idx app) new-idx)
+        (echo-message! echo (string-append "Moved tab to position "
+                                          (number->string (+ new-idx 1))))))))
 
 ;; Additional VC commands
 (def (cmd-vc-register app)
