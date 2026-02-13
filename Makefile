@@ -11,7 +11,7 @@ build:
 	chmod +x build.ss
 	LD_LIBRARY_PATH=$(OPENSSL_RPATH) gerbil build
 	patchelf --set-rpath $(OPENSSL_RPATH) .gerbil/bin/gerbil-emacs
-	patchelf --set-rpath $(OPENSSL_RPATH):$(QT_SHIM_RPATH) .gerbil/bin/gerbil-emacs-qt
+	-patchelf --set-rpath $(OPENSSL_RPATH):$(QT_SHIM_RPATH) .gerbil/bin/gerbil-emacs-qt
 
 clean:
 	gerbil clean

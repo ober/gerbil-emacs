@@ -6,6 +6,7 @@
 (import :std/sugar
         :gerbil-qt/qt
         :gerbil-emacs/core
+        :gerbil-emacs/editor
         :gerbil-emacs/repl
         :gerbil-emacs/eshell
         :gerbil-emacs/shell
