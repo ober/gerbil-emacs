@@ -53,6 +53,9 @@
   ;; Shared helpers
   brace-char?
 
+  ;; Hooks
+  *post-buffer-attach-hook*
+
   ;; File I/O helpers
   read-file-as-string
   write-string-to-file
@@ -789,6 +792,14 @@
 (def (echo-clear! echo)
   (set! (echo-state-message echo) #f)
   (set! (echo-state-error? echo) #f))
+
+;;;============================================================================
+;;; Hooks
+;;;============================================================================
+
+;; Called after buffer-attach! with (editor buffer) arguments.
+;; Set by app-init! to restore syntax highlighting per buffer.
+(def *post-buffer-attach-hook* (lambda (editor buf) (void)))
 
 ;;;============================================================================
 ;;; Buffer structure and list

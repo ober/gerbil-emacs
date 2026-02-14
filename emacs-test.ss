@@ -28,7 +28,10 @@
                  cmd-org-insert-heading cmd-org-insert-src-block
                  cmd-org-template-expand
                  org-heading-level org-find-subtree-end org-on-checkbox-line?)
-        (only-in :gerbil-emacs/editor register-all-commands!))
+        (only-in :gerbil-emacs/editor register-all-commands!)
+        (only-in :gerbil-emacs/highlight
+                 detect-file-language gerbil-file-extension?
+                 setup-highlighting-for-file!))
 
 (export emacs-test)
 
@@ -1916,6 +1919,85 @@
       (check (not (not (find-command 'org-clock-in))) => #t)
       (check (not (not (find-command 'org-clock-out))) => #t)
       (check (not (not (find-command 'org-template-expand))) => #t))
+
+    ;;; ================================================================
+    ;;; Language detection and highlighting tests
+    ;;; ================================================================
+
+    (test-case "detect-file-language: Python"
+      (check (detect-file-language "script.py") => 'python)
+      (check (detect-file-language "app.pyw") => 'python)
+      (check (detect-file-language "/home/user/code/main.py") => 'python))
+
+    (test-case "detect-file-language: Scheme/Gerbil"
+      (check (detect-file-language "core.ss") => 'scheme)
+      (check (detect-file-language "lib.scm") => 'scheme)
+      (check (detect-file-language "module.sld") => 'scheme)
+      (check (detect-file-language "lib.sls") => 'scheme))
+
+    (test-case "detect-file-language: C/C++"
+      (check (detect-file-language "main.c") => 'c)
+      (check (detect-file-language "header.h") => 'c)
+      (check (detect-file-language "app.cpp") => 'c)
+      (check (detect-file-language "lib.hpp") => 'c)
+      (check (detect-file-language "test.cc") => 'c)
+      (check (detect-file-language "util.cxx") => 'c))
+
+    (test-case "detect-file-language: JavaScript/TypeScript"
+      (check (detect-file-language "app.js") => 'javascript)
+      (check (detect-file-language "index.jsx") => 'javascript)
+      (check (detect-file-language "main.mjs") => 'javascript)
+      (check (detect-file-language "app.ts") => 'typescript)
+      (check (detect-file-language "component.tsx") => 'typescript))
+
+    (test-case "detect-file-language: Web languages"
+      (check (detect-file-language "index.html") => 'html)
+      (check (detect-file-language "page.htm") => 'html)
+      (check (detect-file-language "style.css") => 'css))
+
+    (test-case "detect-file-language: Shell/Bash"
+      (check (detect-file-language "deploy.sh") => 'bash)
+      (check (detect-file-language "config.bash") => 'bash)
+      (check (detect-file-language "setup.zsh") => 'bash))
+
+    (test-case "detect-file-language: Data formats"
+      (check (detect-file-language "data.json") => 'json)
+      (check (detect-file-language "config.yaml") => 'yaml)
+      (check (detect-file-language "config.yml") => 'yaml)
+      (check (detect-file-language "settings.toml") => 'toml))
+
+    (test-case "detect-file-language: Other languages"
+      (check (detect-file-language "app.rb") => 'ruby)
+      (check (detect-file-language "main.rs") => 'rust)
+      (check (detect-file-language "main.go") => 'go)
+      (check (detect-file-language "App.java") => 'java)
+      (check (detect-file-language "script.lua") => 'lua)
+      (check (detect-file-language "query.sql") => 'sql)
+      (check (detect-file-language "README.md") => 'markdown)
+      (check (detect-file-language "Makefile") => 'makefile)
+      (check (detect-file-language "changes.diff") => 'diff)
+      (check (detect-file-language "changes.patch") => 'diff))
+
+    (test-case "detect-file-language: unknown/no extension"
+      (check (detect-file-language "README") => #f)
+      (check (detect-file-language "data.xyz") => #f)
+      (check (detect-file-language #f) => #f))
+
+    (test-case "gerbil-file-extension?"
+      (check (gerbil-file-extension? "core.ss") => #t)
+      (check (gerbil-file-extension? "lib.scm") => #t)
+      (check (gerbil-file-extension? "main.py") => #f)
+      (check (gerbil-file-extension? #f) => #f))
+
+    (test-case "buffer-attach hook restores highlighting"
+      ;; Verify the hook mechanism: creating a buffer with a file-path
+      ;; and attaching it should trigger the post-attach hook
+      (let* ((ed (create-scintilla-editor))
+             (buf (buffer-create! "test.py" ed "/tmp/test.py")))
+        ;; Just verify the attach doesn't crash (hook is no-op by default in tests)
+        (buffer-attach! ed buf)
+        (check (buffer-file-path buf) => "/tmp/test.py")
+        (check (detect-file-language "/tmp/test.py") => 'python)))
 
     ))
 

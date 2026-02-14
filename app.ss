@@ -36,6 +36,13 @@
   (setup-default-bindings!)
   (register-all-commands!)
 
+  ;; Install hook to restore per-buffer highlighting on every buffer switch
+  (set! *post-buffer-attach-hook*
+    (lambda (editor buf)
+      (let ((fp (buffer-file-path buf)))
+        (when fp
+          (setup-highlighting-for-file! editor fp)))))
+
   ;; Create frame with one window
   (let* ((width (tui-width))
          (height (tui-height))
@@ -72,9 +79,8 @@
           (editor-set-text ed text)
           (editor-set-save-point ed)
           (editor-goto-pos ed 0))))
-    ;; Apply syntax highlighting for Gerbil files
-    (when (gerbil-file-extension? filename)
-      (setup-gerbil-highlighting! ed))))
+    ;; Apply syntax highlighting based on file type
+    (setup-highlighting-for-file! ed filename)))
 
 ;;;============================================================================
 ;;; REPL output polling
