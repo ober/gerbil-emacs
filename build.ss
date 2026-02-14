@@ -32,17 +32,37 @@
 (def qt-base (path-expand "mine/gerbil-qt" (getenv "HOME")))
 (def qt-vendor-dir (path-expand "vendor" qt-base))
 
+;; Ensure pkg-config can find Qt6 .pc files
+(let ((existing (or (getenv "PKG_CONFIG_PATH" #f) "")))
+  (unless (string-contains existing "/usr/lib/x86_64-linux-gnu/pkgconfig")
+    (setenv "PKG_CONFIG_PATH"
+      (if (string=? existing "")
+        "/usr/lib/x86_64-linux-gnu/pkgconfig"
+        (string-append existing ":/usr/lib/x86_64-linux-gnu/pkgconfig")))))
+
+;; Qt modules also need scintilla headers (editor.ss transitively includes them)
 (def qt-cc-opts
   (string-append
    "-I" qt-vendor-dir " "
-   (cppflags "Qt6Widgets" "")))
+   (cppflags "Qt6Widgets" "") " "
+   cc-opts))
 
+;; Homebrew OpenSSL path — must come before system -L/usr/lib/... from Qt pkg-config
+;; to avoid linking against system OpenSSL 3.0 (missing newer symbols)
+(def openssl-lib-dir "/home/linuxbrew/.linuxbrew/opt/openssl@3/lib")
+
+;; Qt exe also links scintilla/termbox/lexilla because editor.ss pulls them in
 (def qt-ld-opts
   (string-append
+   "-L" openssl-lib-dir " "
+   "-Wl,-rpath," openssl-lib-dir " "
    "-L" qt-vendor-dir " -lqt_shim "
    "-Wl,-rpath," qt-vendor-dir " "
    (ldflags "Qt6Widgets" "-lQt6Widgets") " "
-   "-lstdc++"))
+   (path-expand "bin/scintilla.a" sci-dir) " "
+   (path-expand "bin/liblexilla.a" lexilla-dir) " "
+   (path-expand "bin/termbox.a" termbox-dir) " "
+   "-lstdc++ -lpthread"))
 
 (defbuild-script
   `(;; Shared core (no backend dependencies)

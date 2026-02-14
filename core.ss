@@ -324,6 +324,7 @@
 
   ;; Downcase/upcase region
   (keymap-bind! *ctrl-x-map* "C-l" 'downcase-region)
+  (keymap-bind! *ctrl-x-map* "C-u" 'upcase-region)
 
   ;; Shell command
   (keymap-bind! *global-keymap* "M-!" 'shell-command)
