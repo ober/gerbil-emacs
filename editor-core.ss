@@ -73,6 +73,8 @@
     (else #f)))
 
 (def (cmd-self-insert! app ch)
+  ;; Clear search highlights on any text insertion
+  (clear-search-highlights! (current-editor app))
   (let ((buf (current-buffer-from-app app)))
     (cond
       ;; Suppress self-insert in dired buffers
@@ -555,6 +557,51 @@
   (frame-delete-other-windows! (app-state-frame app)))
 
 ;;;============================================================================
+;;; Search highlighting (highlight all matches)
+;;;============================================================================
+
+;; Use indicator 8 for search highlights (0-7 may be used by lexers)
+(def *search-indicator* 8)
+
+(def SCI_INDICSETALPHA 2523)  ; not in constants.ss yet
+
+(def (setup-search-indicator! ed)
+  "Configure the search highlight indicator."
+  (send-message ed SCI_INDICSETSTYLE *search-indicator* INDIC_ROUNDBOX)
+  (send-message ed SCI_INDICSETFORE *search-indicator* #xFFCC00)  ; yellow
+  (send-message ed SCI_INDICSETUNDER *search-indicator* 1)        ; draw under text
+  (send-message ed SCI_INDICSETALPHA *search-indicator* 80))      ; semi-transparent
+
+(def (highlight-all-matches! ed query)
+  "Highlight all occurrences of query in the editor using indicators."
+  (setup-search-indicator! ed)
+  ;; Clear existing search highlights
+  (clear-search-highlights! ed)
+  (when (> (string-length query) 0)
+    (let ((len (editor-get-text-length ed))
+          (query-len (string-length query)))
+      ;; Set current indicator
+      (send-message ed SCI_SETINDICATORCURRENT *search-indicator*)
+      ;; Find all matches
+      (send-message ed SCI_SETSEARCHFLAGS 0)
+      (let loop ((start 0))
+        (when (< start len)
+          (send-message ed SCI_SETTARGETSTART start)
+          (send-message ed SCI_SETTARGETEND len)
+          (let ((found (send-message/string ed SCI_SEARCHINTARGET query)))
+            (when (>= found 0)
+              (let ((match-end (send-message ed SCI_GETTARGETEND)))
+                (send-message ed SCI_INDICATORFILLRANGE found (- match-end found))
+                (loop (+ found 1))))))))))
+
+(def (clear-search-highlights! ed)
+  "Remove all search highlight indicators."
+  (let ((len (editor-get-text-length ed)))
+    (when (> len 0)
+      (send-message ed SCI_SETINDICATORCURRENT *search-indicator*)
+      (send-message ed SCI_INDICATORCLEARRANGE 0 len))))
+
+;;;============================================================================
 ;;; Search
 ;;;============================================================================
 
@@ -573,6 +620,8 @@
              (ed (current-editor app)))
         (when (> (string-length query) 0)
           (set! (app-state-last-search app) query)
+          ;; Highlight all matches
+          (highlight-all-matches! ed query)
           (let ((pos (editor-get-current-pos ed))
                 (len (editor-get-text-length ed)))
             ;; Search forward from current position
@@ -614,6 +663,8 @@
              (ed (current-editor app)))
         (when (> (string-length query) 0)
           (set! (app-state-last-search app) query)
+          ;; Highlight all matches
+          (highlight-all-matches! ed query)
           (let ((pos (editor-get-current-pos ed)))
             ;; Search backward: set target end before start
             (send-message ed SCI_SETTARGETSTART pos)
