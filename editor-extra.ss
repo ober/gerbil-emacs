@@ -1777,9 +1777,38 @@
                 (loop (+ i 1) (cons line hunk-lines))))))))))
 
 (def (cmd-diff-revert-hunk app)
-  "Revert the current diff hunk (apply in reverse)."
-  (let* ((echo (app-state-echo app)))
-    (echo-message! echo "Revert hunk: use git checkout or patch -R")))
+  "Revert the current diff hunk (apply patch in reverse)."
+  (let* ((fr (app-state-frame app))
+         (win (current-window fr))
+         (ed (edit-window-editor win))
+         (echo (app-state-echo app))
+         (hunk-line (diff-find-current-hunk ed)))
+    (if (not hunk-line)
+      (echo-message! echo "Not in a diff hunk")
+      (let* ((text (editor-get-text ed))
+             (lines (string-split text #\newline)))
+        (let loop ((i hunk-line) (hunk-lines '()))
+          (if (>= i (length lines))
+            (let* ((hunk-text (string-join (reverse hunk-lines) "\n"))
+                   (tmp-file "/tmp/gerbil-emacs-revert-hunk.patch"))
+              (with-exception-catcher
+                (lambda (e) (echo-error! echo "Failed to revert hunk"))
+                (lambda ()
+                  (call-with-output-file tmp-file
+                    (lambda (p) (display hunk-text p)))
+                  (let* ((proc (open-process
+                                 (list path: "patch"
+                                       arguments: (list "-p1" "-R" "-i" tmp-file)
+                                       stdin-redirection: #f
+                                       stdout-redirection: #t
+                                       stderr-redirection: #t)))
+                         (out (read-line proc #f)))
+                    (process-status proc)
+                    (echo-message! echo (string-append "Reverted: " (or out "ok")))))))
+            (let ((line (list-ref lines i)))
+              (if (and (> i hunk-line) (string-prefix? "@@" line))
+                (loop (length lines) hunk-lines)
+                (loop (+ i 1) (cons line hunk-lines))))))))))
 
 (def (cmd-diff-goto-source app)
   "Jump to source file and line from diff."
@@ -4647,6 +4676,8 @@
 (def *emms-player-process* #f)  ; current player process
 (def *emms-current-file* #f)    ; current playing file
 (def *emms-paused* #f)          ; paused state
+(def *emms-playlist* [])        ; list of file paths
+(def *emms-playlist-idx* 0)     ; current index into playlist
 
 (def (emms-find-player)
   "Find available media player."
@@ -4692,6 +4723,15 @@
                       stderr-redirection: #f)))
             (set! *emms-current-file* file)
             (set! *emms-paused* #f)
+            ;; Add to playlist if not already present
+            (unless (member file *emms-playlist*)
+              (set! *emms-playlist* (append *emms-playlist* (list file))))
+            ;; Update playlist index
+            (let loop ((i 0) (pl *emms-playlist*))
+              (when (pair? pl)
+                (if (equal? (car pl) file)
+                  (set! *emms-playlist-idx* i)
+                  (loop (+ i 1) (cdr pl)))))
             (echo-message! echo (string-append "Playing: " (path-strip-directory file)))))))))
 
 (def (cmd-emms-pause app)
@@ -4714,13 +4754,48 @@
       (set! *emms-paused* #f))
     (echo-message! echo "Stopped")))
 
+(def (emms-play-track! app file)
+  "Play a specific track file, updating state."
+  (let ((echo (app-state-echo app))
+        (player (emms-find-player)))
+    (if (not player)
+      (echo-error! echo "No media player found")
+      (begin
+        ;; Stop existing
+        (when *emms-player-process*
+          (with-exception-catcher (lambda (e) #f)
+            (lambda () (close-port *emms-player-process*))))
+        ;; Start new
+        (set! *emms-player-process*
+          (open-process
+            (list path: player
+                  arguments: (list "--quiet" file)
+                  stdin-redirection: #f
+                  stdout-redirection: #f
+                  stderr-redirection: #f)))
+        (set! *emms-current-file* file)
+        (set! *emms-paused* #f)
+        (echo-message! echo (string-append "Playing: " (path-strip-directory file)))))))
+
 (def (cmd-emms-next app)
-  "Next track (stub - would need playlist support)."
-  (echo-message! (app-state-echo app) "Next track (needs playlist)"))
+  "Play the next track in the playlist."
+  (let ((echo (app-state-echo app)))
+    (if (null? *emms-playlist*)
+      (echo-message! echo "Playlist is empty. Use emms-play-file to add tracks.")
+      (begin
+        (set! *emms-playlist-idx*
+          (modulo (+ *emms-playlist-idx* 1) (length *emms-playlist*)))
+        (emms-play-track! app (list-ref *emms-playlist* *emms-playlist-idx*))))))
 
 (def (cmd-emms-previous app)
-  "Previous track (stub - would need playlist support)."
-  (echo-message! (app-state-echo app) "Previous track (needs playlist)"))
+  "Play the previous track in the playlist."
+  (let ((echo (app-state-echo app)))
+    (if (null? *emms-playlist*)
+      (echo-message! echo "Playlist is empty. Use emms-play-file to add tracks.")
+      (begin
+        (set! *emms-playlist-idx*
+          (modulo (- *emms-playlist-idx* 1) (length *emms-playlist*)))
+        (emms-play-track! app (list-ref *emms-playlist* *emms-playlist-idx*))))))
 
 ;; PDF tools - basic PDF viewing using pdftotext
 (def *pdf-current-file* #f)  ; current PDF file

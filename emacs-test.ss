@@ -11,7 +11,8 @@
         :gerbil-emacs/shell
         :gerbil-emacs/keymap
         :gerbil-emacs/buffer
-        :gerbil-emacs/echo)
+        :gerbil-emacs/echo
+        (only-in :gerbil-emacs/editor register-all-commands!))
 
 (export emacs-test)
 
@@ -839,6 +840,296 @@
       (check (keymap-lookup *meta-g-map* "m") => 'goto-matching-paren)
       (check (keymap-lookup *meta-g-map* "v") => 'scroll-other-window)
       (check (keymap-lookup *meta-g-map* "V") => 'scroll-other-window-up))
+
+    ;;=========================================================================
+    ;; Feature implementation tests
+    ;;=========================================================================
+
+    (test-case "app-state: winner mode fields"
+      (let ((app (new-app-state #f)))
+        ;; Winner history starts empty
+        (check (app-state-winner-history app) => [])
+        (check (app-state-winner-history-idx app) => 0)
+        ;; Can set winner history
+        (set! (app-state-winner-history app)
+          (list '(1 0 ("*scratch*")) '(2 0 ("*scratch*" "foo.ss"))))
+        (check (length (app-state-winner-history app)) => 2)
+        ;; Can navigate history index
+        (set! (app-state-winner-history-idx app) 1)
+        (check (app-state-winner-history-idx app) => 1)))
+
+    (test-case "app-state: tab management fields"
+      (let ((app (new-app-state #f)))
+        ;; Starts with one default tab
+        (check (length (app-state-tabs app)) => 1)
+        (check (app-state-current-tab-idx app) => 0)
+        ;; Default tab has correct structure: (name buffer-names window-idx)
+        (let ((tab (car (app-state-tabs app))))
+          (check (car tab) => "Tab 1")
+          (check (cadr tab) => '("*scratch*"))
+          (check (caddr tab) => 0))
+        ;; Can add tabs
+        (set! (app-state-tabs app)
+          (append (app-state-tabs app) (list (list "Tab 2" '("foo.ss") 0))))
+        (check (length (app-state-tabs app)) => 2)
+        ;; Can switch tabs
+        (set! (app-state-current-tab-idx app) 1)
+        (check (app-state-current-tab-idx app) => 1)))
+
+    (test-case "command registration: spell checking"
+      (register-all-commands!)
+      (check (not (not (find-command 'ispell-word))) => #t)
+      (check (not (not (find-command 'ispell-buffer))) => #t)
+      (check (not (not (find-command 'ispell-region))) => #t))
+
+    (test-case "command registration: winner mode"
+      (register-all-commands!)
+      (check (not (not (find-command 'winner-undo))) => #t)
+      (check (not (not (find-command 'winner-redo))) => #t)
+      (check (not (not (find-command 'winner-mode))) => #t))
+
+    (test-case "command registration: tab management"
+      (register-all-commands!)
+      (check (not (not (find-command 'tab-new))) => #t)
+      (check (not (not (find-command 'tab-close))) => #t)
+      (check (not (not (find-command 'tab-next))) => #t)
+      (check (not (not (find-command 'tab-previous))) => #t)
+      (check (not (not (find-command 'tab-rename))) => #t)
+      (check (not (not (find-command 'tab-move))) => #t))
+
+    (test-case "command registration: flycheck"
+      (register-all-commands!)
+      (check (not (not (find-command 'flycheck-mode))) => #t)
+      (check (not (not (find-command 'flycheck-next-error))) => #t)
+      (check (not (not (find-command 'flycheck-previous-error))) => #t)
+      (check (not (not (find-command 'flycheck-list-errors))) => #t))
+
+    (test-case "command registration: git gutter"
+      (register-all-commands!)
+      (check (not (not (find-command 'git-gutter-mode))) => #t)
+      (check (not (not (find-command 'git-gutter-next-hunk))) => #t)
+      (check (not (not (find-command 'git-gutter-previous-hunk))) => #t)
+      (check (not (not (find-command 'git-gutter-revert-hunk))) => #t)
+      (check (not (not (find-command 'git-gutter-stage-hunk))) => #t))
+
+    (test-case "command registration: multiple cursors"
+      (register-all-commands!)
+      (check (not (not (find-command 'mc-mark-next-like-this))) => #t)
+      (check (not (not (find-command 'mc-mark-previous-like-this))) => #t)
+      (check (not (not (find-command 'mc-mark-all-like-this))) => #t))
+
+    (test-case "command registration: xref navigation"
+      (register-all-commands!)
+      (check (not (not (find-command 'xref-find-definitions))) => #t)
+      (check (not (not (find-command 'xref-find-references))) => #t)
+      (check (not (not (find-command 'xref-find-apropos))) => #t)
+      (check (not (not (find-command 'xref-go-back))) => #t)
+      (check (not (not (find-command 'xref-go-forward))) => #t))
+
+    (test-case "command registration: project.el"
+      (register-all-commands!)
+      (check (not (not (find-command 'project-switch-project))) => #t)
+      (check (not (not (find-command 'project-find-regexp))) => #t)
+      (check (not (not (find-command 'project-shell))) => #t)
+      (check (not (not (find-command 'project-dired))) => #t)
+      (check (not (not (find-command 'project-eshell))) => #t))
+
+    (test-case "command registration: treemacs"
+      (register-all-commands!)
+      (check (not (not (find-command 'treemacs))) => #t)
+      (check (not (not (find-command 'treemacs-find-file))) => #t))
+
+    (test-case "command registration: calendar"
+      (register-all-commands!)
+      (check (not (not (find-command 'calendar-goto-date))) => #t)
+      (check (not (not (find-command 'calendar-holidays))) => #t))
+
+    (test-case "command registration: auto-insert"
+      (register-all-commands!)
+      (check (not (not (find-command 'auto-insert))) => #t)
+      (check (not (not (find-command 'auto-insert-mode))) => #t))
+
+    (test-case "command registration: smartparens and paredit"
+      (register-all-commands!)
+      (check (not (not (find-command 'sp-forward-slurp-sexp))) => #t)
+      (check (not (not (find-command 'sp-forward-barf-sexp))) => #t)
+      (check (not (not (find-command 'paredit-wrap-round))) => #t)
+      (check (not (not (find-command 'paredit-raise-sexp))) => #t)
+      (check (not (not (find-command 'paredit-splice-sexp))) => #t))
+
+    (test-case "command registration: EWW browser"
+      (register-all-commands!)
+      (check (not (not (find-command 'eww))) => #t)
+      (check (not (not (find-command 'eww-browse-url))) => #t)
+      (check (not (not (find-command 'browse-url-at-point))) => #t)
+      (check (not (not (find-command 'eww-back))) => #t)
+      (check (not (not (find-command 'eww-forward))) => #t)
+      (check (not (not (find-command 'eww-reload))) => #t)
+      (check (not (not (find-command 'eww-download))) => #t)
+      (check (not (not (find-command 'eww-copy-page-url))) => #t))
+
+    (test-case "command registration: diff and ediff"
+      (register-all-commands!)
+      (check (not (not (find-command 'diff-mode))) => #t)
+      (check (not (not (find-command 'diff-apply-hunk))) => #t)
+      (check (not (not (find-command 'diff-revert-hunk))) => #t)
+      (check (not (not (find-command 'diff-goto-source))) => #t)
+      (check (not (not (find-command 'ediff-files))) => #t)
+      (check (not (not (find-command 'ediff-regions))) => #t)
+      (check (not (not (find-command 'ediff-merge))) => #t))
+
+    (test-case "command registration: yasnippet"
+      (register-all-commands!)
+      (check (not (not (find-command 'yas-insert-snippet))) => #t)
+      (check (not (not (find-command 'yas-new-snippet))) => #t)
+      (check (not (not (find-command 'yas-visit-snippet-file))) => #t))
+
+    (test-case "command registration: EMMS media player"
+      (register-all-commands!)
+      (check (not (not (find-command 'emms))) => #t)
+      (check (not (not (find-command 'emms-play-file))) => #t)
+      (check (not (not (find-command 'emms-pause))) => #t)
+      (check (not (not (find-command 'emms-stop))) => #t)
+      (check (not (not (find-command 'emms-next))) => #t)
+      (check (not (not (find-command 'emms-previous))) => #t))
+
+    (test-case "command registration: PDF viewer"
+      (register-all-commands!)
+      (check (not (not (find-command 'pdf-view-mode))) => #t)
+      (check (not (not (find-command 'pdf-view-next-page))) => #t)
+      (check (not (not (find-command 'pdf-view-previous-page))) => #t)
+      (check (not (not (find-command 'pdf-view-goto-page))) => #t))
+
+    (test-case "command registration: avy/ace-jump"
+      (register-all-commands!)
+      (check (not (not (find-command 'avy-goto-char))) => #t)
+      (check (not (not (find-command 'avy-goto-word))) => #t)
+      (check (not (not (find-command 'avy-goto-line))) => #t))
+
+    (test-case "command registration: expand-region"
+      (register-all-commands!)
+      (check (not (not (find-command 'expand-region))) => #t)
+      (check (not (not (find-command 'contract-region))) => #t))
+
+    (test-case "command registration: abbreviations"
+      (register-all-commands!)
+      (check (not (not (find-command 'define-global-abbrev))) => #t))
+
+    (test-case "keybindings: ediff"
+      (setup-default-bindings!)
+      (check (keymap-lookup *ctrl-c-map* "B") => 'ediff-buffers))
+
+    (test-case "keybindings: help extensions"
+      (setup-default-bindings!)
+      (check (keymap-lookup *help-map* "c") => 'describe-key-briefly)
+      (check (keymap-lookup *help-map* "d") => 'describe-function)
+      (check (keymap-lookup *help-map* "v") => 'describe-variable)
+      (check (keymap-lookup *help-map* "i") => 'info))
+
+    (test-case "keybindings: M-g extended bindings"
+      (setup-default-bindings!)
+      (check (keymap-lookup *meta-g-map* "i") => 'imenu)
+      (check (keymap-lookup *meta-g-map* "F") => 'toggle-fold))
+
+    (test-case "buffer-list management"
+      ;; Clear any existing buffers
+      (set! *buffer-list* [])
+      ;; Create and add buffers
+      (let* ((buf1 (make-buffer "test1.ss" #f #f #f #f #f #f))
+             (buf2 (make-buffer "test2.ss" #f #f #f #f #f #f)))
+        (buffer-list-add! buf1)
+        (buffer-list-add! buf2)
+        (check (length (buffer-list)) => 2)
+        ;; Find by name
+        (check (buffer-name (buffer-by-name "test1.ss")) => "test1.ss")
+        (check (buffer-by-name "nonexistent") => #f)
+        ;; Remove
+        (buffer-list-remove! buf1)
+        (check (length (buffer-list)) => 1)
+        (check (buffer-by-name "test1.ss") => #f)))
+
+    (test-case "dired-buffer? predicate"
+      (let ((buf (make-buffer "*test*" #f #f #f #f #f #f)))
+        (check (dired-buffer? buf) => #f)
+        (set! (buffer-lexer-lang buf) 'dired)
+        (check (dired-buffer? buf) => #t)))
+
+    (test-case "brace-char? exported from core"
+      (check (brace-char? (char->integer #\()) => #t)
+      (check (brace-char? (char->integer #\))) => #t)
+      (check (brace-char? (char->integer #\[)) => #t)
+      (check (brace-char? (char->integer #\])) => #t)
+      (check (brace-char? (char->integer #\{)) => #t)
+      (check (brace-char? (char->integer #\})) => #t)
+      (check (brace-char? (char->integer #\a)) => #f)
+      (check (brace-char? (char->integer #\space)) => #f))
+
+    (test-case "file I/O helpers"
+      ;; Write and read a temp file
+      (let ((tmp "/tmp/gerbil-emacs-test-file.txt"))
+        (write-string-to-file tmp "hello world\n")
+        (check (read-file-as-string tmp) => "hello world\n")
+        ;; Cleanup
+        (delete-file tmp)))
+
+    (test-case "eval-expression-string: various types"
+      ;; String result
+      (let-values (((result error?) (eval-expression-string "\"hello\"")))
+        (check result => "\"hello\"")
+        (check error? => #f))
+      ;; Boolean
+      (let-values (((result error?) (eval-expression-string "#t")))
+        (check result => "#t")
+        (check error? => #f))
+      ;; List
+      (let-values (((result error?) (eval-expression-string "'(1 2 3)")))
+        (check result => "(1 2 3)")
+        (check error? => #f)))
+
+    (test-case "eshell: pipeline"
+      ;; Test piped commands
+      (let-values (((output cwd) (eshell-process-input "echo hello | wc -c" "/tmp")))
+        ;; Should get the character count of "hello\n"
+        (check (string? output) => #t)))
+
+    (test-case "eshell: head and tail"
+      (let-values (((output cwd) (eshell-process-input "echo -e 'a\\nb\\nc' | head -2" "/tmp")))
+        (check (string? output) => #t)))
+
+    (test-case "eshell: find command"
+      ;; Find in /tmp (may or may not have files)
+      (let-values (((output cwd) (eshell-process-input "find /tmp -maxdepth 0 -type d" "/tmp")))
+        (check (string? output) => #t)))
+
+    (test-case "eshell: env and export"
+      ;; Test env variable access
+      (let-values (((output cwd) (eshell-process-input "echo $HOME" "/tmp")))
+        (check (string? output) => #t)
+        (check (> (string-length output) 0) => #t)))
+
+    (test-case "strip-ansi-codes: complex sequences"
+      ;; OSC sequences
+      (let ((esc (string (integer->char 27))))
+        ;; Title setting escape
+        (check (strip-ansi-codes (string-append esc "]0;title" (string (integer->char 7)) "text"))
+               => "text")
+        ;; Nested formatting
+        (check (strip-ansi-codes
+                 (string-append esc "[1m" esc "[31m" "bold-red" esc "[0m"))
+               => "bold-red")))
+
+    (test-case "command registry: find-command returns procedure"
+      (register-all-commands!)
+      ;; find-command should return a procedure for registered commands
+      (let ((cmd (find-command 'forward-char)))
+        (check (procedure? cmd) => #t))
+      ;; Non-existent command returns #f
+      (check (find-command 'nonexistent-command-xyz) => #f))
+
+    (test-case "all-commands hash populated"
+      (register-all-commands!)
+      ;; Should have many commands registered
+      (check (> (hash-length *all-commands*) 100) => #t))
 
     ))
 
