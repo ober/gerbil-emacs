@@ -36,7 +36,9 @@
                  parse-ansi-segments text-segment-text
                  text-segment-fg-color text-segment-bold?
                  terminal-buffer? color-to-style
-                 *term-style-base*))
+                 *term-style-base*)
+        (only-in :gerbil-emacs/echo
+                 *minibuffer-history* minibuffer-history-add!))
 
 (export emacs-test)
 
@@ -2081,6 +2083,52 @@
         (check (terminal-buffer? buf) => #f)
         (set! (buffer-lexer-lang buf) 'terminal)
         (check (terminal-buffer? buf) => #t)))
+
+    ;;=========================================================================
+    ;; Minibuffer history tests
+    ;;=========================================================================
+
+    (test-case "minibuffer-history-add! adds entries"
+      (set! *minibuffer-history* [])
+      (minibuffer-history-add! "first")
+      (check *minibuffer-history* => ["first"])
+      (minibuffer-history-add! "second")
+      (check *minibuffer-history* => ["second" "first"]))
+
+    (test-case "minibuffer-history-add! ignores empty strings"
+      (set! *minibuffer-history* [])
+      (minibuffer-history-add! "")
+      (check *minibuffer-history* => [])
+      (minibuffer-history-add! "valid")
+      (minibuffer-history-add! "")
+      (check *minibuffer-history* => ["valid"]))
+
+    (test-case "minibuffer-history-add! deduplicates front"
+      (set! *minibuffer-history* [])
+      (minibuffer-history-add! "cmd")
+      (minibuffer-history-add! "cmd")
+      ;; Should not have duplicate at front
+      (check (length *minibuffer-history*) => 1)
+      (check (car *minibuffer-history*) => "cmd"))
+
+    (test-case "minibuffer-history-add! allows non-front duplicates"
+      (set! *minibuffer-history* [])
+      (minibuffer-history-add! "alpha")
+      (minibuffer-history-add! "beta")
+      (minibuffer-history-add! "alpha")
+      ;; alpha appears twice (front and end), that's OK
+      (check (length *minibuffer-history*) => 3)
+      (check (car *minibuffer-history*) => "alpha"))
+
+    (test-case "minibuffer-history-add! respects max size"
+      (set! *minibuffer-history* [])
+      ;; Add 105 entries
+      (let loop ((i 0))
+        (when (< i 105)
+          (minibuffer-history-add! (string-append "entry-" (number->string i)))
+          (loop (+ i 1))))
+      ;; Should be capped at 100
+      (check (<= (length *minibuffer-history*) 100) => #t))
 
     ))
 
