@@ -80,6 +80,8 @@
           (editor-set-text ed text)
           (editor-set-save-point ed)
           (editor-goto-pos ed 0))))
+    ;; Record file modification time for external change detection
+    (update-buffer-mod-time! buf)
     ;; Apply syntax highlighting based on file type
     (setup-highlighting-for-file! ed filename)))
 
@@ -196,6 +198,13 @@
 
       ;; Poll terminal PTY output
       (poll-terminal-output! app)
+
+      ;; Auto-save and external modification check (~30s at 50ms poll)
+      (set! *auto-save-counter* (+ *auto-save-counter* 1))
+      (when (>= *auto-save-counter* *auto-save-interval*)
+        (set! *auto-save-counter* 0)
+        (auto-save-buffers! app)
+        (check-file-modifications! app))
 
       ;; Draw modelines, dividers, and echo area FIRST into the termbox buffer.
       ;; This must happen before editor-refresh because Scintilla's

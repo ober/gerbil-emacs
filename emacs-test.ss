@@ -38,7 +38,10 @@
                  terminal-buffer? color-to-style
                  *term-style-base*)
         (only-in :gerbil-emacs/echo
-                 *minibuffer-history* minibuffer-history-add!))
+                 *minibuffer-history* minibuffer-history-add!)
+        (only-in :gerbil-emacs/editor-core
+                 make-auto-save-path file-mod-time
+                 *buffer-mod-times* update-buffer-mod-time!))
 
 (export emacs-test)
 
@@ -2129,6 +2132,39 @@
           (loop (+ i 1))))
       ;; Should be capped at 100
       (check (<= (length *minibuffer-history*) 100) => #t))
+
+    ;;=========================================================================
+    ;; Auto-save and file modification tracking tests
+    ;;=========================================================================
+
+    (test-case "make-auto-save-path produces #name# format"
+      (check (make-auto-save-path "/home/user/foo.txt") => "/home/user/#foo.txt#")
+      (check (make-auto-save-path "/tmp/bar.ss") => "/tmp/#bar.ss#")
+      (check (make-auto-save-path "simple.txt") => "#simple.txt#"))
+
+    (test-case "file-mod-time returns number for existing file"
+      (let ((mt (file-mod-time "/home/jafourni/mine/gerbil-emacs/core.ss")))
+        (check (number? mt) => #t)
+        (check (> mt 0) => #t)))
+
+    (test-case "file-mod-time returns #f for nonexistent file"
+      (check (file-mod-time "/nonexistent/path/foo.ss") => #f))
+
+    (test-case "update-buffer-mod-time! tracks file times"
+      (let* ((ed (create-scintilla-editor))
+             (buf (buffer-create! "test.ss" ed "/home/jafourni/mine/gerbil-emacs/core.ss")))
+        (update-buffer-mod-time! buf)
+        (let ((mt (hash-get *buffer-mod-times* buf)))
+          (check (number? mt) => #t)
+          (check (> mt 0) => #t))
+        ;; Clean up
+        (hash-remove! *buffer-mod-times* buf)))
+
+    (test-case "update-buffer-mod-time! ignores non-file buffers"
+      (let* ((ed (create-scintilla-editor))
+             (buf (buffer-create! "*scratch*" ed #f)))
+        (update-buffer-mod-time! buf)
+        (check (hash-get *buffer-mod-times* buf) => #f)))
 
     ))
 

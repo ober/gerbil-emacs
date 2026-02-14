@@ -15,7 +15,17 @@
   auto-pair-char
   register-all-commands!
   read-file-as-string
-  position-cursor-for-replace!)
+  position-cursor-for-replace!
+  ;; Auto-save and file modification tracking
+  *auto-save-enabled*
+  *auto-save-counter*
+  *auto-save-interval*
+  *buffer-mod-times*
+  update-buffer-mod-time!
+  auto-save-buffers!
+  check-file-modifications!
+  make-auto-save-path
+  file-mod-time)
 
 (import :gerbil-emacs/core
         :gerbil-emacs/editor-extra

@@ -32,6 +32,71 @@
 (def *auto-pair-mode* #t)
 
 ;;;============================================================================
+;;; File modification tracking and auto-save
+;;;============================================================================
+
+;; Maps buffer → last-known file modification time (seconds since epoch)
+(def *buffer-mod-times* (make-hash-table))
+
+;; Auto-save enabled flag and interval counter
+(def *auto-save-enabled* #t)
+(def *auto-save-counter* 0)
+(def *auto-save-interval* 600) ;; ~30 seconds at 50ms poll rate
+
+(def (file-mod-time path)
+  "Get file modification time as seconds, or #f if file doesn't exist."
+  (with-catch
+    (lambda (e) #f)
+    (lambda ()
+      (time->seconds (file-info-last-modification-time (file-info path))))))
+
+(def (update-buffer-mod-time! buf)
+  "Record the current file modification time for a buffer."
+  (let ((path (buffer-file-path buf)))
+    (when path
+      (let ((mt (file-mod-time path)))
+        (when mt
+          (hash-put! *buffer-mod-times* buf mt))))))
+
+(def (auto-save-buffers! app)
+  "Write auto-save files (#name#) for modified file-visiting buffers."
+  (when *auto-save-enabled*
+    (for-each
+      (lambda (buf)
+        (let ((path (buffer-file-path buf)))
+          (when path
+            ;; Find a window showing this buffer to check if modified
+            (let loop ((wins (frame-windows (app-state-frame app))))
+              (when (pair? wins)
+                (if (eq? (edit-window-buffer (car wins)) buf)
+                  (let ((ed (edit-window-editor (car wins))))
+                    (when (editor-get-modify? ed)
+                      (let ((auto-path (make-auto-save-path path)))
+                        (with-catch
+                          (lambda (e) #f)
+                          (lambda ()
+                            (let ((text (editor-get-text ed)))
+                              (write-string-to-file auto-path text)))))))
+                  (loop (cdr wins))))))))
+      (buffer-list))))
+
+(def (check-file-modifications! app)
+  "Check if any file-visiting buffers have been modified externally.
+   Warns in the echo area if a file changed on disk."
+  (for-each
+    (lambda (buf)
+      (let ((path (buffer-file-path buf)))
+        (when path
+          (let ((saved-mt (hash-get *buffer-mod-times* buf))
+                (current-mt (file-mod-time path)))
+            (when (and saved-mt current-mt (> current-mt saved-mt))
+              ;; File changed on disk — update recorded time and warn
+              (hash-put! *buffer-mod-times* buf current-mt)
+              (echo-message! (app-state-echo app)
+                (string-append (buffer-name buf) " changed on disk; revert with C-x C-r")))))))
+    (buffer-list)))
+
+;;;============================================================================
 ;;; Accessors
 ;;;============================================================================
 
@@ -406,6 +471,8 @@
         (let ((text (editor-get-text ed)))
           (write-string-to-file path text)
           (editor-set-save-point ed)
+          ;; Update recorded modification time
+          (update-buffer-mod-time! buf)
           ;; Remove auto-save file if it exists
           (let ((auto-save-path (make-auto-save-path path)))
             (when (file-exists? auto-save-path)
@@ -461,6 +528,7 @@
           (editor-set-text ed text)
           (editor-set-save-point ed)
           (editor-goto-pos ed 0)
+          (update-buffer-mod-time! buf)
           (echo-message! echo (string-append "Reverted " path))))
       (echo-error! echo "Buffer is not visiting a file"))))
 

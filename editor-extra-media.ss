@@ -11,6 +11,8 @@
         :gerbil-scintilla/scintilla
         :gerbil-scintilla/tui
         :gerbil-emacs/core
+        (only-in :gerbil-emacs/editor-core
+                 *auto-save-enabled* make-auto-save-path)
         :gerbil-emacs/keymap
         :gerbil-emacs/buffer
         :gerbil-emacs/window
@@ -1162,9 +1164,7 @@
   "Show configured package archives."
   (echo-message! (app-state-echo app) "Package archives: gerbil-pkg (built-in)"))
 
-;; Auto-save
-(def *auto-save-enabled* #f)
-
+;; Auto-save (uses *auto-save-enabled* from editor-core)
 (def (cmd-auto-save-mode app)
   "Toggle auto-save mode."
   (set! *auto-save-enabled* (not *auto-save-enabled*))
@@ -1172,17 +1172,17 @@
     (if *auto-save-enabled* "Auto-save mode: on" "Auto-save mode: off")))
 
 (def (cmd-recover-file app)
-  "Recover file from auto-save backup."
+  "Recover file from auto-save (#file#) backup."
   (let* ((buf (current-buffer-from-app app))
          (path (and buf (buffer-file-path buf))))
     (if (not path)
       (echo-error! (app-state-echo app) "Buffer has no file")
-      (let ((auto-save (string-append path "~")))
+      (let ((auto-save (make-auto-save-path path)))
         (if (file-exists? auto-save)
           (let* ((fr (app-state-frame app))
                  (win (current-window fr))
                  (ed (edit-window-editor win))
-                 (content (with-input-from-file auto-save (lambda () (read-line (current-input-port) #f)))))
+                 (content (read-file-as-string auto-save)))
             (editor-set-text ed (or content ""))
             (echo-message! (app-state-echo app) (string-append "Recovered from " auto-save)))
           (echo-message! (app-state-echo app) "No auto-save file found"))))))
