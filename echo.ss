@@ -13,9 +13,11 @@
   echo-error!
   echo-clear!
   echo-draw!
-  echo-read-string)
+  echo-read-string
+  echo-read-string-with-completion)
 
 (import :std/sugar
+        :std/srfi/13
         :gerbil-scintilla/tui
         :gerbil-emacs/core)
 
@@ -82,3 +84,79 @@
               (loop (string-append input (string (integer->char ch)))))
              ;; Ignore other keys
              (else (loop input)))))))))
+
+;;;============================================================================
+;;; Read a string with tab-completion (TUI-specific)
+;;; completions: sorted list of strings to complete against
+;;; Returns the input string, or #f if cancelled (C-g).
+;;;============================================================================
+
+(def (echo-read-string-with-completion echo prompt completions row width)
+  (echo-clear! echo)
+  (let loop ((input "") (match-idx 0))
+    ;; Filter completions by prefix (case-insensitive)
+    (let* ((matches (if (string=? input "")
+                      completions
+                      (filter (lambda (c) (string-prefix-ci? input c))
+                              completions)))
+           (match-count (length matches))
+           ;; Build status suffix
+           (suffix (if (> match-count 0)
+                     (string-append " [" (number->string (min (+ match-idx 1) match-count))
+                                    "/" (number->string match-count) "]")
+                     " [No match]"))
+           (display-str (string-append prompt input suffix))
+           (cursor-pos (+ (string-length prompt) (string-length input)))
+           (display-len (string-length display-str)))
+      ;; Draw prompt + input
+      (tui-print! 0 row #xd8d8d8 #x181818 (make-string width #\space))
+      (tui-print! 0 row #xd8d8d8 #x181818
+                  (if (> cursor-pos width)
+                    (substring (string-append prompt input) 0 width)
+                    (string-append prompt input)))
+      ;; Show suffix in a dimmer color
+      (when (< cursor-pos width)
+        (let ((avail (- width cursor-pos)))
+          (tui-print! cursor-pos row #x888888 #x181818
+                      (if (> (string-length suffix) avail)
+                        (substring suffix 0 avail)
+                        suffix))))
+      (tui-set-cursor! (min cursor-pos (- width 1)) row)
+      (tui-present!))
+    ;; Wait for key
+    (let ((ev (tui-poll-event)))
+      (cond
+        ((not ev) (loop input match-idx))
+        ((not (tui-event-key? ev)) (loop input match-idx))
+        (else
+         (let* ((key (tui-event-key ev))
+                (ch  (tui-event-ch ev))
+                (matches (if (string=? input "")
+                           completions
+                           (filter (lambda (c) (string-prefix-ci? input c))
+                                   completions)))
+                (match-count (length matches)))
+           (cond
+             ;; C-g -> cancel
+             ((= key #x07)
+              (echo-message! echo "Quit")
+              #f)
+             ;; Enter -> accept
+             ((= key #x0D) input)
+             ;; Tab (0x09) -> cycle to next completion
+             ((= key #x09)
+              (if (> match-count 0)
+                (let* ((idx (modulo match-idx match-count))
+                       (completed (list-ref matches idx)))
+                  (loop completed (+ idx 1)))
+                (loop input 0)))
+             ;; Backspace -> delete last char, reset match index
+             ((or (= key #x08) (= key #x7F))
+              (if (> (string-length input) 0)
+                (loop (substring input 0 (- (string-length input) 1)) 0)
+                (loop input 0)))
+             ;; Printable char -> append, reset match index
+             ((> ch 31)
+              (loop (string-append input (string (integer->char ch))) 0))
+             ;; Ignore other keys
+             (else (loop input match-idx)))))))))

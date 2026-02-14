@@ -67,6 +67,9 @@
       ;; Layout: splitter takes remaining space, echo-label fixed at bottom
       (qt-layout-add-widget! layout splitter)
       (qt-layout-add-widget! layout echo-label)
+      (qt-layout-set-stretch-factor! layout splitter 1)
+      (qt-layout-set-stretch-factor! layout echo-label 0)
+      (qt-widget-set-size-policy! echo-label QT_SIZE_PREFERRED QT_SIZE_FIXED)
       (qt-layout-set-margins! layout 0 0 0 0)
       (qt-layout-set-spacing! layout 0)
 

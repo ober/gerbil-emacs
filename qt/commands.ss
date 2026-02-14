@@ -534,8 +534,8 @@
 ;;;============================================================================
 
 (def (cmd-execute-extended-command app)
-  (let* ((echo (app-state-echo app))
-         (input (qt-echo-read-string app "M-x ")))
+  (let* ((cmd-names (sort (map symbol->string (hash-keys *all-commands*)) string<?))
+         (input (qt-echo-read-string-with-completion app "M-x " cmd-names)))
     (when (and input (> (string-length input) 0))
       (execute-command! app (string->symbol input)))))
 
