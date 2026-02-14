@@ -860,7 +860,7 @@
 (def (find-matching-brace text pos)
   "Find matching brace position. Returns (values match-pos matched?) or (values #f #f)."
   (let ((len (string-length text)))
-    (when (< pos len)
+    (if (< pos len)
       (let ((ch (string-ref text pos)))
         (cond
           ((brace-open? ch)
@@ -887,7 +887,8 @@
                   (values i (brace-match? (string-ref text i) ch))
                   (loop (- i 1) (- depth 1))))
                (else (loop (- i 1) depth)))))
-          (else (values #f #f)))))))
+          (else (values #f #f))))
+      (values #f #f))))
 
 (def (qt-update-visual-decorations! ed)
   "Update current-line highlight and brace matching on the given editor."

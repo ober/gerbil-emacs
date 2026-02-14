@@ -228,10 +228,10 @@
            (send-message ed SCI_BRACEHIGHLIGHT (- pos 1) match)
            (send-message ed SCI_BRACEBADLIGHT (- pos 1) 0))))
       ;; No brace at cursor — clear highlights
-      ;; Note: Scintilla uses -1 to mean "no position", but FFI wants unsigned-long
-      ;; So we use the max unsigned value (equivalent to (uintptr_t)-1)
+      ;; Scintilla uses INVALID_POSITION (-1) to mean "no position"
+      ;; wparam is unsigned-long, lparam is signed long
       (else
-       (send-message ed SCI_BRACEHIGHLIGHT #xFFFFFFFFFFFFFFFF #xFFFFFFFFFFFFFFFF)))))
+       (send-message ed SCI_BRACEHIGHLIGHT #xFFFFFFFFFFFFFFFF -1)))))
 
 ;;;============================================================================
 ;;; Drawing helpers

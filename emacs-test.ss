@@ -1,9 +1,13 @@
 ;;; -*- Gerbil -*-
 ;;; Tests for gerbil-emacs
-;;; Focus on pure logic (keymap, constants, helpers) since
-;;; editor operations require a live terminal.
+;;; Includes both pure-logic tests and headless Scintilla editor tests.
+;;; Scintilla works headlessly (no terminal needed) for all operations
+;;; except scintilla_refresh(). Lexer/syntax highlighting requires Lexilla
+;;; which is only available at runtime, so highlighting tests are skipped.
 
 (import :std/test
+        :gerbil-scintilla/scintilla
+        :gerbil-scintilla/constants
         :gerbil-scintilla/tui
         :gerbil-emacs/core
         :gerbil-emacs/repl
@@ -11,7 +15,19 @@
         :gerbil-emacs/shell
         :gerbil-emacs/keymap
         :gerbil-emacs/buffer
+        :gerbil-emacs/window
         :gerbil-emacs/echo
+        :gerbil-emacs/editor-core
+        (only-in :gerbil-emacs/editor-cmds-a cmd-copy-region-as-kill)
+        (only-in :gerbil-emacs/editor-extra-org
+                 cmd-org-todo cmd-org-export cmd-org-cycle cmd-org-shift-tab
+                 cmd-org-store-link *org-stored-link*
+                 cmd-org-promote cmd-org-demote
+                 cmd-org-move-subtree-up cmd-org-move-subtree-down
+                 cmd-org-toggle-checkbox cmd-org-priority
+                 cmd-org-insert-heading cmd-org-insert-src-block
+                 cmd-org-template-expand
+                 org-heading-level org-find-subtree-end org-on-checkbox-line?)
         (only-in :gerbil-emacs/editor register-all-commands!))
 
 (export emacs-test)
@@ -1130,6 +1146,776 @@
       (register-all-commands!)
       ;; Should have many commands registered
       (check (> (hash-length *all-commands*) 100) => #t))
+
+    ;;=========================================================================
+    ;; Headless Scintilla editor tests
+    ;; These create real Scintilla editors without a terminal and test
+    ;; actual editor commands (cursor movement, text insertion, etc.)
+    ;;=========================================================================
+
+    (test-case "headless: create editor and app-state"
+      ;; Verify we can create a fully functional headless editor
+      (let* ((ed (create-scintilla-editor width: 80 height: 24))
+             (buf (make-buffer "*scratch*" #f
+                    (send-message ed SCI_GETDOCPOINTER) #f #f #f #f))
+             (win (make-edit-window ed buf 0 0 80 24))
+             (fr (make-frame [win] 0 80 24 'vertical))
+             (app (new-app-state fr)))
+        (check (app-state? app) => #t)
+        (check (eq? (current-editor app) ed) => #t)
+        (check (eq? (current-buffer-from-app app) buf) => #t)))
+
+    (test-case "headless: self-insert advances cursor"
+      (let* ((ed (create-scintilla-editor width: 80 height: 24))
+             (buf (make-buffer "*scratch*" #f
+                    (send-message ed SCI_GETDOCPOINTER) #f #f #f #f))
+             (win (make-edit-window ed buf 0 0 80 24))
+             (fr (make-frame [win] 0 80 24 'vertical))
+             (app (new-app-state fr)))
+        (editor-set-text ed "")
+        ;; Type 'h' (ASCII 104)
+        (cmd-self-insert! app 104)
+        (check (editor-get-text ed) => "h")
+        (check (editor-get-current-pos ed) => 1)
+        ;; Type 'i' (ASCII 105)
+        (cmd-self-insert! app 105)
+        (check (editor-get-text ed) => "hi")
+        (check (editor-get-current-pos ed) => 2)
+        ;; Type '!' (ASCII 33)
+        (cmd-self-insert! app 33)
+        (check (editor-get-text ed) => "hi!")
+        (check (editor-get-current-pos ed) => 3)))
+
+    (test-case "headless: auto-pair inserts both chars"
+      (let* ((ed (create-scintilla-editor width: 80 height: 24))
+             (buf (make-buffer "*scratch*" #f
+                    (send-message ed SCI_GETDOCPOINTER) #f #f #f #f))
+             (win (make-edit-window ed buf 0 0 80 24))
+             (fr (make-frame [win] 0 80 24 'vertical))
+             (app (new-app-state fr)))
+        (editor-set-text ed "")
+        (set! *auto-pair-mode* #t)
+        ;; Type '(' (ASCII 40) - should auto-pair with ')'
+        (cmd-self-insert! app 40)
+        (check (editor-get-text ed) => "()")
+        ;; Cursor between parens
+        (check (editor-get-current-pos ed) => 1)
+        (set! *auto-pair-mode* #f)))
+
+    (test-case "headless: navigation - forward/backward char"
+      (let* ((ed (create-scintilla-editor width: 80 height: 24))
+             (buf (make-buffer "*scratch*" #f
+                    (send-message ed SCI_GETDOCPOINTER) #f #f #f #f))
+             (win (make-edit-window ed buf 0 0 80 24))
+             (fr (make-frame [win] 0 80 24 'vertical))
+             (app (new-app-state fr)))
+        (editor-set-text ed "hello world")
+        (editor-goto-pos ed 0)
+        ;; Forward 3 chars
+        (cmd-forward-char app)
+        (cmd-forward-char app)
+        (cmd-forward-char app)
+        (check (editor-get-current-pos ed) => 3)
+        ;; Backward 1 char
+        (cmd-backward-char app)
+        (check (editor-get-current-pos ed) => 2)))
+
+    (test-case "headless: navigation - beginning/end of line"
+      (let* ((ed (create-scintilla-editor width: 80 height: 24))
+             (buf (make-buffer "*scratch*" #f
+                    (send-message ed SCI_GETDOCPOINTER) #f #f #f #f))
+             (win (make-edit-window ed buf 0 0 80 24))
+             (fr (make-frame [win] 0 80 24 'vertical))
+             (app (new-app-state fr)))
+        (editor-set-text ed "hello world\nsecond line")
+        (editor-goto-pos ed 5)
+        (cmd-end-of-line app)
+        (check (editor-get-current-pos ed) => 11)
+        (cmd-beginning-of-line app)
+        (check (editor-get-current-pos ed) => 0)))
+
+    (test-case "headless: navigation - next/previous line"
+      (let* ((ed (create-scintilla-editor width: 80 height: 24))
+             (buf (make-buffer "*scratch*" #f
+                    (send-message ed SCI_GETDOCPOINTER) #f #f #f #f))
+             (win (make-edit-window ed buf 0 0 80 24))
+             (fr (make-frame [win] 0 80 24 'vertical))
+             (app (new-app-state fr)))
+        (editor-set-text ed "line one\nline two\nline three")
+        (editor-goto-pos ed 0)
+        (cmd-next-line app)
+        ;; Should be on line 1, column 0 -> position 9
+        (check (editor-line-from-position ed (editor-get-current-pos ed)) => 1)
+        (cmd-next-line app)
+        (check (editor-line-from-position ed (editor-get-current-pos ed)) => 2)
+        (cmd-previous-line app)
+        (check (editor-line-from-position ed (editor-get-current-pos ed)) => 1)))
+
+    (test-case "headless: navigation - beginning/end of buffer"
+      (let* ((ed (create-scintilla-editor width: 80 height: 24))
+             (buf (make-buffer "*scratch*" #f
+                    (send-message ed SCI_GETDOCPOINTER) #f #f #f #f))
+             (win (make-edit-window ed buf 0 0 80 24))
+             (fr (make-frame [win] 0 80 24 'vertical))
+             (app (new-app-state fr)))
+        (editor-set-text ed "line one\nline two\nline three")
+        (editor-goto-pos ed 5)
+        (cmd-end-of-buffer app)
+        ;; "line one\nline two\nline three" = 28 chars, cursor goes to end
+        (check (editor-get-current-pos ed) => (editor-get-text-length ed))
+        (cmd-beginning-of-buffer app)
+        (check (editor-get-current-pos ed) => 0)))
+
+    (test-case "headless: newline with electric indent"
+      (let* ((ed (create-scintilla-editor width: 80 height: 24))
+             (buf (make-buffer "*scratch*" #f
+                    (send-message ed SCI_GETDOCPOINTER) #f #f #f #f))
+             (win (make-edit-window ed buf 0 0 80 24))
+             (fr (make-frame [win] 0 80 24 'vertical))
+             (app (new-app-state fr)))
+        (editor-set-text ed "  indented")
+        (editor-goto-pos ed 10) ;; end of "  indented"
+        (cmd-newline app)
+        (let ((text (editor-get-text ed)))
+          ;; Should have newline + 2 spaces of indent
+          (check (string-contains text "\n  ") => 10)
+          ;; Cursor should be after the indent
+          (check (editor-get-current-pos ed) => 13))))
+
+    (test-case "headless: kill-line and yank"
+      (let* ((ed (create-scintilla-editor width: 80 height: 24))
+             (buf (make-buffer "*scratch*" #f
+                    (send-message ed SCI_GETDOCPOINTER) #f #f #f #f))
+             (win (make-edit-window ed buf 0 0 80 24))
+             (fr (make-frame [win] 0 80 24 'vertical))
+             (app (new-app-state fr)))
+        (editor-set-text ed "hello world\nsecond line")
+        (editor-goto-pos ed 0)
+        ;; Kill line should remove "hello world" (to end of line)
+        (cmd-kill-line app)
+        (check (editor-get-text ed) => "\nsecond line")
+        ;; Kill ring should have "hello world"
+        (check (car (app-state-kill-ring app)) => "hello world")
+        ;; Move to end and yank
+        (cmd-end-of-buffer app)
+        (cmd-yank app)
+        (check (editor-get-text ed) => "\nsecond linehello world")))
+
+    (test-case "headless: delete-char and backward-delete-char"
+      (let* ((ed (create-scintilla-editor width: 80 height: 24))
+             (buf (make-buffer "*scratch*" #f
+                    (send-message ed SCI_GETDOCPOINTER) #f #f #f #f))
+             (win (make-edit-window ed buf 0 0 80 24))
+             (fr (make-frame [win] 0 80 24 'vertical))
+             (app (new-app-state fr)))
+        (editor-set-text ed "abcde")
+        ;; Delete char at position 0 (removes 'a')
+        (editor-goto-pos ed 0)
+        (cmd-delete-char app)
+        (check (editor-get-text ed) => "bcde")
+        ;; Backward delete at position 2 (removes 'c')
+        (editor-goto-pos ed 2)
+        (cmd-backward-delete-char app)
+        (check (editor-get-text ed) => "bde")))
+
+    (test-case "headless: undo and redo"
+      (let* ((ed (create-scintilla-editor width: 80 height: 24))
+             (buf (make-buffer "*scratch*" #f
+                    (send-message ed SCI_GETDOCPOINTER) #f #f #f #f))
+             (win (make-edit-window ed buf 0 0 80 24))
+             (fr (make-frame [win] 0 80 24 'vertical))
+             (app (new-app-state fr)))
+        (editor-set-text ed "")
+        (editor-set-save-point ed) ;; clear undo history
+        (editor-insert-text ed 0 "hello")
+        (editor-goto-pos ed 5)
+        (check (editor-get-text ed) => "hello")
+        (cmd-undo app)
+        (check (editor-get-text ed) => "")
+        (cmd-redo app)
+        (check (editor-get-text ed) => "hello")))
+
+    (test-case "headless: set-mark and kill-region"
+      (let* ((ed (create-scintilla-editor width: 80 height: 24))
+             (buf (make-buffer "*scratch*" #f
+                    (send-message ed SCI_GETDOCPOINTER) #f #f #f #f))
+             (win (make-edit-window ed buf 0 0 80 24))
+             (fr (make-frame [win] 0 80 24 'vertical))
+             (app (new-app-state fr)))
+        (editor-set-text ed "hello world")
+        ;; Set mark at 0, move to 5, kill region -> removes "hello"
+        (editor-goto-pos ed 0)
+        (cmd-set-mark app)
+        (editor-goto-pos ed 5)
+        (cmd-kill-region app)
+        (check (editor-get-text ed) => " world")
+        ;; Scintilla clipboard should have the killed text
+        (check (editor-get-clipboard ed) => "hello")
+        ;; Mark should be cleared
+        (check (buffer-mark buf) => #f)))
+
+    (test-case "headless: copy-region-as-kill"
+      (let* ((ed (create-scintilla-editor width: 80 height: 24))
+             (buf (make-buffer "*scratch*" #f
+                    (send-message ed SCI_GETDOCPOINTER) #f #f #f #f))
+             (win (make-edit-window ed buf 0 0 80 24))
+             (fr (make-frame [win] 0 80 24 'vertical))
+             (app (new-app-state fr)))
+        (editor-set-text ed "hello world")
+        (editor-goto-pos ed 0)
+        (cmd-set-mark app)
+        (editor-goto-pos ed 5)
+        (cmd-copy-region-as-kill app)
+        ;; Text should be unchanged
+        (check (editor-get-text ed) => "hello world")
+        ;; Kill ring should have "hello"
+        (check (car (app-state-kill-ring app)) => "hello")))
+
+    (test-case "headless: buffer-list-buffer? predicate"
+      (let ((buf (make-buffer "*test*" #f #f #f #f #f #f)))
+        (check (buffer-list-buffer? buf) => #f)
+        (set! (buffer-lexer-lang buf) 'buffer-list)
+        (check (buffer-list-buffer? buf) => #t)))
+
+    (test-case "headless: buffer list select switches buffer"
+      (let* ((ed (create-scintilla-editor width: 80 height: 24))
+             (buf (make-buffer "*scratch*" #f
+                    (send-message ed SCI_GETDOCPOINTER) #f #f #f #f))
+             (win (make-edit-window ed buf 0 0 80 24))
+             (fr (make-frame [win] 0 80 24 'vertical))
+             (app (new-app-state fr)))
+        (buffer-list-add! buf)
+        ;; Create a second buffer and buffer-list buffer
+        (let* ((buf2 (buffer-create! "target.ss" ed "/tmp/target.ss"))
+               (bl-buf (buffer-create! "*Buffer List*" ed)))
+          (set! (buffer-lexer-lang bl-buf) 'buffer-list)
+          (buffer-attach! ed bl-buf)
+          (set! (edit-window-buffer win) bl-buf)
+          (editor-set-text ed "  Buffer\t\tFile\n  ------\t\t----\n  *scratch*\t\t\n  target.ss\t\t/tmp/target.ss\n")
+          ;; Position cursor on the "target.ss" line (line 3)
+          (let ((line3-start (editor-position-from-line ed 3)))
+            (editor-goto-pos ed line3-start)
+            ;; Select buffer
+            (cmd-buffer-list-select app)
+            ;; Should have switched to target.ss buffer
+            (check (buffer-name (edit-window-buffer win)) => "target.ss"))
+          ;; Cleanup
+          (buffer-list-remove! buf)
+          (buffer-list-remove! buf2)
+          (buffer-list-remove! bl-buf))))
+
+    (test-case "headless: org-todo cycling"
+      (let* ((ed (create-scintilla-editor width: 80 height: 24))
+             (buf (make-buffer "test.org" #f
+                    (send-message ed SCI_GETDOCPOINTER) #f #f #f #f))
+             (win (make-edit-window ed buf 0 0 80 24))
+             (fr (make-frame [win] 0 80 24 'vertical))
+             (app (new-app-state fr)))
+        ;; Test: heading with no state -> add TODO
+        (editor-set-text ed "* Buy milk")
+        (editor-goto-pos ed 2) ;; on the heading
+        (cmd-org-todo app)
+        (check (editor-get-text ed) => "* TODO Buy milk")
+        ;; Test: TODO -> DONE
+        (editor-goto-pos ed 2)
+        (cmd-org-todo app)
+        (check (editor-get-text ed) => "* DONE Buy milk")
+        ;; Test: DONE -> remove keyword
+        (editor-goto-pos ed 2)
+        (cmd-org-todo app)
+        (check (editor-get-text ed) => "* Buy milk")))
+
+    (test-case "headless: dired buffer blocks self-insert"
+      (let* ((ed (create-scintilla-editor width: 80 height: 24))
+             (buf (make-buffer "*dired*" #f
+                    (send-message ed SCI_GETDOCPOINTER) #f #f 'dired #f))
+             (win (make-edit-window ed buf 0 0 80 24))
+             (fr (make-frame [win] 0 80 24 'vertical))
+             (app (new-app-state fr)))
+        (editor-set-text ed "  file1.txt\n  file2.txt\n")
+        (editor-goto-pos ed 0)
+        ;; Self-insert should be suppressed in dired
+        (cmd-self-insert! app 97) ;; 'a'
+        (check (editor-get-text ed) => "  file1.txt\n  file2.txt\n")
+        (check (editor-get-current-pos ed) => 0)))
+
+    (test-case "headless: open-line inserts newline without moving cursor"
+      (let* ((ed (create-scintilla-editor width: 80 height: 24))
+             (buf (make-buffer "*scratch*" #f
+                    (send-message ed SCI_GETDOCPOINTER) #f #f #f #f))
+             (win (make-edit-window ed buf 0 0 80 24))
+             (fr (make-frame [win] 0 80 24 'vertical))
+             (app (new-app-state fr)))
+        (editor-set-text ed "hello")
+        (editor-goto-pos ed 5)
+        (cmd-open-line app)
+        (check (editor-get-text ed) => "hello\n")
+        ;; Cursor stays at position 5 (before the newline)
+        (check (editor-get-current-pos ed) => 5)))
+
+    (test-case "headless: forward-word navigation"
+      (let* ((ed (create-scintilla-editor width: 80 height: 24))
+             (buf (make-buffer "*scratch*" #f
+                    (send-message ed SCI_GETDOCPOINTER) #f #f #f #f))
+             (win (make-edit-window ed buf 0 0 80 24))
+             (fr (make-frame [win] 0 80 24 'vertical))
+             (app (new-app-state fr)))
+        (editor-set-text ed "hello world foo")
+        (editor-goto-pos ed 0)
+        (cmd-forward-word app)
+        ;; Should be at end of first word or start of second
+        (let ((pos (editor-get-current-pos ed)))
+          (check (> pos 0) => #t)
+          (check (<= pos 6) => #t))))
+
+    (test-case "headless: self-insert in dired is suppressed"
+      (let* ((ed (create-scintilla-editor width: 80 height: 24))
+             (buf (make-buffer "*dired*" #f
+                    (send-message ed SCI_GETDOCPOINTER) #f #f 'dired #f))
+             (win (make-edit-window ed buf 0 0 80 24))
+             (fr (make-frame [win] 0 80 24 'vertical))
+             (app (new-app-state fr)))
+        (editor-set-text ed "dir listing")
+        (editor-goto-pos ed 0)
+        (cmd-self-insert! app 120) ;; 'x'
+        ;; Text should be unchanged
+        (check (editor-get-text ed) => "dir listing")))
+
+    (test-case "headless: multiple self-inserts build text correctly"
+      (let* ((ed (create-scintilla-editor width: 80 height: 24))
+             (buf (make-buffer "*scratch*" #f
+                    (send-message ed SCI_GETDOCPOINTER) #f #f #f #f))
+             (win (make-edit-window ed buf 0 0 80 24))
+             (fr (make-frame [win] 0 80 24 'vertical))
+             (app (new-app-state fr)))
+        (editor-set-text ed "")
+        ;; Type "abc" one character at a time
+        (cmd-self-insert! app 97)  ;; a
+        (cmd-self-insert! app 98)  ;; b
+        (cmd-self-insert! app 99)  ;; c
+        (check (editor-get-text ed) => "abc")
+        (check (editor-get-current-pos ed) => 3)
+        ;; Move to beginning and type "X"
+        (editor-goto-pos ed 0)
+        (cmd-self-insert! app 88)  ;; X
+        (check (editor-get-text ed) => "Xabc")
+        (check (editor-get-current-pos ed) => 1)))
+
+    (test-case "headless: kill-line at end of line kills newline"
+      (let* ((ed (create-scintilla-editor width: 80 height: 24))
+             (buf (make-buffer "*scratch*" #f
+                    (send-message ed SCI_GETDOCPOINTER) #f #f #f #f))
+             (win (make-edit-window ed buf 0 0 80 24))
+             (fr (make-frame [win] 0 80 24 'vertical))
+             (app (new-app-state fr)))
+        (editor-set-text ed "first\nsecond")
+        ;; Go to end of first line (pos 5, just before \n)
+        (editor-goto-pos ed 5)
+        (cmd-kill-line app)
+        ;; Should kill the newline, joining lines
+        (check (editor-get-text ed) => "firstsecond")))
+
+    ;;=========================================================================
+    ;; Org-mode: helper function tests
+    ;;=========================================================================
+
+    (test-case "org-heading-level: counts stars"
+      (check (org-heading-level "* Heading") => 1)
+      (check (org-heading-level "** Sub") => 2)
+      (check (org-heading-level "*** Deep") => 3)
+      (check (org-heading-level "Not a heading") => 0)
+      (check (org-heading-level "") => 0))
+
+    (test-case "org-find-subtree-end: finds boundaries"
+      (let ((lines '("* H1" "Body1" "** Sub1" "Body2" "* H2" "Body3")))
+        ;; Subtree of H1 (level 1) ends at H2 (index 4)
+        (check (org-find-subtree-end lines 0 1) => 4)
+        ;; Subtree of Sub1 (level 2) ends at H2 (index 4)
+        (check (org-find-subtree-end lines 2 2) => 4)
+        ;; Subtree of H2 (level 1) ends at end of list
+        (check (org-find-subtree-end lines 4 1) => 6)))
+
+    (test-case "org-on-checkbox-line?: detects checkboxes"
+      ;; string-contains returns index (0 for first match) or #f
+      (check (not (not (org-on-checkbox-line? "- [ ] Buy milk"))) => #t)
+      (check (not (not (org-on-checkbox-line? "- [X] Done task"))) => #t)
+      (check (not (not (org-on-checkbox-line? "- [x] Also done"))) => #t)
+      (check (org-on-checkbox-line? "Regular text") => #f)
+      (check (org-on-checkbox-line? "* Heading") => #f))
+
+    ;;=========================================================================
+    ;; Org-mode: headless command tests
+    ;;=========================================================================
+
+    (test-case "headless: org-todo on nested heading"
+      (let* ((ed (create-scintilla-editor width: 80 height: 24))
+             (buf (make-buffer "test.org" #f
+                    (send-message ed SCI_GETDOCPOINTER) #f #f #f #f))
+             (win (make-edit-window ed buf 0 0 80 24))
+             (fr (make-frame [win] 0 80 24 'vertical))
+             (app (new-app-state fr)))
+        ;; Test on ** sub-heading
+        (editor-set-text ed "** Task item")
+        (editor-goto-pos ed 3)
+        (cmd-org-todo app)
+        (check (editor-get-text ed) => "** TODO Task item")
+        ;; Cycle to DONE
+        (editor-goto-pos ed 3)
+        (cmd-org-todo app)
+        (check (editor-get-text ed) => "** DONE Task item")
+        ;; Cycle back to none
+        (editor-goto-pos ed 3)
+        (cmd-org-todo app)
+        (check (editor-get-text ed) => "** Task item")))
+
+    (test-case "headless: org-promote and org-demote"
+      (let* ((ed (create-scintilla-editor width: 80 height: 24))
+             (buf (make-buffer "test.org" #f
+                    (send-message ed SCI_GETDOCPOINTER) #f #f #f #f))
+             (win (make-edit-window ed buf 0 0 80 24))
+             (fr (make-frame [win] 0 80 24 'vertical))
+             (app (new-app-state fr)))
+        ;; Demote: * -> **
+        (editor-set-text ed "* Heading One")
+        (editor-goto-pos ed 2)
+        (cmd-org-demote app)
+        (check (editor-get-text ed) => "** Heading One")
+        ;; Demote again: ** -> ***
+        (editor-goto-pos ed 2)
+        (cmd-org-demote app)
+        (check (editor-get-text ed) => "*** Heading One")
+        ;; Promote: *** -> **
+        (editor-goto-pos ed 2)
+        (cmd-org-promote app)
+        (check (editor-get-text ed) => "** Heading One")
+        ;; Promote: ** -> *
+        (editor-goto-pos ed 2)
+        (cmd-org-promote app)
+        (check (editor-get-text ed) => "* Heading One")))
+
+    (test-case "headless: org-promote at level 1 is no-op"
+      (let* ((ed (create-scintilla-editor width: 80 height: 24))
+             (buf (make-buffer "test.org" #f
+                    (send-message ed SCI_GETDOCPOINTER) #f #f #f #f))
+             (win (make-edit-window ed buf 0 0 80 24))
+             (fr (make-frame [win] 0 80 24 'vertical))
+             (app (new-app-state fr)))
+        (editor-set-text ed "* Already top")
+        (editor-goto-pos ed 2)
+        (cmd-org-promote app)
+        ;; Should stay unchanged
+        (check (editor-get-text ed) => "* Already top")))
+
+    (test-case "headless: org-toggle-checkbox"
+      (let* ((ed (create-scintilla-editor width: 80 height: 24))
+             (buf (make-buffer "test.org" #f
+                    (send-message ed SCI_GETDOCPOINTER) #f #f #f #f))
+             (win (make-edit-window ed buf 0 0 80 24))
+             (fr (make-frame [win] 0 80 24 'vertical))
+             (app (new-app-state fr)))
+        ;; Unchecked -> checked
+        (editor-set-text ed "- [ ] Buy groceries")
+        (editor-goto-pos ed 5)
+        (cmd-org-toggle-checkbox app)
+        (check (editor-get-text ed) => "- [X] Buy groceries")
+        ;; Checked -> unchecked
+        (editor-goto-pos ed 5)
+        (cmd-org-toggle-checkbox app)
+        (check (editor-get-text ed) => "- [ ] Buy groceries")))
+
+    (test-case "headless: org-priority cycling"
+      (let* ((ed (create-scintilla-editor width: 80 height: 24))
+             (buf (make-buffer "test.org" #f
+                    (send-message ed SCI_GETDOCPOINTER) #f #f #f #f))
+             (win (make-edit-window ed buf 0 0 80 24))
+             (fr (make-frame [win] 0 80 24 'vertical))
+             (app (new-app-state fr)))
+        ;; No priority -> [#A]
+        (editor-set-text ed "* Task")
+        (editor-goto-pos ed 2)
+        (cmd-org-priority app)
+        (check (editor-get-text ed) => "* [#A] Task")
+        ;; [#A] -> [#B]
+        (editor-goto-pos ed 2)
+        (cmd-org-priority app)
+        (check (editor-get-text ed) => "* [#B] Task")
+        ;; [#B] -> [#C]
+        (editor-goto-pos ed 2)
+        (cmd-org-priority app)
+        (check (editor-get-text ed) => "* [#C] Task")
+        ;; [#C] -> none
+        (editor-goto-pos ed 2)
+        (cmd-org-priority app)
+        (check (editor-get-text ed) => "* Task")))
+
+    (test-case "headless: org-priority with TODO keyword"
+      (let* ((ed (create-scintilla-editor width: 80 height: 24))
+             (buf (make-buffer "test.org" #f
+                    (send-message ed SCI_GETDOCPOINTER) #f #f #f #f))
+             (win (make-edit-window ed buf 0 0 80 24))
+             (fr (make-frame [win] 0 80 24 'vertical))
+             (app (new-app-state fr)))
+        ;; TODO heading: priority goes after keyword
+        (editor-set-text ed "* TODO Fix bug")
+        (editor-goto-pos ed 2)
+        (cmd-org-priority app)
+        (check (editor-get-text ed) => "* TODO [#A] Fix bug")))
+
+    (test-case "headless: org-move-subtree-down"
+      (let* ((ed (create-scintilla-editor width: 80 height: 24))
+             (buf (make-buffer "test.org" #f
+                    (send-message ed SCI_GETDOCPOINTER) #f #f #f #f))
+             (win (make-edit-window ed buf 0 0 80 24))
+             (fr (make-frame [win] 0 80 24 'vertical))
+             (app (new-app-state fr)))
+        ;; Two headings with content
+        (editor-set-text ed "* First\nBody 1\n* Second\nBody 2")
+        (editor-goto-pos ed 0)  ;; on "* First"
+        (cmd-org-move-subtree-down app)
+        (check (editor-get-text ed) => "* Second\nBody 2\n* First\nBody 1")))
+
+    (test-case "headless: org-move-subtree-up"
+      (let* ((ed (create-scintilla-editor width: 80 height: 24))
+             (buf (make-buffer "test.org" #f
+                    (send-message ed SCI_GETDOCPOINTER) #f #f #f #f))
+             (win (make-edit-window ed buf 0 0 80 24))
+             (fr (make-frame [win] 0 80 24 'vertical))
+             (app (new-app-state fr)))
+        ;; Position on second heading
+        (editor-set-text ed "* First\nBody 1\n* Second\nBody 2")
+        ;; Move cursor to "* Second" (line 2)
+        (editor-goto-pos ed (editor-position-from-line ed 2))
+        (cmd-org-move-subtree-up app)
+        (check (editor-get-text ed) => "* Second\nBody 2\n* First\nBody 1")))
+
+    (test-case "headless: org-insert-heading"
+      (let* ((ed (create-scintilla-editor width: 80 height: 24))
+             (buf (make-buffer "test.org" #f
+                    (send-message ed SCI_GETDOCPOINTER) #f #f #f #f))
+             (win (make-edit-window ed buf 0 0 80 24))
+             (fr (make-frame [win] 0 80 24 'vertical))
+             (app (new-app-state fr)))
+        ;; On a level-1 heading, insert new level-1 heading after subtree
+        (editor-set-text ed "* Heading\nSome body text")
+        (editor-goto-pos ed 2)
+        (cmd-org-insert-heading app)
+        (let ((text (editor-get-text ed)))
+          ;; Should have new "* " heading after the body
+          (check (not (not (string-contains text "\n* "))) => #t))))
+
+    (test-case "headless: org-insert-heading at level 2"
+      (let* ((ed (create-scintilla-editor width: 80 height: 24))
+             (buf (make-buffer "test.org" #f
+                    (send-message ed SCI_GETDOCPOINTER) #f #f #f #f))
+             (win (make-edit-window ed buf 0 0 80 24))
+             (fr (make-frame [win] 0 80 24 'vertical))
+             (app (new-app-state fr)))
+        (editor-set-text ed "** Sub heading\nBody")
+        (editor-goto-pos ed 3)
+        (cmd-org-insert-heading app)
+        (let ((text (editor-get-text ed)))
+          ;; Should insert ** heading (same level)
+          (check (not (not (string-contains text "\n** "))) => #t))))
+
+    (test-case "headless: org-export strips stars, preserves case"
+      (let* ((ed (create-scintilla-editor width: 80 height: 24))
+             (buf (make-buffer "test.org" #f
+                    (send-message ed SCI_GETDOCPOINTER) #f #f #f #f))
+             (win (make-edit-window ed buf 0 0 80 24))
+             (fr (make-frame [win] 0 80 24 'vertical))
+             (app (new-app-state fr)))
+        (editor-set-text ed "* My Heading\nBody text here\n** Sub Heading")
+        (cmd-org-export app)
+        ;; Export creates *Org Export* buffer with stripped text
+        (let ((text (editor-get-text ed)))
+          ;; Heading text should preserve case (bug fix: was string-upcase)
+          (check (not (not (string-contains text "My Heading"))) => #t)
+          (check (not (not (string-contains text "Sub Heading"))) => #t)
+          ;; Should not contain * prefix
+          (check (not (string-contains text "* ")) => #t)
+          ;; Body preserved
+          (check (not (not (string-contains text "Body text here"))) => #t))))
+
+    (test-case "headless: org-cycle fold/unfold"
+      (let* ((ed (create-scintilla-editor width: 80 height: 24))
+             (buf (make-buffer "test.org" #f
+                    (send-message ed SCI_GETDOCPOINTER) #f #f #f #f))
+             (win (make-edit-window ed buf 0 0 80 24))
+             (fr (make-frame [win] 0 80 24 'vertical))
+             (app (new-app-state fr)))
+        (editor-set-text ed "* Heading\nChild line 1\nChild line 2\n* Next")
+        (editor-goto-pos ed 0)
+        ;; All lines should be visible initially
+        (check (send-message ed SCI_GETLINEVISIBLE 1 0) => 1)
+        (check (send-message ed SCI_GETLINEVISIBLE 2 0) => 1)
+        ;; Fold
+        (cmd-org-cycle app)
+        (check (send-message ed SCI_GETLINEVISIBLE 1 0) => 0)
+        (check (send-message ed SCI_GETLINEVISIBLE 2 0) => 0)
+        ;; Heading line 0 stays visible
+        (check (send-message ed SCI_GETLINEVISIBLE 0 0) => 1)
+        ;; Line 3 ("* Next") should stay visible (not part of subtree)
+        (check (send-message ed SCI_GETLINEVISIBLE 3 0) => 1)
+        ;; Unfold
+        (cmd-org-cycle app)
+        (check (send-message ed SCI_GETLINEVISIBLE 1 0) => 1)
+        (check (send-message ed SCI_GETLINEVISIBLE 2 0) => 1)))
+
+    (test-case "headless: org-shift-tab global fold/unfold"
+      (let* ((ed (create-scintilla-editor width: 80 height: 24))
+             (buf (make-buffer "test.org" #f
+                    (send-message ed SCI_GETDOCPOINTER) #f #f #f #f))
+             (win (make-edit-window ed buf 0 0 80 24))
+             (fr (make-frame [win] 0 80 24 'vertical))
+             (app (new-app-state fr)))
+        (editor-set-text ed "* H1\nBody1\n* H2\nBody2")
+        ;; All visible initially
+        (check (send-message ed SCI_GETLINEVISIBLE 1 0) => 1)
+        ;; Fold: hide non-headings
+        (cmd-org-shift-tab app)
+        (check (send-message ed SCI_GETLINEVISIBLE 0 0) => 1)  ;; heading visible
+        (check (send-message ed SCI_GETLINEVISIBLE 1 0) => 0)  ;; body hidden
+        (check (send-message ed SCI_GETLINEVISIBLE 2 0) => 1)  ;; heading visible
+        (check (send-message ed SCI_GETLINEVISIBLE 3 0) => 0)  ;; body hidden
+        ;; Unfold: show all
+        (cmd-org-shift-tab app)
+        (check (send-message ed SCI_GETLINEVISIBLE 1 0) => 1)
+        (check (send-message ed SCI_GETLINEVISIBLE 3 0) => 1)))
+
+    (test-case "headless: org-store-link"
+      (let* ((ed (create-scintilla-editor width: 80 height: 24))
+             (buf (make-buffer "test.org" "/tmp/test.org"
+                    (send-message ed SCI_GETDOCPOINTER) #f #f #f #f))
+             (win (make-edit-window ed buf 0 0 80 24))
+             (fr (make-frame [win] 0 80 24 'vertical))
+             (app (new-app-state fr)))
+        (editor-set-text ed "* Heading\nLine 2")
+        (editor-goto-pos ed 0) ;; line 0
+        (cmd-org-store-link app)
+        (check (string? *org-stored-link*) => #t)
+        (check (not (not (string-contains *org-stored-link* "file:/tmp/test.org"))) => #t)
+        (check (not (not (string-contains *org-stored-link* "::1"))) => #t)))
+
+    (test-case "headless: org src-block template format"
+      (let* ((ed (create-scintilla-editor width: 80 height: 24))
+             (buf (make-buffer "test.org" #f
+                    (send-message ed SCI_GETDOCPOINTER) #f #f #f #f))
+             (win (make-edit-window ed buf 0 0 80 24))
+             (fr (make-frame [win] 0 80 24 'vertical))
+             (app (new-app-state fr)))
+        ;; cmd-org-insert-src-block requires interactive prompt, so test
+        ;; the template format directly by inserting text
+        (editor-set-text ed "")
+        (editor-goto-pos ed 0)
+        (let ((template "#+BEGIN_SRC python\n\n#+END_SRC\n"))
+          (editor-insert-text ed 0 template)
+          (let ((text (editor-get-text ed)))
+            (check (not (not (string-contains text "#+BEGIN_SRC"))) => #t)
+            (check (not (not (string-contains text "#+END_SRC"))) => #t)))))
+
+    (test-case "headless: org-template-expand <s"
+      (let* ((ed (create-scintilla-editor width: 80 height: 24))
+             (buf (make-buffer "test.org" #f
+                    (send-message ed SCI_GETDOCPOINTER) #f #f #f #f))
+             (win (make-edit-window ed buf 0 0 80 24))
+             (fr (make-frame [win] 0 80 24 'vertical))
+             (app (new-app-state fr)))
+        (editor-set-text ed "<s")
+        (editor-goto-pos ed 2)
+        (cmd-org-template-expand app)
+        (let ((text (editor-get-text ed)))
+          (check (not (not (string-contains text "#+BEGIN_SRC"))) => #t)
+          (check (not (not (string-contains text "#+END_SRC"))) => #t)
+          ;; No <s remaining
+          (check (not (string-contains text "<s")) => #t))))
+
+    (test-case "headless: org-template-expand <e"
+      (let* ((ed (create-scintilla-editor width: 80 height: 24))
+             (buf (make-buffer "test.org" #f
+                    (send-message ed SCI_GETDOCPOINTER) #f #f #f #f))
+             (win (make-edit-window ed buf 0 0 80 24))
+             (fr (make-frame [win] 0 80 24 'vertical))
+             (app (new-app-state fr)))
+        (editor-set-text ed "<e")
+        (editor-goto-pos ed 2)
+        (cmd-org-template-expand app)
+        (let ((text (editor-get-text ed)))
+          (check (not (not (string-contains text "#+BEGIN_EXAMPLE"))) => #t)
+          (check (not (not (string-contains text "#+END_EXAMPLE"))) => #t))))
+
+    (test-case "headless: org-template-expand <q"
+      (let* ((ed (create-scintilla-editor width: 80 height: 24))
+             (buf (make-buffer "test.org" #f
+                    (send-message ed SCI_GETDOCPOINTER) #f #f #f #f))
+             (win (make-edit-window ed buf 0 0 80 24))
+             (fr (make-frame [win] 0 80 24 'vertical))
+             (app (new-app-state fr)))
+        (editor-set-text ed "<q")
+        (editor-goto-pos ed 2)
+        (cmd-org-template-expand app)
+        (let ((text (editor-get-text ed)))
+          (check (not (not (string-contains text "#+BEGIN_QUOTE"))) => #t)
+          (check (not (not (string-contains text "#+END_QUOTE"))) => #t))))
+
+    (test-case "headless: org-template-expand preserves indentation"
+      (let* ((ed (create-scintilla-editor width: 80 height: 24))
+             (buf (make-buffer "test.org" #f
+                    (send-message ed SCI_GETDOCPOINTER) #f #f #f #f))
+             (win (make-edit-window ed buf 0 0 80 24))
+             (fr (make-frame [win] 0 80 24 'vertical))
+             (app (new-app-state fr)))
+        ;; Indented template
+        (editor-set-text ed "  <s")
+        (editor-goto-pos ed 4)
+        (cmd-org-template-expand app)
+        (let ((text (editor-get-text ed)))
+          ;; Both begin and end should be indented
+          (check (not (not (string-contains text "  #+BEGIN_SRC"))) => #t)
+          (check (not (not (string-contains text "  #+END_SRC"))) => #t))))
+
+    (test-case "headless: org-template-expand <l for latex export"
+      (let* ((ed (create-scintilla-editor width: 80 height: 24))
+             (buf (make-buffer "test.org" #f
+                    (send-message ed SCI_GETDOCPOINTER) #f #f #f #f))
+             (win (make-edit-window ed buf 0 0 80 24))
+             (fr (make-frame [win] 0 80 24 'vertical))
+             (app (new-app-state fr)))
+        (editor-set-text ed "<l")
+        (editor-goto-pos ed 2)
+        (cmd-org-template-expand app)
+        (let ((text (editor-get-text ed)))
+          ;; BEGIN has full "EXPORT latex"
+          (check (not (not (string-contains text "#+BEGIN_EXPORT latex"))) => #t)
+          ;; END has just "EXPORT"
+          (check (not (not (string-contains text "#+END_EXPORT"))) => #t))))
+
+    (test-case "headless: org-template-expand unknown key"
+      (let* ((ed (create-scintilla-editor width: 80 height: 24))
+             (buf (make-buffer "test.org" #f
+                    (send-message ed SCI_GETDOCPOINTER) #f #f #f #f))
+             (win (make-edit-window ed buf 0 0 80 24))
+             (fr (make-frame [win] 0 80 24 'vertical))
+             (app (new-app-state fr)))
+        ;; Unknown template key - should not expand
+        (editor-set-text ed "<z")
+        (editor-goto-pos ed 2)
+        (cmd-org-template-expand app)
+        (check (editor-get-text ed) => "<z")))
+
+    (test-case "headless: command registration for new org commands"
+      (register-all-commands!)
+      (check (not (not (find-command 'org-promote))) => #t)
+      (check (not (not (find-command 'org-demote))) => #t)
+      (check (not (not (find-command 'org-move-subtree-up))) => #t)
+      (check (not (not (find-command 'org-move-subtree-down))) => #t)
+      (check (not (not (find-command 'org-toggle-checkbox))) => #t)
+      (check (not (not (find-command 'org-priority))) => #t)
+      (check (not (not (find-command 'org-set-tags))) => #t)
+      (check (not (not (find-command 'org-insert-heading))) => #t)
+      (check (not (not (find-command 'org-insert-src-block))) => #t)
+      (check (not (not (find-command 'org-clock-in))) => #t)
+      (check (not (not (find-command 'org-clock-out))) => #t)
+      (check (not (not (find-command 'org-template-expand))) => #t))
 
     ))
 

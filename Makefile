@@ -16,6 +16,10 @@ build:
 clean:
 	gerbil clean
 	rm -rf .gerbil
+	@# Remove stale global static artifacts that can shadow local builds
+	rm -f $(HOME)/.gerbil/lib/static/gerbil-emacs__*.scm
+	rm -f $(HOME)/.gerbil/lib/static/gerbil-emacs__*.c
+	rm -f $(HOME)/.gerbil/lib/static/gerbil-emacs__*.o
 
 test: build
 	gerbil test
@@ -23,11 +27,18 @@ test: build
 PREFIX ?= $(HOME)/.local
 
 install: build
+	@# Remove stale global static artifacts before install
+	rm -f $(HOME)/.gerbil/lib/static/gerbil-emacs__*.scm
+	rm -f $(HOME)/.gerbil/lib/static/gerbil-emacs__*.c
+	rm -f $(HOME)/.gerbil/lib/static/gerbil-emacs__*.o
 	mkdir -p $(PREFIX)/bin
 	cp -f .gerbil/bin/gerbil-emacs $(PREFIX)/bin/
 	cp -f .gerbil/bin/gerbil-emacs-qt $(PREFIX)/bin/
 	@echo "Installed to $(PREFIX)/bin"
 
 install-qt: build
+	rm -f $(HOME)/.gerbil/lib/static/gerbil-emacs__*.scm
+	rm -f $(HOME)/.gerbil/lib/static/gerbil-emacs__*.c
+	rm -f $(HOME)/.gerbil/lib/static/gerbil-emacs__*.o
 	mkdir -p $(PREFIX)/bin
 	cp -f .gerbil/bin/gerbil-emacs-qt $(PREFIX)/bin/

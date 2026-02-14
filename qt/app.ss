@@ -110,8 +110,10 @@
                       ;; Handle self-insert directly here for Qt
                       (let* ((buf (qt-current-buffer (app-state-frame app)))
                              (ed (qt-current-editor (app-state-frame app)))
-                             (ch (integer->char data))
-                             (close-ch (and *auto-pair-mode* (auto-pair-char ch)))
+                             (ch (string-ref data 0))
+                             (close-ch (and *auto-pair-mode*
+                                            (let ((cc (auto-pair-char (char->integer ch))))
+                                              (and cc (integer->char cc)))))
                              (n (get-prefix-arg app))) ; Get prefix arg
                         (cond
                           ;; Suppress in dired buffers

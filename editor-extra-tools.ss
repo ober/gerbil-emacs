@@ -1,0 +1,1107 @@
+;;; -*- Gerbil -*-
+;;; Xref, ibuffer, which-key, markdown, flycheck, treemacs,
+;;; magit, abbrev, and hippie expand commands
+
+(export #t)
+
+(import :std/sugar
+        :std/sort
+        :std/srfi/13
+        :gerbil-scintilla/constants
+        :gerbil-scintilla/scintilla
+        :gerbil-scintilla/tui
+        :gerbil-emacs/core
+        :gerbil-emacs/keymap
+        :gerbil-emacs/buffer
+        :gerbil-emacs/window
+        :gerbil-emacs/modeline
+        :gerbil-emacs/echo
+        :gerbil-emacs/editor-extra-helpers)
+
+;; --- Task #47: xref, ibuffer, which-key, markdown, auto-insert, and more ---
+
+;; Xref cross-reference navigation using grep
+;; History stack for navigation
+
+(def *xref-history* '())     ; list of (file line col) for back navigation
+(def *xref-forward* '())     ; list of (file line col) for forward navigation
+
+(def (xref-push-location! app)
+  "Save current location to xref history."
+  (let* ((fr (app-state-frame app))
+         (win (current-window fr))
+         (buf (edit-window-buffer win))
+         (ed (edit-window-editor win))
+         (file (and buf (buffer-file-path buf)))
+         (line (editor-line-from-position ed (editor-get-current-pos ed)))
+         (col 0))
+    (when file
+      (set! *xref-history* (cons (list file line col) *xref-history*))
+      (set! *xref-forward* '()))))
+
+(def (xref-get-symbol-at-point app)
+  "Get the symbol at point."
+  (let* ((fr (app-state-frame app))
+         (win (current-window fr))
+         (ed (edit-window-editor win)))
+    (let-values (((start end) (word-bounds-at ed (editor-get-current-pos ed))))
+      (if start
+        (let ((text (editor-get-text ed)))
+          (substring text start end))
+        #f))))
+
+(def (xref-grep-for-pattern pattern dir definition?)
+  "Search for pattern using grep. Returns list of (file line text)."
+  (with-exception-catcher
+    (lambda (e) '())
+    (lambda ()
+      (let* ((grep-pattern (if definition?
+                             ;; Look for definition patterns
+                             (string-append "(def[a-z]*\\s+" pattern "\\b|"
+                                           pattern "\\s*[=:]|"
+                                           "function\\s+" pattern "\\b|"
+                                           "class\\s+" pattern "\\b)")
+                             ;; Look for any occurrence
+                             (string-append "\\b" pattern "\\b")))
+             (proc (open-process
+                     (list path: "grep"
+                           arguments: (list "-rn" "-E" grep-pattern dir
+                                           "--include=*.ss" "--include=*.scm"
+                                           "--include=*.py" "--include=*.js"
+                                           "--include=*.go" "--include=*.rs"
+                                           "--include=*.c" "--include=*.h"
+                                           "--include=*.cpp" "--include=*.hpp")
+                           stdin-redirection: #f
+                           stdout-redirection: #t
+                           stderr-redirection: #f)))
+             (output (read-line proc #f)))
+        (process-status proc)
+        (if (not output)
+          '()
+          (let ((lines (string-split output #\newline)))
+            (filter-map
+              (lambda (line)
+                (let ((parts (string-split line #\:)))
+                  (if (>= (length parts) 3)
+                    (let ((file (car parts))
+                          (line-num (string->number (cadr parts)))
+                          (text (string-join (cddr parts) ":")))
+                      (and line-num (list file line-num (string-trim text))))
+                    #f)))
+              lines)))))))
+
+(def (xref-show-results app results title symbol)
+  "Show xref results in a buffer."
+  (if (null? results)
+    (echo-message! (app-state-echo app) (string-append "No results for: " symbol))
+    (if (= (length results) 1)
+      ;; Single result - jump directly
+      (let* ((result (car results))
+             (file (car result))
+             (line (cadr result)))
+        (xref-push-location! app)
+        (xref-goto-location app file line)
+        (echo-message! (app-state-echo app) (string-append "Found: " symbol)))
+      ;; Multiple results - show in buffer
+      (let* ((fr (app-state-frame app))
+             (win (current-window fr))
+             (ed (edit-window-editor win))
+             (buf (buffer-create! (string-append "*xref: " symbol "*") ed))
+             (text (string-append title "\n\n"
+                     (string-join
+                       (map (lambda (r)
+                              (string-append (car r) ":" (number->string (cadr r)) ": " (caddr r)))
+                            results)
+                       "\n")
+                     "\n\nPress Enter on a line to jump to that location.")))
+        (xref-push-location! app)
+        (buffer-attach! ed buf)
+        (set! (edit-window-buffer win) buf)
+        (editor-set-text ed text)
+        (editor-goto-pos ed 0)
+        (editor-set-read-only ed #t)))))
+
+(def (xref-goto-location app file line)
+  "Jump to a file and line."
+  (let* ((fr (app-state-frame app))
+         (win (current-window fr))
+         (ed (edit-window-editor win)))
+    ;; Open the file
+    (when (file-exists? file)
+      (let* ((name (path-strip-directory file))
+             (buf (or (buffer-by-name name)
+                      (buffer-create! name ed file)))
+             (text (call-with-input-file file (lambda (p) (read-line p #f)))))
+        (buffer-attach! ed buf)
+        (set! (edit-window-buffer win) buf)
+        (set! (buffer-file-path buf) file)
+        (editor-set-text ed (or text ""))
+        (editor-goto-line ed line)))))
+
+(def (cmd-xref-find-definitions app)
+  "Find definitions of symbol at point using grep."
+  (let ((symbol (xref-get-symbol-at-point app))
+        (echo (app-state-echo app)))
+    (if (not symbol)
+      (echo-message! echo "No symbol at point")
+      (let* ((fr (app-state-frame app))
+             (win (current-window fr))
+             (buf (edit-window-buffer win))
+             (file (and buf (buffer-file-path buf)))
+             (dir (if file (path-directory file) (current-directory)))
+             (results (xref-grep-for-pattern symbol dir #t)))
+        (xref-show-results app results
+          (string-append "Definitions of: " symbol) symbol)))))
+
+(def (cmd-xref-find-references app)
+  "Find references to symbol at point using grep."
+  (let ((symbol (xref-get-symbol-at-point app))
+        (echo (app-state-echo app)))
+    (if (not symbol)
+      (echo-message! echo "No symbol at point")
+      (let* ((fr (app-state-frame app))
+             (win (current-window fr))
+             (buf (edit-window-buffer win))
+             (file (and buf (buffer-file-path buf)))
+             (dir (if file (path-directory file) (current-directory)))
+             (results (xref-grep-for-pattern symbol dir #f)))
+        (xref-show-results app results
+          (string-append "References to: " symbol) symbol)))))
+
+(def (cmd-xref-find-apropos app)
+  "Find symbols matching prompted pattern."
+  (let* ((echo (app-state-echo app))
+         (fr (app-state-frame app))
+         (row (- (frame-height fr) 1))
+         (width (frame-width fr))
+         (pattern (echo-read-string echo "Find symbol matching: " row width)))
+    (when (and pattern (not (string-empty? pattern)))
+      (let* ((win (current-window fr))
+             (buf (edit-window-buffer win))
+             (file (and buf (buffer-file-path buf)))
+             (dir (if file (path-directory file) (current-directory)))
+             (results (xref-grep-for-pattern pattern dir #f)))
+        (xref-show-results app results
+          (string-append "Symbols matching: " pattern) pattern)))))
+
+(def (cmd-xref-go-back app)
+  "Go back to previous xref location."
+  (let ((echo (app-state-echo app)))
+    (if (null? *xref-history*)
+      (echo-message! echo "No xref history")
+      (let* ((loc (car *xref-history*))
+             (file (car loc))
+             (line (cadr loc)))
+        ;; Save current position for forward
+        (let* ((fr (app-state-frame app))
+               (win (current-window fr))
+               (buf (edit-window-buffer win))
+               (ed (edit-window-editor win))
+               (cur-file (and buf (buffer-file-path buf)))
+               (cur-line (editor-line-from-position ed (editor-get-current-pos ed))))
+          (when cur-file
+            (set! *xref-forward* (cons (list cur-file cur-line 0) *xref-forward*))))
+        (set! *xref-history* (cdr *xref-history*))
+        (xref-goto-location app file line)
+        (echo-message! echo "Xref: back")))))
+
+(def (cmd-xref-go-forward app)
+  "Go forward in xref history."
+  (let ((echo (app-state-echo app)))
+    (if (null? *xref-forward*)
+      (echo-message! echo "No forward xref history")
+      (let* ((loc (car *xref-forward*))
+             (file (car loc))
+             (line (cadr loc)))
+        (xref-push-location! app)
+        (set! *xref-forward* (cdr *xref-forward*))
+        (xref-goto-location app file line)
+        (echo-message! echo "Xref: forward")))))
+
+;; Ibuffer - advanced buffer management
+(def (cmd-ibuffer app)
+  "Open ibuffer - advanced buffer management."
+  (let* ((fr (app-state-frame app))
+         (win (current-window fr))
+         (ed (edit-window-editor win))
+         (bufs (buffer-list))
+         (lines (map (lambda (b)
+                       (string-append
+                         (if (buffer-modified b) "* " "  ")
+                         (buffer-name b)
+                         (if (buffer-file-path b)
+                           (string-append "  " (buffer-file-path b))
+                           "")))
+                     bufs))
+         (text (string-join lines "\n"))
+         (buf (buffer-create! "*Ibuffer*" ed)))
+    (buffer-attach! ed buf)
+    (set! (edit-window-buffer win) buf)
+    (editor-set-text ed (string-append "Ibuffer\n\n  MR  Buffer              File\n  --  ------              ----\n" text "\n"))
+    (editor-set-read-only ed #t)))
+
+(def (cmd-ibuffer-mark app)
+  "Mark current buffer line in ibuffer."
+  (let* ((fr (app-state-frame app))
+         (win (current-window fr))
+         (ed (edit-window-editor win))
+         (pos (editor-get-current-pos ed))
+         (line-num (editor-line-from-position ed pos))
+         (line-start (editor-position-from-line ed line-num)))
+    ;; Mark by inserting > at start of line
+    (send-message ed SCI_SETTARGETSTART line-start 0)
+    (send-message ed SCI_SETTARGETEND (+ line-start 1) 0)
+    (send-message/string ed SCI_REPLACETARGET ">")
+    ;; Move to next line
+    (editor-goto-pos ed (editor-position-from-line ed (+ line-num 1)))
+    (echo-message! (app-state-echo app) "Marked")))
+
+(def (cmd-ibuffer-delete app)
+  "Flag buffer for deletion in ibuffer (mark with D)."
+  (let* ((fr (app-state-frame app))
+         (win (current-window fr))
+         (ed (edit-window-editor win))
+         (pos (editor-get-current-pos ed))
+         (line-num (editor-line-from-position ed pos))
+         (line-start (editor-position-from-line ed line-num)))
+    (send-message ed SCI_SETTARGETSTART line-start 0)
+    (send-message ed SCI_SETTARGETEND (+ line-start 1) 0)
+    (send-message/string ed SCI_REPLACETARGET "D")
+    (editor-goto-pos ed (editor-position-from-line ed (+ line-num 1)))
+    (echo-message! (app-state-echo app) "Flagged for deletion")))
+
+(def (cmd-ibuffer-do-kill app)
+  "Execute flagged operations in ibuffer (kill D-flagged buffers)."
+  (let* ((fr (app-state-frame app))
+         (win (current-window fr))
+         (ed (edit-window-editor win))
+         (text (editor-get-text ed))
+         (lines (string-split text #\newline))
+         (killed 0))
+    ;; Find lines starting with D and extract buffer name
+    (for-each
+      (lambda (line)
+        (when (and (> (string-length line) 2) (char=? (string-ref line 0) #\D))
+          (let* ((trimmed (string-trim (substring line 1 (string-length line))))
+                 (name (let ((sp (string-index trimmed #\space)))
+                         (if sp (substring trimmed 0 sp) trimmed)))
+                 (buf (buffer-by-name name)))
+            (when buf
+              (buffer-list-remove! buf)
+              (set! killed (+ killed 1))))))
+      lines)
+    (echo-message! (app-state-echo app)
+      (string-append "Killed " (number->string killed) " buffer(s)"))))
+
+;; Which-key - display available keybindings
+(def (cmd-which-key app)
+  "Display available keybindings for the global keymap."
+  (let* ((fr (app-state-frame app))
+         (win (current-window fr))
+         (ed (edit-window-editor win))
+         (entries (keymap-entries *global-keymap*))
+         (lines (map (lambda (e)
+                       (string-append "  " (car e) " -> "
+                         (cond
+                           ((symbol? (cdr e)) (symbol->string (cdr e)))
+                           ((hash-table? (cdr e)) "<prefix-map>")
+                           (else "???"))))
+                     (sort entries (lambda (a b) (string<? (car a) (car b))))))
+         (buf (buffer-create! "*Which Key*" ed)))
+    (buffer-attach! ed buf)
+    (set! (edit-window-buffer win) buf)
+    (editor-set-text ed (string-append "Key Bindings\n\n"
+                          (string-join lines "\n") "\n"))
+    (editor-goto-pos ed 0)
+    (editor-set-read-only ed #t)))
+
+;; Markdown mode
+(def (cmd-markdown-mode app)
+  "Toggle markdown mode — set lexer for markdown files."
+  (let* ((on (toggle-mode! 'markdown-mode))
+         (fr (app-state-frame app))
+         (win (current-window fr))
+         (buf (edit-window-buffer win)))
+    (when (and buf on)
+      (set! (buffer-lexer-lang buf) "markdown"))
+    (echo-message! (app-state-echo app)
+      (if on "Markdown mode enabled" "Markdown mode disabled"))))
+
+(def (cmd-markdown-preview app)
+  "Preview markdown as rendered text using pandoc or basic conversion."
+  (let* ((fr (app-state-frame app))
+         (win (current-window fr))
+         (ed (edit-window-editor win))
+         (text (editor-get-text ed))
+         (echo (app-state-echo app)))
+    ;; Try pandoc, fall back to basic rendering
+    (let ((rendered (with-exception-catcher
+                      (lambda (e) #f)
+                      (lambda ()
+                        (let ((proc (open-process
+                                      (list path: "pandoc"
+                                            arguments: '("-t" "plain")
+                                            stdin-redirection: #t stdout-redirection: #t
+                                            stderr-redirection: #f))))
+                          (display text proc)
+                          (close-output-port proc)
+                          (let ((out (read-line proc #f)))
+                            (process-status proc)
+                            out))))))
+      (let* ((preview-text (or rendered text))
+             (buf (buffer-create! "*Markdown Preview*" ed)))
+        (buffer-attach! ed buf)
+        (set! (edit-window-buffer win) buf)
+        (editor-set-text ed preview-text)
+        (editor-goto-pos ed 0)
+        (editor-set-read-only ed #t)
+        (echo-message! echo (if rendered "Preview (via pandoc)" "Preview (raw)"))))))
+
+(def (cmd-markdown-insert-header app)
+  "Insert markdown header."
+  (let* ((fr (app-state-frame app))
+         (win (current-window fr))
+         (ed (edit-window-editor win)))
+    (editor-insert-text ed (editor-get-current-pos ed) "# ")))
+
+(def (cmd-markdown-insert-bold app)
+  "Insert markdown bold markers."
+  (let* ((fr (app-state-frame app))
+         (win (current-window fr))
+         (ed (edit-window-editor win))
+         (start (editor-get-selection-start ed))
+         (end (editor-get-selection-end ed)))
+    (if (= start end)
+      (begin
+        (editor-insert-text ed (editor-get-current-pos ed) "****")
+        (editor-goto-pos ed (+ (editor-get-current-pos ed) -2)))
+      (begin
+        (editor-insert-text ed end "**")
+        (editor-insert-text ed start "**")))))
+
+(def (cmd-markdown-insert-italic app)
+  "Insert markdown italic markers."
+  (let* ((fr (app-state-frame app))
+         (win (current-window fr))
+         (ed (edit-window-editor win))
+         (start (editor-get-selection-start ed))
+         (end (editor-get-selection-end ed)))
+    (if (= start end)
+      (begin
+        (editor-insert-text ed (editor-get-current-pos ed) "**")
+        (editor-goto-pos ed (+ (editor-get-current-pos ed) -1)))
+      (begin
+        (editor-insert-text ed end "*")
+        (editor-insert-text ed start "*")))))
+
+(def (cmd-markdown-insert-code app)
+  "Insert markdown code markers."
+  (let* ((fr (app-state-frame app))
+         (win (current-window fr))
+         (ed (edit-window-editor win))
+         (start (editor-get-selection-start ed))
+         (end (editor-get-selection-end ed)))
+    (if (= start end)
+      (begin
+        (editor-insert-text ed (editor-get-current-pos ed) "``")
+        (editor-goto-pos ed (+ (editor-get-current-pos ed) -1)))
+      (begin
+        (editor-insert-text ed end "`")
+        (editor-insert-text ed start "`")))))
+
+(def (cmd-markdown-insert-link app)
+  "Insert markdown link template."
+  (let* ((fr (app-state-frame app))
+         (win (current-window fr))
+         (ed (edit-window-editor win)))
+    (editor-insert-text ed (editor-get-current-pos ed) "[text](url)")))
+
+(def (cmd-markdown-insert-image app)
+  "Insert markdown image template."
+  (let* ((fr (app-state-frame app))
+         (win (current-window fr))
+         (ed (edit-window-editor win)))
+    (editor-insert-text ed (editor-get-current-pos ed) "![alt](url)")))
+
+(def (cmd-markdown-insert-code-block app)
+  "Insert markdown fenced code block."
+  (let* ((fr (app-state-frame app))
+         (win (current-window fr))
+         (ed (edit-window-editor win)))
+    (editor-insert-text ed (editor-get-current-pos ed) "```\n\n```")))
+
+(def (cmd-markdown-insert-list-item app)
+  "Insert markdown list item."
+  (let* ((fr (app-state-frame app))
+         (win (current-window fr))
+         (ed (edit-window-editor win)))
+    (editor-insert-text ed (editor-get-current-pos ed) "- ")))
+
+;; Auto-insert templates
+;; Templates for common file types
+
+(def *auto-insert-enabled* #t)
+
+(def (auto-insert-get-template ext filename)
+  "Get template content for a file extension."
+  (let ((base (path-strip-extension filename)))
+    (cond
+      ((member ext '(".ss" ".scm"))
+       (string-append ";;; -*- Gerbil -*-\n"
+                      ";;; " filename "\n"
+                      ";;;\n\n"
+                      "(export )\n\n"
+                      "(import :std/sugar)\n\n"
+                      ";;;============================================================================\n\n"))
+      ((member ext '(".py"))
+       (string-append "#!/usr/bin/env python3\n"
+                      "\"\"\"" filename "\n\n"
+                      "Description here.\n"
+                      "\"\"\"\n\n"
+                      "def main():\n"
+                      "    pass\n\n"
+                      "if __name__ == '__main__':\n"
+                      "    main()\n"))
+      ((member ext '(".sh" ".bash"))
+       (string-append "#!/bin/bash\n"
+                      "# " filename "\n"
+                      "# Description here.\n\n"
+                      "set -euo pipefail\n\n"))
+      ((member ext '(".c"))
+       (string-append "/*\n"
+                      " * " filename "\n"
+                      " * Description here.\n"
+                      " */\n\n"
+                      "#include <stdio.h>\n"
+                      "#include <stdlib.h>\n\n"
+                      "int main(int argc, char *argv[]) {\n"
+                      "    return 0;\n"
+                      "}\n"))
+      ((member ext '(".h"))
+       (let ((guard (string-append (string-upcase base) "_H")))
+         (string-append "#ifndef " guard "\n"
+                        "#define " guard "\n\n"
+                        "/* " filename " */\n\n"
+                        "#endif /* " guard " */\n")))
+      ((member ext '(".go"))
+       (string-append "// " filename "\n"
+                      "package main\n\n"
+                      "func main() {\n"
+                      "}\n"))
+      ((member ext '(".rs"))
+       (string-append "// " filename "\n\n"
+                      "fn main() {\n"
+                      "    println!(\"Hello, world!\");\n"
+                      "}\n"))
+      ((member ext '(".js" ".mjs"))
+       (string-append "// " filename "\n"
+                      "'use strict';\n\n"
+                      "function main() {\n"
+                      "}\n\n"
+                      "main();\n"))
+      ((member ext '(".html"))
+       (string-append "<!DOCTYPE html>\n"
+                      "<html lang=\"en\">\n"
+                      "<head>\n"
+                      "    <meta charset=\"UTF-8\">\n"
+                      "    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n"
+                      "    <title>" base "</title>\n"
+                      "</head>\n"
+                      "<body>\n"
+                      "    \n"
+                      "</body>\n"
+                      "</html>\n"))
+      ((member ext '(".css"))
+       (string-append "/* " filename " */\n\n"
+                      "* {\n"
+                      "    box-sizing: border-box;\n"
+                      "}\n\n"
+                      "body {\n"
+                      "    margin: 0;\n"
+                      "    padding: 0;\n"
+                      "}\n"))
+      ((member ext '(".md"))
+       (string-append "# " base "\n\n"
+                      "## Overview\n\n"
+                      "Description here.\n\n"
+                      "## Usage\n\n"
+                      "```\n"
+                      "example\n"
+                      "```\n"))
+      ((member ext '(".json"))
+       "{\n}\n")
+      ((member ext '(".yaml" ".yml"))
+       (string-append "# " filename "\n---\n\n"))
+      (else #f))))
+
+(def (cmd-auto-insert app)
+  "Insert file template based on file extension."
+  (let* ((fr (app-state-frame app))
+         (win (current-window fr))
+         (buf (edit-window-buffer win))
+         (file (and buf (buffer-file-path buf)))
+         (ed (edit-window-editor win))
+         (echo (app-state-echo app)))
+    (if (not file)
+      (echo-message! echo "Buffer has no associated file")
+      (let* ((ext (path-extension file))
+             (filename (path-strip-directory file))
+             (template (auto-insert-get-template ext filename)))
+        (if (not template)
+          (echo-message! echo (string-append "No template for " ext " files"))
+          (begin
+            (editor-set-text ed template)
+            (editor-goto-pos ed (string-length template))
+            (echo-message! echo (string-append "Inserted template for " ext))))))))
+
+(def (cmd-auto-insert-mode app)
+  "Toggle auto-insert mode."
+  (set! *auto-insert-enabled* (not *auto-insert-enabled*))
+  (echo-message! (app-state-echo app)
+    (if *auto-insert-enabled* "Auto-insert enabled" "Auto-insert disabled")))
+
+;; Text scale (font size)
+(def (cmd-text-scale-increase app)
+  "Increase text scale."
+  (let* ((fr (app-state-frame app))
+         (win (current-window fr))
+         (ed (edit-window-editor win))
+         (cur (send-message ed SCI_GETZOOM 0 0)))
+    (send-message ed SCI_SETZOOM (+ cur 1) 0)
+    (echo-message! (app-state-echo app)
+      (string-append "Zoom: " (number->string (+ cur 1))))))
+
+(def (cmd-text-scale-decrease app)
+  "Decrease text scale."
+  (let* ((fr (app-state-frame app))
+         (win (current-window fr))
+         (ed (edit-window-editor win))
+         (cur (send-message ed SCI_GETZOOM 0 0)))
+    (send-message ed SCI_SETZOOM (- cur 1) 0)
+    (echo-message! (app-state-echo app)
+      (string-append "Zoom: " (number->string (- cur 1))))))
+
+(def (cmd-text-scale-reset app)
+  "Reset text scale to default."
+  (let* ((fr (app-state-frame app))
+         (win (current-window fr))
+         (ed (edit-window-editor win)))
+    (send-message ed SCI_SETZOOM 0 0)
+    (echo-message! (app-state-echo app) "Zoom: 0 (default)")))
+
+;; Browse kill ring
+(def (cmd-browse-kill-ring app)
+  "Display kill ring contents."
+  (let* ((fr (app-state-frame app))
+         (win (current-window fr))
+         (ed (edit-window-editor win))
+         (kr (app-state-kill-ring app))
+         (entries (let loop ((items kr) (i 0) (acc []))
+                    (if (or (null? items) (>= i 20))
+                      (reverse acc)
+                      (let ((entry (car items)))
+                        (loop (cdr items) (+ i 1)
+                              (cons (string-append
+                                      (number->string i) ": "
+                                      (if (> (string-length entry) 60)
+                                        (string-append (substring entry 0 60) "...")
+                                        entry))
+                                    acc))))))
+         (text (if (null? entries) "(empty)"
+                 (string-join entries "\n")))
+         (buf (buffer-create! "*Kill Ring*" ed)))
+    (buffer-attach! ed buf)
+    (set! (edit-window-buffer win) buf)
+    (editor-set-text ed (string-append "Kill Ring\n\n" text "\n"))
+    (editor-set-read-only ed #t)))
+
+;; Flycheck / syntax checking
+;; Uses external linters based on file extension
+
+(def *flycheck-errors* (make-hash-table)) ; buffer-name -> list of (line col message)
+(def *flycheck-error-idx* (make-hash-table)) ; buffer-name -> current error index
+
+(def (flycheck-get-linter file-path)
+  "Get linter command and args for a file based on extension."
+  (let ((ext (path-extension file-path)))
+    (cond
+      ((member ext '(".py")) 
+       '("python3" "-m" "py_compile"))
+      ((member ext '(".js" ".mjs"))
+       '("node" "--check"))
+      ((member ext '(".sh" ".bash"))
+       '("bash" "-n"))
+      ((member ext '(".rb"))
+       '("ruby" "-c"))
+      ((member ext '(".pl" ".pm"))
+       '("perl" "-c"))
+      ((member ext '(".go"))
+       '("gofmt" "-e"))
+      ((member ext '(".rs"))
+       '("rustfmt" "--check"))
+      ((member ext '(".c" ".h"))
+       '("gcc" "-fsyntax-only" "-Wall"))
+      ((member ext '(".cpp" ".hpp" ".cc" ".cxx"))
+       '("g++" "-fsyntax-only" "-Wall"))
+      ((member ext '(".json"))
+       '("python3" "-m" "json.tool"))
+      ((member ext '(".yaml" ".yml"))
+       '("python3" "-c" "import yaml,sys; yaml.safe_load(open(sys.argv[1]))"))
+      ((member ext '(".xml"))
+       '("xmllint" "--noout"))
+      (else #f))))
+
+(def (flycheck-parse-errors output file-path)
+  "Parse linter output into list of (line col message)."
+  (let ((lines (string-split output #\newline))
+        (errors '()))
+    (for-each
+      (lambda (line)
+        (when (and (> (string-length line) 0)
+                   (or (string-contains line "error")
+                       (string-contains line "Error")
+                       (string-contains line "warning")
+                       (string-contains line "Warning")
+                       (string-contains line "line ")
+                       (string-contains line ":")))
+          ;; Try to extract line number - common format: file:line:col: message
+          (let* ((parts (string-split line #\:))
+                 (line-num (if (>= (length parts) 2)
+                             (string->number (string-trim (cadr parts)))
+                             #f))
+                 (col-num (if (>= (length parts) 3)
+                            (string->number (string-trim (caddr parts)))
+                            1))
+                 (msg (string-trim line)))
+            (when (and line-num (> line-num 0))
+              (set! errors (cons (list line-num (or col-num 1) msg) errors))))))
+      lines)
+    (reverse errors)))
+
+(def (flycheck-run-linter! app)
+  "Run the linter for the current buffer and store errors."
+  (let* ((fr (app-state-frame app))
+         (win (current-window fr))
+         (buf (edit-window-buffer win))
+         (file-path (and buf (buffer-file-path buf)))
+         (buf-name (and buf (buffer-name buf)))
+         (echo (app-state-echo app)))
+    (if (not file-path)
+      (echo-error! echo "No file associated with buffer")
+      (let ((linter-cmd (flycheck-get-linter file-path)))
+        (if (not linter-cmd)
+          (echo-message! echo (string-append "No linter for " (path-extension file-path)))
+          (with-exception-catcher
+            (lambda (e) 
+              (echo-message! echo "Linter not available"))
+            (lambda ()
+              ;; Save buffer first if modified
+              (let* ((ed (edit-window-editor win))
+                     (proc (open-process
+                             (list path: (car linter-cmd)
+                                   arguments: (append (cdr linter-cmd) (list file-path))
+                                   stdin-redirection: #f
+                                   stdout-redirection: #t
+                                   stderr-redirection: #t
+                                   merge-stderr-with-stdout: #t)))
+                     (output-text (read-line proc #f)))
+                (process-status proc)
+                (let* ((output (or output-text ""))
+                       (errors (flycheck-parse-errors output file-path)))
+                  (hash-put! *flycheck-errors* buf-name errors)
+                  (hash-put! *flycheck-error-idx* buf-name 0)
+                  (if (null? errors)
+                    (echo-message! echo "No errors found")
+                    (echo-message! echo
+                      (string-append (number->string (length errors)) " error(s) found"))))))))))))
+
+(def (cmd-flycheck-mode app)
+  "Run syntax check on current buffer using appropriate linter."
+  (flycheck-run-linter! app))
+
+(def (cmd-flycheck-next-error app)
+  "Jump to next flycheck error in current buffer."
+  (let* ((fr (app-state-frame app))
+         (win (current-window fr))
+         (buf (edit-window-buffer win))
+         (buf-name (and buf (buffer-name buf)))
+         (echo (app-state-echo app)))
+    (if (not buf-name)
+      (echo-error! echo "No buffer")
+      (let ((errors (or (hash-get *flycheck-errors* buf-name) '())))
+        (if (null? errors)
+          (echo-message! echo "No errors (run flycheck-mode first)")
+          (let* ((idx (or (hash-get *flycheck-error-idx* buf-name) 0))
+                 (new-idx (modulo (+ idx 1) (length errors)))
+                 (error (list-ref errors new-idx))
+                 (line (car error))
+                 (col (cadr error))
+                 (msg (caddr error))
+                 (ed (edit-window-editor win)))
+            (hash-put! *flycheck-error-idx* buf-name new-idx)
+            ;; Go to the error line
+            (editor-goto-line ed line)
+            (echo-message! echo (string-append "Error " (number->string (+ new-idx 1))
+                                              "/" (number->string (length errors))
+                                              ": " msg))))))))
+
+(def (cmd-flycheck-previous-error app)
+  "Jump to previous flycheck error in current buffer."
+  (let* ((fr (app-state-frame app))
+         (win (current-window fr))
+         (buf (edit-window-buffer win))
+         (buf-name (and buf (buffer-name buf)))
+         (echo (app-state-echo app)))
+    (if (not buf-name)
+      (echo-error! echo "No buffer")
+      (let ((errors (or (hash-get *flycheck-errors* buf-name) '())))
+        (if (null? errors)
+          (echo-message! echo "No errors (run flycheck-mode first)")
+          (let* ((idx (or (hash-get *flycheck-error-idx* buf-name) 0))
+                 (new-idx (modulo (- idx 1) (length errors)))
+                 (error (list-ref errors new-idx))
+                 (line (car error))
+                 (col (cadr error))
+                 (msg (caddr error))
+                 (ed (edit-window-editor win)))
+            (hash-put! *flycheck-error-idx* buf-name new-idx)
+            ;; Go to the error line
+            (editor-goto-line ed line)
+            (echo-message! echo (string-append "Error " (number->string (+ new-idx 1))
+                                              "/" (number->string (length errors))
+                                              ": " msg))))))))
+
+(def (cmd-flycheck-list-errors app)
+  "List all flycheck errors in a buffer."
+  (let* ((fr (app-state-frame app))
+         (win (current-window fr))
+         (buf (edit-window-buffer win))
+         (buf-name (and buf (buffer-name buf)))
+         (echo (app-state-echo app)))
+    (if (not buf-name)
+      (echo-error! echo "No buffer")
+      (let ((errors (or (hash-get *flycheck-errors* buf-name) '())))
+        (if (null? errors)
+          (echo-message! echo "No errors (run flycheck-mode first)")
+          (let* ((ed (edit-window-editor win))
+                 (error-buf (buffer-create! "*Flycheck Errors*" ed))
+                 (text (string-join
+                         (map (lambda (err)
+                                (string-append "Line " (number->string (car err))
+                                              ": " (caddr err)))
+                              errors)
+                         "\n")))
+            (buffer-attach! ed error-buf)
+            (set! (edit-window-buffer win) error-buf)
+            (editor-set-text ed (string-append "Flycheck errors for " buf-name ":\n\n" text "\n"))
+            (editor-goto-pos ed 0)
+            (editor-set-read-only ed #t)))))))
+
+;; Treemacs / file explorer - simple tree-view of directory structure
+;; Uses a dedicated buffer showing directory tree
+
+(def *treemacs-root* #f) ; current tree root directory
+(def *treemacs-expanded* (make-hash-table)) ; path -> #t if expanded
+
+(def (treemacs-get-entries dir depth)
+  "Get directory entries with indentation."
+  (with-exception-catcher
+    (lambda (e) '())
+    (lambda ()
+      (let* ((entries (directory-files dir))
+             (sorted (sort entries string<?))
+             (indent (make-string (* depth 2) #\space)))
+        (apply append
+          (map (lambda (name)
+                 (let* ((path (path-expand name dir))
+                        (is-dir (directory-exists? path))
+                        (expanded (and is-dir (hash-get *treemacs-expanded* path)))
+                        (prefix (if is-dir
+                                  (if expanded "▼ " "▶ ")
+                                  "  ")))
+                   (cons (list (string-append indent prefix name) path is-dir)
+                         (if (and is-dir expanded)
+                           (treemacs-get-entries path (+ depth 1))
+                           '()))))
+               sorted))))))
+
+(def (treemacs-render app root)
+  "Render the tree view in a buffer."
+  (let* ((fr (app-state-frame app))
+         (win (current-window fr))
+         (ed (edit-window-editor win))
+         (buf (or (buffer-by-name "*Treemacs*")
+                  (buffer-create! "*Treemacs*" ed)))
+         (entries (cons (list (string-append "▼ " root) root #t)
+                       (treemacs-get-entries root 1)))
+         (lines (map car entries)))
+    (buffer-attach! ed buf)
+    (set! (edit-window-buffer win) buf)
+    (editor-set-text ed (string-append "Treemacs: " root "\n"
+                                       (make-string 40 #\-)
+                                       "\n"
+                                       (string-join lines "\n")
+                                       "\n\n[Enter: open/toggle, q: quit]"))
+    (editor-goto-line ed 3)
+    (editor-set-read-only ed #t)
+    ;; Store entries for navigation
+    (set! (buffer-lexer-lang buf) (list 'treemacs entries))))
+
+(def (cmd-treemacs app)
+  "Toggle treemacs file explorer."
+  (let* ((echo (app-state-echo app))
+         (fr (app-state-frame app))
+         (win (current-window fr))
+         (buf (edit-window-buffer win)))
+    ;; If already in treemacs, close it
+    (if (and buf (string=? (buffer-name buf) "*Treemacs*"))
+      (begin
+        ;; Switch back to previous buffer or scratch
+        (let ((other (find (lambda (b) (not (string=? (buffer-name b) "*Treemacs*")))
+                          (buffer-list))))
+          (when other
+            (buffer-attach! (edit-window-editor win) other)
+            (set! (edit-window-buffer win) other)))
+        (echo-message! echo "Treemacs closed"))
+      ;; Open treemacs
+      (let ((root (or *treemacs-root*
+                      (let ((file (and buf (buffer-file-path buf))))
+                        (if file
+                          (or (project-find-root (path-directory file))
+                              (path-directory file))
+                          (current-directory))))))
+        (set! *treemacs-root* root)
+        (treemacs-render app root)
+        (echo-message! echo "Treemacs opened")))))
+
+(def (cmd-treemacs-find-file app)
+  "Find current file in treemacs and expand to it."
+  (let* ((echo (app-state-echo app))
+         (fr (app-state-frame app))
+         (win (current-window fr))
+         (buf (edit-window-buffer win))
+         (file (and buf (buffer-file-path buf))))
+    (if (not file)
+      (echo-message! echo "Current buffer has no file")
+      (let* ((root (or *treemacs-root*
+                       (project-find-root (path-directory file))
+                       (path-directory file))))
+        (set! *treemacs-root* root)
+        ;; Expand all parent directories
+        (let loop ((dir (path-directory file)))
+          (when (and dir (string-prefix? root dir))
+            (hash-put! *treemacs-expanded* dir #t)
+            (unless (string=? dir root)
+              (loop (path-directory dir)))))
+        (treemacs-render app root)
+        (echo-message! echo (string-append "Found: " (path-strip-directory file)))))))
+
+;; Magit-like git operations
+(def (cmd-magit-status app)
+  "Show git status in magit-like interface."
+  (let ((result (with-exception-catcher
+                  (lambda (e) "Not a git repository")
+                  (lambda ()
+                    (let ((p (open-process
+                               (list path: "git"
+                                     arguments: '("status" "--short")
+                                     stdin-redirection: #f stdout-redirection: #t
+                                     stderr-redirection: #t))))
+                      (let ((out (read-line p #f)))
+                        (process-status p)
+                        (or out "(clean)")))))))
+    (let* ((fr (app-state-frame app))
+           (win (current-window fr))
+           (ed (edit-window-editor win))
+           (buf (buffer-create! "*Magit*" ed)))
+      (buffer-attach! ed buf)
+      (set! (edit-window-buffer win) buf)
+      (editor-set-text ed (string-append "Git Status\n\n" result "\n"))
+      (editor-set-read-only ed #t))))
+
+(def (cmd-magit-log app)
+  "Show git log in magit-like interface."
+  (let ((result (with-exception-catcher
+                  (lambda (e) "Not a git repository")
+                  (lambda ()
+                    (let ((p (open-process
+                               (list path: "git"
+                                     arguments: '("log" "--oneline" "-30")
+                                     stdin-redirection: #f stdout-redirection: #t
+                                     stderr-redirection: #t))))
+                      (let ((out (read-line p #f)))
+                        (process-status p)
+                        (or out "(empty)")))))))
+    (let* ((fr (app-state-frame app))
+           (win (current-window fr))
+           (ed (edit-window-editor win))
+           (buf (buffer-create! "*Magit Log*" ed)))
+      (buffer-attach! ed buf)
+      (set! (edit-window-buffer win) buf)
+      (editor-set-text ed (string-append "Git Log\n\n" result "\n"))
+      (editor-set-read-only ed #t))))
+
+(def (cmd-magit-diff app)
+  "Show git diff."
+  (let ((result (with-exception-catcher
+                  (lambda (e) "Not a git repository")
+                  (lambda ()
+                    (let ((p (open-process
+                               (list path: "git"
+                                     arguments: '("diff")
+                                     stdin-redirection: #f stdout-redirection: #t
+                                     stderr-redirection: #t))))
+                      (let ((out (read-line p #f)))
+                        (process-status p)
+                        (or out "(no changes)")))))))
+    (let* ((fr (app-state-frame app))
+           (win (current-window fr))
+           (ed (edit-window-editor win))
+           (buf (buffer-create! "*Magit Diff*" ed)))
+      (buffer-attach! ed buf)
+      (set! (edit-window-buffer win) buf)
+      (editor-set-text ed (string-append "Git Diff\n\n" result "\n"))
+      (editor-set-read-only ed #t))))
+
+(def (cmd-magit-commit app)
+  "Create git commit with message from echo area."
+  (let ((msg (app-read-string app "Commit message: ")))
+    (when (and msg (not (string-empty? msg)))
+      (let ((result (with-exception-catcher
+                      (lambda (e) (string-append "Error: " (with-output-to-string (lambda () (display-exception e)))))
+                      (lambda ()
+                        (let ((p (open-process
+                                   (list path: "git"
+                                         arguments: (list "commit" "-m" msg)
+                                         stdin-redirection: #f stdout-redirection: #t
+                                         stderr-redirection: #t))))
+                          (let ((out (read-line p #f)))
+                            (process-status p)
+                            (or out "Committed")))))))
+        (echo-message! (app-state-echo app) result)))))
+
+(def (cmd-magit-stage-file app)
+  "Stage current file."
+  (let* ((fr (app-state-frame app))
+         (win (current-window fr))
+         (buf (edit-window-buffer win))
+         (path (buffer-file-path buf)))
+    (if path
+      (let ((result (with-exception-catcher
+                      (lambda (e) "Error staging file")
+                      (lambda ()
+                        (let ((p (open-process
+                                   (list path: "git"
+                                         arguments: (list "add" path)
+                                         stdin-redirection: #f stdout-redirection: #t
+                                         stderr-redirection: #t))))
+                          (process-status p)
+                          (string-append "Staged: " (path-strip-directory path)))))))
+        (echo-message! (app-state-echo app) result))
+      (echo-message! (app-state-echo app) "Buffer has no file"))))
+
+(def (cmd-magit-unstage-file app)
+  "Unstage current file."
+  (let* ((fr (app-state-frame app))
+         (win (current-window fr))
+         (buf (edit-window-buffer win))
+         (path (buffer-file-path buf)))
+    (if path
+      (let ((result (with-exception-catcher
+                      (lambda (e) "Error unstaging file")
+                      (lambda ()
+                        (let ((p (open-process
+                                   (list path: "git"
+                                         arguments: (list "reset" "HEAD" path)
+                                         stdin-redirection: #f stdout-redirection: #t
+                                         stderr-redirection: #t))))
+                          (process-status p)
+                          (string-append "Unstaged: " (path-strip-directory path)))))))
+        (echo-message! (app-state-echo app) result))
+      (echo-message! (app-state-echo app) "Buffer has no file"))))
+
+(def (cmd-magit-branch app)
+  "Show or create git branch."
+  (let ((result (with-exception-catcher
+                  (lambda (e) "Not a git repository")
+                  (lambda ()
+                    (let ((p (open-process
+                               (list path: "git"
+                                     arguments: '("branch" "-a")
+                                     stdin-redirection: #f stdout-redirection: #t
+                                     stderr-redirection: #t))))
+                      (let ((out (read-line p #f)))
+                        (process-status p)
+                        (or out "(no branches)")))))))
+    (echo-message! (app-state-echo app) result)))
+
+(def (cmd-magit-checkout app)
+  "Switch git branch."
+  (let ((branch (app-read-string app "Branch: ")))
+    (when (and branch (not (string-empty? branch)))
+      (let ((result (with-exception-catcher
+                      (lambda (e) "Error switching branch")
+                      (lambda ()
+                        (let ((p (open-process
+                                   (list path: "git"
+                                         arguments: (list "checkout" branch)
+                                         stdin-redirection: #f stdout-redirection: #t
+                                         stderr-redirection: #t))))
+                          (let ((out (read-line p #f)))
+                            (process-status p)
+                            (or out (string-append "Switched to: " branch))))))))
+        (echo-message! (app-state-echo app) result)))))
+
+;; Minibuffer commands
+(def (cmd-minibuffer-complete app)
+  "Complete in minibuffer (trigger TAB completion)."
+  (echo-message! (app-state-echo app) "TAB to complete"))
+
+(def (cmd-minibuffer-keyboard-quit app)
+  "Quit minibuffer."
+  (echo-clear! (app-state-echo app))
+  (echo-message! (app-state-echo app) "Quit"))
+
+;; Abbrev mode extras
+(def *abbrevs* (make-hash-table)) ; abbrev -> expansion
+
+(def (cmd-define-global-abbrev app)
+  "Define a global abbreviation."
+  (let ((abbrev (app-read-string app "Abbrev: ")))
+    (when (and abbrev (not (string-empty? abbrev)))
+      (let ((expansion (app-read-string app (string-append "Expansion for \"" abbrev "\": "))))
+        (when (and expansion (not (string-empty? expansion)))
+          (hash-put! *abbrevs* abbrev expansion)
+          (echo-message! (app-state-echo app)
+            (string-append "Abbrev: " abbrev " -> " expansion)))))))
+
+(def (cmd-define-mode-abbrev app)
+  "Define a mode-specific abbreviation (stored globally)."
+  (cmd-define-global-abbrev app))
+
+(def (cmd-unexpand-abbrev app)
+  "Undo last abbreviation expansion."
+  (let* ((fr (app-state-frame app))
+         (win (current-window fr))
+         (ed (edit-window-editor win)))
+    (send-message ed SCI_UNDO 0 0)
+    (echo-message! (app-state-echo app) "Abbrev unexpanded")))
+
+;; Hippie expand
+(def (cmd-hippie-expand-undo app)
+  "Undo last hippie-expand."
+  (let* ((fr (app-state-frame app))
+         (win (current-window fr))
+         (ed (edit-window-editor win)))
+    (send-message ed SCI_UNDO 0 0)
+    (echo-message! (app-state-echo app) "Hippie expand undone")))
+
+;; Compilation extras
+(def (cmd-next-error-function app)
+  "Navigate to next compilation error (uses flycheck)."
+  (cmd-flycheck-next-error app))
+
+(def (cmd-previous-error-function app)
+  "Navigate to previous compilation error (uses flycheck)."
+  (cmd-flycheck-previous-error app))
+
