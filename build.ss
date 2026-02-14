@@ -74,6 +74,8 @@
     "eshell"
     ;; Shell (external $SHELL subprocess)
     "shell"
+    ;; Terminal (PTY-backed vterm-like terminal)
+    "terminal"
     ;; TUI backend
     "keymap"
     "buffer"

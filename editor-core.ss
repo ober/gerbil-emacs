@@ -18,6 +18,7 @@
         :gerbil-emacs/repl
         :gerbil-emacs/eshell
         :gerbil-emacs/shell
+        :gerbil-emacs/terminal
         :gerbil-emacs/keymap
         :gerbil-emacs/buffer
         :gerbil-emacs/window
@@ -93,6 +94,11 @@
               (ss (hash-get *shell-state* buf)))
          (when (and ss (>= pos (shell-state-prompt-pos ss)))
            (editor-send-key ed ch))))
+      ;; Terminal: forward character directly to PTY
+      ((terminal-buffer? buf)
+       (let ((ts (hash-get *terminal-state* buf)))
+         (when ts
+           (terminal-send-raw! ts (string (integer->char ch))))))
       (else
        (let* ((ed (current-editor app))
               (close-ch (and *auto-pair-mode* (auto-pair-char ch)))
@@ -180,14 +186,21 @@
 
 (def (cmd-backward-delete-char app)
   (let ((buf (current-buffer-from-app app)))
-    (if (repl-buffer? buf)
+    (cond
       ;; In REPL buffers, don't delete past the prompt
-      (let* ((ed (current-editor app))
-             (pos (editor-get-current-pos ed))
-             (rs (hash-get *repl-state* buf)))
-        (when (and rs (> pos (repl-state-prompt-pos rs)))
-          (editor-send-key ed SCK_BACK)))
-      (editor-send-key (current-editor app) SCK_BACK))))
+      ((repl-buffer? buf)
+       (let* ((ed (current-editor app))
+              (pos (editor-get-current-pos ed))
+              (rs (hash-get *repl-state* buf)))
+         (when (and rs (> pos (repl-state-prompt-pos rs)))
+           (editor-send-key ed SCK_BACK))))
+      ;; Terminal: send backspace to PTY
+      ((terminal-buffer? buf)
+       (let ((ts (hash-get *terminal-state* buf)))
+         (when ts
+           (terminal-send-raw! ts "\x7f;"))))  ; DEL character
+      (else
+       (editor-send-key (current-editor app) SCK_BACK)))))
 
 (def (get-line-indent text line-start)
   "Count leading whitespace chars starting at line-start in text."
@@ -233,6 +246,7 @@
       ((repl-buffer? buf)        (cmd-repl-send app))
       ((eshell-buffer? buf)      (cmd-eshell-send app))
       ((shell-buffer? buf)       (cmd-shell-send app))
+      ((terminal-buffer? buf)    (cmd-terminal-send app))
       (else
        ;; Electric indent: match previous line's indentation
        (let* ((ed (current-editor app))
@@ -746,6 +760,71 @@
         (shell-send! ss input)
         ;; Update prompt-pos to after the newline
         (set! (shell-state-prompt-pos ss) (editor-get-text-length ed))))))
+
+;;;============================================================================
+;;; Terminal commands (PTY-backed vterm-like terminal)
+;;;============================================================================
+
+(def terminal-buffer-counter 0)
+
+(def (cmd-term app)
+  "Open a new PTY-backed terminal buffer (vterm-like)."
+  (let* ((fr (app-state-frame app))
+         (ed (current-editor app))
+         (name (begin
+                 (set! terminal-buffer-counter (+ terminal-buffer-counter 1))
+                 (if (= terminal-buffer-counter 1)
+                   "*terminal*"
+                   (string-append "*terminal-"
+                                  (number->string terminal-buffer-counter) "*"))))
+         (buf (buffer-create! name ed #f)))
+    ;; Mark as terminal buffer
+    (set! (buffer-lexer-lang buf) 'terminal)
+    ;; Attach buffer to editor
+    (buffer-attach! ed buf)
+    (set! (edit-window-buffer (current-window fr)) buf)
+    ;; Set up terminal ANSI color styles
+    (setup-terminal-styles! ed)
+    ;; Spawn PTY-backed shell
+    (let ((ts (terminal-start!)))
+      (hash-put! *terminal-state* buf ts)
+      (editor-set-text ed "")
+      (set! (terminal-state-prompt-pos ts) 0))
+    (echo-message! (app-state-echo app) (string-append name " started"))))
+
+(def (cmd-terminal-send app)
+  "Send Enter (newline) to the terminal PTY."
+  (let* ((buf (current-buffer-from-app app))
+         (ts (hash-get *terminal-state* buf)))
+    (when ts
+      ;; Send newline to PTY — output will come back via polling
+      (terminal-send-raw! ts "\n"))))
+
+(def (cmd-term-interrupt app)
+  "Send Ctrl-C (interrupt) to the terminal PTY."
+  (let* ((buf (current-buffer-from-app app))
+         (ts (and (terminal-buffer? buf) (hash-get *terminal-state* buf))))
+    (if ts
+      (terminal-send-raw! ts "\x03;")  ; Ctrl-C
+      (echo-message! (app-state-echo app) "Not in a terminal buffer"))))
+
+(def (cmd-term-send-eof app)
+  "Send Ctrl-D (EOF) to the terminal PTY."
+  (let* ((buf (current-buffer-from-app app))
+         (ts (and (terminal-buffer? buf) (hash-get *terminal-state* buf))))
+    (if ts
+      (terminal-send-raw! ts "\x04;")  ; Ctrl-D
+      ;; Fall back to normal Ctrl-D behavior (delete char)
+      (editor-send-key (current-editor app) SCK_DELETE))))
+
+(def (cmd-term-send-tab app)
+  "Send Tab to the terminal PTY (for tab completion)."
+  (let* ((buf (current-buffer-from-app app))
+         (ts (and (terminal-buffer? buf) (hash-get *terminal-state* buf))))
+    (if ts
+      (terminal-send-raw! ts "\t")
+      ;; Fall back to normal Tab behavior
+      (editor-send-key (current-editor app) (char->integer #\tab)))))
 
 ;;;============================================================================
 ;;; Dired support (needed by cmd-find-file and cmd-newline)

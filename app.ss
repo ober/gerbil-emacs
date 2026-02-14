@@ -11,6 +11,7 @@
         :gerbil-emacs/core
         :gerbil-emacs/repl
         :gerbil-emacs/shell
+        :gerbil-emacs/terminal
         :gerbil-emacs/keymap
         :gerbil-emacs/buffer
         :gerbil-emacs/window
@@ -144,6 +145,33 @@
     (buffer-list)))
 
 ;;;============================================================================
+;;; Terminal output polling (PTY-backed with ANSI color rendering)
+;;;============================================================================
+
+(def (poll-terminal-output! app)
+  "Check all terminal buffers for new PTY output and insert with styling."
+  (for-each
+    (lambda (buf)
+      (when (terminal-buffer? buf)
+        (let ((ts (hash-get *terminal-state* buf)))
+          (when ts
+            (let ((segments (terminal-read-available ts)))
+              (when segments
+                (let ((win (find-window-for-buffer (app-state-frame app) buf)))
+                  (when win
+                    (let* ((ed (edit-window-editor win))
+                           (start-pos (editor-get-text-length ed)))
+                      ;; Insert styled text segments
+                      (terminal-insert-styled! ed segments start-pos)
+                      ;; Update prompt-pos to after output
+                      (set! (terminal-state-prompt-pos ts)
+                        (editor-get-text-length ed))
+                      ;; Move cursor to end and scroll
+                      (editor-goto-pos ed (editor-get-text-length ed))
+                      (editor-scroll-caret ed))))))))))
+    (buffer-list)))
+
+;;;============================================================================
 ;;; Event loop
 ;;;============================================================================
 
@@ -165,6 +193,9 @@
 
       ;; Poll shell subprocess output
       (poll-shell-output! app)
+
+      ;; Poll terminal PTY output
+      (poll-terminal-output! app)
 
       ;; Draw modelines, dividers, and echo area FIRST into the termbox buffer.
       ;; This must happen before editor-refresh because Scintilla's

@@ -31,7 +31,12 @@
         (only-in :gerbil-emacs/editor register-all-commands!)
         (only-in :gerbil-emacs/highlight
                  detect-file-language gerbil-file-extension?
-                 setup-highlighting-for-file!))
+                 setup-highlighting-for-file!)
+        (only-in :gerbil-emacs/terminal
+                 parse-ansi-segments text-segment-text
+                 text-segment-fg-color text-segment-bold?
+                 terminal-buffer? color-to-style
+                 *term-style-base*))
 
 (export emacs-test)
 
@@ -1998,6 +2003,84 @@
         (buffer-attach! ed buf)
         (check (buffer-file-path buf) => "/tmp/test.py")
         (check (detect-file-language "/tmp/test.py") => 'python)))
+
+    ;;; ================================================================
+    ;;; Terminal ANSI parsing tests
+    ;;; ================================================================
+
+    (test-case "parse-ansi-segments: plain text"
+      (let ((segs (parse-ansi-segments "hello world")))
+        (check (length segs) => 1)
+        (check (text-segment-text (car segs)) => "hello world")
+        (check (text-segment-fg-color (car segs)) => -1)
+        (check (text-segment-bold? (car segs)) => #f)))
+
+    (test-case "parse-ansi-segments: single color"
+      ;; ESC[31m = red foreground, ESC[0m = reset
+      (let* ((input (string-append "\x1b;[31mhello\x1b;[0m world"))
+             (segs (parse-ansi-segments input)))
+        (check (>= (length segs) 2) => #t)
+        ;; First segment: "hello" in red
+        (check (text-segment-text (car segs)) => "hello")
+        (check (text-segment-fg-color (car segs)) => 1)  ; red
+        ;; Second segment: " world" in default
+        (check (text-segment-text (cadr segs)) => " world")
+        (check (text-segment-fg-color (cadr segs)) => -1)))
+
+    (test-case "parse-ansi-segments: bold + color"
+      ;; ESC[1;32m = bold green
+      (let* ((input (string-append "\x1b;[1;32mOK\x1b;[0m"))
+             (segs (parse-ansi-segments input)))
+        (check (>= (length segs) 1) => #t)
+        (check (text-segment-text (car segs)) => "OK")
+        (check (text-segment-fg-color (car segs)) => 2)  ; green
+        (check (text-segment-bold? (car segs)) => #t)))
+
+    (test-case "parse-ansi-segments: bright colors"
+      ;; ESC[91m = bright red
+      (let* ((input (string-append "\x1b;[91mERROR\x1b;[0m"))
+             (segs (parse-ansi-segments input)))
+        (check (text-segment-text (car segs)) => "ERROR")
+        (check (text-segment-fg-color (car segs)) => 9)))  ; bright red = 8+1
+
+    (test-case "parse-ansi-segments: strips carriage returns"
+      (let ((segs (parse-ansi-segments "line1\r\nline2\r\n")))
+        (check (length segs) => 1)
+        (check (text-segment-text (car segs)) => "line1\nline2\n")))
+
+    (test-case "parse-ansi-segments: strips non-SGR CSI sequences"
+      ;; ESC[2J = clear screen, ESC[H = cursor home
+      (let* ((input (string-append "\x1b;[2J\x1b;[Hhello"))
+             (segs (parse-ansi-segments input)))
+        ;; Should produce "hello" with default color
+        (check (= (length segs) 1) => #t)
+        (check (text-segment-text (car segs)) => "hello")))
+
+    (test-case "parse-ansi-segments: OSC sequences stripped"
+      ;; ESC]0;title BEL = set window title
+      (let* ((input (string-append "\x1b;]0;my-title\x07;text"))
+             (segs (parse-ansi-segments input)))
+        (check (text-segment-text (car segs)) => "text")))
+
+    (test-case "color-to-style: default"
+      (check (color-to-style -1 #f) => 0)
+      (check (color-to-style -1 #t) => (+ *term-style-base* 15)))
+
+    (test-case "color-to-style: standard colors"
+      (check (color-to-style 0 #f) => (+ *term-style-base* 0))   ; black
+      (check (color-to-style 1 #f) => (+ *term-style-base* 1))   ; red
+      (check (color-to-style 7 #f) => (+ *term-style-base* 7)))  ; white
+
+    (test-case "color-to-style: bold shifts to bright"
+      (check (color-to-style 1 #t) => (+ *term-style-base* 9))   ; bold red = bright red
+      (check (color-to-style 4 #t) => (+ *term-style-base* 12))) ; bold blue = bright blue
+
+    (test-case "terminal-buffer? detection"
+      (let* ((ed (create-scintilla-editor))
+             (buf (buffer-create! "*terminal*" ed #f)))
+        (check (terminal-buffer? buf) => #f)
+        (set! (buffer-lexer-lang buf) 'terminal)
+        (check (terminal-buffer? buf) => #t)))
 
     ))
 

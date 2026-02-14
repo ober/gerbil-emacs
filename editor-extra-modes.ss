@@ -1445,15 +1445,15 @@
     (echo-message! (app-state-echo app)
       (if on "Meow mode: on" "Meow mode: off"))))
 
-;; Eat terminal — delegates to eshell
+;; Eat terminal — delegates to term (PTY-backed)
 (def (cmd-eat app)
-  "Open eat terminal emulator — delegates to shell."
-  (execute-command! app 'shell))
+  "Open eat terminal emulator — opens PTY terminal."
+  (execute-command! app 'term))
 
-;; Vterm — delegates to eshell
+;; Vterm — delegates to term (PTY-backed)
 (def (cmd-vterm app)
-  "Open vterm terminal — delegates to shell."
-  (execute-command! app 'shell))
+  "Open vterm terminal — opens PTY terminal."
+  (execute-command! app 'term))
 
 ;; Denote — note-taking system
 (def (cmd-denote app)

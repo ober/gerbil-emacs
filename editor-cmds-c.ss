@@ -1897,12 +1897,8 @@
 
 ;; --- Process management ---
 
-(def (cmd-term app)
-  "Open a terminal (same as shell command)."
-  (cmd-shell app))
-
 (def (cmd-ansi-term app)
-  "Open an ANSI terminal (same as shell command)."
-  (cmd-shell app))
+  "Open an ANSI terminal — opens PTY terminal."
+  (execute-command! app 'term))
 
 

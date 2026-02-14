@@ -82,6 +82,11 @@
   (register-command! 'eshell cmd-eshell)
   ;; Shell
   (register-command! 'shell cmd-shell)
+  ;; Terminal (PTY-backed vterm-like)
+  (register-command! 'term cmd-term)
+  (register-command! 'term-interrupt cmd-term-interrupt)
+  (register-command! 'term-send-eof cmd-term-send-eof)
+  (register-command! 'term-send-tab cmd-term-send-tab)
   ;; Goto line
   (register-command! 'goto-line cmd-goto-line)
   ;; M-x
