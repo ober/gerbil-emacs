@@ -36,6 +36,12 @@
                  *dired-marks*)
         (only-in :gerbil-emacs/editor-extra-vcs
                  fuzzy-match? fuzzy-score)
+        (only-in :gerbil-emacs/editor-extra-final
+                 parse-editorconfig find-editorconfig
+                 find-url-at-point collect-buffer-words
+                 *command-history* command-history-add!
+                 *named-macros* *buffer-access-times*
+                 record-buffer-access!)
         (only-in :gerbil-emacs/highlight
                  detect-file-language gerbil-file-extension?
                  setup-highlighting-for-file!)
@@ -1328,6 +1334,69 @@
       (check (procedure? (find-command 'execute-extended-command-fuzzy)) => #t)
       (check (procedure? (find-command 'scratch-with-mode)) => #t)
       (check (procedure? (find-command 'switch-to-buffer-other-window)) => #t))
+
+    ;; -- Editorconfig parsing --
+    (test-case "parse-editorconfig: basic"
+      ;; Write a temp .editorconfig
+      (let ((tmp "/tmp/.gerbil-test-editorconfig"))
+        (call-with-output-file tmp
+          (lambda (port)
+            (display "[*.py]\n" port)
+            (display "indent_style = space\n" port)
+            (display "indent_size = 4\n" port)))
+        (let ((sections (parse-editorconfig tmp)))
+          (check (pair? sections) => #t)
+          (check (caar sections) => "*.py")
+          (check (hash-get (cdar sections) "indent_style") => "space")
+          (check (hash-get (cdar sections) "indent_size") => "4"))
+        (delete-file tmp)))
+
+    ;; -- URL detection --
+    (test-case "find-url-at-point: basic"
+      (let ((text "Visit https://example.com/path for info"))
+        (check (find-url-at-point text 10) => '(6 . 30))
+        (check (find-url-at-point text 0) => #f)))
+
+    ;; -- Command history --
+    (test-case "command-history: add and dedup"
+      (set! *command-history* [])
+      (command-history-add! "find-file")
+      (command-history-add! "save-buffer")
+      (command-history-add! "find-file")  ;; should dedup
+      (check (length *command-history*) => 2)
+      (check (car *command-history*) => "find-file"))
+
+    ;; -- MRU buffer tracking --
+    (test-case "buffer-access-times: tracking"
+      (set! *buffer-access-times* (make-hash-table))
+      (record-buffer-access! "a.txt")
+      (record-buffer-access! "b.txt")
+      (check (> (hash-get *buffer-access-times* "b.txt")
+                (hash-get *buffer-access-times* "a.txt")) => #t))
+
+    ;; -- Named macros --
+    (test-case "named-macros: store and retrieve"
+      (set! *named-macros* (make-hash-table))
+      (hash-put! *named-macros* "test-macro" '((command . forward-char)))
+      (check (hash-get *named-macros* "test-macro") => '((command . forward-char)))
+      (check (hash-get *named-macros* "nonexistent") => #f))
+
+    ;; -- Command registration batch 23 --
+    (test-case "command registration: batch 23 features"
+      (register-all-commands!)
+      (check (procedure? (find-command 'editorconfig-apply)) => #t)
+      (check (procedure? (find-command 'format-buffer)) => #t)
+      (check (procedure? (find-command 'git-blame-line)) => #t)
+      (check (procedure? (find-command 'execute-extended-command-with-history)) => #t)
+      (check (procedure? (find-command 'complete-word-from-buffer)) => #t)
+      (check (procedure? (find-command 'open-url-at-point)) => #t)
+      (check (procedure? (find-command 'switch-buffer-mru)) => #t)
+      (check (procedure? (find-command 'shell-command-on-region-replace)) => #t)
+      (check (procedure? (find-command 'execute-named-macro)) => #t)
+      (check (procedure? (find-command 'apply-macro-to-region)) => #t)
+      (check (procedure? (find-command 'diff-summary)) => #t)
+      (check (procedure? (find-command 'revert-buffer-no-confirm)) => #t)
+      (check (procedure? (find-command 'sudo-save-buffer)) => #t))
 
     ;;=========================================================================
     ;; Headless Scintilla editor tests

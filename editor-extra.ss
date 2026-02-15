@@ -737,4 +737,30 @@
   (register-command! 'scratch-with-mode cmd-scratch-with-mode)
   ;; Buffer navigation
   (register-command! 'switch-to-buffer-other-window cmd-switch-to-buffer-other-window)
+  ;; Editorconfig
+  (register-command! 'editorconfig-apply cmd-editorconfig-apply)
+  ;; Format buffer
+  (register-command! 'format-buffer cmd-format-buffer)
+  ;; Git blame
+  (register-command! 'git-blame-line cmd-git-blame-line)
+  ;; M-x with history
+  (register-command! 'execute-extended-command-with-history cmd-execute-extended-command-with-history)
+  ;; Word completion from buffer
+  (register-command! 'complete-word-from-buffer cmd-complete-word-from-buffer)
+  ;; URL handling
+  (register-command! 'open-url-at-point cmd-open-url-at-point)
+  ;; MRU buffer switching
+  (register-command! 'switch-buffer-mru cmd-switch-buffer-mru)
+  ;; Shell on region with replace
+  (register-command! 'shell-command-on-region-replace cmd-shell-command-on-region-replace)
+  ;; Named macros
+  (register-command! 'execute-named-macro cmd-execute-named-macro)
+  ;; Apply macro to region lines
+  (register-command! 'apply-macro-to-region cmd-apply-macro-to-region)
+  ;; Diff summary
+  (register-command! 'diff-summary cmd-diff-summary)
+  ;; Revert without confirm
+  (register-command! 'revert-buffer-no-confirm cmd-revert-buffer-no-confirm)
+  ;; Sudo save
+  (register-command! 'sudo-save-buffer cmd-sudo-save-buffer)
 )
