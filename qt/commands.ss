@@ -1539,7 +1539,11 @@
   (register-command! 'key-chord-list cmd-key-chord-list)
   ;; Key translation commands
   (register-command! 'toggle-bracket-paren-swap cmd-toggle-bracket-paren-swap)
-  (register-command! 'key-translation-list cmd-key-translation-list))
+  (register-command! 'key-translation-list cmd-key-translation-list)
+  ;; Multi-terminal commands
+  (register-command! 'multi-vterm cmd-multi-vterm)
+  (register-command! 'vterm-copy-mode cmd-vterm-copy-mode)
+  (register-command! 'vterm-copy-done cmd-vterm-copy-done))
 
 ;;;============================================================================
 ;;; Key-chord commands

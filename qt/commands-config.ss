@@ -425,6 +425,47 @@
       (echo-message! (app-state-echo app) "Not in a terminal buffer"))))
 
 ;;;============================================================================
+;;; Multi-terminal and terminal copy mode
+;;;============================================================================
+
+(def (cmd-multi-vterm app)
+  "Create a new terminal buffer (multi-vterm style)."
+  (cmd-term app))
+
+;; Track which terminal buffers are in copy mode
+(def *terminal-copy-mode* (make-hash-table))
+
+(def (cmd-vterm-copy-mode app)
+  "Toggle terminal copy mode — makes terminal read-only for text selection."
+  (let* ((buf (current-qt-buffer app))
+         (ed (current-qt-editor app))
+         (echo (app-state-echo app)))
+    (if (terminal-buffer? buf)
+      (let ((in-copy (hash-get *terminal-copy-mode* buf)))
+        (if in-copy
+          ;; Exit copy mode
+          (begin
+            (hash-put! *terminal-copy-mode* buf #f)
+            (qt-plain-text-edit-set-read-only! ed #f)
+            (echo-message! echo "Terminal copy mode OFF"))
+          ;; Enter copy mode
+          (begin
+            (hash-put! *terminal-copy-mode* buf #t)
+            (qt-plain-text-edit-set-read-only! ed #t)
+            (echo-message! echo "Terminal copy mode ON — select text, C-w/M-w to copy"))))
+      (echo-message! echo "Not in a terminal buffer"))))
+
+(def (cmd-vterm-copy-done app)
+  "Exit terminal copy mode and resume terminal."
+  (let* ((buf (current-qt-buffer app))
+         (ed (current-qt-editor app))
+         (echo (app-state-echo app)))
+    (when (and (terminal-buffer? buf) (hash-get *terminal-copy-mode* buf))
+      (hash-put! *terminal-copy-mode* buf #f)
+      (qt-plain-text-edit-set-read-only! ed #f)
+      (echo-message! echo "Terminal copy mode OFF"))))
+
+;;;============================================================================
 ;;; Buffer-local keybindings (mode keymaps)
 ;;;============================================================================
 
