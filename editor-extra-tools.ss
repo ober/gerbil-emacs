@@ -1545,3 +1545,85 @@
       (begin
         (send-message ed 2242 0 0)
         (echo-message! echo "Global linum mode OFF")))))
+
+;; ── batch 41: IDE framework toggles ─────────────────────────────────
+(def *company-mode* #f)
+(def *ivy-mode* #f)
+(def *helm-mode* #f)
+(def *projectile-mode* #f)
+(def *evil-mode* #f)
+(def *doom-modeline* #f)
+(def *treesit-mode* #f)
+(def *eglot-mode* #f)
+(def *display-time* #f)
+(def *display-battery* #f)
+
+(def (cmd-toggle-company-mode app)
+  "Toggle company-mode (auto-completion framework)."
+  (let ((echo (app-state-echo app)))
+    (set! *company-mode* (not *company-mode*))
+    (echo-message! echo (if *company-mode*
+                          "Company mode ON" "Company mode OFF"))))
+
+(def (cmd-toggle-ivy-mode app)
+  "Toggle ivy-mode (completion framework)."
+  (let ((echo (app-state-echo app)))
+    (set! *ivy-mode* (not *ivy-mode*))
+    (echo-message! echo (if *ivy-mode*
+                          "Ivy mode ON" "Ivy mode OFF"))))
+
+(def (cmd-toggle-helm-mode app)
+  "Toggle helm-mode (incremental completion framework)."
+  (let ((echo (app-state-echo app)))
+    (set! *helm-mode* (not *helm-mode*))
+    (echo-message! echo (if *helm-mode*
+                          "Helm mode ON" "Helm mode OFF"))))
+
+(def (cmd-toggle-projectile-mode app)
+  "Toggle projectile-mode (project management)."
+  (let ((echo (app-state-echo app)))
+    (set! *projectile-mode* (not *projectile-mode*))
+    (echo-message! echo (if *projectile-mode*
+                          "Projectile mode ON" "Projectile mode OFF"))))
+
+(def (cmd-toggle-evil-mode app)
+  "Toggle evil-mode (vim emulation)."
+  (let ((echo (app-state-echo app)))
+    (set! *evil-mode* (not *evil-mode*))
+    (echo-message! echo (if *evil-mode*
+                          "Evil mode ON" "Evil mode OFF"))))
+
+(def (cmd-toggle-doom-modeline app)
+  "Toggle doom-modeline (fancy mode line)."
+  (let ((echo (app-state-echo app)))
+    (set! *doom-modeline* (not *doom-modeline*))
+    (echo-message! echo (if *doom-modeline*
+                          "Doom modeline ON" "Doom modeline OFF"))))
+
+(def (cmd-toggle-treesit-mode app)
+  "Toggle treesit-mode (tree-sitter based syntax)."
+  (let ((echo (app-state-echo app)))
+    (set! *treesit-mode* (not *treesit-mode*))
+    (echo-message! echo (if *treesit-mode*
+                          "Tree-sitter mode ON" "Tree-sitter mode OFF"))))
+
+(def (cmd-toggle-eglot-mode app)
+  "Toggle eglot-mode (LSP client)."
+  (let ((echo (app-state-echo app)))
+    (set! *eglot-mode* (not *eglot-mode*))
+    (echo-message! echo (if *eglot-mode*
+                          "Eglot mode ON" "Eglot mode OFF"))))
+
+(def (cmd-toggle-display-time app)
+  "Toggle display of time in mode line."
+  (let ((echo (app-state-echo app)))
+    (set! *display-time* (not *display-time*))
+    (echo-message! echo (if *display-time*
+                          "Display time ON" "Display time OFF"))))
+
+(def (cmd-toggle-display-battery app)
+  "Toggle display of battery status in mode line."
+  (let ((echo (app-state-echo app)))
+    (set! *display-battery* (not *display-battery*))
+    (echo-message! echo (if *display-battery*
+                          "Display battery ON" "Display battery OFF"))))

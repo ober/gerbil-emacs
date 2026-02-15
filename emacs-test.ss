@@ -81,7 +81,11 @@
                  *global-visual-line-mode* *scroll-conservatively*
                  *show-keystroke-mode* *auto-revert-tail-mode*
                  *flyspell-prog-mode* *auto-save-buffers-mode*
-                 *global-linum-mode*)
+                 *global-linum-mode*
+                 *company-mode* *ivy-mode* *helm-mode*
+                 *projectile-mode* *evil-mode* *doom-modeline*
+                 *treesit-mode* *eglot-mode*
+                 *display-time* *display-battery*)
         (only-in :gerbil-emacs/editor-extra-web
                  url-encode url-decode
                  html-encode-entities html-decode-entities
@@ -2063,6 +2067,35 @@
       (check (procedure? (find-command 'toggle-sentence-end-double-space)) => #t)
       (check (procedure? (find-command 'toggle-colon-double-space)) => #t)
       (check (procedure? (find-command 'toggle-comment-auto-fill)) => #t))
+
+    ;; -- Batch 41 tests --
+    (test-case "batch 41: mode toggles"
+      (check *company-mode* => #f)
+      (set! *company-mode* #t)
+      (check *company-mode* => #t)
+      (check *ivy-mode* => #f)
+      (check *helm-mode* => #f)
+      (check *projectile-mode* => #f)
+      (check *evil-mode* => #f)
+      (check *doom-modeline* => #f)
+      (check *treesit-mode* => #f)
+      (check *eglot-mode* => #f)
+      (check *display-time* => #f)
+      (check *display-battery* => #f))
+
+    ;; -- Command registration batch 41 --
+    (test-case "command registration: batch 41 features"
+      (register-all-commands!)
+      (check (procedure? (find-command 'toggle-company-mode)) => #t)
+      (check (procedure? (find-command 'toggle-ivy-mode)) => #t)
+      (check (procedure? (find-command 'toggle-helm-mode)) => #t)
+      (check (procedure? (find-command 'toggle-projectile-mode)) => #t)
+      (check (procedure? (find-command 'toggle-evil-mode)) => #t)
+      (check (procedure? (find-command 'toggle-doom-modeline)) => #t)
+      (check (procedure? (find-command 'toggle-treesit-mode)) => #t)
+      (check (procedure? (find-command 'toggle-eglot-mode)) => #t)
+      (check (procedure? (find-command 'toggle-display-time)) => #t)
+      (check (procedure? (find-command 'toggle-display-battery)) => #t))
 
     ;;=========================================================================
     ;; Headless Scintilla editor tests
