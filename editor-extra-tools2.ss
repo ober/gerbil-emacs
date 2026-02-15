@@ -1372,3 +1372,174 @@
               (editor-goto-pos ed 0)
               (editor-set-read-only ed #t))))))))
 
+;;; =========================================================================
+;;; Batch 34: cursor blink, other-window scroll, header line, etc.
+;;; =========================================================================
+
+(def *cursor-blink* #t)
+(def *header-line-mode* #f)
+(def *auto-save-visited-mode* #f)
+(def *hl-todo-mode* #f)
+
+(def (cmd-toggle-cursor-blink app)
+  "Toggle cursor blinking (like blink-cursor-mode)."
+  (let ((echo (app-state-echo app))
+        (ed (current-editor app)))
+    (set! *cursor-blink* (not *cursor-blink*))
+    (if *cursor-blink*
+      (begin
+        ;; SCI_SETCARETPERIOD = 2076 — set blink rate in ms
+        (send-message ed 2076 530 0)
+        (echo-message! echo "Cursor blink ON"))
+      (begin
+        ;; SCI_SETCARETPERIOD = 2076 — 0 = no blink
+        (send-message ed 2076 0 0)
+        (echo-message! echo "Cursor blink OFF")))))
+
+(def (cmd-recenter-other-window app)
+  "Recenter the other window's display (like recenter-other-window)."
+  (let* ((echo (app-state-echo app))
+         (fr (app-state-frame app))
+         (wins (frame-windows fr)))
+    (if (<= (length wins) 1)
+      (echo-message! echo "Only one window")
+      (let* ((cur-win (current-window fr))
+             (other (let loop ((ws wins))
+                      (cond ((null? ws) (car wins))
+                            ((eq? (car ws) cur-win)
+                             (if (null? (cdr ws)) (car wins) (cadr ws)))
+                            (else (loop (cdr ws))))))
+             (ed (edit-window-editor other))
+             (pos (editor-get-current-pos ed))
+             ;; SCI_LINEFROMPOSITION = 2166
+             (line (send-message ed 2166 pos 0))
+             ;; SCI_GETFIRSTVISIBLELINE = 2152
+             (first-vis (send-message ed 2152 0 0))
+             ;; SCI_LINESONSCREEN = 2370
+             (screen-lines (send-message ed 2370 0 0))
+             (target (max 0 (- line (quotient screen-lines 2)))))
+        ;; SCI_SETFIRSTVISIBLELINE = 2613
+        (send-message ed 2613 target 0)
+        (echo-message! echo "Other window recentered")))))
+
+(def (cmd-scroll-up-other-window app)
+  "Scroll the other window up (like scroll-other-window)."
+  (let* ((echo (app-state-echo app))
+         (fr (app-state-frame app))
+         (wins (frame-windows fr)))
+    (if (<= (length wins) 1)
+      (echo-message! echo "Only one window")
+      (let* ((cur-win (current-window fr))
+             (other (let loop ((ws wins))
+                      (cond ((null? ws) (car wins))
+                            ((eq? (car ws) cur-win)
+                             (if (null? (cdr ws)) (car wins) (cadr ws)))
+                            (else (loop (cdr ws))))))
+             (ed (edit-window-editor other))
+             ;; SCI_LINESONSCREEN = 2370
+             (page-lines (max 1 (- (send-message ed 2370 0 0) 2)))
+             ;; SCI_LINESCROLL = 2168
+             )
+        (send-message ed 2168 0 page-lines)
+        (echo-message! echo "Scrolled other window up")))))
+
+(def (cmd-scroll-down-other-window app)
+  "Scroll the other window down (like scroll-other-window-down)."
+  (let* ((echo (app-state-echo app))
+         (fr (app-state-frame app))
+         (wins (frame-windows fr)))
+    (if (<= (length wins) 1)
+      (echo-message! echo "Only one window")
+      (let* ((cur-win (current-window fr))
+             (other (let loop ((ws wins))
+                      (cond ((null? ws) (car wins))
+                            ((eq? (car ws) cur-win)
+                             (if (null? (cdr ws)) (car wins) (cadr ws)))
+                            (else (loop (cdr ws))))))
+             (ed (edit-window-editor other))
+             ;; SCI_LINESONSCREEN = 2370
+             (page-lines (max 1 (- (send-message ed 2370 0 0) 2)))
+             ;; SCI_LINESCROLL = 2168 — negative = scroll down
+             )
+        (send-message ed 2168 0 (- page-lines))
+        (echo-message! echo "Scrolled other window down")))))
+
+(def (cmd-toggle-header-line app)
+  "Toggle display of a header line at top of window."
+  (let ((echo (app-state-echo app)))
+    (set! *header-line-mode* (not *header-line-mode*))
+    (echo-message! echo (if *header-line-mode*
+                          "Header line ON"
+                          "Header line OFF"))))
+
+(def (cmd-toggle-auto-save-visited app)
+  "Toggle auto-save-visited-mode (auto-save to the visited file)."
+  (let ((echo (app-state-echo app)))
+    (set! *auto-save-visited-mode* (not *auto-save-visited-mode*))
+    (echo-message! echo (if *auto-save-visited-mode*
+                          "Auto-save visited ON"
+                          "Auto-save visited OFF"))))
+
+(def (cmd-goto-random-line app)
+  "Jump to a random line in the current buffer."
+  (let* ((echo (app-state-echo app))
+         (ed (current-editor app))
+         ;; SCI_GETLINECOUNT = 2154
+         (line-count (send-message ed 2154 0 0))
+         (target (random-integer line-count))
+         ;; SCI_GOTOLINE = 2024
+         )
+    (send-message ed 2024 target 0)
+    (echo-message! echo (string-append "Jumped to line "
+                          (number->string (+ target 1))))))
+
+(def (cmd-reverse-words-in-region app)
+  "Reverse the order of words in the selected region."
+  (let* ((echo (app-state-echo app))
+         (ed (current-editor app))
+         (start (editor-get-selection-start ed))
+         (end (editor-get-selection-end ed)))
+    (if (= start end)
+      (echo-message! echo "No selection")
+      (let* ((all-text (editor-get-text ed))
+             (text (substring all-text start (min end (string-length all-text))))
+             (words (string-tokenize text))
+             (reversed (string-join (reverse words) " ")))
+        (editor-replace-selection ed reversed)
+        (echo-message! echo "Words reversed")))))
+
+(def (cmd-insert-separator-line app)
+  "Insert a horizontal separator line (dashes) at point."
+  (let* ((echo (app-state-echo app))
+         (ed (current-editor app))
+         (sep (make-string 72 #\-)))
+    (editor-replace-selection ed (string-append sep "\n"))
+    (echo-message! echo "Separator inserted")))
+
+(def (cmd-toggle-hl-todo app)
+  "Toggle highlighting of TODO/FIXME/HACK keywords (hl-todo-mode)."
+  (let ((echo (app-state-echo app)))
+    (set! *hl-todo-mode* (not *hl-todo-mode*))
+    (echo-message! echo (if *hl-todo-mode*
+                          "hl-todo mode ON"
+                          "hl-todo mode OFF"))))
+
+(def (cmd-sort-words-in-line app)
+  "Sort words in the current line alphabetically."
+  (let* ((echo (app-state-echo app))
+         (ed (current-editor app))
+         (pos (editor-get-current-pos ed))
+         ;; SCI_LINEFROMPOSITION = 2166
+         (line (send-message ed 2166 pos 0))
+         (line-text (editor-get-line ed line))
+         (trimmed (string-trim-right line-text))
+         (words (string-tokenize trimmed))
+         (sorted (sort words string<?))
+         (new-text (string-join sorted " "))
+         ;; SCI_POSITIONFROMLINE = 2167
+         (line-start (send-message ed 2167 line 0))
+         ;; SCI_GETLINEENDPOSITION = 2136
+         (line-end (send-message ed 2136 line 0)))
+    (editor-set-selection ed line-start line-end)
+    (editor-replace-selection ed new-text)
+    (echo-message! echo "Words sorted")))

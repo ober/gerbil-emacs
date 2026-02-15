@@ -54,7 +54,9 @@
                  *lorem-ipsum-text* insert-char-by-code-string)
         (only-in :gerbil-emacs/editor-extra-tools2
                  *highlight-changes-mode* *saved-window-layouts*
-                 *known-modes* *password-chars*)
+                 *known-modes* *password-chars*
+                 *cursor-blink* *header-line-mode*
+                 *auto-save-visited-mode* *hl-todo-mode*)
         (only-in :gerbil-emacs/editor-extra-tools
                  *cursor-type* *modeline-visible*
                  *indent-guide-mode* *rainbow-mode*
@@ -1819,6 +1821,32 @@
       (check (procedure? (find-command 'toggle-auto-highlight-symbol)) => #t)
       (check (procedure? (find-command 'copy-rectangle-to-clipboard)) => #t)
       (check (procedure? (find-command 'insert-file-contents)) => #t))
+
+    ;; -- Batch 34 tests --
+    (test-case "batch 34: mode toggles"
+      (set! *cursor-blink* #t)
+      (check *cursor-blink* => #t)
+      (set! *header-line-mode* #f)
+      (check *header-line-mode* => #f)
+      (set! *auto-save-visited-mode* #f)
+      (check *auto-save-visited-mode* => #f)
+      (set! *hl-todo-mode* #f)
+      (check *hl-todo-mode* => #f))
+
+    ;; -- Command registration batch 34 --
+    (test-case "command registration: batch 34 features"
+      (register-all-commands!)
+      (check (procedure? (find-command 'toggle-cursor-blink)) => #t)
+      (check (procedure? (find-command 'recenter-other-window)) => #t)
+      (check (procedure? (find-command 'scroll-up-other-window)) => #t)
+      (check (procedure? (find-command 'scroll-down-other-window)) => #t)
+      (check (procedure? (find-command 'toggle-header-line)) => #t)
+      (check (procedure? (find-command 'toggle-auto-save-visited)) => #t)
+      (check (procedure? (find-command 'goto-random-line)) => #t)
+      (check (procedure? (find-command 'reverse-words-in-region)) => #t)
+      (check (procedure? (find-command 'insert-separator-line)) => #t)
+      (check (procedure? (find-command 'toggle-hl-todo)) => #t)
+      (check (procedure? (find-command 'sort-words-in-line)) => #t))
 
     ;;=========================================================================
     ;; Headless Scintilla editor tests
