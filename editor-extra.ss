@@ -1139,4 +1139,12 @@
   (register-command! 'toggle-global-use-package cmd-toggle-global-use-package)
   (register-command! 'toggle-global-diminish cmd-toggle-global-diminish)
   (register-command! 'toggle-global-delight cmd-toggle-global-delight)
+  ;; batch 57
+  (register-command! 'toggle-global-envrc cmd-toggle-global-envrc)
+  (register-command! 'toggle-global-direnv cmd-toggle-global-direnv)
+  (register-command! 'toggle-global-editorconfig cmd-toggle-global-editorconfig)
+  (register-command! 'toggle-global-dtrt-indent cmd-toggle-global-dtrt-indent)
+  (register-command! 'toggle-global-ws-trim cmd-toggle-global-ws-trim)
+  (register-command! 'toggle-global-auto-compile cmd-toggle-global-auto-compile)
+  (register-command! 'toggle-global-no-littering cmd-toggle-global-no-littering)
 )

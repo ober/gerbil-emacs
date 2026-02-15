@@ -158,6 +158,10 @@
                  *delete-by-moving-to-trash* *create-lockfiles*
                  *mode-line-compact* *use-file-dialog*
                  *xterm-mouse-mode*)
+        (only-in :gerbil-emacs/editor-extra-modes
+                 *global-envrc* *global-direnv* *global-editorconfig*
+                 *global-dtrt-indent* *global-ws-trim*
+                 *global-auto-compile* *global-no-littering*)
         (only-in :gerbil-emacs/editor-extra-vcs
                  *comment-style* *flymake-mode*
                  *delete-selection-mode* *word-count-mode*
@@ -2514,6 +2518,25 @@
       (check (procedure? (find-command 'toggle-global-use-package)) => #t)
       (check (procedure? (find-command 'toggle-global-diminish)) => #t)
       (check (procedure? (find-command 'toggle-global-delight)) => #t))
+
+    (test-case "batch 57: mode toggles"
+      (check *global-envrc* => #f)
+      (check *global-direnv* => #f)
+      (check *global-editorconfig* => #f)
+      (check *global-dtrt-indent* => #f)
+      (check *global-ws-trim* => #f)
+      (check *global-auto-compile* => #f)
+      (check *global-no-littering* => #f))
+
+    (test-case "command registration: batch 57 features"
+      (register-all-commands!)
+      (check (procedure? (find-command 'toggle-global-envrc)) => #t)
+      (check (procedure? (find-command 'toggle-global-direnv)) => #t)
+      (check (procedure? (find-command 'toggle-global-editorconfig)) => #t)
+      (check (procedure? (find-command 'toggle-global-dtrt-indent)) => #t)
+      (check (procedure? (find-command 'toggle-global-ws-trim)) => #t)
+      (check (procedure? (find-command 'toggle-global-auto-compile)) => #t)
+      (check (procedure? (find-command 'toggle-global-no-littering)) => #t))
 
     ;;=========================================================================
     ;; Headless Scintilla editor tests

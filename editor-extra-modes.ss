@@ -1715,4 +1715,63 @@
     (when (and branch (not (string-empty? branch)))
       (run-git-command app (list "merge" branch) #f))))
 
+;;; ---- batch 57: environment and project configuration toggles ----
+
+(def *global-envrc* #f)
+(def *global-direnv* #f)
+(def *global-editorconfig* #f)
+(def *global-dtrt-indent* #f)
+(def *global-ws-trim* #f)
+(def *global-auto-compile* #f)
+(def *global-no-littering* #f)
+
+(def (cmd-toggle-global-envrc app)
+  "Toggle global envrc-mode (direnv integration via envrc.el)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-envrc* (not *global-envrc*))
+    (echo-message! echo (if *global-envrc*
+                          "Global envrc ON" "Global envrc OFF"))))
+
+(def (cmd-toggle-global-direnv app)
+  "Toggle global direnv-mode (load .envrc in project dirs)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-direnv* (not *global-direnv*))
+    (echo-message! echo (if *global-direnv*
+                          "Global direnv ON" "Global direnv OFF"))))
+
+(def (cmd-toggle-global-editorconfig app)
+  "Toggle global editorconfig-mode (apply .editorconfig)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-editorconfig* (not *global-editorconfig*))
+    (echo-message! echo (if *global-editorconfig*
+                          "Global editorconfig ON" "Global editorconfig OFF"))))
+
+(def (cmd-toggle-global-dtrt-indent app)
+  "Toggle global dtrt-indent-mode (auto-detect indentation)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-dtrt-indent* (not *global-dtrt-indent*))
+    (echo-message! echo (if *global-dtrt-indent*
+                          "Global dtrt-indent ON" "Global dtrt-indent OFF"))))
+
+(def (cmd-toggle-global-ws-trim app)
+  "Toggle global ws-trim-mode (trim trailing whitespace on save)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-ws-trim* (not *global-ws-trim*))
+    (echo-message! echo (if *global-ws-trim*
+                          "Global ws-trim ON" "Global ws-trim OFF"))))
+
+(def (cmd-toggle-global-auto-compile app)
+  "Toggle global auto-compile-mode (byte-compile Elisp on save)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-auto-compile* (not *global-auto-compile*))
+    (echo-message! echo (if *global-auto-compile*
+                          "Global auto-compile ON" "Global auto-compile OFF"))))
+
+(def (cmd-toggle-global-no-littering app)
+  "Toggle global no-littering-mode (clean up config dirs)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-no-littering* (not *global-no-littering*))
+    (echo-message! echo (if *global-no-littering*
+                          "Global no-littering ON" "Global no-littering OFF"))))
+
 
