@@ -763,4 +763,23 @@
   (register-command! 'revert-buffer-no-confirm cmd-revert-buffer-no-confirm)
   ;; Sudo save
   (register-command! 'sudo-save-buffer cmd-sudo-save-buffer)
+  ;; URL encode/decode
+  (register-command! 'url-encode-region cmd-url-encode-region)
+  (register-command! 'url-decode-region cmd-url-decode-region)
+  ;; JSON
+  (register-command! 'json-format-buffer cmd-json-format-buffer)
+  (register-command! 'json-minify-buffer cmd-json-minify-buffer)
+  (register-command! 'json-sort-keys cmd-json-sort-keys)
+  (register-command! 'jq-filter cmd-jq-filter)
+  ;; HTML entities
+  (register-command! 'html-encode-region cmd-html-encode-region)
+  (register-command! 'html-decode-region cmd-html-decode-region)
+  ;; File warnings
+  (register-command! 'find-file-with-warnings cmd-find-file-with-warnings)
+  ;; Encoding
+  (register-command! 'detect-encoding cmd-detect-encoding)
+  ;; CSV
+  (register-command! 'csv-align-columns cmd-csv-align-columns)
+  ;; Epoch conversion
+  (register-command! 'epoch-to-date cmd-epoch-to-date)
 )

@@ -6,6 +6,9 @@
 (import :std/sugar
         :std/sort
         :std/srfi/13
+        :std/misc/string
+        :std/misc/process
+        :std/text/json
         :gerbil-scintilla/constants
         :gerbil-scintilla/scintilla
         :gerbil-scintilla/tui
@@ -443,4 +446,483 @@
         (set! (app-state-current-tab-idx app) new-idx)
         (echo-message! echo (string-append "Moved tab to position "
                                           (number->string (+ new-idx 1))))))))
+
+;;;============================================================================
+;;; URL encode/decode
+;;;============================================================================
+
+(def (url-encode str)
+  "Percent-encode a string for URLs."
+  (let ((out (open-output-string)))
+    (let loop ((i 0))
+      (when (< i (string-length str))
+        (let ((ch (string-ref str i)))
+          (cond
+            ((or (char-alphabetic? ch) (char-numeric? ch)
+                 (memv ch '(#\- #\_ #\. #\~)))
+             (write-char ch out))
+            ((char=? ch #\space)
+             (write-char #\+ out))
+            (else
+             (let ((b (char->integer ch)))
+               (display "%" out)
+               (when (< b 16) (write-char #\0 out))
+               (display (number->string b 16) out)))))
+        (loop (+ i 1))))
+    (get-output-string out)))
+
+(def (hex-digit-value ch)
+  "Convert hex digit char to integer value."
+  (cond
+    ((and (char>=? ch #\0) (char<=? ch #\9))
+     (- (char->integer ch) (char->integer #\0)))
+    ((and (char>=? ch #\a) (char<=? ch #\f))
+     (+ 10 (- (char->integer ch) (char->integer #\a))))
+    ((and (char>=? ch #\A) (char<=? ch #\F))
+     (+ 10 (- (char->integer ch) (char->integer #\A))))
+    (else #f)))
+
+(def (url-decode str)
+  "Decode a percent-encoded URL string."
+  (let ((out (open-output-string))
+        (len (string-length str)))
+    (let loop ((i 0))
+      (when (< i len)
+        (let ((ch (string-ref str i)))
+          (cond
+            ((and (char=? ch #\%) (< (+ i 2) len))
+             (let ((h1 (hex-digit-value (string-ref str (+ i 1))))
+                   (h2 (hex-digit-value (string-ref str (+ i 2)))))
+               (if (and h1 h2)
+                 (begin
+                   (write-char (integer->char (+ (* h1 16) h2)) out)
+                   (loop (+ i 3)))
+                 (begin (write-char ch out) (loop (+ i 1))))))
+            ((char=? ch #\+)
+             (write-char #\space out)
+             (loop (+ i 1)))
+            (else
+             (write-char ch out)
+             (loop (+ i 1)))))))
+    (get-output-string out)))
+
+(def (cmd-url-encode-region app)
+  "URL-encode the selected region."
+  (let* ((ed (current-editor app))
+         (start (editor-get-selection-start ed))
+         (end (editor-get-selection-end ed)))
+    (if (= start end)
+      (echo-error! (app-state-echo app) "No region selected")
+      (let* ((text (editor-get-text ed))
+             (region (substring text start end))
+             (encoded (url-encode region)))
+        (editor-set-selection ed start end)
+        (send-message/string ed 2170 encoded) ;; SCI_REPLACESEL
+        (echo-message! (app-state-echo app) "URL encoded")))))
+
+(def (cmd-url-decode-region app)
+  "URL-decode the selected region."
+  (let* ((ed (current-editor app))
+         (start (editor-get-selection-start ed))
+         (end (editor-get-selection-end ed)))
+    (if (= start end)
+      (echo-error! (app-state-echo app) "No region selected")
+      (let* ((text (editor-get-text ed))
+             (region (substring text start end))
+             (decoded (url-decode region)))
+        (editor-set-selection ed start end)
+        (send-message/string ed 2170 decoded) ;; SCI_REPLACESEL
+        (echo-message! (app-state-echo app) "URL decoded")))))
+
+;;;============================================================================
+;;; JSON format / minify
+;;;============================================================================
+
+(def (json-pretty-print obj indent)
+  "Pretty-print a JSON value with indentation."
+  (let ((out (open-output-string)))
+    (let pp ((val obj) (level 0))
+      (let ((prefix (make-string (* level indent) #\space)))
+        (cond
+          ((hash-table? val)
+           (display "{\n" out)
+           (let ((keys (sort (hash-keys val) string<?))
+                 (first #t))
+             (for-each
+               (lambda (k)
+                 (unless first (display ",\n" out))
+                 (display (make-string (* (+ level 1) indent) #\space) out)
+                 (write k out)
+                 (display ": " out)
+                 (pp (hash-ref val k) (+ level 1))
+                 (set! first #f))
+               keys))
+           (display "\n" out)
+           (display prefix out)
+           (display "}" out))
+          ((list? val)
+           (if (null? val)
+             (display "[]" out)
+             (begin
+               (display "[\n" out)
+               (let ((first #t))
+                 (for-each
+                   (lambda (item)
+                     (unless first (display ",\n" out))
+                     (display (make-string (* (+ level 1) indent) #\space) out)
+                     (pp item (+ level 1))
+                     (set! first #f))
+                   val))
+               (display "\n" out)
+               (display prefix out)
+               (display "]" out))))
+          ((string? val) (write val out))
+          ((number? val) (display val out))
+          ((boolean? val) (display (if val "true" "false") out))
+          ((not val) (display "null" out))
+          (else (write val out)))))
+    (get-output-string out)))
+
+(def (cmd-json-format-buffer app)
+  "Pretty-print JSON in the current buffer."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app))
+         (text (editor-get-text ed)))
+    (with-catch
+      (lambda (e) (echo-error! echo "Invalid JSON"))
+      (lambda ()
+        (let* ((obj (call-with-input-string text read-json))
+               (formatted (json-pretty-print obj 2))
+               (pos (editor-get-current-pos ed)))
+          (editor-set-text ed (string-append formatted "\n"))
+          (editor-goto-pos ed (min pos (string-length formatted)))
+          (echo-message! echo "JSON formatted"))))))
+
+(def (cmd-json-minify-buffer app)
+  "Minify JSON in the current buffer (remove whitespace)."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app))
+         (text (editor-get-text ed)))
+    (with-catch
+      (lambda (e) (echo-error! echo "Invalid JSON"))
+      (lambda ()
+        (let* ((obj (call-with-input-string text read-json))
+               (minified (call-with-output-string
+                           (lambda (port) (write-json obj port))))
+               (pos (editor-get-current-pos ed)))
+          (editor-set-text ed minified)
+          (editor-goto-pos ed (min pos (string-length minified)))
+          (echo-message! echo
+            (string-append "JSON minified ("
+              (number->string (string-length minified)) " bytes)")))))))
+
+;;;============================================================================
+;;; HTML entity encode/decode
+;;;============================================================================
+
+(def *html-entities*
+  '(("&amp;" . "&") ("&lt;" . "<") ("&gt;" . ">")
+    ("&quot;" . "\"") ("&#39;" . "'") ("&apos;" . "'")
+    ("&nbsp;" . " ") ("&copy;" . "(c)") ("&reg;" . "(R)")
+    ("&ndash;" . "-") ("&mdash;" . "--") ("&hellip;" . "...")
+    ("&laquo;" . "<<") ("&raquo;" . ">>")))
+
+(def (html-decode-entities str)
+  "Decode common HTML entities in a string."
+  (let ((result str))
+    (for-each
+      (lambda (pair)
+        (set! result (string-subst result (car pair) (cdr pair))))
+      *html-entities*)
+    result))
+
+(def (html-encode-entities str)
+  "Encode special characters as HTML entities."
+  (let ((result str))
+    (set! result (string-subst result "&" "&amp;"))
+    (set! result (string-subst result "<" "&lt;"))
+    (set! result (string-subst result ">" "&gt;"))
+    (set! result (string-subst result "\"" "&quot;"))
+    result))
+
+(def (cmd-html-encode-region app)
+  "Encode HTML entities in the selected region."
+  (let* ((ed (current-editor app))
+         (start (editor-get-selection-start ed))
+         (end (editor-get-selection-end ed)))
+    (if (= start end)
+      (echo-error! (app-state-echo app) "No region selected")
+      (let* ((text (editor-get-text ed))
+             (region (substring text start end))
+             (encoded (html-encode-entities region)))
+        (editor-set-selection ed start end)
+        (send-message/string ed 2170 encoded)
+        (echo-message! (app-state-echo app) "HTML encoded")))))
+
+(def (cmd-html-decode-region app)
+  "Decode HTML entities in the selected region."
+  (let* ((ed (current-editor app))
+         (start (editor-get-selection-start ed))
+         (end (editor-get-selection-end ed)))
+    (if (= start end)
+      (echo-error! (app-state-echo app) "No region selected")
+      (let* ((text (editor-get-text ed))
+             (region (substring text start end))
+             (decoded (html-decode-entities region)))
+        (editor-set-selection ed start end)
+        (send-message/string ed 2170 decoded)
+        (echo-message! (app-state-echo app) "HTML decoded")))))
+
+;;;============================================================================
+;;; Backup file before save (helper)
+;;;============================================================================
+
+(def (create-backup-file! path)
+  "Create a backup of a file (file~ naming convention)."
+  (when (file-exists? path)
+    (let ((backup-path (string-append path "~")))
+      (with-catch
+        (lambda (e) (void)) ;; Silently fail — backup is best-effort
+        (lambda ()
+          (run-process/batch ["cp" "-p" path backup-path]))))))
+
+;;;============================================================================
+;;; Large file and binary file warnings
+;;;============================================================================
+
+(def *large-file-threshold* (* 1024 1024)) ;; 1 MB
+
+(def (large-file? path)
+  "Check if a file exceeds the large file threshold."
+  (and (file-exists? path)
+       (with-catch
+         (lambda (e) #f)
+         (lambda ()
+           (> (file-info-size (file-info path)) *large-file-threshold*)))))
+
+(def (binary-file? path)
+  "Heuristic: check if a file appears to be binary (has null bytes in first 8KB)."
+  (and (file-exists? path)
+       (with-catch
+         (lambda (e) #f)
+         (lambda ()
+           (call-with-input-file path
+             (lambda (port)
+               (let loop ((i 0))
+                 (if (>= i 8192) #f
+                   (let ((ch (read-char port)))
+                     (cond
+                       ((eof-object? ch) #f)
+                       ((= (char->integer ch) 0) #t)
+                       (else (loop (+ i 1)))))))))))))
+
+(def (cmd-find-file-with-warnings app)
+  "Open file with warnings for large or binary files."
+  (let* ((echo (app-state-echo app))
+         (path (app-read-string app "Find file: ")))
+    (when (and path (> (string-length path) 0))
+      (let ((expanded (path-expand path)))
+        (cond
+          ((large-file? expanded)
+           (echo-message! echo
+             (string-append "Warning: Large file ("
+               (number->string (quotient (file-info-size (file-info expanded)) 1024))
+               " KB). Opening anyway..."))
+           (execute-command! app 'find-file))
+          ((binary-file? expanded)
+           (echo-message! echo "Warning: Binary file detected. Opening in hex view may be better."))
+          (else
+           (execute-command! app 'find-file)))))))
+
+;;;============================================================================
+;;; Encoding detection
+;;;============================================================================
+
+(def (detect-file-encoding path)
+  "Detect file encoding using heuristics. Returns encoding name string."
+  (if (not (file-exists? path)) "unknown"
+    (with-catch
+      (lambda (e) "utf-8")
+      (lambda ()
+        (call-with-input-file path
+          (lambda (port)
+            (let ((b1 (read-u8 port))
+                  (b2 (read-u8 port))
+                  (b3 (read-u8 port)))
+              (cond
+                ;; UTF-8 BOM
+                ((and (eqv? b1 #xEF) (eqv? b2 #xBB) (eqv? b3 #xBF))
+                 "utf-8-bom")
+                ;; UTF-16 LE BOM
+                ((and (eqv? b1 #xFF) (eqv? b2 #xFE))
+                 "utf-16-le")
+                ;; UTF-16 BE BOM
+                ((and (eqv? b1 #xFE) (eqv? b2 #xFF))
+                 "utf-16-be")
+                ;; Default: assume UTF-8
+                (else "utf-8")))))))))
+
+(def (cmd-detect-encoding app)
+  "Show the detected encoding of the current file."
+  (let* ((buf (current-buffer-from-app app))
+         (path (and buf (buffer-file-path buf)))
+         (echo (app-state-echo app)))
+    (if (not path)
+      (echo-error! echo "Buffer has no file")
+      (echo-message! echo
+        (string-append "Encoding: " (detect-file-encoding path))))))
+
+;;;============================================================================
+;;; Sort JSON keys
+;;;============================================================================
+
+(def (cmd-json-sort-keys app)
+  "Sort all JSON object keys alphabetically."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app))
+         (text (editor-get-text ed)))
+    (with-catch
+      (lambda (e) (echo-error! echo "Invalid JSON"))
+      (lambda ()
+        (let* ((obj (call-with-input-string text read-json))
+               ;; json-pretty-print already sorts keys
+               (sorted (json-pretty-print obj 2))
+               (pos (editor-get-current-pos ed)))
+          (editor-set-text ed (string-append sorted "\n"))
+          (editor-goto-pos ed (min pos (string-length sorted)))
+          (echo-message! echo "JSON keys sorted"))))))
+
+;;;============================================================================
+;;; CSV mode helpers
+;;;============================================================================
+
+(def (csv-split-line line)
+  "Split a CSV line into fields (handles simple cases)."
+  (let ((fields [])
+        (current (open-output-string))
+        (in-quotes #f)
+        (len (string-length line)))
+    (let loop ((i 0))
+      (if (>= i len)
+        (reverse (cons (get-output-string current) fields))
+        (let ((ch (string-ref line i)))
+          (cond
+            ((and (char=? ch (integer->char 34)) (not in-quotes))
+             (set! in-quotes #t)
+             (loop (+ i 1)))
+            ((and (char=? ch (integer->char 34)) in-quotes)
+             (set! in-quotes #f)
+             (loop (+ i 1)))
+            ((and (char=? ch #\,) (not in-quotes))
+             (set! fields (cons (get-output-string current) fields))
+             (set! current (open-output-string))
+             (loop (+ i 1)))
+            (else
+             (write-char ch current)
+             (loop (+ i 1)))))))))
+
+(def (cmd-csv-align-columns app)
+  "Align CSV columns for better readability."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app))
+         (text (editor-get-text ed))
+         (lines (string-split text #\newline))
+         (rows (map csv-split-line (filter (lambda (l) (> (string-length l) 0)) lines))))
+    (if (null? rows)
+      (echo-message! echo "No CSV data")
+      ;; Calculate max width for each column
+      (let* ((num-cols (apply max (map length rows)))
+             (widths (let loop ((col 0) (acc []))
+                       (if (>= col num-cols)
+                         (reverse acc)
+                         (loop (+ col 1)
+                               (cons (apply max
+                                       (map (lambda (row)
+                                              (if (< col (length row))
+                                                (string-length (list-ref row col))
+                                                0))
+                                            rows))
+                                     acc))))))
+        ;; Build aligned output
+        (let ((out (open-output-string)))
+          (for-each
+            (lambda (row)
+              (let field-loop ((i 0) (fields row))
+                (unless (null? fields)
+                  (when (> i 0) (display " | " out))
+                  (let* ((field (car fields))
+                         (width (if (< i (length widths))
+                                  (list-ref widths i) 0))
+                         (pad (max 0 (- width (string-length field)))))
+                    (display field out)
+                    (display (make-string pad #\space) out))
+                  (field-loop (+ i 1) (cdr fields))))
+              (newline out))
+            rows)
+          (let ((result (get-output-string out))
+                (pos (editor-get-current-pos ed)))
+            (editor-set-text ed result)
+            (editor-goto-pos ed (min pos (string-length result)))
+            (echo-message! echo
+              (string-append "Aligned " (number->string (length rows))
+                " rows, " (number->string num-cols) " columns"))))))))
+
+;;;============================================================================
+;;; Epoch timestamp conversion
+;;;============================================================================
+
+(def (cmd-epoch-to-date app)
+  "Convert Unix epoch timestamp at point or in region to human-readable date."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app))
+         (start (editor-get-selection-start ed))
+         (end (editor-get-selection-end ed))
+         (text (editor-get-text ed)))
+    (let ((num-str (if (= start end)
+                     ;; No selection: try to find number at point
+                     (let ((pos (editor-get-current-pos ed)))
+                       (let loop ((s pos))
+                         (if (or (< s 0) (not (char-numeric? (string-ref text s))))
+                           (let loop2 ((e (+ s 1)))
+                             (if (or (>= e (string-length text))
+                                     (not (char-numeric? (string-ref text e))))
+                               (substring text (+ s 1) e)
+                               (loop2 (+ e 1))))
+                           (loop (- s 1)))))
+                     (substring text start end))))
+      (let ((ts (string->number num-str)))
+        (if (not ts)
+          (echo-error! echo "No timestamp at point")
+          (with-catch
+            (lambda (e) (echo-error! echo "Invalid timestamp"))
+            (lambda ()
+              (let ((output (run-process ["date" "-d"
+                              (string-append "@" (number->string (inexact->exact (floor ts))))
+                              "+%Y-%m-%d %H:%M:%S %Z"])))
+                (echo-message! echo
+                  (string-append (number->string (inexact->exact (floor ts)))
+                    " = " (string-trim-both output)))))))))))
+
+;;;============================================================================
+;;; Pipe buffer through jq
+;;;============================================================================
+
+(def (cmd-jq-filter app)
+  "Run jq filter on current buffer's JSON content."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app))
+         (filter-str (app-read-string app "jq filter (e.g. '.key'): ")))
+    (when (and filter-str (> (string-length filter-str) 0))
+      (let ((text (editor-get-text ed)))
+        (with-catch
+          (lambda (e) (echo-error! echo "jq error (is jq installed?)"))
+          (lambda ()
+            (let ((output (filter-with-process ["jq" filter-str]
+                            (lambda (port) (display text port))
+                            (lambda (port) (read-line port #f)))))
+              (when (and output (> (string-length output) 0))
+                (let ((pos (editor-get-current-pos ed)))
+                  (editor-set-text ed output)
+                  (editor-goto-pos ed (min pos (string-length output)))
+                  (echo-message! echo "jq filter applied"))))))))))
 

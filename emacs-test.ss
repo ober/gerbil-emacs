@@ -42,6 +42,11 @@
                  *command-history* command-history-add!
                  *named-macros* *buffer-access-times*
                  record-buffer-access!)
+        (only-in :gerbil-emacs/editor-extra-web
+                 url-encode url-decode
+                 html-encode-entities html-decode-entities
+                 csv-split-line detect-file-encoding
+                 large-file? binary-file?)
         (only-in :gerbil-emacs/highlight
                  detect-file-language gerbil-file-extension?
                  setup-highlighting-for-file!)
@@ -1397,6 +1402,47 @@
       (check (procedure? (find-command 'diff-summary)) => #t)
       (check (procedure? (find-command 'revert-buffer-no-confirm)) => #t)
       (check (procedure? (find-command 'sudo-save-buffer)) => #t))
+
+    ;; -- URL encode/decode --
+    (test-case "url-encode and url-decode"
+      (check (url-encode "hello world") => "hello+world")
+      (check (url-encode "a&b=c") => "a%26b%3dc")
+      (check (url-decode "hello+world") => "hello world")
+      (check (url-decode "a%26b%3dc") => "a&b=c"))
+
+    ;; -- HTML entities --
+    (test-case "html-encode and html-decode"
+      (check (html-encode-entities "<b>hi</b>") => "&lt;b&gt;hi&lt;/b&gt;")
+      (check (html-decode-entities "&amp;lt;") => "<")
+      (check (html-decode-entities "&copy; 2024") => "(c) 2024"))
+
+    ;; -- CSV split --
+    (test-case "csv-split-line"
+      (check (csv-split-line "a,b,c") => '("a" "b" "c"))
+      (check (csv-split-line "\"hello world\",2,3") => '("hello world" "2" "3")))
+
+    ;; -- Encoding detection --
+    (test-case "detect-file-encoding: utf8"
+      (let ((tmp "/tmp/.gerbil-test-encoding"))
+        (call-with-output-file tmp (lambda (p) (display "hello" p)))
+        (check (detect-file-encoding tmp) => "utf-8")
+        (delete-file tmp)))
+
+    ;; -- Command registration batch 24 --
+    (test-case "command registration: batch 24 features"
+      (register-all-commands!)
+      (check (procedure? (find-command 'url-encode-region)) => #t)
+      (check (procedure? (find-command 'url-decode-region)) => #t)
+      (check (procedure? (find-command 'json-format-buffer)) => #t)
+      (check (procedure? (find-command 'json-minify-buffer)) => #t)
+      (check (procedure? (find-command 'json-sort-keys)) => #t)
+      (check (procedure? (find-command 'jq-filter)) => #t)
+      (check (procedure? (find-command 'html-encode-region)) => #t)
+      (check (procedure? (find-command 'html-decode-region)) => #t)
+      (check (procedure? (find-command 'find-file-with-warnings)) => #t)
+      (check (procedure? (find-command 'detect-encoding)) => #t)
+      (check (procedure? (find-command 'csv-align-columns)) => #t)
+      (check (procedure? (find-command 'epoch-to-date)) => #t))
 
     ;;=========================================================================
     ;; Headless Scintilla editor tests
