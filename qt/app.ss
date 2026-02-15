@@ -31,6 +31,22 @@
          (name (path-strip-directory path)))
     (path-expand (string-append "#" name "#") dir)))
 
+(def (qt-update-frame-title! app)
+  "Update window title to show current buffer and file path."
+  (let* ((fr (app-state-frame app))
+         (win (qt-frame-main-win fr))
+         (buf (qt-current-buffer fr))
+         (name (buffer-name buf))
+         (path (buffer-file-path buf))
+         (modified? (and (buffer-doc-pointer buf)
+                         (qt-text-document-modified? (buffer-doc-pointer buf))))
+         (title (string-append
+                  (if modified? "* " "")
+                  name
+                  (if path (string-append " - " path) "")
+                  " - gerbil-emacs")))
+    (qt-main-window-set-title! win title)))
+
 ;; Which-key state — show available bindings after prefix key delay
 (def *which-key-timer* #f)
 (def *which-key-pending-keymap* #f)
@@ -328,9 +344,10 @@
                    ;; Update visual decorations (current-line + brace match)
                    (qt-update-visual-decorations!
                      (qt-current-editor (app-state-frame app)))
-                   ;; Update modeline, tab bar, and echo after each key
+                   ;; Update modeline, tab bar, title, and echo after each key
                    (qt-modeline-update! app)
                    (qt-tabbar-update! app)
+                   (qt-update-frame-title! app)
                    (qt-echo-draw! (app-state-echo app) echo-label))))))))
 
         ;; Install on the initial editor (consuming — editor doesn't see keys)
@@ -559,9 +576,10 @@
       (qt-widget-resize! win 800 600)
       (qt-widget-show! win)
 
-      ;; Initial modeline and tab bar update (before any key press)
+      ;; Initial modeline, tab bar, and title update (before any key press)
       (qt-modeline-update! app)
       (qt-tabbar-update! app)
+      (qt-update-frame-title! app)
 
       ;; Enter Qt event loop
       (qt-app-exec! qt-app))))

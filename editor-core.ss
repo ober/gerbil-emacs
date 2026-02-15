@@ -597,32 +597,43 @@
           (let ((ed (current-editor app)))
             (if (<= (length (buffer-list)) 1)
               (echo-error! echo "Can't kill last buffer")
-              (begin
-                ;; Switch to another buffer if killing current
-                (when (eq? buf (current-buffer-from-app app))
-                  (let ((other (let loop ((bs (buffer-list)))
-                                 (cond ((null? bs) #f)
-                                       ((eq? (car bs) buf) (loop (cdr bs)))
-                                       (else (car bs))))))
-                    (when other
-                      (buffer-attach! ed other)
-                      (set! (edit-window-buffer (current-window fr)) other))))
-                ;; Clean up dired entries if applicable
-                (hash-remove! *dired-entries* buf)
-                ;; Clean up REPL state if applicable
-                (let ((rs (hash-get *repl-state* buf)))
-                  (when rs
-                    (repl-stop! rs)
-                    (hash-remove! *repl-state* buf)))
-                ;; Clean up eshell state if applicable
-                (hash-remove! *eshell-state* buf)
-                ;; Clean up shell state if applicable
-                (let ((ss (hash-get *shell-state* buf)))
-                  (when ss
-                    (shell-stop! ss)
-                    (hash-remove! *shell-state* buf)))
-                (buffer-kill! ed buf)
-                (echo-message! echo (string-append "Killed " target-name)))))
+              ;; Check if buffer is modified and needs confirmation
+              (if (and (buffer-file-path buf)
+                       (editor-get-modify? ed)
+                       (eq? buf (current-buffer-from-app app))
+                       (let ((answer (echo-read-string echo
+                                       (string-append "Buffer " target-name
+                                         " modified; kill anyway? (yes/no) ")
+                                       row width)))
+                         (not (and answer (or (string=? answer "yes")
+                                             (string=? answer "y"))))))
+                (echo-message! echo "Cancelled")
+                (begin
+                  ;; Switch to another buffer if killing current
+                  (when (eq? buf (current-buffer-from-app app))
+                    (let ((other (let loop ((bs (buffer-list)))
+                                   (cond ((null? bs) #f)
+                                         ((eq? (car bs) buf) (loop (cdr bs)))
+                                         (else (car bs))))))
+                      (when other
+                        (buffer-attach! ed other)
+                        (set! (edit-window-buffer (current-window fr)) other))))
+                  ;; Clean up dired entries if applicable
+                  (hash-remove! *dired-entries* buf)
+                  ;; Clean up REPL state if applicable
+                  (let ((rs (hash-get *repl-state* buf)))
+                    (when rs
+                      (repl-stop! rs)
+                      (hash-remove! *repl-state* buf)))
+                  ;; Clean up eshell state if applicable
+                  (hash-remove! *eshell-state* buf)
+                  ;; Clean up shell state if applicable
+                  (let ((ss (hash-get *shell-state* buf)))
+                    (when ss
+                      (shell-stop! ss)
+                      (hash-remove! *shell-state* buf)))
+                  (buffer-kill! ed buf)
+                  (echo-message! echo (string-append "Killed " target-name))))))
           (echo-error! echo (string-append "No buffer: " target-name)))))))
 
 ;;;============================================================================

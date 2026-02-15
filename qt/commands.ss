@@ -195,7 +195,7 @@
       (if (and (file-exists? filename)
                (eq? 'directory (file-info-type (file-info filename))))
         (dired-open-directory! app filename)
-        (let* ((name (path-strip-directory filename))
+        (let* ((name (uniquify-buffer-name! filename))
                (fr (app-state-frame app))
                (ed2 (current-qt-editor app))
                (buf (qt-buffer-create! name ed2 filename)))
@@ -256,7 +256,7 @@
           ;; Open as dired
           (dired-open-directory! app filename)
           ;; Open as regular file
-          (let* ((name (path-strip-directory filename))
+          (let* ((name (uniquify-buffer-name! filename))
                  (fr (app-state-frame app))
                  (ed (current-qt-editor app))
                  (buf (qt-buffer-create! name ed filename)))
@@ -351,7 +351,17 @@
         (if buf
           (if (<= (length (buffer-list)) 1)
             (echo-error! echo "Can't kill last buffer")
-            (begin
+            ;; Confirm if buffer is modified
+            (let ((proceed?
+                   (if (and (buffer-file-path buf)
+                            (buffer-doc-pointer buf)
+                            (qt-text-document-modified? (buffer-doc-pointer buf)))
+                     (let ((answer (qt-echo-read-string app
+                                     (string-append "Buffer " target-name
+                                       " modified; kill anyway? (yes/no) "))))
+                       (and answer (or (string=? answer "yes") (string=? answer "y"))))
+                     #t)))
+            (when proceed?
               ;; Switch to another buffer if killing current
               (when (eq? buf (current-qt-buffer app))
                 (let* ((fr (app-state-frame app))
@@ -391,7 +401,7 @@
                 (filter (lambda (n) (not (string=? n target-name)))
                         *buffer-recent*))
               (qt-buffer-kill! buf)
-              (echo-message! echo (string-append "Killed " target-name))))
+              (echo-message! echo (string-append "Killed " target-name)))))
           (echo-error! echo (string-append "No buffer: " target-name)))))))
 
 (def (cmd-kill-buffer-and-window app)
