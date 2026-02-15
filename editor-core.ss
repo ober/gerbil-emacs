@@ -1092,34 +1092,60 @@
               (search-forward-impl! app query))))))))
 
 (def (cmd-search-backward app)
+  (let ((default (or (app-state-last-search app) "")))
+    (if (and (eq? (app-state-last-command app) 'search-backward)
+             (> (string-length default) 0))
+      ;; Repeat: move before current match, then search again
+      (let* ((ed (current-editor app))
+             (pos (editor-get-current-pos ed)))
+        (when (> pos 0) (editor-goto-pos ed (- pos 1)))
+        (search-backward-impl! app default))
+      ;; First C-r: prompt for query
+      (let* ((echo (app-state-echo app))
+             (fr (app-state-frame app))
+             (row (- (frame-height fr) 1))
+             (width (frame-width fr))
+             (prompt (if (string=? default "")
+                       "Search backward: "
+                       (string-append "Search backward [" default "]: ")))
+             (input (echo-read-string echo prompt row width)))
+        (when input
+          (let ((query (if (string=? input "") default input)))
+            (when (> (string-length query) 0)
+              (search-backward-impl! app query))))))))
+
+(def (search-backward-impl! app query)
+  "Execute a backward search for query, wrapping to end if not found."
   (let* ((echo (app-state-echo app))
-         (fr (app-state-frame app))
-         (row (- (frame-height fr) 1))
-         (width (frame-width fr))
-         (default (or (app-state-last-search app) ""))
-         (prompt (if (string=? default "")
-                   "Search backward: "
-                   (string-append "Search backward [" default "]: ")))
-         (input (echo-read-string echo prompt row width)))
-    (when input
-      (let* ((query (if (string=? input "") default input))
-             (ed (current-editor app)))
-        (when (> (string-length query) 0)
-          (set! (app-state-last-search app) query)
-          ;; Highlight all matches
-          (highlight-all-matches! ed query)
-          (let ((pos (editor-get-current-pos ed)))
-            ;; Search backward: set target end before start
-            (send-message ed SCI_SETTARGETSTART pos)
+         (ed (current-editor app)))
+    (set! (app-state-last-search app) query)
+    ;; Highlight all matches
+    (highlight-all-matches! ed query)
+    (let ((pos (editor-get-current-pos ed))
+          (len (editor-get-text-length ed)))
+      ;; Search backward: target start > target end means reverse search
+      (send-message ed SCI_SETTARGETSTART pos)
+      (send-message ed SCI_SETTARGETEND 0)
+      (send-message ed SCI_SETSEARCHFLAGS 0)
+      (let ((found (send-message/string ed SCI_SEARCHINTARGET query)))
+        (if (>= found 0)
+          (begin
+            (editor-goto-pos ed found)
+            (editor-set-selection ed found
+                                  (+ found (string-length query)))
+            (pulse-line! ed (editor-line-from-position ed found)))
+          ;; Wrap around from end
+          (begin
+            (send-message ed SCI_SETTARGETSTART len)
             (send-message ed SCI_SETTARGETEND 0)
-            (send-message ed SCI_SETSEARCHFLAGS 0)
-            (let ((found (send-message/string ed SCI_SEARCHINTARGET query)))
-              (if (>= found 0)
+            (let ((found2 (send-message/string ed SCI_SEARCHINTARGET query)))
+              (if (>= found2 0)
                 (begin
-                  (editor-goto-pos ed found)
-                  (editor-set-selection ed found
-                                        (+ found (string-length query)))
-                  (pulse-line! ed (editor-line-from-position ed found)))
+                  (editor-goto-pos ed found2)
+                  (editor-set-selection ed found2
+                                        (+ found2 (string-length query)))
+                  (pulse-line! ed (editor-line-from-position ed found2))
+                  (echo-message! echo "Wrapped"))
                 (echo-error! echo
                              (string-append "Not found: " query))))))))))
 

@@ -76,7 +76,11 @@
                   (send-message ed SCI_SETMARGINWIDTHN 0 5)
                   ;; Style line number margin: dark gray on very dark background
                   (editor-style-set-foreground ed STYLE_LINENUMBER #x808080)
-                  (editor-style-set-background ed STYLE_LINENUMBER #x181818)))
+                  (editor-style-set-background ed STYLE_LINENUMBER #x181818)
+                  ;; Enable multiple selection + typing into all selections
+                  ;; SCI_SETMULTIPLESELECTION=2563, SCI_SETADDITIONALSELECTIONTYPING=2565
+                  (send-message ed 2563 1 0)
+                  (send-message ed 2565 1 0)))
               (frame-windows fr))
 
     ;; Restore scratch buffer from persistent storage, or set default
@@ -110,6 +114,8 @@
          (ed (current-editor app))
          (buf (buffer-create! name ed filename))
          (fr (app-state-frame app)))
+    ;; Track in recent files
+    (recent-files-add! filename)
     (buffer-attach! ed buf)
     (set! (edit-window-buffer (current-window fr)) buf)
     (when (file-exists? filename)
@@ -117,7 +123,13 @@
         (when text
           (editor-set-text ed text)
           (editor-set-save-point ed)
-          (editor-goto-pos ed 0))))
+          ;; Restore cursor position from save-place
+          (let ((saved-pos (save-place-restore filename)))
+            (if (and saved-pos (< saved-pos (string-length text)))
+              (begin
+                (editor-goto-pos ed saved-pos)
+                (editor-scroll-caret ed))
+              (editor-goto-pos ed 0))))))
     ;; Record file modification time for external change detection
     (update-buffer-mod-time! buf)
     ;; Apply syntax highlighting: extension first, then shebang fallback
@@ -130,7 +142,13 @@
             (let ((shebang-lang (detect-language-from-shebang text)))
               (when shebang-lang
                 (setup-highlighting-for-file! ed
-                  (string-append "shebang." (symbol->string shebang-lang)))))))))))
+                  (string-append "shebang." (symbol->string shebang-lang)))))))))
+    ;; Activate major mode from auto-mode-alist
+    (let ((mode (detect-major-mode filename)))
+      (when mode
+        (buffer-local-set! buf 'major-mode mode)
+        (let ((mode-cmd (find-command mode)))
+          (when mode-cmd (mode-cmd app)))))))
 
 ;;;============================================================================
 ;;; REPL output polling
@@ -297,14 +315,18 @@
   (send-message ed SCI_STYLECLEARALL)  ; propagate to all styles
   ;; White caret for visibility
   (editor-set-caret-foreground ed #xFFFFFF)
-  ;; Highlight current line with subtle background
+  ;; Highlight current line with visible background
   (editor-set-caret-line-visible ed #t)
-  (editor-set-caret-line-background ed #x222222)
+  (editor-set-caret-line-background ed #x333333)
   ;; Brace matching styles
   (editor-style-set-foreground ed STYLE_BRACELIGHT #x00FF00)  ; green for match
   (editor-style-set-bold ed STYLE_BRACELIGHT #t)
   (editor-style-set-foreground ed STYLE_BRACEBAD #xFF0000)    ; red for mismatch
-  (editor-style-set-bold ed STYLE_BRACEBAD #t))
+  (editor-style-set-bold ed STYLE_BRACEBAD #t)
+  ;; Enable multiple selection + typing into all selections
+  ;; SCI_SETMULTIPLESELECTION=2563, SCI_SETADDITIONALSELECTIONTYPING=2565
+  (send-message ed 2563 1 0)
+  (send-message ed 2565 1 0))
 
 ;;;============================================================================
 ;;; Brace/paren matching
