@@ -17,6 +17,7 @@
         :gerbil-emacs/terminal
         :gerbil-emacs/qt/buffer
         :gerbil-emacs/qt/window
+        :gerbil-emacs/persist
         :gerbil-emacs/qt/echo
         :gerbil-emacs/qt/highlight
         :gerbil-emacs/qt/modeline)
@@ -1141,4 +1142,30 @@ Returns (path . line) or #f. Handles file:line format."
 (def (cmd-keyboard-quit app)
   (echo-message! (app-state-echo app) "Quit")
   (set! (app-state-key-state app) (make-initial-key-state)))
+
+;;;============================================================================
+;;; Scroll margin commands (Qt)
+;;;============================================================================
+
+(def (cmd-set-scroll-margin app)
+  "Set the scroll margin (lines to keep visible above/below cursor)."
+  (let* ((input (qt-echo-read-string app
+                  (string-append "Scroll margin (current "
+                                 (number->string *scroll-margin*) "): "))))
+    (when (and input (> (string-length input) 0))
+      (let ((n (string->number input)))
+        (when (and n (>= n 0) (<= n 20))
+          (set! *scroll-margin* n)
+          (echo-message! (app-state-echo app)
+            (string-append "Scroll margin set to " (number->string n))))))))
+
+(def (cmd-toggle-scroll-margin app)
+  "Toggle scroll margin between 0 and 3."
+  (if (> *scroll-margin* 0)
+    (set! *scroll-margin* 0)
+    (set! *scroll-margin* 3))
+  (echo-message! (app-state-echo app)
+    (if (> *scroll-margin* 0)
+      (string-append "Scroll margin: " (number->string *scroll-margin*))
+      "Scroll margin: off")))
 

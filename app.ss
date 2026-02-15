@@ -38,6 +38,9 @@
   (setup-default-bindings!)
   (register-all-commands!)
 
+  ;; Load init file (applies settings like scroll-margin)
+  (init-file-load!)
+
   ;; Load persistent state: recent files, minibuffer history
   (recent-files-load!)
   (set! *minibuffer-history* (savehist-load!))
@@ -55,13 +58,19 @@
          (fr (frame-init! width height))
          (app (new-app-state fr)))
 
-    ;; Configure dark theme on all editors
-    (for-each (lambda (win) (setup-editor-theme! (edit-window-editor win)))
+    ;; Configure dark theme and scroll margin on all editors
+    (for-each (lambda (win)
+                (let ((ed (edit-window-editor win)))
+                  (setup-editor-theme! ed)
+                  (setup-scroll-margin! ed)))
               (frame-windows fr))
 
-    ;; Set initial text in scratch buffer
+    ;; Restore scratch buffer from persistent storage, or set default
     (let ((ed (current-editor app)))
-      (editor-set-text ed ";; *scratch*\n")
+      (let ((saved (scratch-load!)))
+        (if (and saved (> (string-length saved) 0))
+          (editor-set-text ed saved)
+          (editor-set-text ed ";; *scratch*\n")))
       (editor-set-save-point ed)
       (editor-goto-pos ed 0))
 
@@ -237,6 +246,12 @@
 ;;;============================================================================
 ;;; Editor theme (dark colors matching scintilla-termbox defaults)
 ;;;============================================================================
+
+(def (setup-scroll-margin! ed)
+  "Set vertical caret policy for scroll margin on a Scintilla editor.
+   SCI_SETYCARETPOLICY = 2403, CARET_SLOP=1, CARET_STRICT=4."
+  (when (> *scroll-margin* 0)
+    (send-message ed 2403 5 *scroll-margin*)))  ;; 5 = CARET_SLOP|CARET_STRICT
 
 (def (setup-editor-theme! ed)
   "Configure dark terminal theme for an editor."
@@ -441,5 +456,12 @@
           ;; Save persistent state before exit
           (recent-files-save!)
           (savehist-save! *minibuffer-history*)
+          ;; Save scratch buffer content
+          (let* ((scratch-buf (buffer-by-name "*scratch*"))
+                 (fr (app-state-frame app)))
+            (when scratch-buf
+              (let ((win (find-window-for-buffer fr scratch-buf)))
+                (when win
+                  (scratch-save! (editor-get-text (edit-window-editor win)))))))
           (frame-shutdown! (app-state-frame app))
           (tui-shutdown!))))))

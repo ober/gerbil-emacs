@@ -857,5 +857,11 @@
   (register-command! 'desktop-read cmd-desktop-read)
   (register-command! 'savehist-save cmd-savehist-save)
   (register-command! 'savehist-load cmd-savehist-load)
+  ;; Scroll margin
+  (register-command! 'set-scroll-margin cmd-set-scroll-margin)
+  (register-command! 'toggle-scroll-margin cmd-toggle-scroll-margin)
+  ;; Init file
+  (register-command! 'load-init-file cmd-load-init-file)
+  (register-command! 'find-init-file cmd-find-init-file)
   ;; Task #46+ (in editor-extra.ss)
   (register-extra-commands!))

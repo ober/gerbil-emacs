@@ -24,6 +24,7 @@
         :gerbil-emacs/modeline
         :gerbil-emacs/echo
         :gerbil-emacs/highlight
+        :gerbil-emacs/persist
         :gerbil-emacs/editor-core
         :gerbil-emacs/editor-ui
         :gerbil-emacs/editor-text
@@ -1612,4 +1613,82 @@
         (has-crlf "Line endings: CRLF (DOS/Windows)")
         (has-cr "Line endings: CR (old Mac)")
         (else "Line endings: LF (Unix)")))))
+
+;;;============================================================================
+;;; Scroll margin commands
+;;;============================================================================
+
+(def (apply-scroll-margin-to-editor! ed)
+  "Apply current scroll margin setting to a Scintilla editor.
+   SCI_SETYCARETPOLICY = 2403, CARET_SLOP=1, CARET_STRICT=4."
+  (if (> *scroll-margin* 0)
+    (send-message ed 2403 5 *scroll-margin*)  ;; CARET_SLOP|CARET_STRICT
+    (send-message ed 2403 0 0)))              ;; Reset to default
+
+(def (cmd-set-scroll-margin app)
+  "Set the scroll margin (lines to keep visible above/below cursor)."
+  (let* ((echo (app-state-echo app))
+         (fr (app-state-frame app))
+         (row (- (frame-height fr) 1))
+         (width (frame-width fr))
+         (input (echo-read-string echo
+                  (string-append "Scroll margin (current "
+                                 (number->string *scroll-margin*) "): ")
+                  row width)))
+    (when (and input (> (string-length input) 0))
+      (let ((n (string->number input)))
+        (when (and n (>= n 0) (<= n 20))
+          (set! *scroll-margin* n)
+          ;; Apply to all editors
+          (for-each (lambda (win) (apply-scroll-margin-to-editor! (edit-window-editor win)))
+                    (frame-windows fr))
+          (echo-message! echo (string-append "Scroll margin set to "
+                                             (number->string n))))))))
+
+(def (cmd-toggle-scroll-margin app)
+  "Toggle scroll margin between 0 and 3."
+  (let ((fr (app-state-frame app)))
+    (if (> *scroll-margin* 0)
+      (set! *scroll-margin* 0)
+      (set! *scroll-margin* 3))
+    (for-each (lambda (win) (apply-scroll-margin-to-editor! (edit-window-editor win)))
+              (frame-windows fr))
+    (echo-message! (app-state-echo app)
+      (if (> *scroll-margin* 0)
+        (string-append "Scroll margin: " (number->string *scroll-margin*))
+        "Scroll margin: off"))))
+
+;;;============================================================================
+;;; Init file commands (TUI)
+;;;============================================================================
+
+(def (cmd-load-init-file app)
+  "Load the TUI init file (~/.gerbil-emacs-init)."
+  (if (file-exists? *init-file-path*)
+    (begin
+      (init-file-load!)
+      ;; Re-apply scroll margin to all editors
+      (for-each (lambda (win)
+                  (apply-scroll-margin-to-editor! (edit-window-editor win)))
+                (frame-windows (app-state-frame app)))
+      (echo-message! (app-state-echo app)
+        (string-append "Loaded " *init-file-path*)))
+    (echo-message! (app-state-echo app)
+      (string-append "No init file: " *init-file-path*))))
+
+(def (cmd-find-init-file app)
+  "Open the init file for editing."
+  (let* ((fr (app-state-frame app))
+         (ed (current-editor app))
+         (name (path-strip-directory *init-file-path*))
+         (buf (buffer-create! name ed *init-file-path*)))
+    (buffer-attach! ed buf)
+    (set! (edit-window-buffer (current-window fr)) buf)
+    (when (file-exists? *init-file-path*)
+      (let ((text (read-file-as-string *init-file-path*)))
+        (when text
+          (editor-set-text ed text)
+          (editor-set-save-point ed)
+          (editor-goto-pos ed 0))))
+    (echo-message! (app-state-echo app) *init-file-path*)))
 

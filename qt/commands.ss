@@ -1196,6 +1196,8 @@
   (register-command! 'toggle-tool-bar cmd-toggle-tool-bar)
   (register-command! 'toggle-scroll-bar cmd-toggle-scroll-bar)
   (register-command! 'toggle-tab-bar-mode cmd-toggle-tab-bar-mode)
+  (register-command! 'set-scroll-margin cmd-set-scroll-margin)
+  (register-command! 'toggle-scroll-margin cmd-toggle-scroll-margin)
   (register-command! 'toggle-input-method cmd-toggle-input-method)
   (register-command! 'toggle-eol-conversion cmd-toggle-eol-conversion)
   (register-command! 'toggle-flymake cmd-toggle-flymake)

@@ -97,6 +97,20 @@
           (check (not (not (string-contains summary "r:+prefix"))) => #t)
           (check (not (not (string-contains summary "b:switch-buffer"))) => #t))))
 
+    (test-case "scroll margin: default value"
+      (check (number? *scroll-margin*) => #t)
+      (check (>= *scroll-margin* 0) => #t))
+
+    (test-case "scratch-save! and scratch-load! round-trip"
+      (scratch-save! ";; test scratch content\n(+ 1 2)")
+      (let ((loaded (scratch-load!)))
+        (check (not (not loaded)) => #t)
+        (check (not (not (string-contains loaded "test scratch"))) => #t)))
+
+    (test-case "init-file-path is a string"
+      (check (string? *init-file-path*) => #t)
+      (check (not (not (string-contains *init-file-path* ".gerbil-emacs-init"))) => #t))
+
     (test-case "persist command registration"
       (register-all-commands!)
       (check (procedure? (find-command 'recentf-open)) => #t)
@@ -104,6 +118,11 @@
       (check (procedure? (find-command 'desktop-read)) => #t)
       (check (procedure? (find-command 'savehist-save)) => #t)
       (check (procedure? (find-command 'savehist-load)) => #t)
-      (check (procedure? (find-command 'recentf-cleanup)) => #t))
+      (check (procedure? (find-command 'recentf-cleanup)) => #t)
+      ;; New commands
+      (check (procedure? (find-command 'set-scroll-margin)) => #t)
+      (check (procedure? (find-command 'toggle-scroll-margin)) => #t)
+      (check (procedure? (find-command 'load-init-file)) => #t)
+      (check (procedure? (find-command 'find-init-file)) => #t))
 
     ))

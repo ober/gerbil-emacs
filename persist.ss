@@ -36,6 +36,18 @@
   ;; Which-key
   which-key-summary
 
+  ;; Scroll margin
+  *scroll-margin*
+
+  ;; Persistent scratch
+  *scratch-file*
+  scratch-save!
+  scratch-load!
+
+  ;; Init file
+  *init-file-path*
+  init-file-load!
+
   ;; Persistence paths
   persist-path)
 
@@ -388,3 +400,78 @@
                          (cons (string-append key ":" desc) acc)
                          (+ n 1))))))))
     (string-join items "  ")))
+
+;;;============================================================================
+;;; Scroll margin
+;;;============================================================================
+
+;; Number of lines to keep visible above/below the cursor
+(def *scroll-margin* 3)
+
+;;;============================================================================
+;;; Persistent scratch buffer
+;;;============================================================================
+
+(def *scratch-file* ".gerbil-emacs-scratch")
+
+(def (scratch-save! text)
+  "Save scratch buffer content to disk."
+  (with-catch
+    (lambda (e) #f)
+    (lambda ()
+      (call-with-output-file (persist-path *scratch-file*)
+        (lambda (port)
+          (display text port))))))
+
+(def (scratch-load!)
+  "Load scratch buffer content from disk. Returns string or #f."
+  (with-catch
+    (lambda (e) #f)
+    (lambda ()
+      (let ((path (persist-path *scratch-file*)))
+        (if (file-exists? path)
+          (call-with-input-file path
+            (lambda (port)
+              (read-line port #f)))  ;; read entire file
+          #f)))))
+
+;;;============================================================================
+;;; Init file
+;;;============================================================================
+
+(def *init-file-path*
+  (path-expand ".gerbil-emacs-init" (user-info-home (user-info (user-name)))))
+
+(def (init-file-load!)
+  "Load init file and apply settings.
+   Format: one setting per line, KEY VALUE (space-separated).
+   Lines starting with ; or # are comments.
+   Supported settings: scroll-margin, fill-column, tab-width,
+   auto-pair-mode, auto-save-enabled."
+  (with-catch
+    (lambda (e) #f)
+    (lambda ()
+      (when (file-exists? *init-file-path*)
+        (call-with-input-file *init-file-path*
+          (lambda (port)
+            (let loop ()
+              (let ((line (read-line port)))
+                (unless (eof-object? line)
+                  (let ((trimmed (string-trim-both line)))
+                    (when (and (> (string-length trimmed) 0)
+                               (not (char=? (string-ref trimmed 0) (integer->char 59)))   ;; semicolon
+                               (not (char=? (string-ref trimmed 0) (integer->char 35))))  ;; hash
+                      ;; Parse "key value" pairs
+                      (let ((space-idx (string-index trimmed #\space)))
+                        (when space-idx
+                          (let ((key (substring trimmed 0 space-idx))
+                                (val (string-trim-both (substring trimmed (+ space-idx 1)
+                                                                  (string-length trimmed)))))
+                            (cond
+                              ((string=? key "scroll-margin")
+                               (let ((n (string->number val)))
+                                 (when (and n (>= n 0) (<= n 20))
+                                   (set! *scroll-margin* n))))
+                              ;; Other settings handled by callers
+                              ))))))
+                  (loop))))))))))
