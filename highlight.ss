@@ -1026,6 +1026,32 @@
            ((member ext '(".diff" ".patch")) 'diff)
            (else #f)))))
 
+(def (enable-fold-properties! ed)
+  "Enable folding for the current lexer."
+  (editor-set-property ed "fold" "1")
+  (editor-set-property ed "fold.compact" "0")
+  (editor-set-property ed "fold.comment" "1")
+  ;; Set up fold margin (margin 2, symbol type)
+  (send-message ed SCI_SETMARGINTYPEN 2 SC_MARGIN_SYMBOL)
+  (send-message ed SCI_SETMARGINWIDTHN 2 14)
+  (send-message ed SCI_SETMARGINMASKN 2 SC_MASK_FOLDERS)
+  (send-message ed SCI_SETMARGINSENSITIVEN 2 1)
+  ;; Fold markers: box tree style
+  (send-message ed SCI_MARKERDEFINE SC_MARKNUM_FOLDEROPEN SC_MARK_BOXMINUS)
+  (send-message ed SCI_MARKERDEFINE SC_MARKNUM_FOLDER SC_MARK_BOXPLUS)
+  (send-message ed SCI_MARKERDEFINE SC_MARKNUM_FOLDERSUB SC_MARK_VLINE)
+  (send-message ed SCI_MARKERDEFINE SC_MARKNUM_FOLDERTAIL SC_MARK_LCORNER)
+  (send-message ed SCI_MARKERDEFINE SC_MARKNUM_FOLDEREND SC_MARK_BOXPLUSCONNECTED)
+  (send-message ed SCI_MARKERDEFINE SC_MARKNUM_FOLDEROPENMID SC_MARK_BOXMINUSCONNECTED)
+  (send-message ed SCI_MARKERDEFINE SC_MARKNUM_FOLDERMIDTAIL SC_MARK_TCORNER)
+  ;; Fold marker colors (dark theme)
+  (send-message ed SCI_MARKERSETFORE SC_MARKNUM_FOLDER #x808080)
+  (send-message ed SCI_MARKERSETBACK SC_MARKNUM_FOLDER #x282828)
+  (send-message ed SCI_MARKERSETFORE SC_MARKNUM_FOLDEROPEN #x808080)
+  (send-message ed SCI_MARKERSETBACK SC_MARKNUM_FOLDEROPEN #x282828)
+  ;; Auto-fold on margin clicks
+  (send-message ed SCI_SETAUTOMATICFOLD 7 0))  ;; SC_AUTOMATICFOLD_SHOW|CLICK|CHANGE
+
 (def (setup-highlighting-for-file! ed filename)
   "Set up syntax highlighting based on file extension.
    Dispatches to the appropriate language-specific setup."
@@ -1049,4 +1075,7 @@
       ((sql)      (setup-sql-highlighting! ed))
       ((makefile)  (setup-makefile-highlighting! ed))
       ((diff)     (setup-diff-highlighting! ed))
-      (else (void)))))
+      (else (void)))
+    ;; Enable folding for all recognized languages
+    (when lang
+      (enable-fold-properties! ed))))

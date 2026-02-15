@@ -737,21 +737,21 @@
 (def (cmd-fold-all app)
   "Fold all foldable regions."
   (let ((ed (current-editor app)))
-    (send-message ed 2335 0 0)  ;; SCI_FOLDALL SC_FOLDACTION_CONTRACT
+    (send-message ed SCI_FOLDALL SC_FOLDACTION_CONTRACT 0)
     (echo-message! (app-state-echo app) "All folds collapsed")))
 
 (def (cmd-unfold-all app)
   "Unfold all foldable regions."
   (let ((ed (current-editor app)))
-    (send-message ed 2335 1 0)  ;; SCI_FOLDALL SC_FOLDACTION_EXPAND
+    (send-message ed SCI_FOLDALL SC_FOLDACTION_EXPAND 0)
     (echo-message! (app-state-echo app) "All folds expanded")))
 
 (def (cmd-toggle-fold app)
   "Toggle fold at current line."
   (let* ((ed (current-editor app))
          (pos (editor-get-current-pos ed))
-         (line (send-message ed 2166 pos 0)))
-    (send-message ed 2231 line 0)  ;; SCI_TOGGLEFOLD
+         (line (editor-line-from-position ed pos)))
+    (send-message ed SCI_TOGGLEFOLD line 0)
     (echo-message! (app-state-echo app) "Fold toggled")))
 
 (def (cmd-fold-level app)

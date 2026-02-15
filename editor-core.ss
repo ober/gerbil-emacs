@@ -683,10 +683,13 @@
                  (buf (buffer-create! name ed filename)))
             ;; Track in recent files
             (recent-files-add! filename)
-            ;; Set major mode from auto-mode-alist
+            ;; Set major mode from auto-mode-alist and activate it
             (let ((mode (detect-major-mode filename)))
               (when mode
-                (buffer-local-set! buf 'major-mode mode)))
+                (buffer-local-set! buf 'major-mode mode)
+                ;; Try to execute the mode command (e.g., 'markdown-mode -> cmd-markdown-mode)
+                (let ((mode-cmd (find-command mode)))
+                  (when mode-cmd (mode-cmd app)))))
             (buffer-attach! ed buf)
             (set! (edit-window-buffer (current-window fr)) buf)
             (when (file-exists? filename)

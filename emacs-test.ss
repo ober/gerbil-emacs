@@ -887,6 +887,12 @@
       (setup-default-bindings!)
       (check (keymap-lookup *help-map* "l") => 'view-lossage))
 
+    (test-case "keybindings: code folding"
+      (setup-default-bindings!)
+      (check (keymap-lookup *meta-g-map* "F") => 'toggle-fold)
+      (check (keymap-lookup *meta-g-map* "C") => 'fold-all)
+      (check (keymap-lookup *meta-g-map* "E") => 'unfold-all))
+
     (test-case "key lossage recording"
       (let ((app (new-app-state #f)))
         ;; Starts empty

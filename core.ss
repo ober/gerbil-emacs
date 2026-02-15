@@ -778,8 +778,10 @@
   ;; Insert register (C-x r i)
   (keymap-bind! *ctrl-x-r-map* "i" 'insert-register)
 
-  ;; Toggle fold (M-g F — uppercase to avoid conflict with forward-sexp)
+  ;; Code folding (M-g F toggle, M-g C fold-all, M-g E expand-all)
   (keymap-bind! *meta-g-map* "F" 'toggle-fold)
+  (keymap-bind! *meta-g-map* "C" 'fold-all)
+  (keymap-bind! *meta-g-map* "E" 'unfold-all)
 
   ;; Help describe key briefly (C-h c — already have C-h k)
   (keymap-bind! *help-map* "c" 'describe-key-briefly)
