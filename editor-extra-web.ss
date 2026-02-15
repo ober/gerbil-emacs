@@ -1636,3 +1636,85 @@
     (echo-message! echo (if *auto-encryption-mode*
                           "Auto-encryption ON"
                           "Auto-encryption OFF"))))
+
+;; ── batch 46: file handling and display preferences ─────────────────
+(def *auto-rename-tag* #f)
+(def *global-prettify-symbols* #f)
+(def *global-subword-mode* #f)
+(def *global-superword-mode* #f)
+(def *delete-by-moving-to-trash* #f)
+(def *create-lockfiles* #t)
+(def *mode-line-compact* #f)
+(def *use-file-dialog* #f)
+(def *xterm-mouse-mode* #f)
+
+(def (cmd-insert-date-time-stamp app)
+  "Insert current date and time at point."
+  (let* ((ed (current-editor app))
+         (stamp (string-trim-right
+                 (run-process ["date" "+%Y-%m-%d %H:%M:%S"]
+                              stdout-redirection: #t))))
+    (editor-replace-selection ed stamp)))
+
+(def (cmd-toggle-auto-rename-tag app)
+  "Toggle auto-rename-tag (rename matching HTML tags)."
+  (let ((echo (app-state-echo app)))
+    (set! *auto-rename-tag* (not *auto-rename-tag*))
+    (echo-message! echo (if *auto-rename-tag*
+                          "Auto-rename tag ON" "Auto-rename tag OFF"))))
+
+(def (cmd-toggle-global-prettify-symbols app)
+  "Toggle global-prettify-symbols-mode (display symbol ligatures)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-prettify-symbols* (not *global-prettify-symbols*))
+    (echo-message! echo (if *global-prettify-symbols*
+                          "Prettify symbols ON" "Prettify symbols OFF"))))
+
+(def (cmd-toggle-global-subword app)
+  "Toggle global-subword-mode (camelCase word navigation)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-subword-mode* (not *global-subword-mode*))
+    (echo-message! echo (if *global-subword-mode*
+                          "Global subword mode ON" "Global subword mode OFF"))))
+
+(def (cmd-toggle-global-superword app)
+  "Toggle global-superword-mode (treat symbols as words)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-superword-mode* (not *global-superword-mode*))
+    (echo-message! echo (if *global-superword-mode*
+                          "Global superword mode ON" "Global superword mode OFF"))))
+
+(def (cmd-toggle-delete-by-moving-to-trash app)
+  "Toggle delete-by-moving-to-trash."
+  (let ((echo (app-state-echo app)))
+    (set! *delete-by-moving-to-trash* (not *delete-by-moving-to-trash*))
+    (echo-message! echo (if *delete-by-moving-to-trash*
+                          "Delete to trash ON" "Delete to trash OFF"))))
+
+(def (cmd-toggle-create-lockfiles app)
+  "Toggle creation of lock files for edited buffers."
+  (let ((echo (app-state-echo app)))
+    (set! *create-lockfiles* (not *create-lockfiles*))
+    (echo-message! echo (if *create-lockfiles*
+                          "Lock files ON" "Lock files OFF"))))
+
+(def (cmd-toggle-mode-line-compact app)
+  "Toggle compact mode-line display."
+  (let ((echo (app-state-echo app)))
+    (set! *mode-line-compact* (not *mode-line-compact*))
+    (echo-message! echo (if *mode-line-compact*
+                          "Mode-line compact ON" "Mode-line compact OFF"))))
+
+(def (cmd-toggle-use-file-dialog app)
+  "Toggle use of file dialogs for file operations."
+  (let ((echo (app-state-echo app)))
+    (set! *use-file-dialog* (not *use-file-dialog*))
+    (echo-message! echo (if *use-file-dialog*
+                          "File dialog ON" "File dialog OFF"))))
+
+(def (cmd-toggle-xterm-mouse-mode app)
+  "Toggle xterm-mouse-mode (mouse in terminal)."
+  (let ((echo (app-state-echo app)))
+    (set! *xterm-mouse-mode* (not *xterm-mouse-mode*))
+    (echo-message! echo (if *xterm-mouse-mode*
+                          "Xterm mouse mode ON" "Xterm mouse mode OFF"))))

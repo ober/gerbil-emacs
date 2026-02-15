@@ -117,7 +117,12 @@
                  *save-silently* *confirm-kill-emacs*
                  *auto-window-vscroll* *fast-but-imprecise-scrolling*
                  *mouse-avoidance-mode* *make-backup-files*
-                 *lock-file-create* *auto-encryption-mode*)
+                 *lock-file-create* *auto-encryption-mode*
+                 *auto-rename-tag* *global-prettify-symbols*
+                 *global-subword-mode* *global-superword-mode*
+                 *delete-by-moving-to-trash* *create-lockfiles*
+                 *mode-line-compact* *use-file-dialog*
+                 *xterm-mouse-mode*)
         (only-in :gerbil-emacs/editor-extra-vcs
                  *comment-style* *flymake-mode*
                  *delete-selection-mode* *word-count-mode*
@@ -2221,6 +2226,32 @@
       (check (procedure? (find-command 'toggle-tab-line-mode)) => #t)
       (check (procedure? (find-command 'toggle-scroll-bar-mode)) => #t)
       (check (procedure? (find-command 'toggle-tool-bar-mode)) => #t))
+
+    ;; -- Batch 46 tests --
+    (test-case "batch 46: mode toggles"
+      (check *auto-rename-tag* => #f)
+      (check *global-prettify-symbols* => #f)
+      (check *global-subword-mode* => #f)
+      (check *global-superword-mode* => #f)
+      (check *delete-by-moving-to-trash* => #f)
+      (check *create-lockfiles* => #t)
+      (check *mode-line-compact* => #f)
+      (check *use-file-dialog* => #f)
+      (check *xterm-mouse-mode* => #f))
+
+    ;; -- Command registration batch 46 --
+    (test-case "command registration: batch 46 features"
+      (register-all-commands!)
+      (check (procedure? (find-command 'insert-date-time-stamp)) => #t)
+      (check (procedure? (find-command 'toggle-auto-rename-tag)) => #t)
+      (check (procedure? (find-command 'toggle-global-prettify-symbols)) => #t)
+      (check (procedure? (find-command 'toggle-global-subword)) => #t)
+      (check (procedure? (find-command 'toggle-global-superword)) => #t)
+      (check (procedure? (find-command 'toggle-delete-by-moving-to-trash)) => #t)
+      (check (procedure? (find-command 'toggle-create-lockfiles)) => #t)
+      (check (procedure? (find-command 'toggle-mode-line-compact)) => #t)
+      (check (procedure? (find-command 'toggle-use-file-dialog)) => #t)
+      (check (procedure? (find-command 'toggle-xterm-mouse-mode)) => #t))
 
     ;;=========================================================================
     ;; Headless Scintilla editor tests
