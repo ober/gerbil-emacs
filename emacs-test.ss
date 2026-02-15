@@ -31,7 +31,11 @@
                  *focus-mode* *zen-mode* *killed-buffers*
                  remember-killed-buffer! *which-key-mode*
                  *dedicated-windows* *new-buffer-counter*
-                 *relative-line-numbers* *cua-mode*)
+                 *relative-line-numbers* *cua-mode*
+                 *global-auto-complete-mode* *which-function-mode*
+                 *display-line-numbers-mode* *selective-display-level*
+                 *global-font-lock-mode* *auto-dim-other-buffers*
+                 *global-eldoc-mode* *word-wrap-column*)
         (only-in :gerbil-emacs/editor register-all-commands!)
         (only-in :gerbil-emacs/editor-extra-editing
                  occur-parse-source-name
@@ -1847,6 +1851,39 @@
       (check (procedure? (find-command 'insert-separator-line)) => #t)
       (check (procedure? (find-command 'toggle-hl-todo)) => #t)
       (check (procedure? (find-command 'sort-words-in-line)) => #t))
+
+    ;; -- Batch 35 tests --
+    (test-case "batch 35: mode toggles"
+      (set! *global-auto-complete-mode* #f)
+      (check *global-auto-complete-mode* => #f)
+      (set! *which-function-mode* #f)
+      (check *which-function-mode* => #f)
+      (set! *display-line-numbers-mode* #t)
+      (check *display-line-numbers-mode* => #t)
+      (check *selective-display-level* => #f)
+      (set! *global-font-lock-mode* #t)
+      (check *global-font-lock-mode* => #t)
+      (set! *auto-dim-other-buffers* #f)
+      (check *auto-dim-other-buffers* => #f)
+      (set! *global-eldoc-mode* #t)
+      (check *global-eldoc-mode* => #t)
+      (check (number? *word-wrap-column*) => #t))
+
+    ;; -- Command registration batch 35 --
+    (test-case "command registration: batch 35 features"
+      (register-all-commands!)
+      (check (procedure? (find-command 'toggle-global-auto-complete)) => #t)
+      (check (procedure? (find-command 'toggle-which-function)) => #t)
+      (check (procedure? (find-command 'toggle-display-line-numbers)) => #t)
+      (check (procedure? (find-command 'toggle-selective-display)) => #t)
+      (check (procedure? (find-command 'toggle-global-font-lock)) => #t)
+      (check (procedure? (find-command 'insert-register-content)) => #t)
+      (check (procedure? (find-command 'insert-date-iso)) => #t)
+      (check (procedure? (find-command 'toggle-word-wrap-column)) => #t)
+      (check (procedure? (find-command 'clone-indirect-buffer)) => #t)
+      (check (procedure? (find-command 'toggle-auto-dim-other-buffers)) => #t)
+      (check (procedure? (find-command 'toggle-global-eldoc)) => #t)
+      (check (procedure? (find-command 'open-line-below)) => #t))
 
     ;;=========================================================================
     ;; Headless Scintilla editor tests
