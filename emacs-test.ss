@@ -39,7 +39,10 @@
                  *desktop-save-mode* *recentf-mode* *savehist-mode*
                  *winner-mode* *midnight-mode* *global-undo-tree*
                  *diff-hl-mode* *volatile-highlights*
-                 *vertico-mode* *marginalia-mode*)
+                 *vertico-mode* *marginalia-mode*
+                 *global-cwarn* *global-hideshow* *global-abbrev*
+                 *global-diff-auto-refine* *global-eldoc-box*
+                 *global-flyspell-lazy* *global-so-clean*)
         (only-in :gerbil-emacs/editor register-all-commands!)
         (only-in :gerbil-emacs/editor-extra-media
                  *consult-mode* *orderless-mode* *embark-mode*
@@ -2396,6 +2399,27 @@
       (check (procedure? (find-command 'toggle-global-format-on-save)) => #t)
       (check (procedure? (find-command 'toggle-global-yas)) => #t)
       (check (procedure? (find-command 'toggle-global-smartparens)) => #t))
+
+    ;; -- Batch 52 tests --
+    (test-case "batch 52: mode toggles"
+      (check *global-cwarn* => #f)
+      (check *global-hideshow* => #f)
+      (check *global-abbrev* => #t)
+      (check *global-diff-auto-refine* => #t)
+      (check *global-eldoc-box* => #f)
+      (check *global-flyspell-lazy* => #f)
+      (check *global-so-clean* => #f))
+
+    ;; -- Command registration batch 52 --
+    (test-case "command registration: batch 52 features"
+      (register-all-commands!)
+      (check (procedure? (find-command 'toggle-global-cwarn)) => #t)
+      (check (procedure? (find-command 'toggle-global-hideshow)) => #t)
+      (check (procedure? (find-command 'toggle-global-abbrev)) => #t)
+      (check (procedure? (find-command 'toggle-global-diff-auto-refine)) => #t)
+      (check (procedure? (find-command 'toggle-global-eldoc-box)) => #t)
+      (check (procedure? (find-command 'toggle-global-flyspell-lazy)) => #t)
+      (check (procedure? (find-command 'toggle-global-so-clean)) => #t))
 
     ;;=========================================================================
     ;; Headless Scintilla editor tests

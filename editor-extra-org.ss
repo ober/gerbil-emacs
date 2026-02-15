@@ -1665,3 +1665,61 @@
     (set! *marginalia-mode* (not *marginalia-mode*))
     (echo-message! echo (if *marginalia-mode*
                           "Marginalia mode ON" "Marginalia mode OFF"))))
+
+;; ── batch 52: programming and analysis toggles ──────────────────────
+(def *global-cwarn* #f)
+(def *global-hideshow* #f)
+(def *global-abbrev* #t)
+(def *global-diff-auto-refine* #t)
+(def *global-eldoc-box* #f)
+(def *global-flyspell-lazy* #f)
+(def *global-so-clean* #f)
+
+(def (cmd-toggle-global-cwarn app)
+  "Toggle global cwarn-mode (C/C++ warning highlighting)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-cwarn* (not *global-cwarn*))
+    (echo-message! echo (if *global-cwarn*
+                          "Global cwarn ON" "Global cwarn OFF"))))
+
+(def (cmd-toggle-global-hideshow app)
+  "Toggle global hideshow-mode (code block folding)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-hideshow* (not *global-hideshow*))
+    (echo-message! echo (if *global-hideshow*
+                          "Global hideshow ON" "Global hideshow OFF"))))
+
+(def (cmd-toggle-global-abbrev app)
+  "Toggle global abbrev-mode (text abbreviation expansion)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-abbrev* (not *global-abbrev*))
+    (echo-message! echo (if *global-abbrev*
+                          "Global abbrev ON" "Global abbrev OFF"))))
+
+(def (cmd-toggle-global-diff-auto-refine app)
+  "Toggle auto-refinement in diff mode."
+  (let ((echo (app-state-echo app)))
+    (set! *global-diff-auto-refine* (not *global-diff-auto-refine*))
+    (echo-message! echo (if *global-diff-auto-refine*
+                          "Diff auto-refine ON" "Diff auto-refine OFF"))))
+
+(def (cmd-toggle-global-eldoc-box app)
+  "Toggle global eldoc-box-mode (eldoc in popup)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-eldoc-box* (not *global-eldoc-box*))
+    (echo-message! echo (if *global-eldoc-box*
+                          "Eldoc box ON" "Eldoc box OFF"))))
+
+(def (cmd-toggle-global-flyspell-lazy app)
+  "Toggle global flyspell-lazy-mode (lazy spell checking)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-flyspell-lazy* (not *global-flyspell-lazy*))
+    (echo-message! echo (if *global-flyspell-lazy*
+                          "Flyspell lazy ON" "Flyspell lazy OFF"))))
+
+(def (cmd-toggle-global-so-clean app)
+  "Toggle global so-clean-mode (hide modeline lighters)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-so-clean* (not *global-so-clean*))
+    (echo-message! echo (if *global-so-clean*
+                          "So-clean ON" "So-clean OFF"))))

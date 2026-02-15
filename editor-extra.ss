@@ -1099,4 +1099,12 @@
   (register-command! 'toggle-global-format-on-save cmd-toggle-global-format-on-save)
   (register-command! 'toggle-global-yas cmd-toggle-global-yas)
   (register-command! 'toggle-global-smartparens cmd-toggle-global-smartparens)
+  ;; batch 52
+  (register-command! 'toggle-global-cwarn cmd-toggle-global-cwarn)
+  (register-command! 'toggle-global-hideshow cmd-toggle-global-hideshow)
+  (register-command! 'toggle-global-abbrev cmd-toggle-global-abbrev)
+  (register-command! 'toggle-global-diff-auto-refine cmd-toggle-global-diff-auto-refine)
+  (register-command! 'toggle-global-eldoc-box cmd-toggle-global-eldoc-box)
+  (register-command! 'toggle-global-flyspell-lazy cmd-toggle-global-flyspell-lazy)
+  (register-command! 'toggle-global-so-clean cmd-toggle-global-so-clean)
 )
