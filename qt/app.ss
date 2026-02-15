@@ -229,9 +229,13 @@
       ;; Uses consuming variant so QPlainTextEdit doesn't process keys itself.
       (let ((key-handler
              (lambda ()
-               (let ((code (qt-last-key-code))
-                     (mods (qt-last-key-modifiers))
-                     (text (qt-last-key-text)))
+               (let* ((code (qt-last-key-code))
+                      (mods (qt-last-key-modifiers))
+                      (raw-text (qt-last-key-text))
+                      ;; Apply key translation map to printable characters
+                      (text (if (= (string-length raw-text) 1)
+                              (string (key-translate-char (string-ref raw-text 0)))
+                              raw-text)))
                 ;; Record keystroke in lossage ring
                 (let ((ks (qt-key-event->string code mods text)))
                   (when ks (key-lossage-record! app ks)))

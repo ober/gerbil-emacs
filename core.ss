@@ -75,6 +75,11 @@
   *repl-state*
   eval-expression-string
 
+  ;; Key translation map
+  *key-translation-map*
+  key-translate!
+  key-translate-char
+
   ;; Key-chord system
   *chord-map*
   *chord-first-chars*
@@ -1160,6 +1165,22 @@
              (result (eval expr))
              (output (with-output-to-string (lambda () (write result)))))
         (values output #f)))))
+
+;;;============================================================================
+;;; Key translation map
+;;;============================================================================
+
+;; Maps char→char for input translation (e.g., swap brackets and parens)
+(def *key-translation-map* (make-hash-table))
+
+(def (key-translate! from to)
+  "Register a character translation. FROM and TO are characters."
+  (hash-put! *key-translation-map* from to))
+
+(def (key-translate-char ch)
+  "Translate a character through the key translation map.
+   Returns the translated char, or the original if no mapping."
+  (or (hash-get *key-translation-map* ch) ch))
 
 ;;;============================================================================
 ;;; Key-chord system

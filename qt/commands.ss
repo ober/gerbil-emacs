@@ -1535,7 +1535,10 @@
   ;; Key-chord commands
   (register-command! 'key-chord-mode cmd-key-chord-mode)
   (register-command! 'key-chord-define cmd-key-chord-define)
-  (register-command! 'key-chord-list cmd-key-chord-list))
+  (register-command! 'key-chord-list cmd-key-chord-list)
+  ;; Key translation commands
+  (register-command! 'toggle-bracket-paren-swap cmd-toggle-bracket-paren-swap)
+  (register-command! 'key-translation-list cmd-key-translation-list))
 
 ;;;============================================================================
 ;;; Key-chord commands
@@ -1573,5 +1576,46 @@
          (text (if (null? lines)
                  "No key chords defined."
                  (string-append "Key Chords:\n"
+                                (string-join lines "\n")))))
+    (echo-message! (app-state-echo app) text)))
+
+;;;============================================================================
+;;; Key translation commands
+;;;============================================================================
+
+;; State for the bracket/paren swap toggle
+(def *bracket-paren-swapped* #f)
+
+(def (cmd-toggle-bracket-paren-swap app)
+  "Toggle swapping [ ↔ ( and ] ↔ ) for Lisp editing."
+  (if *bracket-paren-swapped*
+    ;; Remove the translations
+    (begin
+      (hash-remove! *key-translation-map* #\[)
+      (hash-remove! *key-translation-map* #\])
+      (hash-remove! *key-translation-map* #\()
+      (hash-remove! *key-translation-map* #\))
+      (set! *bracket-paren-swapped* #f)
+      (echo-message! (app-state-echo app) "Bracket/paren swap disabled"))
+    ;; Install the translations
+    (begin
+      (key-translate! #\[ #\()
+      (key-translate! #\] #\))
+      (key-translate! #\( #\[)
+      (key-translate! #\) #\])
+      (set! *bracket-paren-swapped* #t)
+      (echo-message! (app-state-echo app) "Bracket/paren swap enabled"))))
+
+(def (cmd-key-translation-list app)
+  "List all active key translations."
+  (let* ((entries (hash->list *key-translation-map*))
+         (sorted (sort entries (lambda (a b) (char<? (car a) (car b)))))
+         (lines (map (lambda (e)
+                       (string-append "  " (string (car e)) " → "
+                                      (string (cdr e))))
+                     sorted))
+         (text (if (null? lines)
+                 "No key translations active."
+                 (string-append "Key Translations:\n"
                                 (string-join lines "\n")))))
     (echo-message! (app-state-echo app) text)))
