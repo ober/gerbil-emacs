@@ -336,8 +336,32 @@ Returns #t if changed, #f if not or if no record exists."
         (loop (+ i 1))))))
 
 (def (cmd-beginning-of-line app)
-  (qt-plain-text-edit-move-cursor! (current-qt-editor app)
-                                   QT_CURSOR_START_OF_BLOCK))
+  "Smart beginning of line: toggle between first non-whitespace and column 0."
+  (let* ((ed (current-qt-editor app))
+         (text (qt-plain-text-edit-text ed))
+         (pos (qt-plain-text-edit-cursor-position ed))
+         (col (qt-plain-text-edit-cursor-column ed))
+         (line (qt-plain-text-edit-cursor-line ed))
+         ;; Find start of current line
+         (line-start (let loop ((p pos))
+                       (if (or (<= p 0)
+                               (and (> p 0)
+                                    (char=? (string-ref text (- p 1)) #\newline)))
+                         p
+                         (loop (- p 1)))))
+         ;; Find first non-whitespace on line
+         (indent-pos (let loop ((p line-start))
+                       (if (or (>= p (string-length text))
+                               (char=? (string-ref text p) #\newline))
+                         line-start  ; all whitespace
+                         (if (or (char=? (string-ref text p) #\space)
+                                 (char=? (string-ref text p) #\tab))
+                           (loop (+ p 1))
+                           p)))))
+    ;; Toggle: if at indentation, go to column 0; otherwise go to indentation
+    (if (= pos indent-pos)
+      (qt-plain-text-edit-set-cursor-position! ed line-start)
+      (qt-plain-text-edit-set-cursor-position! ed indent-pos))))
 
 (def (cmd-end-of-line app)
   (qt-plain-text-edit-move-cursor! (current-qt-editor app)

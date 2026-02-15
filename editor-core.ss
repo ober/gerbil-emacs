@@ -356,7 +356,25 @@
       (let loop ((i 0)) (when (< i (- n)) (editor-send-key ed SCK_DOWN) (loop (+ i 1)))))))
 
 (def (cmd-beginning-of-line app)
-  (editor-send-key (current-editor app) SCK_HOME))
+  "Smart beginning of line: toggle between first non-whitespace and column 0."
+  (let* ((ed (current-editor app))
+         (pos (editor-get-current-pos ed))
+         (line (editor-line-from-position ed pos))
+         (line-start (editor-position-from-line ed line))
+         (line-end (editor-get-line-end-position ed line))
+         ;; Find first non-whitespace character on the line
+         (indent-pos
+           (let loop ((p line-start))
+             (if (>= p line-end)
+               line-start  ; all whitespace line -> go to start
+               (let ((ch (send-message ed SCI_GETCHARAT p 0)))
+                 (if (or (= ch 32) (= ch 9))  ; space or tab
+                   (loop (+ p 1))
+                   p))))))
+    ;; If already at indentation, go to column 0; otherwise go to indentation
+    (if (= pos indent-pos)
+      (editor-goto-pos ed line-start)
+      (editor-goto-pos ed indent-pos))))
 
 (def (cmd-end-of-line app)
   (editor-send-key (current-editor app) SCK_END))
@@ -386,7 +404,17 @@
   (editor-send-key (current-editor app) SCK_PRIOR))
 
 (def (cmd-recenter app)
-  (editor-scroll-caret (current-editor app)))
+  "Center the current line on screen (C-l behavior)."
+  (let* ((ed (current-editor app))
+         (pos (editor-get-current-pos ed))
+         (cur-line (editor-line-from-position ed pos))
+         (fr (app-state-frame app))
+         (win (current-window fr))
+         ;; Window height minus modeline = visible lines
+         (visible-lines (max 1 (- (edit-window-h win) 1)))
+         ;; Target: place current line at center of screen
+         (target-first (max 0 (- cur-line (quotient visible-lines 2)))))
+    (send-message ed SCI_SETFIRSTVISIBLELINE target-first 0)))
 
 ;;;============================================================================
 ;;; Editing commands
@@ -573,12 +601,23 @@
 ;;; File operations
 ;;;============================================================================
 
+(def (list-directory-files dir)
+  "List files in a directory for completion. Returns sorted list of basenames."
+  (with-catch (lambda (e) [])
+    (lambda ()
+      (let ((entries (directory-files dir)))
+        (sort entries string<?)))))
+
 (def (cmd-find-file app)
   (let* ((echo (app-state-echo app))
          (fr (app-state-frame app))
          (row (- (frame-height fr) 1))
          (width (frame-width fr))
-         (filename (echo-read-string echo "Find file: " row width)))
+         ;; Get files in current directory for completion
+         (cwd (current-directory))
+         (files (list-directory-files cwd))
+         (filename (echo-read-string-with-completion echo "Find file: "
+                      files row width)))
     (when filename
       (when (> (string-length filename) 0)
         ;; Check if it's a directory
@@ -744,8 +783,14 @@
          (fr (app-state-frame app))
          (row (- (frame-height fr) 1))
          (width (frame-width fr))
-         (name (echo-read-string echo "Switch to buffer: " row width)))
-    (when name
+         ;; Build completion list from buffer names (current buffer last)
+         (cur-name (buffer-name (current-buffer-from-app app)))
+         (names (map buffer-name (buffer-list)))
+         (other-names (filter (lambda (n) (not (string=? n cur-name))) names))
+         (completions (append other-names (list cur-name)))
+         (name (echo-read-string-with-completion echo "Switch to buffer: "
+                  completions row width)))
+    (when (and name (> (string-length name) 0))
       (let ((buf (buffer-by-name name)))
         (if buf
           (let ((ed (current-editor app)))
@@ -759,9 +804,10 @@
          (cur-buf (current-buffer-from-app app))
          (row (- (frame-height fr) 1))
          (width (frame-width fr))
-         (name (echo-read-string echo
+         (names (map buffer-name (buffer-list)))
+         (name (echo-read-string-with-completion echo
                   (string-append "Kill buffer (" (buffer-name cur-buf) "): ")
-                  row width)))
+                  names row width)))
     (when name
       (let* ((target-name (if (string=? name "") (buffer-name cur-buf) name))
              (buf (buffer-by-name target-name)))
