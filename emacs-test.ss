@@ -3175,6 +3175,37 @@
           (let ((bl (buffer-by-name "*Buffer List*")))
             (when bl (buffer-list-remove! bl))))))
 
+    (test-case "headless: REPL self-insert uses editor-insert-text"
+      ;; Regression: editor-send-key doesn't insert chars in Scintilla TUI.
+      ;; cmd-self-insert! must use editor-insert-text for REPL/shell/eshell buffers.
+      (let* ((ed (create-scintilla-editor width: 80 height: 24))
+             (buf (make-buffer "*REPL*" #f
+                    (send-message ed SCI_GETDOCPOINTER) #f #f #f #f))
+             (win (make-edit-window ed buf 0 0 80 24 0))
+             (fr (make-frame [win] 0 80 24 'vertical))
+             (app (new-app-state fr)))
+        (buffer-list-add! buf)
+        ;; Mark as REPL buffer
+        (set! (buffer-lexer-lang buf) 'repl)
+        ;; Set initial prompt text
+        (editor-set-text ed "gerbil> ")
+        ;; Create a fake repl-state with prompt-pos at 8 (end of "gerbil> ")
+        (let ((rs (make-repl-state #f 8 [])))
+          (hash-put! *repl-state* buf rs)
+          ;; Position cursor at end (after prompt)
+          (editor-goto-pos ed 8)
+          ;; Type "(+ 1 2)" via cmd-self-insert!
+          (for-each (lambda (ch) (cmd-self-insert! app (char->integer ch)))
+                    (string->list "(+ 1 2)"))
+          ;; Verify the text was inserted
+          (let ((text (editor-get-text ed)))
+            (check (string-contains text "(+ 1 2)") => 8))
+          ;; Verify cursor moved forward
+          (check (editor-get-current-pos ed) => 15))
+        ;; Cleanup
+        (hash-remove! *repl-state* buf)
+        (buffer-list-remove! buf)))
+
     (test-case "headless: org-todo cycling"
       (let* ((ed (create-scintilla-editor width: 80 height: 24))
              (buf (make-buffer "test.org" #f

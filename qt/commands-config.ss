@@ -525,6 +525,13 @@
     (keymap-bind! grep-km "q" 'kill-buffer-cmd)
     (hash-put! *mode-keymaps* 'grep grep-km))
 
+  ;; Buffer list mode: single-key navigation
+  (let ((bl-km (make-keymap)))
+    (keymap-bind! bl-km "n" 'next-line)
+    (keymap-bind! bl-km "p" 'previous-line)
+    (keymap-bind! bl-km "q" 'kill-buffer-cmd)
+    (hash-put! *mode-keymaps* 'buffer-list bl-km))
+
   ;; Occur mode
   (let ((occur-km (make-keymap)))
     (keymap-bind! occur-km "n" 'next-line)

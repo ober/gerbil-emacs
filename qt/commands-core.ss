@@ -555,6 +555,9 @@ Returns #t if changed, #f if not or if no record exists."
         (let ((buf (buffer-by-name name)))
           (if buf
             (let ((fr (app-state-frame app)))
+              ;; Clear read-only before switching — QScintilla read-only
+              ;; is document-level but clear explicitly to be safe
+              (qt-plain-text-edit-set-read-only! ed #f)
               (qt-buffer-attach! ed buf)
               (set! (qt-edit-window-buffer (qt-current-window fr)) buf)
               (echo-message! (app-state-echo app) (buffer-name buf)))
