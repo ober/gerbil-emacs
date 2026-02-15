@@ -41,6 +41,11 @@
                  *diff-hl-mode* *volatile-highlights*
                  *vertico-mode* *marginalia-mode*)
         (only-in :gerbil-emacs/editor register-all-commands!)
+        (only-in :gerbil-emacs/editor-extra-media
+                 *consult-mode* *orderless-mode* *embark-mode*
+                 *undo-fu-session* *auto-package-mode*
+                 *corfu-mode* *cape-mode* *nerd-icons-mode*
+                 *all-the-icons* *doom-themes*)
         (only-in :gerbil-emacs/editor-extra-editing
                  occur-parse-source-name
                  text-find-matching-close text-sexp-end
@@ -2160,6 +2165,33 @@
       (check (procedure? (find-command 'toggle-volatile-highlights)) => #t)
       (check (procedure? (find-command 'toggle-vertico-mode)) => #t)
       (check (procedure? (find-command 'toggle-marginalia-mode)) => #t))
+
+    ;; -- Batch 44 tests --
+    (test-case "batch 44: mode toggles"
+      (check *consult-mode* => #f)
+      (check *orderless-mode* => #f)
+      (check *embark-mode* => #f)
+      (check *undo-fu-session* => #f)
+      (check *auto-package-mode* => #f)
+      (check *corfu-mode* => #f)
+      (check *cape-mode* => #f)
+      (check *nerd-icons-mode* => #f)
+      (check *all-the-icons* => #f)
+      (check *doom-themes* => #f))
+
+    ;; -- Command registration batch 44 --
+    (test-case "command registration: batch 44 features"
+      (register-all-commands!)
+      (check (procedure? (find-command 'toggle-consult-mode)) => #t)
+      (check (procedure? (find-command 'toggle-orderless-mode)) => #t)
+      (check (procedure? (find-command 'toggle-embark-mode)) => #t)
+      (check (procedure? (find-command 'toggle-undo-fu-session)) => #t)
+      (check (procedure? (find-command 'toggle-auto-package-mode)) => #t)
+      (check (procedure? (find-command 'toggle-corfu-mode)) => #t)
+      (check (procedure? (find-command 'toggle-cape-mode)) => #t)
+      (check (procedure? (find-command 'toggle-nerd-icons-mode)) => #t)
+      (check (procedure? (find-command 'toggle-all-the-icons)) => #t)
+      (check (procedure? (find-command 'toggle-doom-themes)) => #t))
 
     ;;=========================================================================
     ;; Headless Scintilla editor tests

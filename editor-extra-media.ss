@@ -1604,3 +1604,85 @@
   "Show ediff session registry."
   (echo-message! (app-state-echo app) "No active ediff sessions"))
 
+;; ── batch 44: modern Emacs package toggles ──────────────────────────
+(def *consult-mode* #f)
+(def *orderless-mode* #f)
+(def *embark-mode* #f)
+(def *undo-fu-session* #f)
+(def *auto-package-mode* #f)
+(def *corfu-mode* #f)
+(def *cape-mode* #f)
+(def *nerd-icons-mode* #f)
+(def *all-the-icons* #f)
+(def *doom-themes* #f)
+
+(def (cmd-toggle-consult-mode app)
+  "Toggle consult-mode (enhanced search commands)."
+  (let ((echo (app-state-echo app)))
+    (set! *consult-mode* (not *consult-mode*))
+    (echo-message! echo (if *consult-mode*
+                          "Consult mode ON" "Consult mode OFF"))))
+
+(def (cmd-toggle-orderless-mode app)
+  "Toggle orderless-mode (orderless completion style)."
+  (let ((echo (app-state-echo app)))
+    (set! *orderless-mode* (not *orderless-mode*))
+    (echo-message! echo (if *orderless-mode*
+                          "Orderless mode ON" "Orderless mode OFF"))))
+
+(def (cmd-toggle-embark-mode app)
+  "Toggle embark-mode (contextual actions)."
+  (let ((echo (app-state-echo app)))
+    (set! *embark-mode* (not *embark-mode*))
+    (echo-message! echo (if *embark-mode*
+                          "Embark mode ON" "Embark mode OFF"))))
+
+(def (cmd-toggle-undo-fu-session app)
+  "Toggle undo-fu-session-mode (persistent undo history)."
+  (let ((echo (app-state-echo app)))
+    (set! *undo-fu-session* (not *undo-fu-session*))
+    (echo-message! echo (if *undo-fu-session*
+                          "Undo-fu session ON" "Undo-fu session OFF"))))
+
+(def (cmd-toggle-auto-package-mode app)
+  "Toggle auto-package-mode (auto install packages)."
+  (let ((echo (app-state-echo app)))
+    (set! *auto-package-mode* (not *auto-package-mode*))
+    (echo-message! echo (if *auto-package-mode*
+                          "Auto-package mode ON" "Auto-package mode OFF"))))
+
+(def (cmd-toggle-corfu-mode app)
+  "Toggle corfu-mode (in-buffer completion popup)."
+  (let ((echo (app-state-echo app)))
+    (set! *corfu-mode* (not *corfu-mode*))
+    (echo-message! echo (if *corfu-mode*
+                          "Corfu mode ON" "Corfu mode OFF"))))
+
+(def (cmd-toggle-cape-mode app)
+  "Toggle cape-mode (completion-at-point extensions)."
+  (let ((echo (app-state-echo app)))
+    (set! *cape-mode* (not *cape-mode*))
+    (echo-message! echo (if *cape-mode*
+                          "Cape mode ON" "Cape mode OFF"))))
+
+(def (cmd-toggle-nerd-icons-mode app)
+  "Toggle nerd-icons-mode (icon display)."
+  (let ((echo (app-state-echo app)))
+    (set! *nerd-icons-mode* (not *nerd-icons-mode*))
+    (echo-message! echo (if *nerd-icons-mode*
+                          "Nerd icons mode ON" "Nerd icons mode OFF"))))
+
+(def (cmd-toggle-all-the-icons app)
+  "Toggle all-the-icons mode."
+  (let ((echo (app-state-echo app)))
+    (set! *all-the-icons* (not *all-the-icons*))
+    (echo-message! echo (if *all-the-icons*
+                          "All-the-icons ON" "All-the-icons OFF"))))
+
+(def (cmd-toggle-doom-themes app)
+  "Toggle doom-themes (themed appearance)."
+  (let ((echo (app-state-echo app)))
+    (set! *doom-themes* (not *doom-themes*))
+    (echo-message! echo (if *doom-themes*
+                          "Doom themes ON" "Doom themes OFF"))))
+
