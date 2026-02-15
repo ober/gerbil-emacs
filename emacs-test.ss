@@ -35,7 +35,11 @@
                  *global-auto-complete-mode* *which-function-mode*
                  *display-line-numbers-mode* *selective-display-level*
                  *global-font-lock-mode* *auto-dim-other-buffers*
-                 *global-eldoc-mode* *word-wrap-column*)
+                 *global-eldoc-mode* *word-wrap-column*
+                 *desktop-save-mode* *recentf-mode* *savehist-mode*
+                 *winner-mode* *midnight-mode* *global-undo-tree*
+                 *diff-hl-mode* *volatile-highlights*
+                 *vertico-mode* *marginalia-mode*)
         (only-in :gerbil-emacs/editor register-all-commands!)
         (only-in :gerbil-emacs/editor-extra-editing
                  occur-parse-source-name
@@ -2129,6 +2133,33 @@
       (check (procedure? (find-command 'toggle-global-whitespace-mode)) => #t)
       (check (procedure? (find-command 'toggle-hide-ifdef-mode)) => #t)
       (check (procedure? (find-command 'toggle-allout-mode)) => #t))
+
+    ;; -- Batch 43 tests --
+    (test-case "batch 43: mode toggles"
+      (check *desktop-save-mode* => #f)
+      (check *recentf-mode* => #t)
+      (check *savehist-mode* => #t)
+      (check *winner-mode* => #t)
+      (check *midnight-mode* => #f)
+      (check *global-undo-tree* => #f)
+      (check *diff-hl-mode* => #f)
+      (check *volatile-highlights* => #f)
+      (check *vertico-mode* => #f)
+      (check *marginalia-mode* => #f))
+
+    ;; -- Command registration batch 43 --
+    (test-case "command registration: batch 43 features"
+      (register-all-commands!)
+      (check (procedure? (find-command 'toggle-desktop-save-mode)) => #t)
+      (check (procedure? (find-command 'toggle-recentf-mode)) => #t)
+      (check (procedure? (find-command 'toggle-savehist-mode)) => #t)
+      (check (procedure? (find-command 'toggle-winner-mode)) => #t)
+      (check (procedure? (find-command 'toggle-midnight-mode)) => #t)
+      (check (procedure? (find-command 'toggle-global-undo-tree)) => #t)
+      (check (procedure? (find-command 'toggle-diff-hl-mode)) => #t)
+      (check (procedure? (find-command 'toggle-volatile-highlights)) => #t)
+      (check (procedure? (find-command 'toggle-vertico-mode)) => #t)
+      (check (procedure? (find-command 'toggle-marginalia-mode)) => #t))
 
     ;;=========================================================================
     ;; Headless Scintilla editor tests

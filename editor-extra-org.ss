@@ -1583,3 +1583,85 @@
     (editor-goto-pos ed line-end)
     (editor-replace-selection ed "\n")
     (echo-message! echo "Opened line below")))
+
+;; ── batch 43: session and completion framework toggles ──────────────
+(def *desktop-save-mode* #f)
+(def *recentf-mode* #t)
+(def *savehist-mode* #t)
+(def *winner-mode* #t)
+(def *midnight-mode* #f)
+(def *global-undo-tree* #f)
+(def *diff-hl-mode* #f)
+(def *volatile-highlights* #f)
+(def *vertico-mode* #f)
+(def *marginalia-mode* #f)
+
+(def (cmd-toggle-desktop-save-mode app)
+  "Toggle desktop-save-mode (save/restore session)."
+  (let ((echo (app-state-echo app)))
+    (set! *desktop-save-mode* (not *desktop-save-mode*))
+    (echo-message! echo (if *desktop-save-mode*
+                          "Desktop save mode ON" "Desktop save mode OFF"))))
+
+(def (cmd-toggle-recentf-mode app)
+  "Toggle recentf-mode (track recent files)."
+  (let ((echo (app-state-echo app)))
+    (set! *recentf-mode* (not *recentf-mode*))
+    (echo-message! echo (if *recentf-mode*
+                          "Recentf mode ON" "Recentf mode OFF"))))
+
+(def (cmd-toggle-savehist-mode app)
+  "Toggle savehist-mode (persist minibuffer history)."
+  (let ((echo (app-state-echo app)))
+    (set! *savehist-mode* (not *savehist-mode*))
+    (echo-message! echo (if *savehist-mode*
+                          "Savehist mode ON" "Savehist mode OFF"))))
+
+(def (cmd-toggle-winner-mode app)
+  "Toggle winner-mode (window config undo/redo)."
+  (let ((echo (app-state-echo app)))
+    (set! *winner-mode* (not *winner-mode*))
+    (echo-message! echo (if *winner-mode*
+                          "Winner mode ON" "Winner mode OFF"))))
+
+(def (cmd-toggle-midnight-mode app)
+  "Toggle midnight-mode (clean old buffers at midnight)."
+  (let ((echo (app-state-echo app)))
+    (set! *midnight-mode* (not *midnight-mode*))
+    (echo-message! echo (if *midnight-mode*
+                          "Midnight mode ON" "Midnight mode OFF"))))
+
+(def (cmd-toggle-global-undo-tree app)
+  "Toggle global-undo-tree-mode (tree-based undo)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-undo-tree* (not *global-undo-tree*))
+    (echo-message! echo (if *global-undo-tree*
+                          "Undo-tree mode ON" "Undo-tree mode OFF"))))
+
+(def (cmd-toggle-diff-hl-mode app)
+  "Toggle diff-hl-mode (highlight VCS diffs in fringe)."
+  (let ((echo (app-state-echo app)))
+    (set! *diff-hl-mode* (not *diff-hl-mode*))
+    (echo-message! echo (if *diff-hl-mode*
+                          "Diff-hl mode ON" "Diff-hl mode OFF"))))
+
+(def (cmd-toggle-volatile-highlights app)
+  "Toggle volatile-highlights (flash changed regions)."
+  (let ((echo (app-state-echo app)))
+    (set! *volatile-highlights* (not *volatile-highlights*))
+    (echo-message! echo (if *volatile-highlights*
+                          "Volatile highlights ON" "Volatile highlights OFF"))))
+
+(def (cmd-toggle-vertico-mode app)
+  "Toggle vertico-mode (vertical completion UI)."
+  (let ((echo (app-state-echo app)))
+    (set! *vertico-mode* (not *vertico-mode*))
+    (echo-message! echo (if *vertico-mode*
+                          "Vertico mode ON" "Vertico mode OFF"))))
+
+(def (cmd-toggle-marginalia-mode app)
+  "Toggle marginalia-mode (annotations in completions)."
+  (let ((echo (app-state-echo app)))
+    (set! *marginalia-mode* (not *marginalia-mode*))
+    (echo-message! echo (if *marginalia-mode*
+                          "Marginalia mode ON" "Marginalia mode OFF"))))
