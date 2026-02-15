@@ -222,7 +222,11 @@
                  *global-treemacs-icons* *global-all-the-icons-dired*
                  *global-centaur-tabs* *global-awesome-tab*
                  *global-tab-bar* *global-mini-frame*
-                 *global-vertico-posframe*)
+                 *global-vertico-posframe*
+                 *global-cmake-mode* *global-bazel-mode*
+                 *global-meson-mode* *global-ninja-mode*
+                 *global-groovy-mode* *global-kotlin-mode*
+                 *global-scala-mode*)
         (only-in :gerbil-emacs/highlight
                  detect-file-language gerbil-file-extension?
                  setup-highlighting-for-file!)
@@ -2811,6 +2815,25 @@
       (check (procedure? (find-command 'toggle-global-protobuf-mode)) => #t)
       (check (procedure? (find-command 'toggle-global-graphql-mode)) => #t)
       (check (procedure? (find-command 'toggle-global-nix-mode)) => #t))
+
+    (test-case "batch 70: mode toggles"
+      (check *global-cmake-mode* => #f)
+      (check *global-bazel-mode* => #f)
+      (check *global-meson-mode* => #f)
+      (check *global-ninja-mode* => #f)
+      (check *global-groovy-mode* => #f)
+      (check *global-kotlin-mode* => #f)
+      (check *global-scala-mode* => #f))
+
+    (test-case "command registration: batch 70 features"
+      (register-all-commands!)
+      (check (procedure? (find-command 'toggle-global-cmake-mode)) => #t)
+      (check (procedure? (find-command 'toggle-global-bazel-mode)) => #t)
+      (check (procedure? (find-command 'toggle-global-meson-mode)) => #t)
+      (check (procedure? (find-command 'toggle-global-ninja-mode)) => #t)
+      (check (procedure? (find-command 'toggle-global-groovy-mode)) => #t)
+      (check (procedure? (find-command 'toggle-global-kotlin-mode)) => #t)
+      (check (procedure? (find-command 'toggle-global-scala-mode)) => #t))
 
     ;;=========================================================================
     ;; Headless Scintilla editor tests

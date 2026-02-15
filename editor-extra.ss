@@ -1243,4 +1243,12 @@
   (register-command! 'toggle-global-protobuf-mode cmd-toggle-global-protobuf-mode)
   (register-command! 'toggle-global-graphql-mode cmd-toggle-global-graphql-mode)
   (register-command! 'toggle-global-nix-mode cmd-toggle-global-nix-mode)
+  ;; batch 70
+  (register-command! 'toggle-global-cmake-mode cmd-toggle-global-cmake-mode)
+  (register-command! 'toggle-global-bazel-mode cmd-toggle-global-bazel-mode)
+  (register-command! 'toggle-global-meson-mode cmd-toggle-global-meson-mode)
+  (register-command! 'toggle-global-ninja-mode cmd-toggle-global-ninja-mode)
+  (register-command! 'toggle-global-groovy-mode cmd-toggle-global-groovy-mode)
+  (register-command! 'toggle-global-kotlin-mode cmd-toggle-global-kotlin-mode)
+  (register-command! 'toggle-global-scala-mode cmd-toggle-global-scala-mode)
 )

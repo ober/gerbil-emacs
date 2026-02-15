@@ -1785,3 +1785,62 @@
     (set! *global-vertico-posframe* (not *global-vertico-posframe*))
     (echo-message! echo (if *global-vertico-posframe*
                           "Vertico posframe ON" "Vertico posframe OFF"))))
+
+;;; ---- batch 70: build system and JVM language toggles ----
+
+(def *global-cmake-mode* #f)
+(def *global-bazel-mode* #f)
+(def *global-meson-mode* #f)
+(def *global-ninja-mode* #f)
+(def *global-groovy-mode* #f)
+(def *global-kotlin-mode* #f)
+(def *global-scala-mode* #f)
+
+(def (cmd-toggle-global-cmake-mode app)
+  "Toggle global cmake-mode (CMake build file editing)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-cmake-mode* (not *global-cmake-mode*))
+    (echo-message! echo (if *global-cmake-mode*
+                          "CMake mode ON" "CMake mode OFF"))))
+
+(def (cmd-toggle-global-bazel-mode app)
+  "Toggle global bazel-mode (Bazel BUILD file editing)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-bazel-mode* (not *global-bazel-mode*))
+    (echo-message! echo (if *global-bazel-mode*
+                          "Bazel mode ON" "Bazel mode OFF"))))
+
+(def (cmd-toggle-global-meson-mode app)
+  "Toggle global meson-mode (Meson build file editing)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-meson-mode* (not *global-meson-mode*))
+    (echo-message! echo (if *global-meson-mode*
+                          "Meson mode ON" "Meson mode OFF"))))
+
+(def (cmd-toggle-global-ninja-mode app)
+  "Toggle global ninja-mode (Ninja build file editing)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-ninja-mode* (not *global-ninja-mode*))
+    (echo-message! echo (if *global-ninja-mode*
+                          "Ninja mode ON" "Ninja mode OFF"))))
+
+(def (cmd-toggle-global-groovy-mode app)
+  "Toggle global groovy-mode (Groovy/Gradle development)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-groovy-mode* (not *global-groovy-mode*))
+    (echo-message! echo (if *global-groovy-mode*
+                          "Groovy mode ON" "Groovy mode OFF"))))
+
+(def (cmd-toggle-global-kotlin-mode app)
+  "Toggle global kotlin-mode (Kotlin development)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-kotlin-mode* (not *global-kotlin-mode*))
+    (echo-message! echo (if *global-kotlin-mode*
+                          "Kotlin mode ON" "Kotlin mode OFF"))))
+
+(def (cmd-toggle-global-scala-mode app)
+  "Toggle global scala-mode (Scala development)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-scala-mode* (not *global-scala-mode*))
+    (echo-message! echo (if *global-scala-mode*
+                          "Scala mode ON" "Scala mode OFF"))))
