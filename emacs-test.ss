@@ -79,7 +79,12 @@
                  reverse-lines-in-string
                  *aggressive-indent-mode*
                  *ws-butler-mode* *file-runners*
-                 file-extension)
+                 file-extension
+                 *auto-compression-mode* *image-mode*
+                 *save-silently* *confirm-kill-emacs*
+                 *auto-window-vscroll* *fast-but-imprecise-scrolling*
+                 *mouse-avoidance-mode* *make-backup-files*
+                 *lock-file-create* *auto-encryption-mode*)
         (only-in :gerbil-emacs/editor-extra-vcs
                  *comment-style* *flymake-mode*
                  *delete-selection-mode* *word-count-mode*
@@ -1955,6 +1960,37 @@
       (check (procedure? (find-command 'toggle-blink-matching-paren)) => #t)
       (check (procedure? (find-command 'toggle-next-error-follow)) => #t)
       (check (procedure? (find-command 'insert-page-break)) => #t))
+
+    ;; -- Batch 38 tests --
+    (test-case "batch 38: mode toggles"
+      (check *auto-compression-mode* => #t)
+      (set! *image-mode* #f)
+      (check *image-mode* => #f)
+      (set! *save-silently* #f)
+      (check *save-silently* => #f)
+      (check *confirm-kill-emacs* => #t)
+      (check *auto-window-vscroll* => #t)
+      (set! *fast-but-imprecise-scrolling* #f)
+      (check *fast-but-imprecise-scrolling* => #f)
+      (set! *mouse-avoidance-mode* #f)
+      (check *mouse-avoidance-mode* => #f)
+      (check *make-backup-files* => #t)
+      (check *lock-file-create* => #t)
+      (check *auto-encryption-mode* => #t))
+
+    ;; -- Command registration batch 38 --
+    (test-case "command registration: batch 38 features"
+      (register-all-commands!)
+      (check (procedure? (find-command 'toggle-auto-compression)) => #t)
+      (check (procedure? (find-command 'toggle-image-mode)) => #t)
+      (check (procedure? (find-command 'toggle-save-silently)) => #t)
+      (check (procedure? (find-command 'toggle-confirm-kill-emacs)) => #t)
+      (check (procedure? (find-command 'toggle-auto-window-vscroll)) => #t)
+      (check (procedure? (find-command 'toggle-fast-but-imprecise-scrolling)) => #t)
+      (check (procedure? (find-command 'toggle-mouse-avoidance)) => #t)
+      (check (procedure? (find-command 'toggle-make-backup-files)) => #t)
+      (check (procedure? (find-command 'toggle-lock-file-create)) => #t)
+      (check (procedure? (find-command 'toggle-auto-encryption)) => #t))
 
     ;;=========================================================================
     ;; Headless Scintilla editor tests

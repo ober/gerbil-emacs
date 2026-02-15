@@ -1542,3 +1542,97 @@
         "Buffer is now read-only"
         "Buffer is now editable"))))
 
+;;; =========================================================================
+;;; Batch 38: auto-compression, image mode, save silently, backups, etc.
+;;; =========================================================================
+
+(def *auto-compression-mode* #t)
+(def *image-mode* #f)
+(def *save-silently* #f)
+(def *confirm-kill-emacs* #t)
+(def *auto-window-vscroll* #t)
+(def *fast-but-imprecise-scrolling* #f)
+(def *mouse-avoidance-mode* #f)
+(def *make-backup-files* #t)
+(def *lock-file-create* #t)
+(def *auto-encryption-mode* #t)
+
+(def (cmd-toggle-auto-compression app)
+  "Toggle auto-compression-mode (transparent gzip file handling)."
+  (let ((echo (app-state-echo app)))
+    (set! *auto-compression-mode* (not *auto-compression-mode*))
+    (echo-message! echo (if *auto-compression-mode*
+                          "Auto-compression ON"
+                          "Auto-compression OFF"))))
+
+(def (cmd-toggle-image-mode app)
+  "Toggle image display mode for the current buffer."
+  (let ((echo (app-state-echo app)))
+    (set! *image-mode* (not *image-mode*))
+    (echo-message! echo (if *image-mode*
+                          "Image mode ON"
+                          "Image mode OFF"))))
+
+(def (cmd-toggle-save-silently app)
+  "Toggle silent saving (no messages on save)."
+  (let ((echo (app-state-echo app)))
+    (set! *save-silently* (not *save-silently*))
+    (echo-message! echo (if *save-silently*
+                          "Save silently ON"
+                          "Save silently OFF"))))
+
+(def (cmd-toggle-confirm-kill-emacs app)
+  "Toggle confirmation prompt before exiting."
+  (let ((echo (app-state-echo app)))
+    (set! *confirm-kill-emacs* (not *confirm-kill-emacs*))
+    (echo-message! echo (if *confirm-kill-emacs*
+                          "Confirm kill ON"
+                          "Confirm kill OFF"))))
+
+(def (cmd-toggle-auto-window-vscroll app)
+  "Toggle automatic vertical scrolling in tall lines."
+  (let ((echo (app-state-echo app)))
+    (set! *auto-window-vscroll* (not *auto-window-vscroll*))
+    (echo-message! echo (if *auto-window-vscroll*
+                          "Auto window vscroll ON"
+                          "Auto window vscroll OFF"))))
+
+(def (cmd-toggle-fast-but-imprecise-scrolling app)
+  "Toggle fast-but-imprecise scrolling (skip fontification during scroll)."
+  (let ((echo (app-state-echo app)))
+    (set! *fast-but-imprecise-scrolling* (not *fast-but-imprecise-scrolling*))
+    (echo-message! echo (if *fast-but-imprecise-scrolling*
+                          "Fast scrolling ON"
+                          "Fast scrolling OFF"))))
+
+(def (cmd-toggle-mouse-avoidance app)
+  "Toggle mouse-avoidance-mode (move mouse pointer away from cursor)."
+  (let ((echo (app-state-echo app)))
+    (set! *mouse-avoidance-mode* (not *mouse-avoidance-mode*))
+    (echo-message! echo (if *mouse-avoidance-mode*
+                          "Mouse avoidance ON"
+                          "Mouse avoidance OFF"))))
+
+(def (cmd-toggle-make-backup-files app)
+  "Toggle creation of backup files (~) on save."
+  (let ((echo (app-state-echo app)))
+    (set! *make-backup-files* (not *make-backup-files*))
+    (echo-message! echo (if *make-backup-files*
+                          "Backup files ON"
+                          "Backup files OFF"))))
+
+(def (cmd-toggle-lock-file-create app)
+  "Toggle creation of lock files (.#filename) for editing."
+  (let ((echo (app-state-echo app)))
+    (set! *lock-file-create* (not *lock-file-create*))
+    (echo-message! echo (if *lock-file-create*
+                          "Lock files ON"
+                          "Lock files OFF"))))
+
+(def (cmd-toggle-auto-encryption app)
+  "Toggle auto-encryption-mode (transparent .gpg file handling)."
+  (let ((echo (app-state-echo app)))
+    (set! *auto-encryption-mode* (not *auto-encryption-mode*))
+    (echo-message! echo (if *auto-encryption-mode*
+                          "Auto-encryption ON"
+                          "Auto-encryption OFF"))))
