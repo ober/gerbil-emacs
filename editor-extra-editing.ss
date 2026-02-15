@@ -1821,3 +1821,62 @@
     (echo-message! echo (if *global-animate-typing*
                           "Animate typing ON" "Animate typing OFF"))))
 
+;;; ---- batch 72: data science and environment management toggles ----
+
+(def *global-r-mode* #f)
+(def *global-ess* #f)
+(def *global-sql-mode* #f)
+(def *global-ein* #f)
+(def *global-conda* #f)
+(def *global-pyvenv* #f)
+(def *global-pipenv* #f)
+
+(def (cmd-toggle-global-r-mode app)
+  "Toggle global R-mode (R statistics language)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-r-mode* (not *global-r-mode*))
+    (echo-message! echo (if *global-r-mode*
+                          "R mode ON" "R mode OFF"))))
+
+(def (cmd-toggle-global-ess app)
+  "Toggle global ESS-mode (Emacs Speaks Statistics)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-ess* (not *global-ess*))
+    (echo-message! echo (if *global-ess*
+                          "ESS ON" "ESS OFF"))))
+
+(def (cmd-toggle-global-sql-mode app)
+  "Toggle global sql-mode (SQL query editing and execution)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-sql-mode* (not *global-sql-mode*))
+    (echo-message! echo (if *global-sql-mode*
+                          "SQL mode ON" "SQL mode OFF"))))
+
+(def (cmd-toggle-global-ein app)
+  "Toggle global EIN-mode (Jupyter notebook in Emacs)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-ein* (not *global-ein*))
+    (echo-message! echo (if *global-ein*
+                          "EIN ON" "EIN OFF"))))
+
+(def (cmd-toggle-global-conda app)
+  "Toggle global conda-mode (Conda environment management)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-conda* (not *global-conda*))
+    (echo-message! echo (if *global-conda*
+                          "Conda ON" "Conda OFF"))))
+
+(def (cmd-toggle-global-pyvenv app)
+  "Toggle global pyvenv-mode (Python virtualenv management)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-pyvenv* (not *global-pyvenv*))
+    (echo-message! echo (if *global-pyvenv*
+                          "Pyvenv ON" "Pyvenv OFF"))))
+
+(def (cmd-toggle-global-pipenv app)
+  "Toggle global pipenv-mode (Pipenv environment management)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-pipenv* (not *global-pipenv*))
+    (echo-message! echo (if *global-pipenv*
+                          "Pipenv ON" "Pipenv OFF"))))
+

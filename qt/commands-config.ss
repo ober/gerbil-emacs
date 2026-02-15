@@ -1595,42 +1595,85 @@ If on blank line: insert comment and indent."
 ;;; Git gutter / diff-hl (show changed lines in margin)
 ;;;============================================================================
 
+(def *diff-hl-active* #f)
+
+(def (parse-hunk-header line)
+  "Parse @@ -old,count +new,count @@ to extract new-start and new-count.
+   Returns (start . count) or #f."
+  (let ((at-pos (string-contains line "+"))
+        (end-pos (string-contains line " @@" 3)))
+    (when (and at-pos end-pos)
+      (let* ((plus-part (substring line at-pos end-pos))
+             (comma (string-contains plus-part ",")))
+        (if comma
+          (let ((start (string->number (substring plus-part 1 comma)))
+                (count (string->number (substring plus-part (+ comma 1)
+                                         (string-length plus-part)))))
+            (and start count (cons start count)))
+          (let ((start (string->number (substring plus-part 1
+                                         (string-length plus-part)))))
+            (and start (cons start 1))))))))
+
 (def (cmd-diff-hl-mode app)
-  "Show diff indicators for lines changed since last save/commit."
+  "Highlight lines changed since last git commit directly in the buffer.
+   Green = added, yellow = modified. Toggle on/off."
   (let* ((echo (app-state-echo app))
          (buf (current-qt-buffer app))
          (ed (current-qt-editor app))
          (path (buffer-file-path buf)))
-    (if (not path)
-      (echo-message! echo "Buffer has no file")
-      (with-catch
-        (lambda (e) (echo-error! echo "diff-hl: git diff failed"))
-        (lambda ()
-          (let* ((proc (open-process
-                         [path: "/usr/bin/git"
-                          arguments: ["diff" "--no-color" "-U0" path]
-                          stdout-redirection: #t
-                          stderr-redirection: #t]))
-                 (output (let loop ((lines '()))
-                           (let ((line (read-line proc)))
-                             (if (eof-object? line)
-                               (reverse lines)
-                               (loop (cons line lines)))))))
-            (close-port proc)
-            (if (null? output)
-              (echo-message! echo "No uncommitted changes in this file")
-              (let* ((fr (app-state-frame app))
-                     (res-buf (or (buffer-by-name "*Diff-HL*")
-                                  (qt-buffer-create! "*Diff-HL*" ed)))
-                     (result (string-join output "\n")))
-                (qt-buffer-attach! ed res-buf)
-                (set! (qt-edit-window-buffer (qt-current-window fr)) res-buf)
-                (qt-plain-text-edit-set-text! ed
-                  (string-append "=== Changes in " (path-strip-directory path) " ===\n\n"
-                                 result))
-                (qt-plain-text-edit-set-read-only! ed #t)
-                (qt-modeline-update! app)
-                (echo-message! echo "Showing uncommitted changes")))))))))
+    (cond
+      ((not path)
+       (echo-message! echo "Buffer has no file"))
+      ;; Toggle off
+      (*diff-hl-active*
+       (set! *diff-hl-active* #f)
+       (qt-extra-selections-clear! ed)
+       (qt-extra-selections-apply! ed)
+       (echo-message! echo "diff-hl: off"))
+      ;; Toggle on: run git diff and highlight changed lines
+      (else
+       (with-catch
+         (lambda (e) (echo-error! echo "diff-hl: git diff failed"))
+         (lambda ()
+           (let* ((proc (open-process
+                          [path: "/usr/bin/git"
+                           arguments: ["diff" "--no-color" "-U0" path]
+                           stdout-redirection: #t
+                           stderr-redirection: #t]))
+                  (output (let loop ((lines '()))
+                            (let ((line (read-line proc)))
+                              (if (eof-object? line)
+                                (reverse lines)
+                                (loop (cons line lines)))))))
+             (close-port proc)
+             (if (null? output)
+               (echo-message! echo "No uncommitted changes")
+               ;; Parse hunks and highlight lines
+               (let* ((hunks (filter identity
+                               (map (lambda (line)
+                                      (if (and (>= (string-length line) 3)
+                                               (string=? (substring line 0 2) "@@"))
+                                        (parse-hunk-header line)
+                                        #f))
+                                    output))))
+                 (qt-extra-selections-clear! ed)
+                 (for-each
+                   (lambda (hunk)
+                     (let* ((start-line (- (car hunk) 1))  ; 0-indexed
+                            (count (cdr hunk)))
+                       (let hloop ((i 0))
+                         (when (< i count)
+                           ;; Green (#2d5a2d) background for changed lines
+                           (qt-extra-selection-add-line! ed (+ start-line i)
+                             #x2d #x5a #x2d)
+                           (hloop (+ i 1))))))
+                   hunks)
+                 (qt-extra-selections-apply! ed)
+                 (set! *diff-hl-active* #t)
+                 (echo-message! echo
+                   (string-append "diff-hl: " (number->string (length hunks))
+                     " changed region(s)")))))))))))
+
 
 ;;;============================================================================
 ;;; Pop-to-mark (cycle through mark ring)

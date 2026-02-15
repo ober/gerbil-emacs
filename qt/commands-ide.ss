@@ -7,6 +7,7 @@
 (import :std/sugar
         :std/sort
         :std/srfi/13
+        :std/format
         :std/text/base64
         :gerbil-qt/qt
         :gerbil-emacs/core
@@ -1261,6 +1262,271 @@
           (setenv var val)
           (echo-message! (app-state-echo app)
             (string-append "Set " var "=" val)))))))
+
+;;;============================================================================
+;;; Hl-todo — highlight TODO/FIXME/HACK keywords
+;;;============================================================================
+
+(def *hl-todo-mode* #f)
+(def *hl-todo-keywords* '("TODO" "FIXME" "HACK" "BUG" "XXX" "NOTE"))
+
+(def (cmd-hl-todo-mode app)
+  "Toggle hl-todo mode — highlights TODO keywords."
+  (set! *hl-todo-mode* (not *hl-todo-mode*))
+  (echo-message! (app-state-echo app)
+    (if *hl-todo-mode* "HL-todo: on" "HL-todo: off")))
+
+(def (cmd-hl-todo-next app)
+  "Jump to next TODO/FIXME/HACK keyword."
+  (let* ((ed (current-qt-editor app))
+         (text (qt-plain-text-edit-text ed))
+         (pos (qt-plain-text-edit-cursor-position ed))
+         (next-pos #f))
+    (for-each
+      (lambda (kw)
+        (let ((found (string-contains text kw (+ pos 1))))
+          (when (and found (or (not next-pos) (< found next-pos)))
+            (set! next-pos found))))
+      *hl-todo-keywords*)
+    (if next-pos
+      (begin (qt-plain-text-edit-set-cursor-position! ed next-pos)
+             (echo-message! (app-state-echo app) "Found TODO keyword"))
+      (echo-message! (app-state-echo app) "No more TODO keywords"))))
+
+(def (cmd-hl-todo-previous app)
+  "Jump to previous TODO/FIXME/HACK keyword."
+  (let* ((ed (current-qt-editor app))
+         (text (qt-plain-text-edit-text ed))
+         (pos (qt-plain-text-edit-cursor-position ed))
+         (prev-pos #f))
+    (for-each
+      (lambda (kw)
+        (let loop ((search-from 0))
+          (let ((found (string-contains text kw search-from)))
+            (when (and found (< found pos))
+              (when (or (not prev-pos) (> found prev-pos))
+                (set! prev-pos found))
+              (loop (+ found 1))))))
+      *hl-todo-keywords*)
+    (if prev-pos
+      (begin (qt-plain-text-edit-set-cursor-position! ed prev-pos)
+             (echo-message! (app-state-echo app) "Found TODO keyword"))
+      (echo-message! (app-state-echo app) "No previous TODO keywords"))))
+
+;;;============================================================================
+;;; Shell command framework (plan items 0.3 + 3.2)
+;;;============================================================================
+
+(def (shell-command-to-string cmd)
+  "Run CMD via /bin/sh and return stdout as a string. Returns empty string on error."
+  (with-catch
+    (lambda (e) "")
+    (lambda ()
+      (let* ((proc (open-process
+                      (list path: "/bin/sh"
+                            arguments: ["-c" cmd]
+                            stdout-redirection: #t
+                            stderr-redirection: #t
+                            pseudo-terminal: #f)))
+             (output (read-line proc #f)))
+        (process-status proc)
+        (close-port proc)
+        (or output "")))))
+
+(def (shell-command-to-buffer! app cmd buffer-name . opts)
+  "Run CMD, display output in BUFFER-NAME. Options: read-only: #t (default #t)."
+  (let* ((read-only? (if (and (pair? opts) (pair? (car opts)))
+                       (let ((ro (assoc read-only: opts)))
+                         (if ro (cdr ro) #t))
+                       #t))
+         (result (with-catch
+                   (lambda (e)
+                     (string-append "Error: "
+                       (with-output-to-string (lambda () (display-exception e)))))
+                   (lambda ()
+                     (shell-command-to-string cmd))))
+         (fr (app-state-frame app))
+         (ed (current-qt-editor app))
+         (buf (or (buffer-by-name buffer-name)
+                  (qt-buffer-create! buffer-name ed #f))))
+    (qt-buffer-attach! ed buf)
+    (set! (qt-edit-window-buffer (qt-current-window fr)) buf)
+    (qt-plain-text-edit-set-text! ed result)
+    (qt-text-document-set-modified! (buffer-doc-pointer buf) #f)
+    (qt-plain-text-edit-set-cursor-position! ed 0)
+    (when read-only?
+      (qt-plain-text-edit-set-read-only! ed #t))
+    (qt-modeline-update! app)
+    result))
+
+(def *user-shell-commands* (make-hash-table))
+
+(def (register-shell-command! name prompt command-template buffer-template)
+  "Register a user-definable shell command.
+   PROMPT is shown when reading input.
+   COMMAND-TEMPLATE is a format string with ~a for the input.
+   BUFFER-TEMPLATE is a format string for the buffer name."
+  (hash-put! *user-shell-commands* name
+    (list prompt command-template buffer-template)))
+
+(def (cmd-run-user-shell-command app)
+  "Run a registered user shell command by name."
+  (let* ((names (sort (hash-keys *user-shell-commands*) string<?))
+         (name (if (null? names)
+                 (begin (echo-message! (app-state-echo app) "No shell commands registered")
+                        #f)
+                 (qt-echo-read-string app
+                   (string-append "Shell command ("
+                     (string-join (map symbol->string names) ", ") "): ")))))
+    (when (and name (> (string-length name) 0))
+      (let ((entry (hash-get *user-shell-commands* (string->symbol name))))
+        (if entry
+          (let* ((prompt (car entry))
+                 (cmd-template (cadr entry))
+                 (buf-template (caddr entry))
+                 (input (qt-echo-read-string app prompt)))
+            (when (and input (> (string-length input) 0))
+              (let ((cmd (format cmd-template input))
+                    (buf-name (format buf-template input)))
+                (shell-command-to-buffer! app cmd buf-name)
+                (echo-message! (app-state-echo app)
+                  (string-append "Ran: " cmd)))))
+          (echo-message! (app-state-echo app)
+            (string-append "Unknown command: " name)))))))
+
+;;;============================================================================
+;;; Workspaces / Perspectives (plan item 2.3)
+;;;============================================================================
+
+;; Each workspace: (name . buffer-names)
+;; buffer-names is a list of buffer name strings visible in this workspace
+(def *workspaces* (make-hash-table))  ; name -> list of buffer-name strings
+(def *current-workspace* "default")
+(def *workspace-buffers* (make-hash-table))  ; workspace -> current-buffer-name
+
+(def (workspace-init! app)
+  "Initialize the default workspace with all current buffers."
+  (hash-put! *workspaces* "default"
+    (map buffer-name (buffer-list)))
+  (let ((buf (qt-current-buffer (app-state-frame app))))
+    (when buf
+      (hash-put! *workspace-buffers* "default" (buffer-name buf)))))
+
+(def (workspace-add-buffer! ws-name buf-name)
+  "Add a buffer to a workspace's buffer list."
+  (let ((bufs (or (hash-get *workspaces* ws-name) [])))
+    (unless (member buf-name bufs)
+      (hash-put! *workspaces* ws-name (cons buf-name bufs)))))
+
+(def (workspace-remove-buffer! ws-name buf-name)
+  "Remove a buffer from a workspace."
+  (let ((bufs (or (hash-get *workspaces* ws-name) [])))
+    (hash-put! *workspaces* ws-name
+      (filter (lambda (b) (not (string=? b buf-name))) bufs))))
+
+(def (cmd-workspace-create app)
+  "Create a new named workspace."
+  (let ((name (qt-echo-read-string app "New workspace name: ")))
+    (when (and name (> (string-length name) 0))
+      (if (hash-get *workspaces* name)
+        (echo-message! (app-state-echo app)
+          (string-append "Workspace '" name "' already exists"))
+        (begin
+          (hash-put! *workspaces* name ["*scratch*"])
+          (echo-message! (app-state-echo app)
+            (string-append "Created workspace: " name)))))))
+
+(def (cmd-workspace-switch app)
+  "Switch to a named workspace."
+  (let* ((names (sort (hash-keys *workspaces*) string<?))
+         (prompt (string-append "Switch workspace ("
+                   (string-join names ", ") "): "))
+         (name (qt-echo-read-string app prompt)))
+    (when (and name (> (string-length name) 0))
+      (let ((bufs (hash-get *workspaces* name)))
+        (if bufs
+          (begin
+            ;; Save current workspace's active buffer
+            (let ((cur-buf (qt-current-buffer (app-state-frame app))))
+              (when cur-buf
+                (hash-put! *workspace-buffers* *current-workspace*
+                  (buffer-name cur-buf))))
+            ;; Switch to new workspace
+            (set! *current-workspace* name)
+            ;; Restore the workspace's active buffer
+            (let* ((active (hash-get *workspace-buffers* name))
+                   (target (and active (buffer-by-name active))))
+              (when target
+                (let* ((fr (app-state-frame app))
+                       (ed (current-qt-editor app)))
+                  (qt-buffer-attach! ed target)
+                  (set! (qt-edit-window-buffer (qt-current-window fr)) target))))
+            (echo-message! (app-state-echo app)
+              (string-append "Workspace: " name
+                " (" (number->string (length bufs)) " buffers)")))
+          (echo-message! (app-state-echo app)
+            (string-append "No workspace: " name)))))))
+
+(def (cmd-workspace-delete app)
+  "Delete a workspace (cannot delete default)."
+  (let* ((names (sort (filter (lambda (n) (not (string=? n "default")))
+                        (hash-keys *workspaces*)) string<?))
+         (name (if (null? names)
+                 (begin (echo-message! (app-state-echo app) "No deletable workspaces")
+                        #f)
+                 (qt-echo-read-string app
+                   (string-append "Delete workspace (" (string-join names ", ") "): ")))))
+    (when (and name (> (string-length name) 0))
+      (cond
+        ((string=? name "default")
+         (echo-message! (app-state-echo app) "Cannot delete default workspace"))
+        ((hash-get *workspaces* name)
+         (hash-remove! *workspaces* name)
+         (hash-remove! *workspace-buffers* name)
+         (when (string=? *current-workspace* name)
+           (set! *current-workspace* "default"))
+         (echo-message! (app-state-echo app)
+           (string-append "Deleted workspace: " name)))
+        (else
+         (echo-message! (app-state-echo app)
+           (string-append "No workspace: " name)))))))
+
+(def (cmd-workspace-add-buffer app)
+  "Add current buffer to a workspace."
+  (let* ((buf (qt-current-buffer (app-state-frame app)))
+         (buf-name (buffer-name buf)))
+    (workspace-add-buffer! *current-workspace* buf-name)
+    (echo-message! (app-state-echo app)
+      (string-append "Added '" buf-name "' to workspace '" *current-workspace* "'"))))
+
+(def (cmd-workspace-list app)
+  "List all workspaces and their buffers."
+  (let* ((fr (app-state-frame app))
+         (ed (current-qt-editor app))
+         (lines
+           (let loop ((names (sort (hash-keys *workspaces*) string<?)) (acc []))
+             (if (null? names)
+               (reverse acc)
+               (let* ((name (car names))
+                      (bufs (or (hash-get *workspaces* name) []))
+                      (active? (string=? name *current-workspace*))
+                      (header (string-append
+                                (if active? "* " "  ")
+                                name " (" (number->string (length bufs)) " buffers)"))
+                      (buf-lines (map (lambda (b) (string-append "    " b)) bufs)))
+                 (loop (cdr names)
+                   (append (reverse (cons header buf-lines)) acc))))))
+         (content (string-join lines "\n"))
+         (buf (or (buffer-by-name "*Workspaces*")
+                  (qt-buffer-create! "*Workspaces*" ed #f))))
+    (qt-buffer-attach! ed buf)
+    (set! (qt-edit-window-buffer (qt-current-window fr)) buf)
+    (qt-plain-text-edit-set-text! ed content)
+    (qt-text-document-set-modified! (buffer-doc-pointer buf) #f)
+    (qt-plain-text-edit-set-cursor-position! ed 0)
+    (qt-modeline-update! app)
+    (echo-message! (app-state-echo app)
+      (string-append "Current: " *current-workspace*))))
 
 ;;;============================================================================
 ;;; Batch 7: More missing commands

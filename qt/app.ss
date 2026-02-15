@@ -148,6 +148,11 @@
            (tab-layout (qt-hbox-layout-create tab-bar))
            ;; Main content area: splitter for editors
            (splitter (qt-splitter-create QT_VERTICAL parent: central))
+           (_ (begin
+                ;; Window dividers: visible blue handle between split panes
+                (qt-splitter-set-handle-width! splitter 3)
+                (qt-widget-set-style-sheet! splitter
+                  "QSplitter::handle { background: #51afef; }")))
            ;; Echo label at bottom
            (echo-label (qt-label-create "" parent: central))
            ;; Initialize frame with one editor in the splitter
@@ -681,8 +686,9 @@
                     (set! (qt-edit-window-buffer (qt-current-window fr)) (car bufs)))
                   (loop (cdr bufs))))))))
 
-      ;; Open files from command line
-      (for-each (lambda (file) (qt-open-file! app file)) args)
+      ;; Open files from command line — skip flags (handled in main.ss)
+      (let ((files (filter (lambda (a) (not (string-prefix? "-" a))) args)))
+        (for-each (lambda (file) (qt-open-file! app file)) files))
 
       ;; Show window
       (qt-main-window-set-central-widget! win central)

@@ -978,6 +978,86 @@
                     (+ line-start (string-length next-subtree)))
                   (qt-plain-text-edit-ensure-cursor-visible! ed))))))))))
 
+;;;============================================================================
+;;; Org outline / cycle / table operations
+;;;============================================================================
+
+(def (cmd-org-outline app)
+  "Show an outline of all org headings in the current buffer."
+  (let* ((ed (current-qt-editor app))
+         (fr (app-state-frame app))
+         (text (qt-plain-text-edit-text ed))
+         (lines (string-split text #\newline))
+         (headings
+           (let loop ((ls lines) (n 1) (acc []))
+             (if (null? ls)
+               (reverse acc)
+               (let* ((line (car ls))
+                      (level (org-heading-level line)))
+                 (if (> level 0)
+                   (loop (cdr ls) (+ n 1)
+                     (cons (string-append (number->string n) ": " line) acc))
+                   (loop (cdr ls) (+ n 1) acc))))))
+         (content (if (null? headings)
+                    "No org headings found"
+                    (string-join headings "\n")))
+         (buf (or (buffer-by-name "*Org Outline*")
+                  (qt-buffer-create! "*Org Outline*" ed #f))))
+    (qt-buffer-attach! ed buf)
+    (set! (qt-edit-window-buffer (qt-current-window fr)) buf)
+    (qt-plain-text-edit-set-text! ed content)
+    (qt-text-document-set-modified! (buffer-doc-pointer buf) #f)
+    (qt-plain-text-edit-set-cursor-position! ed 0)
+    (qt-modeline-update! app)
+    (echo-message! (app-state-echo app)
+      (string-append (number->string (length headings)) " headings"))))
+
+(def (cmd-org-table-delete-column app)
+  "Delete the column at point in an org table.
+   Org tables use | as column separator."
+  (let* ((ed (current-qt-editor app))
+         (text (qt-plain-text-edit-text ed))
+         (pos (qt-plain-text-edit-cursor-position ed)))
+    (let-values (((line line-start line-end) (org-get-current-line ed)))
+      ;; Check if we're in a table line (starts with |)
+      (if (not (and (> (string-length line) 0) (char=? (string-ref line 0) #\|)))
+        (echo-message! (app-state-echo app) "Not in an org table")
+        ;; Find which column we're in
+        (let* ((col-pos (- pos line-start))
+               ;; Count pipes before cursor to find column index
+               (col-idx
+                 (let loop ((i 0) (count 0))
+                   (if (>= i col-pos) count
+                     (if (char=? (string-ref line i) #\|)
+                       (loop (+ i 1) (+ count 1))
+                       (loop (+ i 1) count))))))
+          ;; Delete this column from all table lines
+          (let* ((all-lines (string-split text #\newline))
+                 (new-lines
+                   (map (lambda (l)
+                          (if (and (> (string-length l) 0)
+                                   (char=? (string-ref l 0) #\|))
+                            ;; Split on | and remove the column
+                            (let* ((parts (string-split l #\|))
+                                   ;; parts includes empty first element from leading |
+                                   (new-parts
+                                     (let loop ((ps parts) (i 0) (acc []))
+                                       (if (null? ps)
+                                         (reverse acc)
+                                         (if (= i col-idx)
+                                           (loop (cdr ps) (+ i 1) acc)
+                                           (loop (cdr ps) (+ i 1)
+                                             (cons (car ps) acc)))))))
+                              (string-join new-parts "|"))
+                            l))
+                        all-lines))
+                 (new-text (string-join new-lines "\n")))
+            (qt-plain-text-edit-set-text! ed new-text)
+            (qt-plain-text-edit-set-cursor-position! ed
+              (min pos (- (string-length new-text) 1)))
+            (echo-message! (app-state-echo app)
+              (string-append "Deleted column " (number->string col-idx)))))))))
+
 ;;; ============================================================================
 ;;; Markdown mode
 ;;; ============================================================================

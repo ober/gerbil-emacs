@@ -1259,4 +1259,12 @@
   (register-command! 'toggle-global-fsharp-mode cmd-toggle-global-fsharp-mode)
   (register-command! 'toggle-global-dart-mode cmd-toggle-global-dart-mode)
   (register-command! 'toggle-global-julia-mode cmd-toggle-global-julia-mode)
+  ;; batch 72
+  (register-command! 'toggle-global-r-mode cmd-toggle-global-r-mode)
+  (register-command! 'toggle-global-ess cmd-toggle-global-ess)
+  (register-command! 'toggle-global-sql-mode cmd-toggle-global-sql-mode)
+  (register-command! 'toggle-global-ein cmd-toggle-global-ein)
+  (register-command! 'toggle-global-conda cmd-toggle-global-conda)
+  (register-command! 'toggle-global-pyvenv cmd-toggle-global-pyvenv)
+  (register-command! 'toggle-global-pipenv cmd-toggle-global-pipenv)
 )

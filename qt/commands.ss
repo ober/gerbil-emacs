@@ -51,7 +51,20 @@
         *require-final-newline*
         *save-place-enabled*
         *centered-cursor-mode*
-        uniquify-buffer-name!)
+        uniquify-buffer-name!
+        ;; Shell command framework
+        shell-command-to-string
+        shell-command-to-buffer!
+        register-shell-command!
+        *user-shell-commands*
+        ;; Workspaces
+        workspace-init!
+        *workspaces*
+        *current-workspace*
+        workspace-add-buffer!
+        workspace-remove-buffer!
+        ;; Diff-hl
+        *diff-hl-active*)
 
 (import :std/sugar
         :std/sort
@@ -1119,6 +1132,18 @@
   ;; Environment
   (register-command! 'getenv cmd-getenv)
   (register-command! 'setenv cmd-setenv)
+  ;; Hl-todo
+  (register-command! 'hl-todo-mode cmd-hl-todo-mode)
+  (register-command! 'hl-todo-next cmd-hl-todo-next)
+  (register-command! 'hl-todo-previous cmd-hl-todo-previous)
+  ;; Shell command framework
+  (register-command! 'run-user-shell-command cmd-run-user-shell-command)
+  ;; Workspaces
+  (register-command! 'workspace-create cmd-workspace-create)
+  (register-command! 'workspace-switch cmd-workspace-switch)
+  (register-command! 'workspace-delete cmd-workspace-delete)
+  (register-command! 'workspace-add-buffer cmd-workspace-add-buffer)
+  (register-command! 'workspace-list cmd-workspace-list)
   ;; Batch 7: More commands
   (register-command! 'transpose-sexps cmd-transpose-sexps)
   (register-command! 'transpose-paragraphs cmd-transpose-paragraphs)
@@ -1390,6 +1415,8 @@
   (register-command! 'org-prev-heading cmd-org-prev-heading)
   (register-command! 'org-move-subtree-up cmd-org-move-subtree-up)
   (register-command! 'org-move-subtree-down cmd-org-move-subtree-down)
+  (register-command! 'org-outline cmd-org-outline)
+  (register-command! 'org-table-delete-column cmd-org-table-delete-column)
   ;; Markdown
   (register-command! 'markdown-promote cmd-markdown-promote)
   (register-command! 'markdown-demote cmd-markdown-demote)
