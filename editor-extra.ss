@@ -691,6 +691,17 @@
   (register-command! 'mc-cursors-on-lines cmd-mc-cursors-on-lines)
   (register-command! 'mc-unmark-last cmd-mc-unmark-last)
   (register-command! 'mc-rotate cmd-mc-rotate)
+  ;; Paredit advanced
+  (register-command! 'paredit-slurp-forward cmd-paredit-slurp-forward)
+  (register-command! 'paredit-barf-forward cmd-paredit-barf-forward)
+  (register-command! 'paredit-split-sexp cmd-paredit-split-sexp)
+  (register-command! 'paredit-join-sexps cmd-paredit-join-sexps)
+  ;; Number increment/decrement
+  (register-command! 'increment-number cmd-increment-number)
+  (register-command! 'decrement-number cmd-decrement-number)
+  ;; Grep/compilation navigation
+  (register-command! 'grep-goto cmd-grep-goto)
+  (register-command! 'next-error cmd-next-error)
   ;; Occur goto
   (register-command! 'occur-goto cmd-occur-goto)
 )

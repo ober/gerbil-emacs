@@ -167,6 +167,350 @@
                            (editor-goto-pos ed open-pos)
                            (echo-message! echo "Raised sexp")))))))))))))))
 
+;;;============================================================================
+;;; Text-based sexp helpers (for paredit slurp/barf/split/join)
+;;;============================================================================
+
+(def (text-find-matching-close text pos)
+  "Find matching close delimiter from opening at pos. Returns position after closer."
+  (let* ((len (string-length text))
+         (ch (string-ref text pos))
+         (close (cond ((char=? ch #\() #\))
+                      ((char=? ch #\[) #\])
+                      ((char=? ch #\{) #\})
+                      (else #f))))
+    (if close
+      (let loop ((i (+ pos 1)) (depth 1))
+        (cond ((>= i len) #f)
+              ((char=? (string-ref text i) ch) (loop (+ i 1) (+ depth 1)))
+              ((char=? (string-ref text i) close)
+               (if (= depth 1) (+ i 1) (loop (+ i 1) (- depth 1))))
+              (else (loop (+ i 1) depth))))
+      #f)))
+
+(def (text-find-matching-open text pos)
+  "Find matching open delimiter scanning backward from closing at pos."
+  (let* ((ch (string-ref text pos))
+         (open (cond ((char=? ch #\)) #\()
+                     ((char=? ch #\]) #\[)
+                     ((char=? ch #\}) #\{)
+                     (else #f))))
+    (if open
+      (let loop ((i (- pos 1)) (depth 1))
+        (cond ((< i 0) #f)
+              ((char=? (string-ref text i) ch) (loop (- i 1) (+ depth 1)))
+              ((char=? (string-ref text i) open)
+               (if (= depth 1) i (loop (- i 1) (- depth 1))))
+              (else (loop (- i 1) depth))))
+      #f)))
+
+(def (text-sexp-end text pos)
+  "Find end position of sexp starting at pos."
+  (let ((len (string-length text)))
+    (if (>= pos len) pos
+      (let ((ch (string-ref text pos)))
+        (cond
+          ((or (char=? ch #\() (char=? ch #\[) (char=? ch #\{))
+           (or (text-find-matching-close text pos) len))
+          ((char=? ch #\")
+           (let loop ((i (+ pos 1)))
+             (cond ((>= i len) len)
+                   ((char=? (string-ref text i) #\\) (loop (+ i 2)))
+                   ((char=? (string-ref text i) #\") (+ i 1))
+                   (else (loop (+ i 1))))))
+          (else
+           (let loop ((i pos))
+             (if (or (>= i len)
+                     (char-whitespace? (string-ref text i))
+                     (memv (string-ref text i) '(#\( #\) #\[ #\] #\{ #\})))
+               i (loop (+ i 1))))))))))
+
+(def (text-sexp-start text pos)
+  "Find start position of sexp ending at pos."
+  (if (<= pos 0) 0
+    (let* ((i (- pos 1))
+           (ch (string-ref text i)))
+      (cond
+        ((or (char=? ch #\)) (char=? ch #\]) (char=? ch #\}))
+         (or (text-find-matching-open text i) 0))
+        ((char=? ch #\")
+         (let loop ((j (- i 1)))
+           (cond ((<= j 0) 0)
+                 ((and (char=? (string-ref text j) #\")
+                       (or (= j 0) (not (char=? (string-ref text (- j 1)) #\\))))
+                  j)
+                 (else (loop (- j 1))))))
+        (else
+         (let loop ((j i))
+           (if (or (<= j 0)
+                   (char-whitespace? (string-ref text j))
+                   (memv (string-ref text j) '(#\( #\) #\[ #\] #\{ #\})))
+             (+ j 1) (loop (- j 1)))))))))
+
+(def (text-skip-ws-forward text pos)
+  (let ((len (string-length text)))
+    (let loop ((i pos))
+      (if (or (>= i len) (not (char-whitespace? (string-ref text i))))
+        i (loop (+ i 1))))))
+
+(def (text-skip-ws-backward text pos)
+  (let loop ((i pos))
+    (if (or (<= i 0) (not (char-whitespace? (string-ref text (- i 1)))))
+      i (loop (- i 1)))))
+
+(def (text-find-enclosing-open text pos)
+  "Find innermost opening delimiter enclosing pos."
+  (let loop ((i (- pos 1)) (depth 0))
+    (cond
+      ((< i 0) #f)
+      ((memv (string-ref text i) '(#\) #\] #\}))
+       (loop (- i 1) (+ depth 1)))
+      ((memv (string-ref text i) '(#\( #\[ #\{))
+       (if (= depth 0) i (loop (- i 1) (- depth 1))))
+      (else (loop (- i 1) depth)))))
+
+(def (text-find-enclosing-close text pos)
+  "Find innermost closing delimiter enclosing pos."
+  (let ((len (string-length text)))
+    (let loop ((i pos) (depth 0))
+      (cond
+        ((>= i len) #f)
+        ((memv (string-ref text i) '(#\( #\[ #\{))
+         (loop (+ i 1) (+ depth 1)))
+        ((memv (string-ref text i) '(#\) #\] #\}))
+         (if (= depth 0) i (loop (+ i 1) (- depth 1))))
+        (else (loop (+ i 1) depth))))))
+
+;;;============================================================================
+;;; Paredit slurp/barf/split/join
+;;;============================================================================
+
+(def (cmd-paredit-slurp-forward app)
+  "Extend enclosing sexp to include the next sexp after the closing delimiter."
+  (let* ((ed (current-editor app))
+         (text (editor-get-text ed))
+         (pos (editor-get-current-pos ed))
+         (close-pos (text-find-enclosing-close text pos)))
+    (when close-pos
+      (let* ((after (text-skip-ws-forward text (+ close-pos 1)))
+             (next-end (text-sexp-end text after)))
+        (when (> next-end after)
+          (let* ((close-char (string (string-ref text close-pos)))
+                 (new-text (string-append
+                             (substring text 0 close-pos)
+                             (substring text (+ close-pos 1) next-end)
+                             close-char
+                             (substring text next-end (string-length text)))))
+            (with-undo-action ed
+              (editor-set-text ed new-text)
+              (editor-goto-pos ed pos))))))))
+
+(def (cmd-paredit-barf-forward app)
+  "Move the last element of enclosing sexp out past the closing delimiter."
+  (let* ((ed (current-editor app))
+         (text (editor-get-text ed))
+         (pos (editor-get-current-pos ed))
+         (close-pos (text-find-enclosing-close text pos)))
+    (when close-pos
+      (let* ((before-close (text-skip-ws-backward text close-pos))
+             (last-start (text-sexp-start text before-close)))
+        (when (> last-start 0)
+          (let ((open-pos (text-find-enclosing-open text pos))
+                (close-char (string (string-ref text close-pos))))
+            (when (and open-pos (> last-start (+ open-pos 1)))
+              (let* ((ws-before (text-skip-ws-backward text last-start))
+                     (new-text (string-append
+                                 (substring text 0 ws-before)
+                                 close-char
+                                 (substring text ws-before close-pos)
+                                 (substring text (+ close-pos 1) (string-length text)))))
+                (with-undo-action ed
+                  (editor-set-text ed new-text)
+                  (editor-goto-pos ed (min pos (string-length new-text))))))))))))
+
+(def (cmd-paredit-split-sexp app)
+  "Split the enclosing sexp into two at point."
+  (let* ((ed (current-editor app))
+         (text (editor-get-text ed))
+         (pos (editor-get-current-pos ed))
+         (open-pos (text-find-enclosing-open text pos)))
+    (when open-pos
+      (let ((close-pos (text-find-enclosing-close text pos))
+            (open-ch (string-ref text open-pos)))
+        (when close-pos
+          (let* ((close-ch (cond ((char=? open-ch #\() #\))
+                                 ((char=? open-ch #\[) #\])
+                                 ((char=? open-ch #\{) #\})
+                                 (else #\))))
+                 (new-text (string-append
+                             (substring text 0 pos)
+                             (string close-ch) " " (string open-ch)
+                             (substring text pos (string-length text)))))
+            (with-undo-action ed
+              (editor-set-text ed new-text)
+              (editor-goto-pos ed (+ pos 2)))))))))
+
+(def (cmd-paredit-join-sexps app)
+  "Join two adjacent sexps into one."
+  (let* ((ed (current-editor app))
+         (text (editor-get-text ed))
+         (pos (editor-get-current-pos ed))
+         (bwd (text-skip-ws-backward text pos)))
+    (when (and (> bwd 0)
+               (memv (string-ref text (- bwd 1)) '(#\) #\] #\})))
+      (let ((fwd (text-skip-ws-forward text pos)))
+        (when (and (< fwd (string-length text))
+                   (memv (string-ref text fwd) '(#\( #\[ #\{)))
+          (let ((new-text (string-append
+                            (substring text 0 (- bwd 1))
+                            " "
+                            (substring text (+ fwd 1) (string-length text)))))
+            (with-undo-action ed
+              (editor-set-text ed new-text)
+              (editor-goto-pos ed (- bwd 1)))))))))
+
+;;;============================================================================
+;;; Number increment/decrement at point
+;;;============================================================================
+
+(def (find-number-at-pos text pos)
+  "Find start and end of number at pos. Returns (start . end) or #f."
+  (let ((len (string-length text)))
+    (if (and (< pos len) (or (char-numeric? (string-ref text pos))
+                              (and (char=? (string-ref text pos) #\-)
+                                   (< (+ pos 1) len)
+                                   (char-numeric? (string-ref text (+ pos 1))))))
+      ;; Scan backward for start
+      (let ((start (let loop ((i pos))
+                     (if (or (<= i 0)
+                             (not (or (char-numeric? (string-ref text (- i 1)))
+                                      (char=? (string-ref text (- i 1)) #\-))))
+                       i (loop (- i 1))))))
+        ;; Scan forward for end
+        (let ((end (let loop ((i pos))
+                     (if (or (>= i len) (not (char-numeric? (string-ref text i))))
+                       i (loop (+ i 1))))))
+          (cons start end)))
+      #f)))
+
+(def (cmd-increment-number app)
+  "Increment the number at point by 1."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app))
+         (text (editor-get-text ed))
+         (pos (editor-get-current-pos ed))
+         (bounds (find-number-at-pos text pos)))
+    (if (not bounds)
+      (echo-error! echo "No number at point")
+      (let* ((start (car bounds))
+             (end (cdr bounds))
+             (num-str (substring text start end))
+             (num (string->number num-str)))
+        (when num
+          (let ((new-str (number->string (+ num 1))))
+            (with-undo-action ed
+              (editor-set-selection ed start end)
+              (editor-replace-selection ed new-str))
+            (editor-goto-pos ed start)))))))
+
+(def (cmd-decrement-number app)
+  "Decrement the number at point by 1."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app))
+         (text (editor-get-text ed))
+         (pos (editor-get-current-pos ed))
+         (bounds (find-number-at-pos text pos)))
+    (if (not bounds)
+      (echo-error! echo "No number at point")
+      (let* ((start (car bounds))
+             (end (cdr bounds))
+             (num-str (substring text start end))
+             (num (string->number num-str)))
+        (when num
+          (let ((new-str (number->string (- num 1))))
+            (with-undo-action ed
+              (editor-set-selection ed start end)
+              (editor-replace-selection ed new-str))
+            (editor-goto-pos ed start)))))))
+
+;;;============================================================================
+;;; Grep/compilation result navigation
+;;;============================================================================
+
+(def (parse-grep-line-text line)
+  "Parse a grep -n output line. Returns (file line-num) or #f."
+  ;; Format: file:line:text
+  (let ((colon1 (string-index line #\:)))
+    (and colon1
+         (let ((colon2 (string-index line #\: (+ colon1 1))))
+           (and colon2
+                (let ((line-num (string->number
+                                  (substring line (+ colon1 1) colon2))))
+                  (and line-num
+                       (list (substring line 0 colon1)
+                             line-num))))))))
+
+(def (cmd-grep-goto app)
+  "Jump to file:line from grep/compilation output at cursor."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app))
+         (pos (editor-get-current-pos ed))
+         (line-num (editor-line-from-position ed pos))
+         (line-text (editor-get-line ed line-num))
+         (parsed (parse-grep-line-text line-text)))
+    (if (not parsed)
+      (echo-error! echo "No file:line at point")
+      (let ((file (car parsed))
+            (target-line (cadr parsed)))
+        (if (not (file-exists? file))
+          (echo-error! echo (string-append "File not found: " file))
+          ;; Open the file and go to line
+          (let* ((fr (app-state-frame app))
+                 (name (path-strip-directory file))
+                 (buf (or (buffer-by-name name)
+                          (buffer-create! name ed file))))
+            (buffer-attach! ed buf)
+            (set! (edit-window-buffer (current-window fr)) buf)
+            (when (file-exists? file)
+              (let ((text (read-file-as-string file)))
+                (when text
+                  (editor-set-text ed text)
+                  (editor-set-save-point ed))))
+            (editor-goto-line ed (- target-line 1))
+            (editor-scroll-caret ed)
+            (echo-message! echo
+              (string-append file ":" (number->string target-line)))))))))
+
+(def (cmd-next-error app)
+  "Jump to next error/grep result in *Compilation* or *Grep* buffer."
+  (let* ((echo (app-state-echo app))
+         (grep-buf (or (buffer-by-name "*Grep*")
+                       (buffer-by-name "*Compilation*"))))
+    (if (not grep-buf)
+      (echo-error! echo "No grep/compilation buffer")
+      ;; If we're not in the grep buffer, switch to it first
+      (let* ((ed (current-editor app))
+             (fr (app-state-frame app))
+             (cur-buf (current-buffer-from-app app)))
+        (unless (eq? cur-buf grep-buf)
+          (buffer-attach! ed grep-buf)
+          (set! (edit-window-buffer (current-window fr)) grep-buf))
+        ;; Move to next line with a match
+        (let* ((pos (editor-get-current-pos ed))
+               (cur-line (editor-line-from-position ed pos))
+               (total-lines (editor-get-line-count ed)))
+          (let loop ((line (+ cur-line 1)))
+            (if (>= line total-lines)
+              (echo-message! echo "No more results")
+              (let* ((line-text (editor-get-line ed line))
+                     (parsed (parse-grep-line-text line-text)))
+                (if parsed
+                  (begin
+                    (editor-goto-line ed line)
+                    (editor-scroll-caret ed)
+                    (cmd-grep-goto app))
+                  (loop (+ line 1)))))))))))
+
 ;; TRAMP-like remote editing via SSH
 (def (cmd-find-file-ssh app)
   "Open file via SSH. Fetches remote file content using scp."

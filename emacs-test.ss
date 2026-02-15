@@ -29,7 +29,10 @@
                  cmd-org-template-expand
                  org-heading-level org-find-subtree-end org-on-checkbox-line?)
         (only-in :gerbil-emacs/editor register-all-commands!)
-        (only-in :gerbil-emacs/editor-extra-editing occur-parse-source-name)
+        (only-in :gerbil-emacs/editor-extra-editing
+                 occur-parse-source-name
+                 text-find-matching-close text-sexp-end
+                 parse-grep-line-text find-number-at-pos)
         (only-in :gerbil-emacs/highlight
                  detect-file-language gerbil-file-extension?
                  setup-highlighting-for-file!)
@@ -918,6 +921,35 @@
       (check (occur-parse-source-name
                "5 matches for \"foo\" in main.ss:\n\n1:foo") => "main.ss")
       (check (occur-parse-source-name "no header here") => #f))
+
+    (test-case "command registration: paredit advanced and numbers"
+      (register-all-commands!)
+      (check (procedure? (find-command 'paredit-slurp-forward)) => #t)
+      (check (procedure? (find-command 'paredit-barf-forward)) => #t)
+      (check (procedure? (find-command 'paredit-split-sexp)) => #t)
+      (check (procedure? (find-command 'paredit-join-sexps)) => #t)
+      (check (procedure? (find-command 'increment-number)) => #t)
+      (check (procedure? (find-command 'decrement-number)) => #t)
+      (check (procedure? (find-command 'grep-goto)) => #t)
+      (check (procedure? (find-command 'next-error)) => #t))
+
+    (test-case "sexp helpers: text-find-matching-close"
+      (check (text-find-matching-close "(abc)" 0) => 5)
+      (check (text-find-matching-close "(a (b) c)" 0) => 9)
+      (check (text-find-matching-close "[x]" 0) => 3))
+
+    (test-case "sexp helpers: text-sexp-end"
+      (check (text-sexp-end "(abc)" 0) => 5)
+      (check (text-sexp-end "hello world" 0) => 5)
+      (check (text-sexp-end "\"str\"" 0) => 5))
+
+    (test-case "grep line parsing"
+      (check (parse-grep-line-text "foo.ss:42:some text") => '("foo.ss" 42))
+      (check (parse-grep-line-text "no match here") => #f))
+
+    (test-case "number at point: find-number-at-pos"
+      (check (find-number-at-pos "abc 123 def" 4) => '(4 . 7))
+      (check (find-number-at-pos "abc def" 2) => #f))
 
     (test-case "key lossage recording"
       (let ((app (new-app-state #f)))
