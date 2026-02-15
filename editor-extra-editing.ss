@@ -1704,3 +1704,61 @@
     (echo-message! echo (if *global-anzu*
                           "Global anzu ON" "Global anzu OFF"))))
 
+;; ── batch 54: navigation and editing enhancement toggles ────────────
+(def *global-visual-regexp* #f)
+(def *global-move-dup* #f)
+(def *global-expand-region* #f)
+(def *global-multiple-cursors* #f)
+(def *global-undo-propose* #f)
+(def *global-goto-chg* #f)
+(def *global-avy* #f)
+
+(def (cmd-toggle-global-visual-regexp app)
+  "Toggle global visual-regexp-mode."
+  (let ((echo (app-state-echo app)))
+    (set! *global-visual-regexp* (not *global-visual-regexp*))
+    (echo-message! echo (if *global-visual-regexp*
+                          "Visual regexp ON" "Visual regexp OFF"))))
+
+(def (cmd-toggle-global-move-dup app)
+  "Toggle global move-dup-mode (move/duplicate lines)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-move-dup* (not *global-move-dup*))
+    (echo-message! echo (if *global-move-dup*
+                          "Move-dup ON" "Move-dup OFF"))))
+
+(def (cmd-toggle-global-expand-region app)
+  "Toggle global expand-region integration."
+  (let ((echo (app-state-echo app)))
+    (set! *global-expand-region* (not *global-expand-region*))
+    (echo-message! echo (if *global-expand-region*
+                          "Expand-region ON" "Expand-region OFF"))))
+
+(def (cmd-toggle-global-multiple-cursors app)
+  "Toggle global multiple-cursors-mode."
+  (let ((echo (app-state-echo app)))
+    (set! *global-multiple-cursors* (not *global-multiple-cursors*))
+    (echo-message! echo (if *global-multiple-cursors*
+                          "Multiple cursors ON" "Multiple cursors OFF"))))
+
+(def (cmd-toggle-global-undo-propose app)
+  "Toggle global undo-propose-mode (preview undo)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-undo-propose* (not *global-undo-propose*))
+    (echo-message! echo (if *global-undo-propose*
+                          "Undo propose ON" "Undo propose OFF"))))
+
+(def (cmd-toggle-global-goto-chg app)
+  "Toggle global goto-chg-mode (navigate edit points)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-goto-chg* (not *global-goto-chg*))
+    (echo-message! echo (if *global-goto-chg*
+                          "Goto-chg ON" "Goto-chg OFF"))))
+
+(def (cmd-toggle-global-avy app)
+  "Toggle global avy-mode (jump to visible text)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-avy* (not *global-avy*))
+    (echo-message! echo (if *global-avy*
+                          "Global avy ON" "Global avy OFF"))))
+

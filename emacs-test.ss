@@ -67,7 +67,11 @@
                  *global-display-fill-column* *global-flycheck*
                  *global-company* *global-diff-hl*
                  *global-git-gutter* *global-page-break-lines*
-                 *global-anzu*)
+                 *global-anzu*
+                 *global-visual-regexp* *global-move-dup*
+                 *global-expand-region* *global-multiple-cursors*
+                 *global-undo-propose* *global-goto-chg*
+                 *global-avy*)
         (only-in :gerbil-emacs/editor-extra-vcs
                  fuzzy-match? fuzzy-score)
         (only-in :gerbil-emacs/editor-extra-final
@@ -2445,6 +2449,27 @@
       (check (procedure? (find-command 'toggle-global-symbol-overlay)) => #t)
       (check (procedure? (find-command 'toggle-global-highlight-parentheses)) => #t)
       (check (procedure? (find-command 'toggle-global-pulse-line)) => #t))
+
+    ;; -- Batch 54 tests --
+    (test-case "batch 54: mode toggles"
+      (check *global-visual-regexp* => #f)
+      (check *global-move-dup* => #f)
+      (check *global-expand-region* => #f)
+      (check *global-multiple-cursors* => #f)
+      (check *global-undo-propose* => #f)
+      (check *global-goto-chg* => #f)
+      (check *global-avy* => #f))
+
+    ;; -- Command registration batch 54 --
+    (test-case "command registration: batch 54 features"
+      (register-all-commands!)
+      (check (procedure? (find-command 'toggle-global-visual-regexp)) => #t)
+      (check (procedure? (find-command 'toggle-global-move-dup)) => #t)
+      (check (procedure? (find-command 'toggle-global-expand-region)) => #t)
+      (check (procedure? (find-command 'toggle-global-multiple-cursors)) => #t)
+      (check (procedure? (find-command 'toggle-global-undo-propose)) => #t)
+      (check (procedure? (find-command 'toggle-global-goto-chg)) => #t)
+      (check (procedure? (find-command 'toggle-global-avy)) => #t))
 
     ;;=========================================================================
     ;; Headless Scintilla editor tests

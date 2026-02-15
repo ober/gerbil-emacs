@@ -1115,4 +1115,12 @@
   (register-command! 'toggle-global-symbol-overlay cmd-toggle-global-symbol-overlay)
   (register-command! 'toggle-global-highlight-parentheses cmd-toggle-global-highlight-parentheses)
   (register-command! 'toggle-global-pulse-line cmd-toggle-global-pulse-line)
+  ;; batch 54
+  (register-command! 'toggle-global-visual-regexp cmd-toggle-global-visual-regexp)
+  (register-command! 'toggle-global-move-dup cmd-toggle-global-move-dup)
+  (register-command! 'toggle-global-expand-region cmd-toggle-global-expand-region)
+  (register-command! 'toggle-global-multiple-cursors cmd-toggle-global-multiple-cursors)
+  (register-command! 'toggle-global-undo-propose cmd-toggle-global-undo-propose)
+  (register-command! 'toggle-global-goto-chg cmd-toggle-global-goto-chg)
+  (register-command! 'toggle-global-avy cmd-toggle-global-avy)
 )
