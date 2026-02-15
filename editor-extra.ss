@@ -1211,4 +1211,12 @@
   (register-command! 'toggle-global-lsp-headerline cmd-toggle-global-lsp-headerline)
   (register-command! 'toggle-global-lsp-lens cmd-toggle-global-lsp-lens)
   (register-command! 'toggle-global-lsp-semantic-tokens cmd-toggle-global-lsp-semantic-tokens)
+  ;; batch 66
+  (register-command! 'toggle-global-docker cmd-toggle-global-docker)
+  (register-command! 'toggle-global-kubernetes cmd-toggle-global-kubernetes)
+  (register-command! 'toggle-global-terraform cmd-toggle-global-terraform)
+  (register-command! 'toggle-global-ansible cmd-toggle-global-ansible)
+  (register-command! 'toggle-global-vagrant cmd-toggle-global-vagrant)
+  (register-command! 'toggle-global-restclient cmd-toggle-global-restclient)
+  (register-command! 'toggle-global-ob-http cmd-toggle-global-ob-http)
 )

@@ -187,7 +187,11 @@
         (only-in :gerbil-emacs/editor-extra-modes
                  *global-envrc* *global-direnv* *global-editorconfig*
                  *global-dtrt-indent* *global-ws-trim*
-                 *global-auto-compile* *global-no-littering*)
+                 *global-auto-compile* *global-no-littering*
+                 *global-docker* *global-kubernetes*
+                 *global-terraform* *global-ansible*
+                 *global-vagrant* *global-restclient*
+                 *global-ob-http*)
         (only-in :gerbil-emacs/editor-extra-vcs
                  *comment-style* *flymake-mode*
                  *delete-selection-mode* *word-count-mode*
@@ -2719,6 +2723,25 @@
       (check (procedure? (find-command 'toggle-global-lsp-headerline)) => #t)
       (check (procedure? (find-command 'toggle-global-lsp-lens)) => #t)
       (check (procedure? (find-command 'toggle-global-lsp-semantic-tokens)) => #t))
+
+    (test-case "batch 66: mode toggles"
+      (check *global-docker* => #f)
+      (check *global-kubernetes* => #f)
+      (check *global-terraform* => #f)
+      (check *global-ansible* => #f)
+      (check *global-vagrant* => #f)
+      (check *global-restclient* => #f)
+      (check *global-ob-http* => #f))
+
+    (test-case "command registration: batch 66 features"
+      (register-all-commands!)
+      (check (procedure? (find-command 'toggle-global-docker)) => #t)
+      (check (procedure? (find-command 'toggle-global-kubernetes)) => #t)
+      (check (procedure? (find-command 'toggle-global-terraform)) => #t)
+      (check (procedure? (find-command 'toggle-global-ansible)) => #t)
+      (check (procedure? (find-command 'toggle-global-vagrant)) => #t)
+      (check (procedure? (find-command 'toggle-global-restclient)) => #t)
+      (check (procedure? (find-command 'toggle-global-ob-http)) => #t))
 
     ;;=========================================================================
     ;; Headless Scintilla editor tests

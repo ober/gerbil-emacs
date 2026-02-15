@@ -1774,4 +1774,63 @@
     (echo-message! echo (if *global-no-littering*
                           "Global no-littering ON" "Global no-littering OFF"))))
 
+;;; ---- batch 66: DevOps and infrastructure toggles ----
+
+(def *global-docker* #f)
+(def *global-kubernetes* #f)
+(def *global-terraform* #f)
+(def *global-ansible* #f)
+(def *global-vagrant* #f)
+(def *global-restclient* #f)
+(def *global-ob-http* #f)
+
+(def (cmd-toggle-global-docker app)
+  "Toggle global docker-mode (manage Docker containers)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-docker* (not *global-docker*))
+    (echo-message! echo (if *global-docker*
+                          "Docker mode ON" "Docker mode OFF"))))
+
+(def (cmd-toggle-global-kubernetes app)
+  "Toggle global kubernetes-mode (K8s cluster management)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-kubernetes* (not *global-kubernetes*))
+    (echo-message! echo (if *global-kubernetes*
+                          "Kubernetes ON" "Kubernetes OFF"))))
+
+(def (cmd-toggle-global-terraform app)
+  "Toggle global terraform-mode (infrastructure as code)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-terraform* (not *global-terraform*))
+    (echo-message! echo (if *global-terraform*
+                          "Terraform ON" "Terraform OFF"))))
+
+(def (cmd-toggle-global-ansible app)
+  "Toggle global ansible-mode (Ansible playbook support)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-ansible* (not *global-ansible*))
+    (echo-message! echo (if *global-ansible*
+                          "Ansible ON" "Ansible OFF"))))
+
+(def (cmd-toggle-global-vagrant app)
+  "Toggle global vagrant-mode (Vagrant VM management)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-vagrant* (not *global-vagrant*))
+    (echo-message! echo (if *global-vagrant*
+                          "Vagrant ON" "Vagrant OFF"))))
+
+(def (cmd-toggle-global-restclient app)
+  "Toggle global restclient-mode (HTTP REST client)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-restclient* (not *global-restclient*))
+    (echo-message! echo (if *global-restclient*
+                          "Restclient ON" "Restclient OFF"))))
+
+(def (cmd-toggle-global-ob-http app)
+  "Toggle global ob-http-mode (HTTP requests in org-babel)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-ob-http* (not *global-ob-http*))
+    (echo-message! echo (if *global-ob-http*
+                          "Ob-http ON" "Ob-http OFF"))))
+
 
