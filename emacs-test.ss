@@ -84,7 +84,11 @@
                  *modus-themes* *ef-themes* *nano-theme*
                  *ligature-mode* *pixel-scroll-precision*
                  *repeat-mode* *tab-line-mode*
-                 *scroll-bar-mode* *tool-bar-mode*)
+                 *scroll-bar-mode* *tool-bar-mode*
+                 *global-auto-revert-non-file* *global-tree-sitter*
+                 *global-copilot* *global-lsp-mode*
+                 *global-format-on-save* *global-yas*
+                 *global-smartparens*)
         (only-in :gerbil-emacs/editor-extra-tools2
                  *highlight-changes-mode* *saved-window-layouts*
                  *known-modes* *password-chars*
@@ -2371,6 +2375,27 @@
       (check (procedure? (find-command 'toggle-global-beacon)) => #t)
       (check (procedure? (find-command 'toggle-global-dimmer)) => #t)
       (check (procedure? (find-command 'toggle-global-focus)) => #t))
+
+    ;; -- Batch 51 tests --
+    (test-case "batch 51: mode toggles"
+      (check *global-auto-revert-non-file* => #f)
+      (check *global-tree-sitter* => #f)
+      (check *global-copilot* => #f)
+      (check *global-lsp-mode* => #f)
+      (check *global-format-on-save* => #f)
+      (check *global-yas* => #f)
+      (check *global-smartparens* => #f))
+
+    ;; -- Command registration batch 51 --
+    (test-case "command registration: batch 51 features"
+      (register-all-commands!)
+      (check (procedure? (find-command 'toggle-global-auto-revert-non-file)) => #t)
+      (check (procedure? (find-command 'toggle-global-tree-sitter)) => #t)
+      (check (procedure? (find-command 'toggle-global-copilot)) => #t)
+      (check (procedure? (find-command 'toggle-global-lsp-mode)) => #t)
+      (check (procedure? (find-command 'toggle-global-format-on-save)) => #t)
+      (check (procedure? (find-command 'toggle-global-yas)) => #t)
+      (check (procedure? (find-command 'toggle-global-smartparens)) => #t))
 
     ;;=========================================================================
     ;; Headless Scintilla editor tests

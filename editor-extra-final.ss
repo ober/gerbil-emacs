@@ -1665,3 +1665,61 @@
     (set! *tool-bar-mode* (not *tool-bar-mode*))
     (echo-message! echo (if *tool-bar-mode*
                           "Tool bar mode ON" "Tool bar mode OFF"))))
+
+;; ── batch 51: modern editor integration toggles ─────────────────────
+(def *global-auto-revert-non-file* #f)
+(def *global-tree-sitter* #f)
+(def *global-copilot* #f)
+(def *global-lsp-mode* #f)
+(def *global-format-on-save* #f)
+(def *global-yas* #f)
+(def *global-smartparens* #f)
+
+(def (cmd-toggle-global-auto-revert-non-file app)
+  "Toggle auto-revert for non-file buffers (dired, etc)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-auto-revert-non-file* (not *global-auto-revert-non-file*))
+    (echo-message! echo (if *global-auto-revert-non-file*
+                          "Auto-revert non-file ON" "Auto-revert non-file OFF"))))
+
+(def (cmd-toggle-global-tree-sitter app)
+  "Toggle global tree-sitter syntax support."
+  (let ((echo (app-state-echo app)))
+    (set! *global-tree-sitter* (not *global-tree-sitter*))
+    (echo-message! echo (if *global-tree-sitter*
+                          "Tree-sitter global ON" "Tree-sitter global OFF"))))
+
+(def (cmd-toggle-global-copilot app)
+  "Toggle global copilot-mode (AI completion)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-copilot* (not *global-copilot*))
+    (echo-message! echo (if *global-copilot*
+                          "Copilot global ON" "Copilot global OFF"))))
+
+(def (cmd-toggle-global-lsp-mode app)
+  "Toggle global lsp-mode (language server protocol)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-lsp-mode* (not *global-lsp-mode*))
+    (echo-message! echo (if *global-lsp-mode*
+                          "LSP mode global ON" "LSP mode global OFF"))))
+
+(def (cmd-toggle-global-format-on-save app)
+  "Toggle format-on-save (auto-format before saving)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-format-on-save* (not *global-format-on-save*))
+    (echo-message! echo (if *global-format-on-save*
+                          "Format on save ON" "Format on save OFF"))))
+
+(def (cmd-toggle-global-yas app)
+  "Toggle global yasnippet-mode."
+  (let ((echo (app-state-echo app)))
+    (set! *global-yas* (not *global-yas*))
+    (echo-message! echo (if *global-yas*
+                          "Yasnippet global ON" "Yasnippet global OFF"))))
+
+(def (cmd-toggle-global-smartparens app)
+  "Toggle global smartparens-mode."
+  (let ((echo (app-state-echo app)))
+    (set! *global-smartparens* (not *global-smartparens*))
+    (echo-message! echo (if *global-smartparens*
+                          "Smartparens global ON" "Smartparens global OFF"))))

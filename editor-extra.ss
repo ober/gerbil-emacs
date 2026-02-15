@@ -1091,4 +1091,12 @@
   (register-command! 'toggle-global-beacon cmd-toggle-global-beacon)
   (register-command! 'toggle-global-dimmer cmd-toggle-global-dimmer)
   (register-command! 'toggle-global-focus cmd-toggle-global-focus)
+  ;; batch 51
+  (register-command! 'toggle-global-auto-revert-non-file cmd-toggle-global-auto-revert-non-file)
+  (register-command! 'toggle-global-tree-sitter cmd-toggle-global-tree-sitter)
+  (register-command! 'toggle-global-copilot cmd-toggle-global-copilot)
+  (register-command! 'toggle-global-lsp-mode cmd-toggle-global-lsp-mode)
+  (register-command! 'toggle-global-format-on-save cmd-toggle-global-format-on-save)
+  (register-command! 'toggle-global-yas cmd-toggle-global-yas)
+  (register-command! 'toggle-global-smartparens cmd-toggle-global-smartparens)
 )
