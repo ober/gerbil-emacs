@@ -953,18 +953,18 @@
   (send-message ed SCI_INDICSETUNDER *search-indicator* 1)        ; draw under text
   (send-message ed SCI_INDICSETALPHA *search-indicator* 80))      ; semi-transparent
 
-(def (highlight-all-matches! ed query)
-  "Highlight all occurrences of query in the editor using indicators."
+(def (highlight-all-matches! ed query (flags 0))
+  "Highlight all occurrences of query in the editor using indicators.
+   flags: 0 for literal, SCFIND_REGEXP for regex."
   (setup-search-indicator! ed)
   ;; Clear existing search highlights
   (clear-search-highlights! ed)
   (when (> (string-length query) 0)
-    (let ((len (editor-get-text-length ed))
-          (query-len (string-length query)))
+    (let ((len (editor-get-text-length ed)))
       ;; Set current indicator
       (send-message ed SCI_SETINDICATORCURRENT *search-indicator*)
       ;; Find all matches
-      (send-message ed SCI_SETSEARCHFLAGS 0)
+      (send-message ed SCI_SETSEARCHFLAGS flags)
       (let loop ((start 0))
         (when (< start len)
           (send-message ed SCI_SETTARGETSTART start)
@@ -972,8 +972,9 @@
           (let ((found (send-message/string ed SCI_SEARCHINTARGET query)))
             (when (>= found 0)
               (let ((match-end (send-message ed SCI_GETTARGETEND)))
-                (send-message ed SCI_INDICATORFILLRANGE found (- match-end found))
-                (loop (+ found 1))))))))))
+                (when (> match-end found)  ;; guard against zero-length regex matches
+                  (send-message ed SCI_INDICATORFILLRANGE found (- match-end found)))
+                (loop (+ (max found match-end) 1))))))))))
 
 (def (clear-search-highlights! ed)
   "Remove all search highlight indicators."
@@ -1020,6 +1021,39 @@
                   (echo-message! echo "Wrapped"))
                 (echo-error! echo
                              (string-append "Not found: " query))))))))))
+
+(def (search-forward-regexp-impl! app pattern)
+  "Execute a forward regex search for pattern using Scintilla SCFIND_REGEXP."
+  (let* ((echo (app-state-echo app))
+         (ed (current-editor app)))
+    (set! (app-state-last-search app) pattern)
+    ;; Highlight all regex matches
+    (highlight-all-matches! ed pattern SCFIND_REGEXP)
+    (let ((pos (editor-get-current-pos ed))
+          (len (editor-get-text-length ed)))
+      ;; Search forward from current position
+      (send-message ed SCI_SETTARGETSTART pos)
+      (send-message ed SCI_SETTARGETEND len)
+      (send-message ed SCI_SETSEARCHFLAGS SCFIND_REGEXP)
+      (let ((found (send-message/string ed SCI_SEARCHINTARGET pattern)))
+        (if (>= found 0)
+          (let ((match-end (send-message ed SCI_GETTARGETEND)))
+            (editor-goto-pos ed found)
+            (editor-set-selection ed found match-end)
+            (pulse-line! ed (editor-line-from-position ed found)))
+          ;; Wrap around from beginning
+          (begin
+            (send-message ed SCI_SETTARGETSTART 0)
+            (send-message ed SCI_SETTARGETEND len)
+            (let ((found2 (send-message/string ed SCI_SEARCHINTARGET pattern)))
+              (if (>= found2 0)
+                (let ((match-end2 (send-message ed SCI_GETTARGETEND)))
+                  (editor-goto-pos ed found2)
+                  (editor-set-selection ed found2 match-end2)
+                  (pulse-line! ed (editor-line-from-position ed found2))
+                  (echo-message! echo "Wrapped"))
+                (echo-error! echo
+                  (string-append "No regexp match: " pattern))))))))))
 
 (def (cmd-search-forward app)
   ;; If repeating C-s with an existing search query, skip the prompt

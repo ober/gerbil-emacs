@@ -679,4 +679,7 @@
   (register-command! 'enlarge-window cmd-enlarge-window)
   (register-command! 'shrink-window cmd-shrink-window)
   (register-command! 'enlarge-window-horizontally cmd-enlarge-window-horizontally)
-  (register-command! 'shrink-window-horizontally cmd-shrink-window-horizontally))
+  (register-command! 'shrink-window-horizontally cmd-shrink-window-horizontally)
+  ;; Regex search
+  (register-command! 'isearch-forward-regexp cmd-search-forward-regexp)
+  (register-command! 'query-replace-regexp-interactive cmd-query-replace-regexp-interactive))

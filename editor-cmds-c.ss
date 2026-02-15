@@ -1112,33 +1112,31 @@
                 (echo-message! (app-state-echo app) "Only occurrence")))))))))
 
 (def (cmd-query-replace-regexp app)
-  "Query replace using regexp (simplified: uses string-contains)."
-  (let ((from (app-read-string app "Query replace: ")))
+  "Replace all matches of a regexp pattern using Scintilla SCFIND_REGEXP."
+  (let ((from (app-read-string app "Regexp replace: ")))
     (when (and from (not (string-empty? from)))
-      (let ((to (app-read-string app (string-append "Replace \"" from "\" with: "))))
+      (let ((to (app-read-string app (string-append "Replace regexp \"" from "\" with: "))))
         (when to
           (let* ((ed (current-editor app))
-                 (text (editor-get-text ed))
-                 (count (let loop ((i 0) (n 0))
-                          (let ((found (string-contains text from i)))
-                            (if found
-                              (loop (+ found (max 1 (string-length from))) (+ n 1))
-                              n)))))
-            ;; Do the replacement
-            (let loop ((result text) (replaced 0))
-              (let ((found (string-contains result from)))
-                (if found
-                  (let ((new-text (string-append
-                                    (substring result 0 found)
-                                    to
-                                    (substring result (+ found (string-length from))
-                                               (string-length result)))))
-                    (loop new-text (+ replaced 1)))
-                  (begin
-                    (editor-set-text ed result)
+                 (replaced 0))
+            ;; Start from beginning of document
+            (let loop ((pos 0))
+              (let ((text-len (editor-get-text-length ed)))
+                (send-message ed SCI_SETTARGETSTART pos)
+                (send-message ed SCI_SETTARGETEND text-len)
+                (send-message ed SCI_SETSEARCHFLAGS SCFIND_REGEXP)
+                (let ((found (send-message/string ed SCI_SEARCHINTARGET from)))
+                  (if (>= found 0)
+                    (let ((match-end (send-message ed SCI_GETTARGETEND)))
+                      (send-message ed SCI_SETTARGETSTART found)
+                      (send-message ed SCI_SETTARGETEND match-end)
+                      (let ((repl-len (send-message/string ed SCI_REPLACETARGETRE to)))
+                        (set! replaced (+ replaced 1))
+                        (loop (+ found (max repl-len 1)))))
                     (echo-message! (app-state-echo app)
-                                   (string-append "Replaced " (number->string replaced)
-                                                  " occurrences"))))))))))))
+                      (string-append "Replaced " (number->string replaced)
+                                     " occurrence" (if (= replaced 1) "" "s")))))))))))))
+
 
 (def (cmd-multi-occur app)
   "Search for pattern across all buffers."

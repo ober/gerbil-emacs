@@ -237,6 +237,10 @@
   ;; Query replace
   (keymap-bind! *global-keymap* "M-%" 'query-replace)
 
+  ;; Regex search and replace
+  (keymap-bind! *global-keymap* "C-M-s" 'isearch-forward-regexp)
+  (keymap-bind! *global-keymap* "C-M-%" 'query-replace-regexp)
+
   ;; Tab
   (keymap-bind! *global-keymap* "TAB" 'indent-or-complete)
 

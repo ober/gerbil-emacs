@@ -8,6 +8,7 @@
         :std/sort
         :std/srfi/13
         :std/text/base64
+        :std/pregexp
         :gerbil-qt/qt
         :gerbil-emacs/core
         :gerbil-emacs/editor
@@ -194,29 +195,74 @@
           (echo-error! (app-state-echo app)
             (string-append "'" (string ch) "' not found")))))))
 
+(def *qt-last-regexp-search* "")
+
+(def (cmd-search-forward-regexp app)
+  "Forward regex search (C-M-s). Uses pregexp."
+  (let* ((default *qt-last-regexp-search*)
+         (prompt (if (string=? default "")
+                   "Regexp search: "
+                   (string-append "Regexp search [" default "]: ")))
+         (input (qt-echo-read-string app prompt)))
+    (when input
+      (let ((pattern (if (string=? input "") default input)))
+        (when (> (string-length pattern) 0)
+          (set! *qt-last-regexp-search* pattern)
+          (set! (app-state-last-search app) pattern)
+          (let* ((ed (current-qt-editor app))
+                 (text (qt-plain-text-edit-text ed))
+                 (cur-pos (qt-plain-text-edit-cursor-position ed))
+                 ;; Search forward from cursor
+                 (match (pregexp-match-positions pattern text cur-pos)))
+            (if match
+              (let* ((pair (car match))
+                     (start (car pair))
+                     (end (cdr pair)))
+                (qt-plain-text-edit-set-cursor-position! ed end)
+                (qt-plain-text-edit-ensure-cursor-visible! ed)
+                ;; Highlight match
+                (qt-update-visual-decorations! ed)
+                (qt-extra-selection-add-range! ed start (- end start)
+                  #x00 #x00 #x00 #x00 #xdd #xff bold: #t)
+                (qt-extra-selections-apply! ed))
+              ;; Try wrapping from start
+              (let ((match2 (pregexp-match-positions pattern text 0)))
+                (if match2
+                  (let* ((pair2 (car match2))
+                         (start2 (car pair2))
+                         (end2 (cdr pair2)))
+                    (qt-plain-text-edit-set-cursor-position! ed end2)
+                    (qt-plain-text-edit-ensure-cursor-visible! ed)
+                    (qt-update-visual-decorations! ed)
+                    (qt-extra-selection-add-range! ed start2 (- end2 start2)
+                      #x00 #x00 #x00 #x00 #xdd #xff bold: #t)
+                    (qt-extra-selections-apply! ed)
+                    (echo-message! (app-state-echo app) "Wrapped"))
+                  (echo-error! (app-state-echo app)
+                    (string-append "No regexp match: " pattern)))))))))))
+
 (def (cmd-query-replace-regexp app)
-  "Query replace (simplified: uses string-contains, not regexp)."
-  (let ((from (qt-echo-read-string app "Query replace: ")))
-    (when from
-      (let ((to (qt-echo-read-string app (string-append "Replace \"" from "\" with: "))))
+  "Interactive regex query-replace (C-M-%). Uses pregexp."
+  (let ((from (qt-echo-read-string app "Regexp replace: ")))
+    (when (and from (> (string-length from) 0))
+      (let ((to (qt-echo-read-string app
+                  (string-append "Replace regexp \"" from "\" with: "))))
         (when to
           (let* ((ed (current-qt-editor app))
-                 (text (qt-plain-text-edit-text ed)))
-            ;; Do all replacements
-            (let loop ((result text) (replaced 0))
-              (let ((found (string-contains result from)))
-                (if found
-                  (let ((new-text (string-append
-                                    (substring result 0 found)
-                                    to
-                                    (substring result (+ found (string-length from))
-                                               (string-length result)))))
-                    (loop new-text (+ replaced 1)))
-                  (begin
-                    (qt-plain-text-edit-set-text! ed result)
-                    (echo-message! (app-state-echo app)
-                      (string-append "Replaced " (number->string replaced)
-                                     " occurrences"))))))))))))
+                 (text (qt-plain-text-edit-text ed))
+                 (new-text (pregexp-replace* from text to))
+                 ;; Count matches
+                 (count (let loop ((s text) (n 0))
+                          (let ((m (pregexp-match-positions from s)))
+                            (if m
+                              (let ((end (cdr (car m))))
+                                (loop (substring s (max end 1) (string-length s))
+                                      (+ n 1)))
+                              n)))))
+            (qt-plain-text-edit-set-text! ed new-text)
+            (echo-message! (app-state-echo app)
+              (string-append "Replaced " (number->string count)
+                             " occurrence" (if (= count 1) "" "s")))))))))
 
 (def (cmd-copy-from-below app)
   "Copy character from the line below."

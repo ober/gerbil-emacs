@@ -15,6 +15,10 @@
         :gerbil-emacs/window
         :gerbil-emacs/modeline
         :gerbil-emacs/echo
+        (only-in :gerbil-emacs/editor-core
+                 search-forward-regexp-impl!)
+        (only-in :gerbil-emacs/editor-ui
+                 position-cursor-for-replace!)
         :gerbil-emacs/editor-extra-helpers
         :gerbil-emacs/editor-extra-web
         :gerbil-emacs/editor-extra-media
@@ -233,4 +237,123 @@
         (echo-message! (app-state-echo app)
           (string-append "Window narrowed by " (number->string n))))
       (echo-error! (app-state-echo app) "Only one window"))))
+
+;;;============================================================================
+;;; Regex search (C-M-s) and regex query-replace (C-M-%)
+;;;============================================================================
+
+(def *last-regexp-search* "")
+
+(def (cmd-search-forward-regexp app)
+  "Forward regex search (C-M-s). Uses Scintilla SCFIND_REGEXP."
+  (let ((default *last-regexp-search*))
+    (if (and (eq? (app-state-last-command app) 'isearch-forward-regexp)
+             (> (string-length default) 0))
+      ;; Repeat: move past current match, then search again
+      (let* ((ed (current-editor app))
+             (pos (editor-get-current-pos ed)))
+        (editor-goto-pos ed (+ pos 1))
+        (search-forward-regexp-impl! app default))
+      ;; First C-M-s: prompt for pattern
+      (let* ((echo (app-state-echo app))
+             (fr (app-state-frame app))
+             (row (- (frame-height fr) 1))
+             (width (frame-width fr))
+             (prompt (if (string=? default "")
+                       "Regexp search: "
+                       (string-append "Regexp search [" default "]: ")))
+             (input (echo-read-string echo prompt row width)))
+        (when input
+          (let ((pattern (if (string=? input "") default input)))
+            (when (> (string-length pattern) 0)
+              (set! *last-regexp-search* pattern)
+              (search-forward-regexp-impl! app pattern))))))))
+
+(def (cmd-query-replace-regexp-interactive app)
+  "Interactive regex query-replace (C-M-%). Uses Scintilla SCFIND_REGEXP."
+  (let* ((echo (app-state-echo app))
+         (fr (app-state-frame app))
+         (row (- (frame-height fr) 1))
+         (width (frame-width fr))
+         (from-str (echo-read-string echo "Regexp replace: " row width)))
+    (when (and from-str (> (string-length from-str) 0))
+      (let ((to-str (echo-read-string echo
+                      (string-append "Replace regexp \"" from-str "\" with: ")
+                      row width)))
+        (when to-str
+          (let ((ed (current-editor app)))
+            (regexp-query-replace-loop! app ed from-str to-str))))))  )
+
+(def (regexp-query-replace-loop! app ed pattern replacement)
+  "Drive the interactive regexp query-replace using Scintilla regex."
+  (let* ((echo (app-state-echo app))
+         (fr (app-state-frame app))
+         (row (- (frame-height fr) 1))
+         (width (frame-width fr))
+         (replaced 0))
+    ;; Start from current position
+    (let loop ()
+      (let ((text-len (editor-get-text-length ed))
+            (pos (editor-get-current-pos ed)))
+        ;; Search forward with regex
+        (send-message ed SCI_SETTARGETSTART pos)
+        (send-message ed SCI_SETTARGETEND text-len)
+        (send-message ed SCI_SETSEARCHFLAGS SCFIND_REGEXP)
+        (let ((found (send-message/string ed SCI_SEARCHINTARGET pattern)))
+          (if (< found 0)
+            ;; No more matches
+            (echo-message! echo
+              (string-append "Replaced " (number->string replaced) " occurrences"))
+            ;; Found a match
+            (let ((match-end (send-message ed SCI_GETTARGETEND)))
+              (editor-set-selection ed found match-end)
+              (editor-scroll-caret ed)
+              (frame-refresh! fr)
+              (position-cursor-for-replace! app)
+              ;; Prompt: y/n/!/q
+              (tui-print! 0 row #xd8d8d8 #x181818 (make-string width #\space))
+              (tui-print! 0 row #xd8d8d8 #x181818
+                "Replace? (y)es (n)o (!)all (q)uit")
+              (tui-present!)
+              (let ((ev (tui-poll-event)))
+                (when (and ev (tui-event-key? ev))
+                  (let ((ch (tui-event-ch ev)))
+                    (cond
+                      ;; Yes: replace and continue
+                      ((= ch (char->integer #\y))
+                       (send-message ed SCI_SETTARGETSTART found)
+                       (send-message ed SCI_SETTARGETEND match-end)
+                       (let ((repl-len (send-message/string ed SCI_REPLACETARGETRE replacement)))
+                         (editor-goto-pos ed (+ found (max repl-len 1)))
+                         (set! replaced (+ replaced 1)))
+                       (loop))
+                      ;; No: skip
+                      ((= ch (char->integer #\n))
+                       (editor-goto-pos ed (+ found (max 1 (- match-end found))))
+                       (loop))
+                      ;; All: replace all remaining
+                      ((= ch (char->integer #\!))
+                       (let all-loop ()
+                         (let ((text-len2 (editor-get-text-length ed))
+                               (pos2 (editor-get-current-pos ed)))
+                           (send-message ed SCI_SETTARGETSTART pos2)
+                           (send-message ed SCI_SETTARGETEND text-len2)
+                           (send-message ed SCI_SETSEARCHFLAGS SCFIND_REGEXP)
+                           (let ((found2 (send-message/string ed SCI_SEARCHINTARGET pattern)))
+                             (when (>= found2 0)
+                               (let ((match-end2 (send-message ed SCI_GETTARGETEND)))
+                                 (send-message ed SCI_SETTARGETSTART found2)
+                                 (send-message ed SCI_SETTARGETEND match-end2)
+                                 (let ((repl-len2 (send-message/string ed SCI_REPLACETARGETRE replacement)))
+                                   (editor-goto-pos ed (+ found2 (max repl-len2 1)))
+                                   (set! replaced (+ replaced 1))))
+                               (all-loop)))))
+                       (echo-message! echo
+                         (string-append "Replaced " (number->string replaced) " occurrences")))
+                      ;; Quit
+                      ((= ch (char->integer #\q))
+                       (echo-message! echo
+                         (string-append "Replaced " (number->string replaced) " occurrences")))
+                      ;; Unknown key: skip
+                      (else (loop)))))))))))))
 

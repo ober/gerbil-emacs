@@ -1123,6 +1123,7 @@
   (register-command! 'zap-up-to-char cmd-zap-up-to-char)
   (register-command! 'zap-to-char-inclusive cmd-zap-to-char-inclusive)
   (register-command! 'query-replace-regexp cmd-query-replace-regexp)
+  (register-command! 'isearch-forward-regexp cmd-search-forward-regexp)
   (register-command! 'copy-from-below cmd-copy-from-below)
   (register-command! 'copy-symbol-at-point cmd-copy-symbol-at-point)
   (register-command! 'copy-word-at-point cmd-copy-word-at-point)

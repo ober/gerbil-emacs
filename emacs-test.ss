@@ -381,7 +381,7 @@
     (test-case "new keybindings: write-file, revert, defun nav"
       (setup-default-bindings!)
       (check (keymap-lookup *ctrl-x-map* "C-w") => 'write-file)
-      (check (keymap-lookup *ctrl-x-map* "C-r") => 'revert-buffer)
+      (check (keymap-lookup *ctrl-x-map* "C-r") => 'recentf-open)
       (check (keymap-lookup *global-keymap* "M-a") => 'backward-sentence)
       (check (keymap-lookup *global-keymap* "M-e") => 'forward-sentence))
 
@@ -870,6 +870,18 @@
       (check (keymap-lookup *meta-g-map* "m") => 'goto-matching-paren)
       (check (keymap-lookup *meta-g-map* "v") => 'scroll-other-window)
       (check (keymap-lookup *meta-g-map* "V") => 'scroll-other-window-up))
+
+    (test-case "new keybindings: regex search, window resize, undo"
+      (setup-default-bindings!)
+      ;; Regex search and replace
+      (check (keymap-lookup *global-keymap* "C-M-s") => 'isearch-forward-regexp)
+      (check (keymap-lookup *global-keymap* "C-M-%") => 'query-replace-regexp)
+      ;; Window resize
+      (check (keymap-lookup *ctrl-x-map* "^") => 'enlarge-window)
+      (check (keymap-lookup *ctrl-x-map* "{") => 'shrink-window-horizontally)
+      (check (keymap-lookup *ctrl-x-map* "}") => 'enlarge-window-horizontally)
+      ;; Alternative undo
+      (check (keymap-lookup *global-keymap* "C-/") => 'undo))
 
     ;;=========================================================================
     ;; Feature implementation tests
