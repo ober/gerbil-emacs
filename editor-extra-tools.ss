@@ -16,6 +16,7 @@
         :gerbil-emacs/window
         :gerbil-emacs/modeline
         :gerbil-emacs/echo
+        :gerbil-emacs/highlight
         :gerbil-emacs/editor-extra-helpers)
 
 ;; --- Task #47: xref, ibuffer, which-key, markdown, auto-insert, and more ---
@@ -897,41 +898,68 @@
         (echo-message! echo (string-append "Found: " (path-strip-directory file)))))))
 
 ;; Magit-like git operations
+(def (git-output args)
+  "Run a git command and return its stdout as a string, or #f on error."
+  (with-exception-catcher
+    (lambda (e) #f)
+    (lambda ()
+      (let ((p (open-process
+                 (list path: "git"
+                       arguments: args
+                       stdin-redirection: #f stdout-redirection: #t
+                       stderr-redirection: #t))))
+        (let ((out (read-line p #f)))
+          (process-status p)
+          out)))))
+
 (def (cmd-magit-status app)
-  "Show git status in magit-like interface."
-  (let ((result (with-exception-catcher
-                  (lambda (e) "Not a git repository")
-                  (lambda ()
-                    (let ((p (open-process
-                               (list path: "git"
-                                     arguments: '("status" "--short")
-                                     stdin-redirection: #f stdout-redirection: #t
-                                     stderr-redirection: #t))))
-                      (let ((out (read-line p #f)))
-                        (process-status p)
-                        (or out "(clean)")))))))
-    (let* ((fr (app-state-frame app))
+  "Show git status in magit-like interface with sections."
+  (let* ((branch (or (git-output '("branch" "--show-current")) "???"))
+         (status (or (git-output '("status" "--short")) ""))
+         (log (or (git-output '("log" "--oneline" "-10")) ""))
+         (stash (or (git-output '("stash" "list" "--oneline")) ""))
+         ;; Parse status into staged/unstaged
+         (lines (if (string=? status "") [] (string-split status #\newline)))
+         (staged [])
+         (unstaged []))
+    ;; Classify lines
+    (for-each (lambda (line)
+                (when (>= (string-length line) 2)
+                  (let ((ix (string-ref line 0))
+                        (wt (string-ref line 1)))
+                    (when (and (not (char=? ix #\space)) (not (char=? ix #\?)))
+                      (set! staged (cons line staged)))
+                    (when (or (char=? wt #\M) (char=? wt #\D) (char=? ix #\?))
+                      (set! unstaged (cons line unstaged))))))
+              lines)
+    (let* ((text (string-append
+                   "Head: " branch "\n\n"
+                   (if (null? staged) ""
+                     (string-append "Staged changes:\n"
+                       (string-join (reverse staged) "\n") "\n\n"))
+                   (if (null? unstaged) ""
+                     (string-append "Unstaged changes:\n"
+                       (string-join (reverse unstaged) "\n") "\n\n"))
+                   (if (and (null? staged) (null? unstaged))
+                     "Working tree clean\n\n" "")
+                   (if (string=? stash "") ""
+                     (string-append "Stashes:\n" stash "\n\n"))
+                   "Recent commits:\n" log "\n"))
+           (fr (app-state-frame app))
            (win (current-window fr))
            (ed (edit-window-editor win))
            (buf (buffer-create! "*Magit*" ed)))
       (buffer-attach! ed buf)
       (set! (edit-window-buffer win) buf)
-      (editor-set-text ed (string-append "Git Status\n\n" result "\n"))
+      (editor-set-text ed text)
+      (editor-goto-pos ed 0)
       (editor-set-read-only ed #t))))
 
 (def (cmd-magit-log app)
-  "Show git log in magit-like interface."
-  (let ((result (with-exception-catcher
-                  (lambda (e) "Not a git repository")
-                  (lambda ()
-                    (let ((p (open-process
-                               (list path: "git"
-                                     arguments: '("log" "--oneline" "-30")
-                                     stdin-redirection: #f stdout-redirection: #t
-                                     stderr-redirection: #t))))
-                      (let ((out (read-line p #f)))
-                        (process-status p)
-                        (or out "(empty)")))))))
+  "Show git log with graph."
+  (let ((result (or (git-output
+                      '("log" "--oneline" "--graph" "--decorate" "-40"))
+                    "(not a git repository)")))
     (let* ((fr (app-state-frame app))
            (win (current-window fr))
            (ed (edit-window-editor win))
@@ -939,29 +967,47 @@
       (buffer-attach! ed buf)
       (set! (edit-window-buffer win) buf)
       (editor-set-text ed (string-append "Git Log\n\n" result "\n"))
+      (editor-goto-pos ed 0)
       (editor-set-read-only ed #t))))
 
 (def (cmd-magit-diff app)
   "Show git diff."
-  (let ((result (with-exception-catcher
-                  (lambda (e) "Not a git repository")
-                  (lambda ()
-                    (let ((p (open-process
-                               (list path: "git"
-                                     arguments: '("diff")
-                                     stdin-redirection: #f stdout-redirection: #t
-                                     stderr-redirection: #t))))
-                      (let ((out (read-line p #f)))
-                        (process-status p)
-                        (or out "(no changes)")))))))
-    (let* ((fr (app-state-frame app))
+  (let ((result (or (git-output '("diff" "--stat"))
+                    "(not a git repository)")))
+    (let* ((full-diff (or (git-output '("diff")) ""))
+           (fr (app-state-frame app))
            (win (current-window fr))
            (ed (edit-window-editor win))
            (buf (buffer-create! "*Magit Diff*" ed)))
       (buffer-attach! ed buf)
       (set! (edit-window-buffer win) buf)
-      (editor-set-text ed (string-append "Git Diff\n\n" result "\n"))
-      (editor-set-read-only ed #t))))
+      (editor-set-text ed (string-append "Git Diff\n\n" result "\n\n" full-diff "\n"))
+      (editor-goto-pos ed 0)
+      (editor-set-read-only ed #t)
+      ;; Apply diff highlighting
+      (setup-highlighting-for-file! ed "diff.diff"))))
+
+
+(def (cmd-git-log-file app)
+  "Show git log for the current file."
+  (let* ((buf (current-buffer-from-app app))
+         (fp (buffer-file-path buf)))
+    (if (not fp)
+      (echo-error! (app-state-echo app) "Buffer has no file")
+      (let ((result (or (git-output
+                          (list "log" "--oneline" "--follow" "-30" fp))
+                        "Not a git repository or file not tracked")))
+        (let* ((fr (app-state-frame app))
+               (win (current-window fr))
+               (ed (edit-window-editor win))
+               (log-buf (buffer-create!
+                          (string-append "*Log: " (path-strip-directory fp) "*")
+                          ed)))
+          (buffer-attach! ed log-buf)
+          (set! (edit-window-buffer win) log-buf)
+          (editor-set-text ed (string-append "File: " fp "\n\n" result "\n"))
+          (editor-goto-pos ed 0)
+          (editor-set-read-only ed #t))))))
 
 (def (cmd-magit-commit app)
   "Create git commit with message from echo area."
