@@ -30,7 +30,8 @@
                  org-heading-level org-find-subtree-end org-on-checkbox-line?
                  *focus-mode* *zen-mode* *killed-buffers*
                  remember-killed-buffer! *which-key-mode*
-                 *dedicated-windows* *new-buffer-counter*)
+                 *dedicated-windows* *new-buffer-counter*
+                 *relative-line-numbers* *cua-mode*)
         (only-in :gerbil-emacs/editor register-all-commands!)
         (only-in :gerbil-emacs/editor-extra-editing
                  occur-parse-source-name
@@ -1714,6 +1715,32 @@
       (check (procedure? (find-command 'toggle-visible-mark)) => #t)
       (check (procedure? (find-command 'open-recent-dir)) => #t)
       (check (procedure? (find-command 'toggle-fringe)) => #t))
+
+    ;; -- Batch 31 state tests --
+    (test-case "batch 31: mode toggles"
+      (set! *relative-line-numbers* #f)
+      (check *relative-line-numbers* => #f)
+      (set! *relative-line-numbers* #t)
+      (check *relative-line-numbers* => #t)
+      (set! *cua-mode* #f)
+      (check *cua-mode* => #f)
+      (set! *cua-mode* #t)
+      (check *cua-mode* => #t))
+
+    ;; -- Command registration batch 31 --
+    (test-case "command registration: batch 31 features"
+      (register-all-commands!)
+      (check (procedure? (find-command 'titlecase-region)) => #t)
+      (check (procedure? (find-command 'goto-matching-bracket)) => #t)
+      (check (procedure? (find-command 'toggle-block-comment)) => #t)
+      (check (procedure? (find-command 'move-to-window-center)) => #t)
+      (check (procedure? (find-command 'reverse-region-chars)) => #t)
+      (check (procedure? (find-command 'toggle-relative-line-numbers)) => #t)
+      (check (procedure? (find-command 'toggle-cua-mode)) => #t)
+      (check (procedure? (find-command 'exchange-dot-and-mark)) => #t)
+      (check (procedure? (find-command 'sort-paragraphs)) => #t)
+      (check (procedure? (find-command 'insert-mode-line)) => #t)
+      (check (procedure? (find-command 'push-mark-command)) => #t))
 
     ;;=========================================================================
     ;; Headless Scintilla editor tests

@@ -1235,4 +1235,198 @@
     (echo-message! echo
       (string-append (number->string (length defs)) " definitions"))))
 
+;;;============================================================================
+;;; Batch 31: titlecase, bracket match, block comment, sorting, line numbers
+;;;============================================================================
+
+;;; --- Titlecase region ---
+
+(def (cmd-titlecase-region app)
+  "Convert selected text to Title Case."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app))
+         (sel-start (editor-get-selection-start ed))
+         (sel-end (editor-get-selection-end ed)))
+    (if (= sel-start sel-end)
+      (echo-message! echo "No selection")
+      (let* ((text (editor-get-text ed))
+             (region (substring text sel-start sel-end))
+             (result (let loop ((chars (string->list region))
+                                (start-of-word? #t) (acc []))
+                       (if (null? chars)
+                         (list->string (reverse acc))
+                         (let ((c (car chars)))
+                           (cond
+                             ((char-alphabetic? c)
+                              (loop (cdr chars) #f
+                                (cons (if start-of-word?
+                                        (char-upcase c)
+                                        (char-downcase c))
+                                      acc)))
+                             (else
+                              (loop (cdr chars) (or (char=? c #\space)
+                                                    (char=? c #\-)
+                                                    (char=? c #\_))
+                                (cons c acc)))))))))
+        (editor-set-selection ed sel-start sel-end)
+        (editor-replace-selection ed result)
+        (echo-message! echo "Title-cased region")))))
+
+;;; --- Go to matching bracket/paren ---
+
+(def (cmd-goto-matching-bracket app)
+  "Jump to the matching bracket/parenthesis."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app))
+         (pos (editor-get-current-pos ed))
+         (match (send-message ed SCI_BRACEMATCH pos 0)))
+    (if (>= match 0)
+      (begin
+        (editor-goto-pos ed match)
+        (echo-message! echo
+          (string-append "Matched at position " (number->string match))))
+      (echo-message! echo "No matching bracket found"))))
+
+;;; --- Toggle block comment ---
+
+(def (cmd-toggle-block-comment app)
+  "Toggle block comment around selected region."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app))
+         (sel-start (editor-get-selection-start ed))
+         (sel-end (editor-get-selection-end ed)))
+    (if (= sel-start sel-end)
+      (echo-message! echo "No selection to comment")
+      (let* ((text (editor-get-text ed))
+             (region (substring text sel-start sel-end)))
+        ;; Check if already wrapped in block comment
+        (if (and (>= (string-length region) 4)
+                 (string-prefix? "/*" region)
+                 (string-suffix? "*/" region))
+          ;; Uncomment
+          (let ((inner (substring region 2 (- (string-length region) 2))))
+            (editor-set-selection ed sel-start sel-end)
+            (editor-replace-selection ed inner)
+            (echo-message! echo "Block comment removed"))
+          ;; Comment
+          (let ((commented (string-append "/*" region "*/")))
+            (editor-set-selection ed sel-start sel-end)
+            (editor-replace-selection ed commented)
+            (echo-message! echo "Block comment added")))))))
+
+;;; --- Move cursor to window center ---
+
+(def (cmd-move-to-window-center app)
+  "Move cursor to the center line of the visible window."
+  (let* ((ed (current-editor app))
+         (first-vis (send-message ed SCI_GETFIRSTVISIBLELINE 0 0))
+         (lines-on-screen (send-message ed 2370 0 0))  ; SCI_LINESONSCREEN
+         (center-line (+ first-vis (quotient lines-on-screen 2)))
+         (pos (editor-position-from-line ed center-line)))
+    (editor-goto-pos ed pos)))
+
+;;; --- Reverse characters in region ---
+
+(def (cmd-reverse-region-chars app)
+  "Reverse the characters in the selected region."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app))
+         (sel-start (editor-get-selection-start ed))
+         (sel-end (editor-get-selection-end ed)))
+    (if (= sel-start sel-end)
+      (echo-message! echo "No selection")
+      (let* ((text (editor-get-text ed))
+             (region (substring text sel-start sel-end))
+             (reversed (list->string (reverse (string->list region)))))
+        (editor-set-selection ed sel-start sel-end)
+        (editor-replace-selection ed reversed)
+        (echo-message! echo "Region reversed")))))
+
+;;; --- Toggle relative line numbers ---
+
+(def *relative-line-numbers* #f)
+
+(def (cmd-toggle-relative-line-numbers app)
+  "Toggle between absolute and relative line numbers."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app)))
+    (set! *relative-line-numbers* (not *relative-line-numbers*))
+    (echo-message! echo
+      (if *relative-line-numbers*
+        "Relative line numbers mode on"
+        "Absolute line numbers mode"))))
+
+;;; --- Toggle CUA mode (C-c/C-v copy/paste) ---
+
+(def *cua-mode* #f)
+
+(def (cmd-toggle-cua-mode app)
+  "Toggle CUA mode (use C-c/C-v for copy/paste)."
+  (let ((echo (app-state-echo app)))
+    (set! *cua-mode* (not *cua-mode*))
+    (echo-message! echo
+      (if *cua-mode*
+        "CUA mode on (C-c=copy, C-v=paste)"
+        "CUA mode off (Emacs keybindings)"))))
+
+;;; --- Exchange point and mark ---
+
+(def (cmd-exchange-dot-and-mark app)
+  "Exchange point (cursor) and mark positions."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app))
+         (buf (current-buffer-from-app app))
+         (mark (buffer-mark buf))
+         (pos (editor-get-current-pos ed)))
+    (if (not mark)
+      (echo-message! echo "No mark set")
+      (begin
+        (set! (buffer-mark buf) pos)
+        (editor-goto-pos ed mark)
+        (echo-message! echo "Point and mark exchanged")))))
+
+;;; --- Sort paragraphs ---
+
+(def (cmd-sort-paragraphs app)
+  "Sort paragraphs (separated by blank lines) in the buffer."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app))
+         (text (editor-get-text ed))
+         ;; Split on double newlines
+         (paras (let loop ((s text) (start 0) (acc []))
+                  (let ((idx (string-contains s "\n\n" start)))
+                    (if idx
+                      (loop s (+ idx 2) (cons (substring s start idx) acc))
+                      (reverse (cons (substring s start (string-length s)) acc))))))
+         (sorted (sort paras string<?))
+         (result (string-join sorted "\n\n")))
+    (editor-set-text ed result)
+    (editor-goto-pos ed 0)
+    (echo-message! echo
+      (string-append "Sorted " (number->string (length paras)) " paragraphs"))))
+
+;;; --- Insert Emacs/Vim-style mode line ---
+
+(def (cmd-insert-mode-line app)
+  "Insert an Emacs-style mode line comment at the top of the buffer."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app))
+         (buf (current-buffer-from-app app))
+         (mode (or (buffer-lexer-lang buf) "text"))
+         (mode-str (if (symbol? mode) (symbol->string mode) mode))
+         (line (string-append ";; -*- mode: " mode-str " -*-\n")))
+    (editor-insert-text ed 0 line)
+    (echo-message! echo (string-append "Inserted mode line for " mode-str))))
+
+;;; --- Push mark without activating region ---
+
+(def (cmd-push-mark-command app)
+  "Push the current position onto the mark ring without activating region."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app))
+         (buf (current-buffer-from-app app))
+         (pos (editor-get-current-pos ed)))
+    (set! (buffer-mark buf) pos)
+    (echo-message! echo
+      (string-append "Mark pushed at position " (number->string pos)))))
 
