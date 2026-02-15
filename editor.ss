@@ -186,8 +186,9 @@
   ;; Insert file
   (register-command! 'insert-file cmd-insert-file)
   (register-command! 'string-insert-file cmd-insert-file)  ; alias
-  ;; Dabbrev
+  ;; Dabbrev and completion
   (register-command! 'dabbrev-expand cmd-dabbrev-expand)
+  (register-command! 'complete-at-point cmd-complete-at-point)
   ;; What cursor position
   (register-command! 'what-cursor-position cmd-what-cursor-position)
   ;; Keyboard macros
@@ -393,8 +394,9 @@
   (register-command! 'what-encoding cmd-what-encoding)
   ;; Hippie expand
   (register-command! 'hippie-expand cmd-hippie-expand)
-  ;; Swap buffers
+  ;; Swap buffers / transpose windows
   (register-command! 'swap-buffers cmd-swap-buffers)
+  (register-command! 'transpose-windows cmd-swap-buffers)
   ;; Tab width
   (register-command! 'cycle-tab-width cmd-cycle-tab-width)
   (register-command! 'toggle-indent-tabs-mode cmd-toggle-indent-tabs-mode)

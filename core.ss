@@ -244,6 +244,8 @@
   ;; Regex search and replace
   (keymap-bind! *global-keymap* "C-M-s" 'isearch-forward-regexp)
   (keymap-bind! *global-keymap* "C-M-%" 'query-replace-regexp)
+  ;; Completion popup (Scintilla autocomplete)
+  (keymap-bind! *global-keymap* "C-M-i" 'complete-at-point)
 
   ;; Tab
   (keymap-bind! *global-keymap* "TAB" 'indent-or-complete)

@@ -893,6 +893,16 @@
       (check (keymap-lookup *meta-g-map* "C") => 'fold-all)
       (check (keymap-lookup *meta-g-map* "E") => 'unfold-all))
 
+    (test-case "keybindings: completion popup"
+      (setup-default-bindings!)
+      (check (keymap-lookup *global-keymap* "C-M-i") => 'complete-at-point))
+
+    (test-case "command registration: autocomplete and transpose"
+      (register-all-commands!)
+      (check (procedure? (find-command 'complete-at-point)) => #t)
+      (check (procedure? (find-command 'transpose-windows)) => #t)
+      (check (procedure? (find-command 'git-log-file)) => #t))
+
     (test-case "key lossage recording"
       (let ((app (new-app-state #f)))
         ;; Starts empty

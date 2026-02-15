@@ -13,6 +13,7 @@
         :std/crypto/digest
         :gerbil-scintilla/constants
         :gerbil-scintilla/scintilla
+        (only-in :gerbil-scintilla/ffi scintilla-send-message-string)
         :gerbil-scintilla/style
         :gerbil-scintilla/tui
         :gerbil-emacs/core
@@ -1805,4 +1806,79 @@
               (with-undo-action ed
                 (editor-delete-range ed ws-start (- ws-end ws-start))
                 (editor-insert-text ed ws-start " ")))))))))
+
+;;;============================================================================
+;;; Scintilla autocomplete popup
+;;;============================================================================
+
+(def (cmd-complete-at-point app)
+  "Show autocomplete popup using Scintilla's built-in autocompletion.
+   Collects word candidates from the buffer matching the prefix at point."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app))
+         (pos (editor-get-current-pos ed))
+         (text (editor-get-text ed))
+         (len (string-length text)))
+    ;; Find prefix at cursor
+    (let* ((prefix-start
+             (let loop ((i (- pos 1)))
+               (if (or (< i 0)
+                       (let ((ch (string-ref text i)))
+                         (not (or (char-alphabetic? ch)
+                                  (char-numeric? ch)
+                                  (char=? ch #\_)
+                                  (char=? ch #\-)
+                                  (char=? ch #\?)
+                                  (char=? ch #\!)))))
+                 (+ i 1) (loop (- i 1)))))
+           (prefix (substring text prefix-start pos))
+           (plen (string-length prefix)))
+      (if (= plen 0)
+        (echo-message! echo "No prefix to complete")
+        ;; Collect unique word candidates from buffer
+        (let ((candidates (make-hash-table)))
+          (let scan ((i 0))
+            (when (< i len)
+              ;; Skip non-word chars
+              (let skip ((j i))
+                (if (or (>= j len)
+                        (let ((ch (string-ref text j)))
+                          (or (char-alphabetic? ch) (char-numeric? ch)
+                              (char=? ch #\_) (char=? ch #\-)
+                              (char=? ch #\?) (char=? ch #\!))))
+                  ;; Found word start
+                  (let word-end ((k j))
+                    (if (or (>= k len)
+                            (let ((ch (string-ref text k)))
+                              (not (or (char-alphabetic? ch) (char-numeric? ch)
+                                       (char=? ch #\_) (char=? ch #\-)
+                                       (char=? ch #\?) (char=? ch #\!)))))
+                      (begin
+                        (when (> k j)
+                          (let ((word (substring text j k)))
+                            (when (and (> (string-length word) plen)
+                                       (string-prefix? prefix word)
+                                       (not (= j prefix-start)))
+                              (hash-put! candidates word #t))))
+                        (scan k))
+                      (word-end (+ k 1))))
+                  (skip (+ j 1))))))
+          ;; Show popup if candidates found
+          (let ((words (sort (hash-keys candidates) string<?)))
+            (if (null? words)
+              (echo-message! echo (string-append "No completions for \"" prefix "\""))
+              (begin
+                ;; Configure autocomplete
+                (send-message ed SCI_AUTOCSETSEPARATOR (char->integer #\newline) 0)
+                (send-message ed SCI_AUTOCSETIGNORECASE 0 0)
+                (send-message ed SCI_AUTOCSETMAXHEIGHT 10 0)
+                (send-message ed SCI_AUTOCSETDROPRESTOFWORD 1 0)
+                ;; SC_ORDER_PERFORMSORT=2 means we provide sorted list
+                (send-message ed SCI_AUTOCSETORDER 1 0)
+                ;; Build item list separated by newlines
+                (let ((item-list (string-join words "\n")))
+                  (scintilla-send-message-string
+                    (scintilla-editor-handle ed) SCI_AUTOCSHOW plen item-list))
+                (echo-message! echo
+                  (string-append (number->string (length words)) " completions"))))))))))
 
