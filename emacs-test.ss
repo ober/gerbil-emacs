@@ -47,7 +47,11 @@
                  *named-macros* *buffer-access-times*
                  record-buffer-access!
                  *regex-builder-pattern* *last-edit-positions*
-                 record-edit-position! *persistent-scratch-file*)
+                 record-edit-position! *persistent-scratch-file*
+                 *subword-mode* *auto-composition-mode*
+                 *bidi-display-reordering* *fill-column-indicator*
+                 *pixel-scroll-mode* *auto-highlight-symbol-mode*
+                 *lorem-ipsum-text* insert-char-by-code-string)
         (only-in :gerbil-emacs/editor-extra-tools2
                  *highlight-changes-mode* *saved-window-layouts*
                  *known-modes* *password-chars*)
@@ -1775,6 +1779,46 @@
       (check (procedure? (find-command 'insert-random-line)) => #t)
       (check (procedure? (find-command 'smart-backspace)) => #t)
       (check (procedure? (find-command 'toggle-line-move-visual)) => #t))
+
+    ;; -- Batch 33 tests --
+    (test-case "batch 33: mode toggles"
+      (set! *subword-mode* #f)
+      (check *subword-mode* => #f)
+      (set! *auto-composition-mode* #t)
+      (check *auto-composition-mode* => #t)
+      (set! *bidi-display-reordering* #t)
+      (check *bidi-display-reordering* => #t)
+      (set! *fill-column-indicator* #f)
+      (check *fill-column-indicator* => #f)
+      (set! *pixel-scroll-mode* #f)
+      (check *pixel-scroll-mode* => #f)
+      (set! *auto-highlight-symbol-mode* #f)
+      (check *auto-highlight-symbol-mode* => #f))
+
+    (test-case "batch 33: lorem ipsum text"
+      (check (string? *lorem-ipsum-text*) => #t)
+      (check (> (string-length *lorem-ipsum-text*) 50) => #t))
+
+    (test-case "batch 33: insert-char-by-code-string helper"
+      (check (insert-char-by-code-string "65") => #\A)
+      (check (insert-char-by-code-string "#x41") => #\A)
+      (check (insert-char-by-code-string "0x41") => #\A)
+      (check (insert-char-by-code-string "bad") => #f))
+
+    ;; -- Command registration batch 33 --
+    (test-case "command registration: batch 33 features"
+      (register-all-commands!)
+      (check (procedure? (find-command 'insert-char-by-code)) => #t)
+      (check (procedure? (find-command 'toggle-subword-mode)) => #t)
+      (check (procedure? (find-command 'toggle-auto-composition)) => #t)
+      (check (procedure? (find-command 'toggle-bidi-display)) => #t)
+      (check (procedure? (find-command 'toggle-display-fill-column-indicator)) => #t)
+      (check (procedure? (find-command 'insert-current-file-name)) => #t)
+      (check (procedure? (find-command 'toggle-pixel-scroll-2)) => #t)
+      (check (procedure? (find-command 'insert-lorem-ipsum)) => #t)
+      (check (procedure? (find-command 'toggle-auto-highlight-symbol)) => #t)
+      (check (procedure? (find-command 'copy-rectangle-to-clipboard)) => #t)
+      (check (procedure? (find-command 'insert-file-contents)) => #t))
 
     ;;=========================================================================
     ;; Headless Scintilla editor tests

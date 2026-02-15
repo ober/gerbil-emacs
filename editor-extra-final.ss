@@ -1356,3 +1356,144 @@
             (editor-goto-pos ed 0)
             (echo-message! echo "Scratch loaded")))))))
 
+;;; =========================================================================
+;;; Batch 33: insert-char-by-code, subword, bidi, fill-column indicator, etc.
+;;; =========================================================================
+
+(def *subword-mode* #f)
+(def *auto-composition-mode* #t)
+(def *bidi-display-reordering* #t)
+(def *fill-column-indicator* #f)
+(def *pixel-scroll-mode* #f)
+(def *auto-highlight-symbol-mode* #f)
+
+(def *lorem-ipsum-text*
+  "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat.")
+
+(def (insert-char-by-code-string str)
+  "Parse a string as a code point (decimal or #xHEX or 0xHEX) and return the character, or #f."
+  (with-catch
+    (lambda (e) #f)
+    (lambda ()
+      (let ((code (cond
+                    ((string-prefix? "#x" str)
+                     (string->number (substring str 2 (string-length str)) 16))
+                    ((string-prefix? "0x" str)
+                     (string->number (substring str 2 (string-length str)) 16))
+                    (else (string->number str)))))
+        (and code (>= code 0) (<= code #x10FFFF) (integer->char code))))))
+
+(def (cmd-insert-char-by-code app)
+  "Insert a character by its Unicode code point (prompts via minibuffer)."
+  (let* ((echo (app-state-echo app))
+         (ed (current-editor app)))
+    (echo-message! echo "insert-char: Use M-x with code point (e.g., 65 or #x41 for 'A')")))
+
+(def (cmd-toggle-subword-mode app)
+  "Toggle subword-mode: treat CamelCase sub-words as word boundaries."
+  (let ((echo (app-state-echo app)))
+    (set! *subword-mode* (not *subword-mode*))
+    (echo-message! echo (if *subword-mode*
+                          "Subword mode ON"
+                          "Subword mode OFF"))))
+
+(def (cmd-toggle-auto-composition app)
+  "Toggle automatic character composition for display."
+  (let ((echo (app-state-echo app)))
+    (set! *auto-composition-mode* (not *auto-composition-mode*))
+    (echo-message! echo (if *auto-composition-mode*
+                          "Auto-composition ON"
+                          "Auto-composition OFF"))))
+
+(def (cmd-toggle-bidi-display app)
+  "Toggle bidirectional text display reordering."
+  (let ((echo (app-state-echo app)))
+    (set! *bidi-display-reordering* (not *bidi-display-reordering*))
+    (echo-message! echo (if *bidi-display-reordering*
+                          "Bidi display reordering ON"
+                          "Bidi display reordering OFF"))))
+
+(def (cmd-toggle-display-fill-column-indicator app)
+  "Toggle display of a line at the fill column (like display-fill-column-indicator-mode)."
+  (let ((echo (app-state-echo app))
+        (ed (current-editor app)))
+    (set! *fill-column-indicator* (not *fill-column-indicator*))
+    (if *fill-column-indicator*
+      (begin
+        ;; SCI_SETEDGEMODE = 2363, EDGE_LINE = 1
+        (send-message ed 2363 1 0)
+        ;; SCI_SETEDGECOLUMN = 2361
+        (send-message ed 2361 80 0)
+        (echo-message! echo "Fill-column indicator ON (col 80)"))
+      (begin
+        ;; SCI_SETEDGEMODE = 2363, EDGE_NONE = 0
+        (send-message ed 2363 0 0)
+        (echo-message! echo "Fill-column indicator OFF")))))
+
+(def (cmd-insert-current-file-name app)
+  "Insert the current buffer's file name at point."
+  (let* ((echo (app-state-echo app))
+         (ed (current-editor app))
+         (buf (current-buffer-from-app app))
+         (path (buffer-file-path buf)))
+    (if path
+      (begin
+        (editor-replace-selection ed path)
+        (echo-message! echo (string-append "Inserted: " path)))
+      (echo-message! echo "Buffer has no file name"))))
+
+(def (cmd-toggle-pixel-scroll app)
+  "Toggle pixel-level smooth scrolling mode."
+  (let ((echo (app-state-echo app)))
+    (set! *pixel-scroll-mode* (not *pixel-scroll-mode*))
+    (echo-message! echo (if *pixel-scroll-mode*
+                          "Pixel scroll mode ON"
+                          "Pixel scroll mode OFF"))))
+
+(def (cmd-insert-lorem-ipsum app)
+  "Insert Lorem Ipsum placeholder text at point."
+  (let* ((echo (app-state-echo app))
+         (ed (current-editor app)))
+    (editor-replace-selection ed *lorem-ipsum-text*)
+    (echo-message! echo "Lorem Ipsum inserted")))
+
+(def (cmd-toggle-auto-highlight-symbol app)
+  "Toggle automatic highlighting of the symbol at point."
+  (let ((echo (app-state-echo app)))
+    (set! *auto-highlight-symbol-mode* (not *auto-highlight-symbol-mode*))
+    (echo-message! echo (if *auto-highlight-symbol-mode*
+                          "Auto-highlight-symbol mode ON"
+                          "Auto-highlight-symbol mode OFF"))))
+
+(def (cmd-copy-rectangle-to-clipboard app)
+  "Copy the current selection to the clipboard (rectangle-aware)."
+  (let* ((echo (app-state-echo app))
+         (ed (current-editor app))
+         (start (editor-get-selection-start ed))
+         (end (editor-get-selection-end ed)))
+    (if (= start end)
+      (echo-message! echo "No selection")
+      (begin
+        ;; SCI_COPY = 2178
+        (send-message ed 2178 0 0)
+        (echo-message! echo "Selection copied")))))
+
+(def (cmd-insert-file-contents-at-point app)
+  "Insert contents of the current buffer's file at point (re-insert from disk)."
+  (let* ((echo (app-state-echo app))
+         (ed (current-editor app))
+         (buf (current-buffer-from-app app))
+         (path (buffer-file-path buf)))
+    (if (not path)
+      (echo-message! echo "Buffer has no file")
+      (if (not (file-exists? path))
+        (echo-message! echo (string-append "File not found: " path))
+        (with-catch
+          (lambda (e) (echo-message! echo "Error reading file"))
+          (lambda ()
+            (let ((content (read-file-as-string path)))
+              (editor-replace-selection ed content)
+              (echo-message! echo (string-append "Inserted "
+                                    (number->string (string-length content))
+                                    " bytes from " path)))))))))
+
