@@ -1203,4 +1203,12 @@
   (register-command! 'toggle-global-org-download cmd-toggle-global-org-download)
   (register-command! 'toggle-global-org-cliplink cmd-toggle-global-org-cliplink)
   (register-command! 'toggle-global-org-present cmd-toggle-global-org-present)
+  ;; batch 65
+  (register-command! 'toggle-global-lsp-ui cmd-toggle-global-lsp-ui)
+  (register-command! 'toggle-global-lsp-treemacs cmd-toggle-global-lsp-treemacs)
+  (register-command! 'toggle-global-lsp-ivy cmd-toggle-global-lsp-ivy)
+  (register-command! 'toggle-global-dap-mode cmd-toggle-global-dap-mode)
+  (register-command! 'toggle-global-lsp-headerline cmd-toggle-global-lsp-headerline)
+  (register-command! 'toggle-global-lsp-lens cmd-toggle-global-lsp-lens)
+  (register-command! 'toggle-global-lsp-semantic-tokens cmd-toggle-global-lsp-semantic-tokens)
 )

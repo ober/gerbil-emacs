@@ -157,7 +157,11 @@
                  *blink-cursor-mode*
                  *global-which-key* *global-hydra* *global-transient*
                  *global-general* *global-use-package*
-                 *global-diminish* *global-delight*)
+                 *global-diminish* *global-delight*
+                 *global-lsp-ui* *global-lsp-treemacs*
+                 *global-lsp-ivy* *global-dap-mode*
+                 *global-lsp-headerline* *global-lsp-lens*
+                 *global-lsp-semantic-tokens*)
         (only-in :gerbil-emacs/editor-extra-web
                  url-encode url-decode
                  html-encode-entities html-decode-entities
@@ -2696,6 +2700,25 @@
       (check (procedure? (find-command 'toggle-global-org-download)) => #t)
       (check (procedure? (find-command 'toggle-global-org-cliplink)) => #t)
       (check (procedure? (find-command 'toggle-global-org-present)) => #t))
+
+    (test-case "batch 65: mode toggles"
+      (check *global-lsp-ui* => #f)
+      (check *global-lsp-treemacs* => #f)
+      (check *global-lsp-ivy* => #f)
+      (check *global-dap-mode* => #f)
+      (check *global-lsp-headerline* => #f)
+      (check *global-lsp-lens* => #f)
+      (check *global-lsp-semantic-tokens* => #f))
+
+    (test-case "command registration: batch 65 features"
+      (register-all-commands!)
+      (check (procedure? (find-command 'toggle-global-lsp-ui)) => #t)
+      (check (procedure? (find-command 'toggle-global-lsp-treemacs)) => #t)
+      (check (procedure? (find-command 'toggle-global-lsp-ivy)) => #t)
+      (check (procedure? (find-command 'toggle-global-dap-mode)) => #t)
+      (check (procedure? (find-command 'toggle-global-lsp-headerline)) => #t)
+      (check (procedure? (find-command 'toggle-global-lsp-lens)) => #t)
+      (check (procedure? (find-command 'toggle-global-lsp-semantic-tokens)) => #t))
 
     ;;=========================================================================
     ;; Headless Scintilla editor tests

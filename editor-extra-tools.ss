@@ -1771,3 +1771,62 @@
     (echo-message! echo (if *global-delight*
                           "Global delight ON" "Global delight OFF"))))
 
+;;; ---- batch 65: LSP ecosystem and debugging toggles ----
+
+(def *global-lsp-ui* #f)
+(def *global-lsp-treemacs* #f)
+(def *global-lsp-ivy* #f)
+(def *global-dap-mode* #f)
+(def *global-lsp-headerline* #f)
+(def *global-lsp-lens* #f)
+(def *global-lsp-semantic-tokens* #f)
+
+(def (cmd-toggle-global-lsp-ui app)
+  "Toggle global lsp-ui-mode (LSP UI enhancements)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-lsp-ui* (not *global-lsp-ui*))
+    (echo-message! echo (if *global-lsp-ui*
+                          "LSP UI ON" "LSP UI OFF"))))
+
+(def (cmd-toggle-global-lsp-treemacs app)
+  "Toggle global lsp-treemacs-mode (LSP symbols in treemacs)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-lsp-treemacs* (not *global-lsp-treemacs*))
+    (echo-message! echo (if *global-lsp-treemacs*
+                          "LSP treemacs ON" "LSP treemacs OFF"))))
+
+(def (cmd-toggle-global-lsp-ivy app)
+  "Toggle global lsp-ivy-mode (LSP ivy integration)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-lsp-ivy* (not *global-lsp-ivy*))
+    (echo-message! echo (if *global-lsp-ivy*
+                          "LSP ivy ON" "LSP ivy OFF"))))
+
+(def (cmd-toggle-global-dap-mode app)
+  "Toggle global dap-mode (Debug Adapter Protocol)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-dap-mode* (not *global-dap-mode*))
+    (echo-message! echo (if *global-dap-mode*
+                          "DAP mode ON" "DAP mode OFF"))))
+
+(def (cmd-toggle-global-lsp-headerline app)
+  "Toggle global lsp-headerline-mode (breadcrumbs in header)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-lsp-headerline* (not *global-lsp-headerline*))
+    (echo-message! echo (if *global-lsp-headerline*
+                          "LSP headerline ON" "LSP headerline OFF"))))
+
+(def (cmd-toggle-global-lsp-lens app)
+  "Toggle global lsp-lens-mode (code lens references)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-lsp-lens* (not *global-lsp-lens*))
+    (echo-message! echo (if *global-lsp-lens*
+                          "LSP lens ON" "LSP lens OFF"))))
+
+(def (cmd-toggle-global-lsp-semantic-tokens app)
+  "Toggle global lsp-semantic-tokens-mode (semantic highlighting)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-lsp-semantic-tokens* (not *global-lsp-semantic-tokens*))
+    (echo-message! echo (if *global-lsp-semantic-tokens*
+                          "LSP semantic tokens ON" "LSP semantic tokens OFF"))))
+
