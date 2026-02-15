@@ -198,7 +198,20 @@
       ;; Initial text in scratch buffer — restore from disk if available
       (let* ((ed (qt-current-editor fr))
              (saved (scratch-restore!))
-             (text (or saved ";; *scratch*\n")))
+             (text (or saved
+                       (string-append
+                        ";; Gerbil Emacs — *scratch*\n"
+                        ";;\n"
+                        ";; Key Bindings:\n"
+                        ";;   C-x C-f   Find file        C-x C-s   Save buffer\n"
+                        ";;   C-x b     Switch buffer     C-x k     Kill buffer\n"
+                        ";;   C-x C-r   Recent files      M-x       Extended command\n"
+                        ";;   C-s       Search forward    M-%       Query replace\n"
+                        ";;   C-x 2     Split window      C-x o     Other window\n"
+                        ";;   C-h f     Describe command   C-h k     Describe key\n"
+                        ";;\n"
+                        ";; This buffer is for Gerbil Scheme evaluation.\n"
+                        ";; Type expressions and use M-x eval-buffer to evaluate.\n\n"))))
         (qt-plain-text-edit-set-text! ed text)
         (qt-text-document-set-modified! (buffer-doc-pointer
                                           (qt-current-buffer fr)) #f)

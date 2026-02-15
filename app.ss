@@ -78,7 +78,17 @@
       (let ((saved (scratch-load!)))
         (if (and saved (> (string-length saved) 0))
           (editor-set-text ed saved)
-          (editor-set-text ed ";; *scratch*\n")))
+          (editor-set-text ed (string-append
+            ";; Gerbil Emacs — *scratch*\n"
+            ";;\n"
+            ";; Key Bindings:\n"
+            ";;   C-x C-f   Find file        C-x C-s   Save buffer\n"
+            ";;   C-x b     Switch buffer     C-x k     Kill buffer\n"
+            ";;   C-x C-r   Recent files      M-x       Extended command\n"
+            ";;   C-s       Search forward    M-%       Query replace\n"
+            ";;   C-x 2     Split window      C-x o     Other window\n"
+            ";;\n"
+            ";; This buffer is for Gerbil Scheme evaluation.\n\n"))))
       (editor-set-save-point ed)
       (editor-goto-pos ed 0))
 
