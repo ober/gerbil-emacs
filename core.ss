@@ -159,6 +159,7 @@
   (keymap-bind! *global-keymap* "C-w" 'kill-region)
   (keymap-bind! *global-keymap* "M-w" 'copy-region)
   (keymap-bind! *global-keymap* "C-_" 'undo)
+  (keymap-bind! *global-keymap* "C-/" 'undo)
   (keymap-bind! *global-keymap* "C-m" 'newline)
   (keymap-bind! *global-keymap* "C-j" 'newline)
   (keymap-bind! *global-keymap* "C-o" 'open-line)
@@ -387,9 +388,11 @@
   ;; Delete indentation (M-^)  -- note: M-^ was sort-lines, use C-c j instead
   ;; Already have M-j for join-line, keep M-^ for sort-lines
 
-  ;; Goto next/previous error (M-g n / M-g p)
+  ;; Goto next/previous error (M-g n / M-g p / M-g M-n / M-g M-p)
   (keymap-bind! *meta-g-map* "n" 'next-error)
   (keymap-bind! *meta-g-map* "p" 'previous-error)
+  (keymap-bind! *meta-g-map* "M-n" 'next-error)
+  (keymap-bind! *meta-g-map* "M-p" 'previous-error)
 
   ;; Kill whole line
   (keymap-bind! *ctrl-c-map* "k" 'kill-whole-line)

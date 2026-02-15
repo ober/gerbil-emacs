@@ -647,7 +647,30 @@
   (set! (app-state-key-state app) (make-initial-key-state)))
 
 (def (cmd-quit app)
-  (set! (app-state-running app) #f))
+  "Quit the editor, prompting if there are unsaved file buffers."
+  (let* ((fr (app-state-frame app))
+         (echo (app-state-echo app))
+         (row (- (frame-height fr) 1))
+         (width (frame-width fr))
+         ;; Check for unsaved file buffers
+         (unsaved (filter
+                    (lambda (win)
+                      (let ((buf (edit-window-buffer win))
+                            (ed (edit-window-editor win)))
+                        (and (buffer-file-path buf)
+                             (editor-get-modify? ed))))
+                    (frame-windows fr))))
+    (if (null? unsaved)
+      ;; No unsaved buffers — state saving handled by app.ss finally block
+      (set! (app-state-running app) #f)
+      ;; Prompt user
+      (let* ((prompt (string-append
+                       (number->string (length unsaved))
+                       " modified buffer(s). Quit without saving? (y/n) "))
+             (ans (echo-read-string echo prompt row width)))
+        (when (and ans (> (string-length ans) 0)
+                   (char=? (string-ref ans 0) #\y))
+          (set! (app-state-running app) #f))))))
 
 ;;;============================================================================
 ;;; Dired (directory listing) support
