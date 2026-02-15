@@ -9,7 +9,7 @@
         :std/srfi/13
         :std/text/base64
         :std/pregexp
-        :gerbil-qt/qt
+        :gerbil-emacs/qt/sci-shim
         :gerbil-emacs/core
         :gerbil-emacs/editor
         :gerbil-emacs/repl

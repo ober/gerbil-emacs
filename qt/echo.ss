@@ -9,7 +9,7 @@
         qt-echo-read-string-with-completion)
 
 (import :std/sugar
-        :gerbil-qt/qt
+        :gerbil-emacs/qt/sci-shim
         :gerbil-emacs/core
         :gerbil-emacs/qt/window)
 

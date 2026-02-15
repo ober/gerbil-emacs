@@ -9,7 +9,7 @@
 
 (import :std/sugar
         :std/srfi/13
-        :gerbil-qt/qt
+        :gerbil-emacs/qt/sci-shim
         :gerbil-emacs/core)
 
 ;;;============================================================================
