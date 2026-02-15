@@ -50,6 +50,11 @@
         (only-in :gerbil-emacs/editor-extra-tools2
                  *highlight-changes-mode* *saved-window-layouts*
                  *known-modes* *password-chars*)
+        (only-in :gerbil-emacs/editor-extra-tools
+                 *cursor-type* *modeline-visible*
+                 *indent-guide-mode* *rainbow-mode*
+                 *electric-quote-mode* *visible-mark-mode*
+                 *fringe-mode*)
         (only-in :gerbil-emacs/editor-extra-web
                  url-encode url-decode
                  html-encode-entities html-decode-entities
@@ -1666,6 +1671,49 @@
       (check (procedure? (find-command 'set-buffer-mode)) => #t)
       (check (procedure? (find-command 'canonically-space-region)) => #t)
       (check (procedure? (find-command 'list-packages)) => #t))
+
+    ;; -- Batch 30 state tests --
+    (test-case "batch 30: mode toggles"
+      ;; Cursor type
+      (set! *cursor-type* 'line)
+      (check (eq? *cursor-type* 'line) => #t)
+      (set! *cursor-type* 'block)
+      (check (eq? *cursor-type* 'block) => #t)
+      ;; Modeline
+      (set! *modeline-visible* #t)
+      (check *modeline-visible* => #t)
+      ;; Indent guide
+      (set! *indent-guide-mode* #f)
+      (check *indent-guide-mode* => #f)
+      ;; Rainbow mode
+      (set! *rainbow-mode* #f)
+      (check *rainbow-mode* => #f)
+      ;; Electric quote
+      (set! *electric-quote-mode* #f)
+      (check *electric-quote-mode* => #f)
+      ;; Visible mark
+      (set! *visible-mark-mode* #f)
+      (check *visible-mark-mode* => #f)
+      ;; Fringe
+      (set! *fringe-mode* #t)
+      (check *fringe-mode* => #t))
+
+    ;; -- Command registration batch 30 --
+    (test-case "command registration: batch 30 features"
+      (register-all-commands!)
+      (check (procedure? (find-command 'insert-todo)) => #t)
+      (check (procedure? (find-command 'insert-fixme)) => #t)
+      (check (procedure? (find-command 'toggle-cursor-type)) => #t)
+      (check (procedure? (find-command 'toggle-modeline)) => #t)
+      (check (procedure? (find-command 'toggle-indent-guide)) => #t)
+      (check (procedure? (find-command 'toggle-rainbow-mode)) => #t)
+      (check (procedure? (find-command 'goto-scratch)) => #t)
+      (check (procedure? (find-command 'display-prefix-help)) => #t)
+      (check (procedure? (find-command 'toggle-electric-quote)) => #t)
+      (check (procedure? (find-command 'calculator-inline)) => #t)
+      (check (procedure? (find-command 'toggle-visible-mark)) => #t)
+      (check (procedure? (find-command 'open-recent-dir)) => #t)
+      (check (procedure? (find-command 'toggle-fringe)) => #t))
 
     ;;=========================================================================
     ;; Headless Scintilla editor tests

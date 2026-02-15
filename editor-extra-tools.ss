@@ -1151,3 +1151,261 @@
   "Navigate to previous compilation error (uses flycheck)."
   (cmd-flycheck-previous-error app))
 
+;;;============================================================================
+;;; Batch 30: TODO/FIXME, cursor, modeline, indent guides, etc.
+;;;============================================================================
+
+;;; --- Insert TODO/FIXME comment annotations ---
+
+(def (cmd-insert-todo app)
+  "Insert a TODO comment annotation at point."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app))
+         (note (app-read-string app "TODO note: ")))
+    (when (and note (> (string-length note) 0))
+      (let ((text (string-append "TODO: " note)))
+        (editor-insert-text ed (editor-get-current-pos ed) text)
+        (echo-message! echo "TODO inserted")))))
+
+(def (cmd-insert-fixme app)
+  "Insert a FIXME comment annotation at point."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app))
+         (note (app-read-string app "FIXME note: ")))
+    (when (and note (> (string-length note) 0))
+      (let ((text (string-append "FIXME: " note)))
+        (editor-insert-text ed (editor-get-current-pos ed) text)
+        (echo-message! echo "FIXME inserted")))))
+
+;;; --- Toggle cursor type ---
+
+(def *cursor-type* 'line)  ; 'line, 'block, 'underline
+
+(def (cmd-toggle-cursor-type app)
+  "Cycle through cursor types: line -> block -> underline."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app)))
+    (set! *cursor-type*
+      (case *cursor-type*
+        ((line) 'block)
+        ((block) 'underline)
+        (else 'line)))
+    (let ((caret-style
+            (case *cursor-type*
+              ((line) 1)       ; CARETSTYLE_LINE
+              ((block) 2)      ; CARETSTYLE_BLOCK
+              ((underline) 0)  ; CARETSTYLE_INVISIBLE (approx)
+              (else 1))))
+      (send-message ed SCI_SETCARETSTYLE caret-style 0)
+      (echo-message! echo
+        (string-append "Cursor: " (symbol->string *cursor-type*))))))
+
+;;; --- Toggle modeline display ---
+
+(def *modeline-visible* #t)
+
+(def (cmd-toggle-modeline app)
+  "Toggle the modeline/status bar visibility."
+  (let ((echo (app-state-echo app)))
+    (set! *modeline-visible* (not *modeline-visible*))
+    (echo-message! echo
+      (if *modeline-visible*
+        "Modeline visible"
+        "Modeline hidden"))))
+
+;;; --- Toggle indent guides ---
+
+(def *indent-guide-mode* #f)
+
+(def (cmd-toggle-indent-guide app)
+  "Toggle display of indentation guides."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app)))
+    (set! *indent-guide-mode* (not *indent-guide-mode*))
+    (send-message ed SCI_SETINDENTATIONGUIDES (if *indent-guide-mode* 3 0) 0)
+    (echo-message! echo
+      (if *indent-guide-mode*
+        "Indent guides on"
+        "Indent guides off"))))
+
+;;; --- Toggle rainbow delimiters mode ---
+
+(def *rainbow-mode* #f)
+
+(def (cmd-toggle-rainbow-mode app)
+  "Toggle rainbow delimiter/bracket coloring mode."
+  (let ((echo (app-state-echo app)))
+    (set! *rainbow-mode* (not *rainbow-mode*))
+    (echo-message! echo
+      (if *rainbow-mode*
+        "Rainbow delimiters on"
+        "Rainbow delimiters off"))))
+
+;;; --- Quick switch to scratch buffer ---
+
+(def (cmd-goto-scratch app)
+  "Switch to the *scratch* buffer."
+  (let* ((fr (app-state-frame app))
+         (win (current-window fr))
+         (ed (edit-window-editor win))
+         (echo (app-state-echo app))
+         (scratch (find (lambda (b) (equal? (buffer-name b) "*scratch*"))
+                        *buffer-list*)))
+    (if scratch
+      (begin
+        (buffer-attach! ed scratch)
+        (set! (edit-window-buffer win) scratch)
+        (echo-message! echo "Switched to *scratch*"))
+      (let ((buf (buffer-create! "*scratch*" ed)))
+        (buffer-attach! ed buf)
+        (set! (edit-window-buffer win) buf)
+        (echo-message! echo "Created *scratch*")))))
+
+;;; --- Display prefix key help ---
+
+(def (cmd-display-prefix-help app)
+  "Show all bindings under a given prefix key."
+  (let* ((echo (app-state-echo app))
+         (prefix (app-read-string app "Prefix: ")))
+    (when (and prefix (> (string-length prefix) 0))
+      (let* ((ed (current-editor app))
+             (entries (keymap-entries *global-keymap*))
+             (matches (filter
+                        (lambda (e) (string-prefix? prefix (car e)))
+                        entries))
+             (text (with-output-to-string
+                     (lambda ()
+                       (display (string-append "Bindings for '" prefix "':\n"))
+                       (display (make-string 50 #\-))
+                       (display "\n")
+                       (if (null? matches)
+                         (display "  (none)\n")
+                         (for-each
+                           (lambda (e)
+                             (display "  ")
+                             (display (car e))
+                             (display " -> ")
+                             (display (cdr e))
+                             (display "\n"))
+                           (sort matches
+                             (lambda (a b) (string<? (car a) (car b))))))
+                       (display (make-string 50 #\-))
+                       (display "\n")
+                       (display (number->string (length matches)))
+                       (display " binding(s)\n")))))
+        (let* ((fr (app-state-frame app))
+               (win (current-window fr))
+               (buf (buffer-create! "*Prefix Help*" ed)))
+          (buffer-attach! ed buf)
+          (set! (edit-window-buffer win) buf)
+          (editor-set-text ed text)
+          (editor-goto-pos ed 0)
+          (editor-set-read-only ed #t))))))
+
+;;; --- Toggle electric quote mode ---
+
+(def *electric-quote-mode* #f)
+
+(def (cmd-toggle-electric-quote app)
+  "Toggle electric quote mode (auto-convert straight quotes to smart quotes)."
+  (let ((echo (app-state-echo app)))
+    (set! *electric-quote-mode* (not *electric-quote-mode*))
+    (echo-message! echo
+      (if *electric-quote-mode*
+        "Electric quote mode on"
+        "Electric quote mode off"))))
+
+;;; --- Inline calculator ---
+
+(def (cmd-calculator-inline app)
+  "Evaluate math expression at point and show/insert result."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app))
+         (expr (app-read-string app "Calc: ")))
+    (when (and expr (> (string-length expr) 0))
+      (with-catch
+        (lambda (e) (echo-message! echo "Calc error"))
+        (lambda ()
+          (let* ((result (eval (with-input-from-string expr read)))
+                 (result-str (if (number? result)
+                               (number->string result)
+                               (with-output-to-string
+                                 (lambda () (write result))))))
+            (echo-message! echo
+              (string-append expr " = " result-str))))))))
+
+;;; --- Toggle visible mark mode ---
+
+(def *visible-mark-mode* #f)
+
+(def (cmd-toggle-visible-mark app)
+  "Toggle visible mark mode (show mark position indicator)."
+  (let ((echo (app-state-echo app)))
+    (set! *visible-mark-mode* (not *visible-mark-mode*))
+    (echo-message! echo
+      (if *visible-mark-mode*
+        "Visible mark mode on"
+        "Visible mark mode off"))))
+
+;;; --- Open recent directory ---
+
+(def (cmd-open-recent-dir app)
+  "Show a list of directories from recently opened files."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app))
+         (dirs (let loop ((bufs *buffer-list*) (acc []))
+                 (if (null? bufs) (reverse acc)
+                   (let* ((b (car bufs))
+                          (fp (buffer-file-path b)))
+                     (if (not fp) (loop (cdr bufs) acc)
+                       (let* ((parts (string-split fp #\/))
+                              (dir (if (<= (length parts) 1) "."
+                                     (string-join
+                                       (let cut ((ls parts) (res []))
+                                         (if (null? (cdr ls)) (reverse res)
+                                           (cut (cdr ls) (cons (car ls) res))))
+                                       "/"))))
+                         (if (member dir acc)
+                           (loop (cdr bufs) acc)
+                           (loop (cdr bufs) (cons dir acc)))))))))
+         (text (with-output-to-string
+                 (lambda ()
+                   (display "Recent Directories:\n")
+                   (display (make-string 50 #\-))
+                   (display "\n")
+                   (for-each
+                     (lambda (d)
+                       (display "  ")
+                       (display d)
+                       (display "\n"))
+                     dirs)
+                   (display (make-string 50 #\-))
+                   (display "\n")
+                   (display (number->string (length dirs)))
+                   (display " directories\n")))))
+    (let* ((fr (app-state-frame app))
+           (win (current-window fr))
+           (buf (buffer-create! "*Recent Dirs*" ed)))
+      (buffer-attach! ed buf)
+      (set! (edit-window-buffer win) buf)
+      (editor-set-text ed text)
+      (editor-goto-pos ed 0)
+      (editor-set-read-only ed #t))))
+
+;;; --- Toggle fringe indicators ---
+
+(def *fringe-mode* #t)
+
+(def (cmd-toggle-fringe app)
+  "Toggle the fringe/margin indicators."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app)))
+    (set! *fringe-mode* (not *fringe-mode*))
+    (if *fringe-mode*
+      (send-message ed SCI_SETMARGINWIDTHN 2 16)
+      (send-message ed SCI_SETMARGINWIDTHN 2 0))
+    (echo-message! echo
+      (if *fringe-mode*
+        "Fringe indicators on"
+        "Fringe indicators off"))))
+
