@@ -1123,4 +1123,12 @@
   (register-command! 'toggle-global-undo-propose cmd-toggle-global-undo-propose)
   (register-command! 'toggle-global-goto-chg cmd-toggle-global-goto-chg)
   (register-command! 'toggle-global-avy cmd-toggle-global-avy)
+  ;; batch 55
+  (register-command! 'toggle-global-wgrep cmd-toggle-global-wgrep)
+  (register-command! 'toggle-global-deadgrep cmd-toggle-global-deadgrep)
+  (register-command! 'toggle-global-ripgrep cmd-toggle-global-ripgrep)
+  (register-command! 'toggle-global-projectile-ripgrep cmd-toggle-global-projectile-ripgrep)
+  (register-command! 'toggle-global-counsel cmd-toggle-global-counsel)
+  (register-command! 'toggle-global-swiper cmd-toggle-global-swiper)
+  (register-command! 'toggle-global-prescient cmd-toggle-global-prescient)
 )

@@ -1706,3 +1706,62 @@
     (set! *global-focus* (not *global-focus*))
     (echo-message! echo (if *global-focus*
                           "Global focus ON" "Global focus OFF"))))
+
+;;; ---- batch 55: search and completion framework toggles ----
+
+(def *global-wgrep* #f)
+(def *global-deadgrep* #f)
+(def *global-ripgrep* #f)
+(def *global-projectile-ripgrep* #f)
+(def *global-counsel* #f)
+(def *global-swiper* #f)
+(def *global-prescient* #f)
+
+(def (cmd-toggle-global-wgrep app)
+  "Toggle global wgrep-mode (writable grep buffers)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-wgrep* (not *global-wgrep*))
+    (echo-message! echo (if *global-wgrep*
+                          "Global wgrep ON" "Global wgrep OFF"))))
+
+(def (cmd-toggle-global-deadgrep app)
+  "Toggle global deadgrep-mode (fast ripgrep interface)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-deadgrep* (not *global-deadgrep*))
+    (echo-message! echo (if *global-deadgrep*
+                          "Global deadgrep ON" "Global deadgrep OFF"))))
+
+(def (cmd-toggle-global-ripgrep app)
+  "Toggle global ripgrep-mode (rg search integration)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-ripgrep* (not *global-ripgrep*))
+    (echo-message! echo (if *global-ripgrep*
+                          "Global ripgrep ON" "Global ripgrep OFF"))))
+
+(def (cmd-toggle-global-projectile-ripgrep app)
+  "Toggle global projectile-ripgrep-mode."
+  (let ((echo (app-state-echo app)))
+    (set! *global-projectile-ripgrep* (not *global-projectile-ripgrep*))
+    (echo-message! echo (if *global-projectile-ripgrep*
+                          "Projectile ripgrep ON" "Projectile ripgrep OFF"))))
+
+(def (cmd-toggle-global-counsel app)
+  "Toggle global counsel-mode (ivy-based completion commands)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-counsel* (not *global-counsel*))
+    (echo-message! echo (if *global-counsel*
+                          "Global counsel ON" "Global counsel OFF"))))
+
+(def (cmd-toggle-global-swiper app)
+  "Toggle global swiper-mode (ivy-based isearch replacement)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-swiper* (not *global-swiper*))
+    (echo-message! echo (if *global-swiper*
+                          "Global swiper ON" "Global swiper OFF"))))
+
+(def (cmd-toggle-global-prescient app)
+  "Toggle global prescient-mode (frecency-based sorting)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-prescient* (not *global-prescient*))
+    (echo-message! echo (if *global-prescient*
+                          "Global prescient ON" "Global prescient OFF"))))

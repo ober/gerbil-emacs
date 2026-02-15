@@ -113,7 +113,10 @@
                  *global-prettify* *global-hl-todo*
                  *global-color-identifiers* *global-aggressive-indent*
                  *global-origami* *global-centered-cursor*
-                 *global-beacon* *global-dimmer* *global-focus*)
+                 *global-beacon* *global-dimmer* *global-focus*
+                 *global-wgrep* *global-deadgrep* *global-ripgrep*
+                 *global-projectile-ripgrep* *global-counsel*
+                 *global-swiper* *global-prescient*)
         (only-in :gerbil-emacs/editor-extra-tools
                  *cursor-type* *modeline-visible*
                  *indent-guide-mode* *rainbow-mode*
@@ -2470,6 +2473,25 @@
       (check (procedure? (find-command 'toggle-global-undo-propose)) => #t)
       (check (procedure? (find-command 'toggle-global-goto-chg)) => #t)
       (check (procedure? (find-command 'toggle-global-avy)) => #t))
+
+    (test-case "batch 55: mode toggles"
+      (check *global-wgrep* => #f)
+      (check *global-deadgrep* => #f)
+      (check *global-ripgrep* => #f)
+      (check *global-projectile-ripgrep* => #f)
+      (check *global-counsel* => #f)
+      (check *global-swiper* => #f)
+      (check *global-prescient* => #f))
+
+    (test-case "command registration: batch 55 features"
+      (register-all-commands!)
+      (check (procedure? (find-command 'toggle-global-wgrep)) => #t)
+      (check (procedure? (find-command 'toggle-global-deadgrep)) => #t)
+      (check (procedure? (find-command 'toggle-global-ripgrep)) => #t)
+      (check (procedure? (find-command 'toggle-global-projectile-ripgrep)) => #t)
+      (check (procedure? (find-command 'toggle-global-counsel)) => #t)
+      (check (procedure? (find-command 'toggle-global-swiper)) => #t)
+      (check (procedure? (find-command 'toggle-global-prescient)) => #t))
 
     ;;=========================================================================
     ;; Headless Scintilla editor tests
