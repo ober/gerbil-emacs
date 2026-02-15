@@ -56,7 +56,11 @@
                  *global-whitespace-newline* *global-highlight-indent*
                  *global-rainbow-mode* *global-auto-highlight*
                  *global-symbol-overlay* *global-highlight-parentheses*
-                 *global-pulse-line*)
+                 *global-pulse-line*
+                 *global-solaire* *global-spaceline*
+                 *global-doom-modeline-env* *global-minions*
+                 *global-moody* *global-rich-minority*
+                 *global-smart-mode-line*)
         (only-in :gerbil-emacs/editor-extra-editing
                  occur-parse-source-name
                  text-find-matching-close text-sexp-end
@@ -2628,6 +2632,25 @@
       (check (procedure? (find-command 'toggle-global-tab-bar)) => #t)
       (check (procedure? (find-command 'toggle-global-mini-frame)) => #t)
       (check (procedure? (find-command 'toggle-global-vertico-posframe)) => #t))
+
+    (test-case "batch 62: mode toggles"
+      (check *global-solaire* => #f)
+      (check *global-spaceline* => #f)
+      (check *global-doom-modeline-env* => #f)
+      (check *global-minions* => #f)
+      (check *global-moody* => #f)
+      (check *global-rich-minority* => #f)
+      (check *global-smart-mode-line* => #f))
+
+    (test-case "command registration: batch 62 features"
+      (register-all-commands!)
+      (check (procedure? (find-command 'toggle-global-solaire)) => #t)
+      (check (procedure? (find-command 'toggle-global-spaceline)) => #t)
+      (check (procedure? (find-command 'toggle-global-doom-modeline-env)) => #t)
+      (check (procedure? (find-command 'toggle-global-minions)) => #t)
+      (check (procedure? (find-command 'toggle-global-moody)) => #t)
+      (check (procedure? (find-command 'toggle-global-rich-minority)) => #t)
+      (check (procedure? (find-command 'toggle-global-smart-mode-line)) => #t))
 
     ;;=========================================================================
     ;; Headless Scintilla editor tests

@@ -1744,3 +1744,62 @@
     (echo-message! echo (if *global-pulse-line*
                           "Pulse line ON" "Pulse line OFF"))))
 
+;;; ---- batch 62: modeline and theme enhancement toggles ----
+
+(def *global-solaire* #f)
+(def *global-spaceline* #f)
+(def *global-doom-modeline-env* #f)
+(def *global-minions* #f)
+(def *global-moody* #f)
+(def *global-rich-minority* #f)
+(def *global-smart-mode-line* #f)
+
+(def (cmd-toggle-global-solaire app)
+  "Toggle global solaire-mode (distinguish file/non-file buffers)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-solaire* (not *global-solaire*))
+    (echo-message! echo (if *global-solaire*
+                          "Global solaire ON" "Global solaire OFF"))))
+
+(def (cmd-toggle-global-spaceline app)
+  "Toggle global spaceline-mode (Spacemacs modeline)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-spaceline* (not *global-spaceline*))
+    (echo-message! echo (if *global-spaceline*
+                          "Spaceline ON" "Spaceline OFF"))))
+
+(def (cmd-toggle-global-doom-modeline-env app)
+  "Toggle global doom-modeline-env (show env info in modeline)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-doom-modeline-env* (not *global-doom-modeline-env*))
+    (echo-message! echo (if *global-doom-modeline-env*
+                          "Doom modeline env ON" "Doom modeline env OFF"))))
+
+(def (cmd-toggle-global-minions app)
+  "Toggle global minions-mode (minor mode menu in modeline)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-minions* (not *global-minions*))
+    (echo-message! echo (if *global-minions*
+                          "Minions ON" "Minions OFF"))))
+
+(def (cmd-toggle-global-moody app)
+  "Toggle global moody-mode (tabs and ribbons in modeline)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-moody* (not *global-moody*))
+    (echo-message! echo (if *global-moody*
+                          "Moody ON" "Moody OFF"))))
+
+(def (cmd-toggle-global-rich-minority app)
+  "Toggle global rich-minority-mode (clean minor mode display)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-rich-minority* (not *global-rich-minority*))
+    (echo-message! echo (if *global-rich-minority*
+                          "Rich minority ON" "Rich minority OFF"))))
+
+(def (cmd-toggle-global-smart-mode-line app)
+  "Toggle global smart-mode-line (sexy modeline)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-smart-mode-line* (not *global-smart-mode-line*))
+    (echo-message! echo (if *global-smart-mode-line*
+                          "Smart mode-line ON" "Smart mode-line OFF"))))
+

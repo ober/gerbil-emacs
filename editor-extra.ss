@@ -1179,4 +1179,12 @@
   (register-command! 'toggle-global-tab-bar cmd-toggle-global-tab-bar)
   (register-command! 'toggle-global-mini-frame cmd-toggle-global-mini-frame)
   (register-command! 'toggle-global-vertico-posframe cmd-toggle-global-vertico-posframe)
+  ;; batch 62
+  (register-command! 'toggle-global-solaire cmd-toggle-global-solaire)
+  (register-command! 'toggle-global-spaceline cmd-toggle-global-spaceline)
+  (register-command! 'toggle-global-doom-modeline-env cmd-toggle-global-doom-modeline-env)
+  (register-command! 'toggle-global-minions cmd-toggle-global-minions)
+  (register-command! 'toggle-global-moody cmd-toggle-global-moody)
+  (register-command! 'toggle-global-rich-minority cmd-toggle-global-rich-minority)
+  (register-command! 'toggle-global-smart-mode-line cmd-toggle-global-smart-mode-line)
 )
