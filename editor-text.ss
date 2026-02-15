@@ -1284,13 +1284,52 @@
                 (echo-message! echo
                   (string-append "No output (exit " (number->string status) ")"))))))))))
 
+;; Narrowing state: hash-table of buffer -> (full-text start end)
+(def *tui-narrow-state* (make-hash-table))
+
 (def (cmd-narrow-to-region app)
-  "Narrow not supported — Scintilla line hiding APIs not available."
-  (echo-error! (app-state-echo app) "Narrow not supported in this build"))
+  "Narrow to the current region (between point and mark)."
+  (let* ((ed (current-editor app))
+         (fr (app-state-frame app))
+         (buf (edit-window-buffer (current-window fr)))
+         (mark (buffer-mark buf)))
+    (if mark
+      (let* ((pos (editor-get-current-pos ed))
+             (start (min mark pos))
+             (end (max mark pos))
+             (text (editor-get-text ed))
+             (region (substring text start end)))
+        ;; Save full text and narrow bounds
+        (hash-put! *tui-narrow-state* buf (list text start end))
+        ;; Replace buffer text with region only
+        (editor-set-text ed region)
+        (editor-goto-pos ed 0)
+        (editor-set-save-point ed)
+        (set! (buffer-mark buf) #f)
+        (echo-message! (app-state-echo app) "Narrowed"))
+      (echo-error! (app-state-echo app) "No mark set"))))
 
 (def (cmd-widen app)
-  "Widen not supported — Scintilla line hiding APIs not available."
-  (echo-error! (app-state-echo app) "Widen not supported in this build"))
+  "Widen from narrowed region, merging edits back."
+  (let* ((fr (app-state-frame app))
+         (buf (edit-window-buffer (current-window fr)))
+         (state (hash-get *tui-narrow-state* buf)))
+    (if state
+      (let* ((ed (current-editor app))
+             (full-text (car state))
+             (start (cadr state))
+             (end (caddr state))
+             (narrow-text (editor-get-text ed))
+             (new-text (string-append
+                         (substring full-text 0 start)
+                         narrow-text
+                         (substring full-text end (string-length full-text)))))
+        (editor-set-text ed new-text)
+        (editor-goto-pos ed start)
+        (editor-set-save-point ed)
+        (hash-remove! *tui-narrow-state* buf)
+        (echo-message! (app-state-echo app) "Widened"))
+      (echo-error! (app-state-echo app) "Buffer is not narrowed"))))
 
 ;;;============================================================================
 ;;; String rectangle, open rectangle

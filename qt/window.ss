@@ -63,9 +63,10 @@
          (buf (qt-buffer-create! buffer-scratch-name editor))
          (lna (qt-line-number-area-create editor))
          (win (make-qt-edit-window editor buf lna)))
-    ;; Style line number area for dark theme
+    ;; Style line number area for dark theme and ensure visible
     (qt-line-number-area-set-bg-color! lna 32 32 32)    ; #202020
     (qt-line-number-area-set-fg-color! lna 140 140 140) ; #8c8c8c
+    (qt-line-number-area-set-visible! lna #t)
     (qt-plain-text-edit-set-document! editor (buffer-doc-pointer buf))
     (qt-splitter-add-widget! splitter editor)
     (make-qt-frame splitter (list win) 0 main-win)))
@@ -84,6 +85,7 @@
          (new-win (make-qt-edit-window new-ed buf lna)))
     (qt-line-number-area-set-bg-color! lna 32 32 32)
     (qt-line-number-area-set-fg-color! lna 140 140 140)
+    (qt-line-number-area-set-visible! lna #t)
     (qt-buffer-attach! new-ed buf)
     (qt-splitter-add-widget! (qt-frame-splitter fr) new-ed)
     (set! (qt-frame-windows fr)
@@ -100,6 +102,7 @@
          (new-win (make-qt-edit-window new-ed buf lna)))
     (qt-line-number-area-set-bg-color! lna 32 32 32)
     (qt-line-number-area-set-fg-color! lna 140 140 140)
+    (qt-line-number-area-set-visible! lna #t)
     (qt-buffer-attach! new-ed buf)
     (qt-splitter-add-widget! (qt-frame-splitter fr) new-ed)
     (set! (qt-frame-windows fr)
