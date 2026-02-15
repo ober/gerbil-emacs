@@ -450,7 +450,13 @@
                 (when text
                   (editor-set-text ed text)
                   (editor-set-save-point ed)
-                  (editor-goto-pos ed 0))))
+                  ;; Restore cursor position from save-place
+                  (let ((saved-pos (save-place-restore filename)))
+                    (if (and saved-pos (< saved-pos (string-length text)))
+                      (begin
+                        (editor-goto-pos ed saved-pos)
+                        (editor-scroll-caret ed))
+                      (editor-goto-pos ed 0))))))
             ;; Apply syntax highlighting for Gerbil files
             (when (gerbil-file-extension? filename)
               (setup-gerbil-highlighting! ed)
@@ -475,7 +481,25 @@
               (lambda ()
                 (copy-file path backup-path)
                 (set! (buffer-backup-done? buf) #t)))))
+        ;; Remember cursor position for save-place
+        (save-place-remember! path (editor-get-current-pos ed))
+        ;; Delete trailing whitespace if enabled
+        (when *delete-trailing-whitespace-on-save*
+          (let* ((text (editor-get-text ed))
+                 (lines (string-split text #\newline))
+                 (cleaned (map (lambda (line) (string-trim-right line)) lines))
+                 (result (string-join cleaned "\n")))
+            (unless (string=? text result)
+              (with-undo-action ed
+                (editor-delete-range ed 0 (string-length text))
+                (editor-insert-text ed 0 result)))))
         (let ((text (editor-get-text ed)))
+          ;; Ensure final newline if required
+          (when (and *require-final-newline*
+                     (> (string-length text) 0)
+                     (not (char=? (string-ref text (- (string-length text) 1)) #\newline)))
+            (editor-append-text ed "\n")
+            (set! text (editor-get-text ed)))
           (write-string-to-file path text)
           (editor-set-save-point ed)
           ;; Update recorded modification time

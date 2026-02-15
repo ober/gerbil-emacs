@@ -44,8 +44,13 @@
         check-so-long!
         savehist-save!
         savehist-load!
+        save-place-load!
+        save-place-save!
         auto-fill-check!
         *delete-trailing-whitespace-on-save*
+        *require-final-newline*
+        *save-place-enabled*
+        *centered-cursor-mode*
         uniquify-buffer-name!)
 
 (import :std/sugar
@@ -55,6 +60,11 @@
         :gerbil-qt/qt
         :gerbil-emacs/core
         :gerbil-emacs/editor
+        (only-in :gerbil-emacs/persist
+                 save-place-save! save-place-load!
+                 save-place-remember! save-place-restore
+                 *save-place-enabled* *require-final-newline*
+                 *centered-cursor-mode*)
         :gerbil-emacs/repl
         :gerbil-emacs/eshell
         :gerbil-emacs/shell
@@ -200,7 +210,12 @@
                   ;; Jump to the line from file:line
                   (let ((target-pos (text-line-position text default-line)))
                     (qt-plain-text-edit-set-cursor-position! ed2 target-pos))
-                  (qt-plain-text-edit-set-cursor-position! ed2 0))))
+                  ;; Restore saved cursor position if save-place enabled
+                  (let ((saved-pos (and *save-place-enabled*
+                                       (save-place-restore filename))))
+                    (if (and saved-pos (< saved-pos (string-length text)))
+                      (qt-plain-text-edit-set-cursor-position! ed2 saved-pos)
+                      (qt-plain-text-edit-set-cursor-position! ed2 0))))))
             (file-mtime-record! filename))
           (qt-setup-highlighting! app buf)
           (apply-dir-locals! app filename)
@@ -252,7 +267,12 @@
                 (when text
                   (qt-plain-text-edit-set-text! ed text)
                   (qt-text-document-set-modified! (buffer-doc-pointer buf) #f)
-                  (qt-plain-text-edit-set-cursor-position! ed 0)))
+                  ;; Restore saved cursor position if save-place is enabled
+                  (let ((saved-pos (and *save-place-enabled*
+                                       (save-place-restore filename))))
+                    (if (and saved-pos (< saved-pos (string-length text)))
+                      (qt-plain-text-edit-set-cursor-position! ed saved-pos)
+                      (qt-plain-text-edit-set-cursor-position! ed 0)))))
               (file-mtime-record! filename))
             (qt-setup-highlighting! app buf)
             (echo-message! echo (string-append "Opened: " filename))))))))))
@@ -283,9 +303,19 @@
               (lambda ()
                 (copy-file path backup-path)
                 (set! (buffer-backup-done? buf) #t)))))
+        ;; Remember cursor position for save-place
+        (when *save-place-enabled*
+          (save-place-remember! path (qt-plain-text-edit-cursor-position ed)))
         ;; Delete trailing whitespace on save if enabled
         (when *delete-trailing-whitespace-on-save*
           (cmd-delete-trailing-whitespace app))
+        ;; Ensure final newline if required
+        (when *require-final-newline*
+          (let ((txt (qt-plain-text-edit-text ed)))
+            (when (and (> (string-length txt) 0)
+                       (not (char=? (string-ref txt (- (string-length txt) 1)) #\newline)))
+              (qt-plain-text-edit-set-cursor-position! ed (string-length txt))
+              (qt-plain-text-edit-insert-text! ed "\n"))))
         (let ((text (qt-plain-text-edit-text ed)))
           (write-string-to-file path text)
           (qt-text-document-set-modified! (buffer-doc-pointer buf) #f)
@@ -451,6 +481,7 @@
       (begin
         (scratch-save!)
         (savehist-save!)
+        (save-place-save!)
         (session-save! app)
         (set! (app-state-running app) #f)
         (qt-widget-close! (qt-frame-main-win fr)))
@@ -485,12 +516,14 @@
              ;; Restore original buffer
              (qt-buffer-attach! ed original-buf))
            (scratch-save!)
+           (save-place-save!)
            (session-save! app)
            (set! (app-state-running app) #f)
            (qt-widget-close! (qt-frame-main-win fr)))
           ((and answer (or (string=? answer "no") (string=? answer "n")))
            ;; Quit without saving
            (scratch-save!)
+           (save-place-save!)
            (session-save! app)
            (set! (app-state-running app) #f)
            (qt-widget-close! (qt-frame-main-win fr)))
@@ -1372,6 +1405,11 @@
   (register-command! 'auto-fill-mode cmd-toggle-auto-fill)
   ;; Delete trailing whitespace
   (register-command! 'toggle-delete-trailing-whitespace-on-save cmd-toggle-delete-trailing-whitespace-on-save)
+  (register-command! 'toggle-save-place-mode cmd-toggle-save-place-mode)
+  (register-command! 'save-place-mode cmd-toggle-save-place-mode)
+  (register-command! 'toggle-require-final-newline cmd-toggle-require-final-newline)
+  (register-command! 'toggle-centered-cursor-mode cmd-toggle-centered-cursor-mode)
+  (register-command! 'centered-cursor-mode cmd-toggle-centered-cursor-mode)
   ;; Delete horizontal space
   (register-command! 'delete-horizontal-space cmd-delete-horizontal-space)
   ;; Recentf open files

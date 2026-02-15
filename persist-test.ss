@@ -123,6 +123,42 @@
       (check (procedure? (find-command 'set-scroll-margin)) => #t)
       (check (procedure? (find-command 'toggle-scroll-margin)) => #t)
       (check (procedure? (find-command 'load-init-file)) => #t)
-      (check (procedure? (find-command 'find-init-file)) => #t))
+      (check (procedure? (find-command 'find-init-file)) => #t)
+      (check (procedure? (find-command 'toggle-save-place-mode)) => #t)
+      (check (procedure? (find-command 'toggle-delete-trailing-whitespace-on-save)) => #t)
+      (check (procedure? (find-command 'toggle-require-final-newline)) => #t)
+      (check (procedure? (find-command 'toggle-centered-cursor-mode)) => #t))
+
+    (test-case "save-place round-trip"
+      (let ((saved-alist *save-place-alist*)
+            (saved-enabled *save-place-enabled*))
+        (set! *save-place-enabled* #t)
+        (set! *save-place-alist* (make-hash-table))
+        (save-place-remember! "/tmp/test-file.txt" 42)
+        (check (save-place-restore "/tmp/test-file.txt") => 42)
+        (check (save-place-restore "/tmp/nonexistent.txt") => #f)
+        (set! *save-place-alist* saved-alist)
+        (set! *save-place-enabled* saved-enabled)))
+
+    (test-case "save-place persistence"
+      (let ((saved-alist *save-place-alist*)
+            (saved-enabled *save-place-enabled*))
+        (set! *save-place-enabled* #t)
+        (set! *save-place-alist* (make-hash-table))
+        (save-place-remember! "/tmp/a.txt" 100)
+        (save-place-remember! "/tmp/b.txt" 200)
+        (save-place-save!)
+        ;; Clear and reload
+        (set! *save-place-alist* (make-hash-table))
+        (save-place-load!)
+        (check (save-place-restore "/tmp/a.txt") => 100)
+        (check (save-place-restore "/tmp/b.txt") => 200)
+        (set! *save-place-alist* saved-alist)
+        (set! *save-place-enabled* saved-enabled)))
+
+    (test-case "clean-on-save defaults"
+      (check (boolean? *delete-trailing-whitespace-on-save*) => #t)
+      (check (boolean? *require-final-newline*) => #t)
+      (check (boolean? *centered-cursor-mode*) => #t))
 
     ))

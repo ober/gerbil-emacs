@@ -863,5 +863,14 @@
   ;; Init file
   (register-command! 'load-init-file cmd-load-init-file)
   (register-command! 'find-init-file cmd-find-init-file)
+  ;; Save-place
+  (register-command! 'save-place-mode cmd-toggle-save-place-mode)
+  (register-command! 'toggle-save-place-mode cmd-toggle-save-place-mode)
+  ;; Clean-on-save
+  (register-command! 'toggle-delete-trailing-whitespace-on-save cmd-toggle-delete-trailing-whitespace-on-save)
+  (register-command! 'toggle-require-final-newline cmd-toggle-require-final-newline)
+  ;; Centered cursor mode
+  (register-command! 'centered-cursor-mode cmd-toggle-centered-cursor-mode)
+  (register-command! 'toggle-centered-cursor-mode cmd-toggle-centered-cursor-mode)
   ;; Task #46+ (in editor-extra.ss)
   (register-extra-commands!))

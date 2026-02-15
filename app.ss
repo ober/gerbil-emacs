@@ -41,9 +41,10 @@
   ;; Load init file (applies settings like scroll-margin)
   (init-file-load!)
 
-  ;; Load persistent state: recent files, minibuffer history
+  ;; Load persistent state: recent files, minibuffer history, save-place
   (recent-files-load!)
   (set! *minibuffer-history* (savehist-load!))
+  (save-place-load!)
 
   ;; Install hook to restore per-buffer highlighting on every buffer switch
   (set! *post-buffer-attach-hook*
@@ -456,6 +457,7 @@
           ;; Save persistent state before exit
           (recent-files-save!)
           (savehist-save! *minibuffer-history*)
+          (save-place-save!)
           ;; Save scratch buffer content
           (let* ((scratch-buf (buffer-by-name "*scratch*"))
                  (fr (app-state-frame app)))

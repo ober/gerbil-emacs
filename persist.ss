@@ -48,6 +48,21 @@
   *init-file-path*
   init-file-load!
 
+  ;; Save-place (remember cursor position per file)
+  *save-place-enabled*
+  *save-place-alist*
+  save-place-remember!
+  save-place-restore
+  save-place-save!
+  save-place-load!
+
+  ;; Clean-on-save hooks
+  *delete-trailing-whitespace-on-save*
+  *require-final-newline*
+
+  ;; Centered cursor mode
+  *centered-cursor-mode*
+
   ;; Persistence paths
   persist-path)
 
@@ -472,6 +487,89 @@
                                (let ((n (string->number val)))
                                  (when (and n (>= n 0) (<= n 20))
                                    (set! *scroll-margin* n))))
-                              ;; Other settings handled by callers
+                              ((string=? key "save-place")
+                               (set! *save-place-enabled*
+                                 (or (string=? val "true") (string=? val "1"))))
+                              ((string=? key "delete-trailing-whitespace-on-save")
+                               (set! *delete-trailing-whitespace-on-save*
+                                 (or (string=? val "true") (string=? val "1"))))
+                              ((string=? key "require-final-newline")
+                               (set! *require-final-newline*
+                                 (or (string=? val "true") (string=? val "1"))))
+                              ((string=? key "centered-cursor")
+                               (set! *centered-cursor-mode*
+                                 (or (string=? val "true") (string=? val "1"))))
                               ))))))
                   (loop))))))))))
+
+;;;============================================================================
+;;; Save-place: remember cursor position per file
+;;;============================================================================
+
+(def *save-place-enabled* #t)
+(def *save-place-file* ".gerbil-emacs-places")
+(def *save-place-alist* (make-hash-table)) ;; file-path -> position
+(def *save-place-max* 500) ;; max entries to persist
+
+(def (save-place-remember! file-path position)
+  "Remember cursor position for a file."
+  (when (and *save-place-enabled* (string? file-path) (> (string-length file-path) 0))
+    (hash-put! *save-place-alist* file-path position)))
+
+(def (save-place-restore file-path)
+  "Get remembered cursor position for a file. Returns integer or #f."
+  (when (and *save-place-enabled* (string? file-path))
+    (hash-get *save-place-alist* file-path)))
+
+(def (save-place-save!)
+  "Save all remembered positions to disk."
+  (with-catch
+    (lambda (e) #f)
+    (lambda ()
+      (call-with-output-file (persist-path *save-place-file*)
+        (lambda (port)
+          (let ((entries (hash->list *save-place-alist*))
+                (count 0))
+            (for-each
+              (lambda (pair)
+                (when (< count *save-place-max*)
+                  (display (car pair) port)
+                  (display "\t" port)
+                  (display (number->string (cdr pair)) port)
+                  (newline port)
+                  (set! count (+ count 1))))
+              entries)))))))
+
+(def (save-place-load!)
+  "Load remembered positions from disk."
+  (with-catch
+    (lambda (e) #f)
+    (lambda ()
+      (let ((path (persist-path *save-place-file*)))
+        (when (file-exists? path)
+          (call-with-input-file path
+            (lambda (port)
+              (let loop ()
+                (let ((line (read-line port)))
+                  (unless (eof-object? line)
+                    (let ((tab-idx (string-index line #\tab)))
+                      (when tab-idx
+                        (let* ((fpath (substring line 0 tab-idx))
+                               (pos-str (substring line (+ tab-idx 1) (string-length line)))
+                               (pos (string->number pos-str)))
+                          (when (and pos (> (string-length fpath) 0))
+                            (hash-put! *save-place-alist* fpath pos)))))
+                    (loop)))))))))))
+
+;;;============================================================================
+;;; Clean-on-save settings
+;;;============================================================================
+
+(def *delete-trailing-whitespace-on-save* #f)
+(def *require-final-newline* #t)
+
+;;;============================================================================
+;;; Centered cursor mode
+;;;============================================================================
+
+(def *centered-cursor-mode* #f)

@@ -1692,3 +1692,58 @@
           (editor-goto-pos ed 0))))
     (echo-message! (app-state-echo app) *init-file-path*)))
 
+;;;============================================================================
+;;; Save-place commands
+;;;============================================================================
+
+(def (cmd-toggle-save-place-mode app)
+  "Toggle save-place mode — remembers cursor position in files."
+  (set! *save-place-enabled* (not *save-place-enabled*))
+  (echo-message! (app-state-echo app)
+    (if *save-place-enabled* "Save-place mode ON" "Save-place mode OFF")))
+
+;;;============================================================================
+;;; Clean-on-save commands
+;;;============================================================================
+
+(def (cmd-toggle-delete-trailing-whitespace-on-save app)
+  "Toggle deleting trailing whitespace when saving."
+  (set! *delete-trailing-whitespace-on-save*
+        (not *delete-trailing-whitespace-on-save*))
+  (echo-message! (app-state-echo app)
+    (if *delete-trailing-whitespace-on-save*
+      "Delete trailing whitespace on save: ON"
+      "Delete trailing whitespace on save: OFF")))
+
+(def (cmd-toggle-require-final-newline app)
+  "Toggle requiring files to end with a newline on save."
+  (set! *require-final-newline* (not *require-final-newline*))
+  (echo-message! (app-state-echo app)
+    (if *require-final-newline*
+      "Require final newline: ON"
+      "Require final newline: OFF")))
+
+;;;============================================================================
+;;; Centered cursor mode
+;;;============================================================================
+
+(def (cmd-toggle-centered-cursor-mode app)
+  "Toggle centered cursor mode — keeps cursor vertically centered."
+  (set! *centered-cursor-mode* (not *centered-cursor-mode*))
+  (let* ((fr (app-state-frame app))
+         (ed (current-editor app)))
+    ;; Use SCI_SETYCARETPOLICY for centering
+    ;; CARET_SLOP=1, CARET_STRICT=4, CARET_EVEN=8
+    (if *centered-cursor-mode*
+      ;; Set large margin = half screen height to force centering
+      (let ((visible (send-message ed 2370 0 0))) ;; SCI_LINESONSCREEN
+        (send-message ed 2403 13 (quotient visible 2))) ;; SLOP|STRICT|EVEN
+      ;; Restore normal scroll margin
+      (if (> *scroll-margin* 0)
+        (send-message ed 2403 5 *scroll-margin*) ;; SLOP|STRICT
+        (send-message ed 2403 0 0))))
+  (echo-message! (app-state-echo app)
+    (if *centered-cursor-mode*
+      "Centered cursor mode ON"
+      "Centered cursor mode OFF")))
+

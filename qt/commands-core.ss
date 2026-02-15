@@ -1169,3 +1169,37 @@ Returns (path . line) or #f. Handles file:line format."
       (string-append "Scroll margin: " (number->string *scroll-margin*))
       "Scroll margin: off")))
 
+;;;============================================================================
+;;; Save-place mode (Qt)
+;;;============================================================================
+
+(def (cmd-toggle-save-place-mode app)
+  "Toggle save-place mode — remembers cursor position in files."
+  (set! *save-place-enabled* (not *save-place-enabled*))
+  (echo-message! (app-state-echo app)
+    (if *save-place-enabled* "Save-place mode ON" "Save-place mode OFF")))
+
+;;;============================================================================
+;;; Require-final-newline (Qt)
+;;;============================================================================
+
+(def (cmd-toggle-require-final-newline app)
+  "Toggle requiring files to end with a newline on save."
+  (set! *require-final-newline* (not *require-final-newline*))
+  (echo-message! (app-state-echo app)
+    (if *require-final-newline*
+      "Require final newline: ON"
+      "Require final newline: OFF")))
+
+;;;============================================================================
+;;; Centered cursor mode (Qt)
+;;;============================================================================
+
+(def (cmd-toggle-centered-cursor-mode app)
+  "Toggle centered cursor mode — keeps cursor vertically centered."
+  (set! *centered-cursor-mode* (not *centered-cursor-mode*))
+  (echo-message! (app-state-echo app)
+    (if *centered-cursor-mode*
+      "Centered cursor mode ON"
+      "Centered cursor mode OFF")))
+

@@ -172,6 +172,7 @@
       (custom-keys-load!)
       (abbrevs-load!)
       (savehist-load!)
+      (save-place-load!)
       (load-init-file!)
 
       ;; Menu bar and toolbar
