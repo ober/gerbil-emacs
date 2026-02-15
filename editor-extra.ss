@@ -1171,4 +1171,12 @@
   (register-command! 'toggle-global-keyfreq cmd-toggle-global-keyfreq)
   (register-command! 'toggle-global-command-log cmd-toggle-global-command-log)
   (register-command! 'toggle-global-interaction-log cmd-toggle-global-interaction-log)
+  ;; batch 61
+  (register-command! 'toggle-global-treemacs-icons cmd-toggle-global-treemacs-icons)
+  (register-command! 'toggle-global-all-the-icons-dired cmd-toggle-global-all-the-icons-dired)
+  (register-command! 'toggle-global-centaur-tabs cmd-toggle-global-centaur-tabs)
+  (register-command! 'toggle-global-awesome-tab cmd-toggle-global-awesome-tab)
+  (register-command! 'toggle-global-tab-bar cmd-toggle-global-tab-bar)
+  (register-command! 'toggle-global-mini-frame cmd-toggle-global-mini-frame)
+  (register-command! 'toggle-global-vertico-posframe cmd-toggle-global-vertico-posframe)
 )

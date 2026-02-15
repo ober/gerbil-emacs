@@ -187,7 +187,11 @@
                  *kill-whole-line* *set-mark-command-repeat-pop*
                  *enable-local-variables* *enable-dir-local-variables*
                  *ad-activate-all* *global-hi-lock-mode*
-                 *next-line-add-newlines*)
+                 *next-line-add-newlines*
+                 *global-treemacs-icons* *global-all-the-icons-dired*
+                 *global-centaur-tabs* *global-awesome-tab*
+                 *global-tab-bar* *global-mini-frame*
+                 *global-vertico-posframe*)
         (only-in :gerbil-emacs/highlight
                  detect-file-language gerbil-file-extension?
                  setup-highlighting-for-file!)
@@ -2605,6 +2609,25 @@
       (check (procedure? (find-command 'toggle-global-keyfreq)) => #t)
       (check (procedure? (find-command 'toggle-global-command-log)) => #t)
       (check (procedure? (find-command 'toggle-global-interaction-log)) => #t))
+
+    (test-case "batch 61: mode toggles"
+      (check *global-treemacs-icons* => #f)
+      (check *global-all-the-icons-dired* => #f)
+      (check *global-centaur-tabs* => #f)
+      (check *global-awesome-tab* => #f)
+      (check *global-tab-bar* => #f)
+      (check *global-mini-frame* => #f)
+      (check *global-vertico-posframe* => #f))
+
+    (test-case "command registration: batch 61 features"
+      (register-all-commands!)
+      (check (procedure? (find-command 'toggle-global-treemacs-icons)) => #t)
+      (check (procedure? (find-command 'toggle-global-all-the-icons-dired)) => #t)
+      (check (procedure? (find-command 'toggle-global-centaur-tabs)) => #t)
+      (check (procedure? (find-command 'toggle-global-awesome-tab)) => #t)
+      (check (procedure? (find-command 'toggle-global-tab-bar)) => #t)
+      (check (procedure? (find-command 'toggle-global-mini-frame)) => #t)
+      (check (procedure? (find-command 'toggle-global-vertico-posframe)) => #t))
 
     ;;=========================================================================
     ;; Headless Scintilla editor tests

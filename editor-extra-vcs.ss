@@ -1726,3 +1726,62 @@
     (set! *next-line-add-newlines* (not *next-line-add-newlines*))
     (echo-message! echo (if *next-line-add-newlines*
                           "Next-line add newlines ON" "Next-line add newlines OFF"))))
+
+;;; ---- batch 61: UI chrome and tab/icon framework toggles ----
+
+(def *global-treemacs-icons* #f)
+(def *global-all-the-icons-dired* #f)
+(def *global-centaur-tabs* #f)
+(def *global-awesome-tab* #f)
+(def *global-tab-bar* #f)
+(def *global-mini-frame* #f)
+(def *global-vertico-posframe* #f)
+
+(def (cmd-toggle-global-treemacs-icons app)
+  "Toggle global treemacs-icons-mode (file tree icons)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-treemacs-icons* (not *global-treemacs-icons*))
+    (echo-message! echo (if *global-treemacs-icons*
+                          "Treemacs icons ON" "Treemacs icons OFF"))))
+
+(def (cmd-toggle-global-all-the-icons-dired app)
+  "Toggle global all-the-icons-dired-mode (icons in dired)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-all-the-icons-dired* (not *global-all-the-icons-dired*))
+    (echo-message! echo (if *global-all-the-icons-dired*
+                          "All-the-icons dired ON" "All-the-icons dired OFF"))))
+
+(def (cmd-toggle-global-centaur-tabs app)
+  "Toggle global centaur-tabs-mode (tab bar with icons)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-centaur-tabs* (not *global-centaur-tabs*))
+    (echo-message! echo (if *global-centaur-tabs*
+                          "Centaur tabs ON" "Centaur tabs OFF"))))
+
+(def (cmd-toggle-global-awesome-tab app)
+  "Toggle global awesome-tab-mode (tabset management)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-awesome-tab* (not *global-awesome-tab*))
+    (echo-message! echo (if *global-awesome-tab*
+                          "Awesome tab ON" "Awesome tab OFF"))))
+
+(def (cmd-toggle-global-tab-bar app)
+  "Toggle global tab-bar-mode (built-in tab bar)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-tab-bar* (not *global-tab-bar*))
+    (echo-message! echo (if *global-tab-bar*
+                          "Tab bar ON" "Tab bar OFF"))))
+
+(def (cmd-toggle-global-mini-frame app)
+  "Toggle global mini-frame-mode (minibuffer in floating frame)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-mini-frame* (not *global-mini-frame*))
+    (echo-message! echo (if *global-mini-frame*
+                          "Mini-frame ON" "Mini-frame OFF"))))
+
+(def (cmd-toggle-global-vertico-posframe app)
+  "Toggle global vertico-posframe-mode (vertico in child frame)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-vertico-posframe* (not *global-vertico-posframe*))
+    (echo-message! echo (if *global-vertico-posframe*
+                          "Vertico posframe ON" "Vertico posframe OFF"))))
