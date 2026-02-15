@@ -1,0 +1,390 @@
+;;; -*- Gerbil -*-
+;;; Persistence for gerbil-emacs
+;;;
+;;; Backend-agnostic persistence: recent files, minibuffer history,
+;;; desktop (session) save/restore. No Scintilla or Qt imports.
+
+(export
+  ;; Recent files
+  *recent-files*
+  *recent-files-max*
+  recent-files-add!
+  recent-files-save!
+  recent-files-load!
+  recent-files-cleanup!
+
+  ;; Savehist (minibuffer history persistence)
+  savehist-save!
+  savehist-load!
+
+  ;; Desktop (session persistence)
+  desktop-save!
+  desktop-load
+  (struct-out desktop-entry)
+
+  ;; Buffer-local variables
+  *buffer-locals*
+  buffer-local-get
+  buffer-local-set!
+  buffer-local-delete!
+  buffer-locals-for
+
+  ;; Auto-mode-alist
+  *auto-mode-alist*
+  detect-major-mode
+
+  ;; Which-key
+  which-key-summary
+
+  ;; Persistence paths
+  persist-path)
+
+(import :std/sugar
+        :std/sort
+        :std/srfi/13
+        :gerbil-emacs/core)
+
+;;;============================================================================
+;;; Persistence file paths
+;;;============================================================================
+
+(def (persist-dir)
+  (let ((home (user-info-home (user-info (user-name)))))
+    home))
+
+(def (persist-path name)
+  (path-expand name (persist-dir)))
+
+(def *recent-files-file* ".gerbil-emacs-recent-files")
+(def *savehist-file*     ".gerbil-emacs-history")
+(def *desktop-file*      ".gerbil-emacs-desktop")
+
+;;;============================================================================
+;;; Recent files
+;;;============================================================================
+
+(def *recent-files* [])
+(def *recent-files-max* 50)
+
+(def (recent-files-add! path)
+  "Add a file path to the recent files list. Deduplicates and limits size."
+  (when (and (string? path) (> (string-length path) 0))
+    ;; Normalize: expand to absolute path
+    (let ((abs-path (path-expand path)))
+      ;; Remove existing entry (move to front)
+      (set! *recent-files*
+        (cons abs-path
+          (let loop ((files *recent-files*) (acc []))
+            (cond
+              ((null? files) (reverse acc))
+              ((string=? (car files) abs-path) (loop (cdr files) acc))
+              (else (loop (cdr files) (cons (car files) acc)))))))
+      ;; Trim to max size
+      (when (> (length *recent-files*) *recent-files-max*)
+        (set! *recent-files*
+          (let loop ((files *recent-files*) (n 0) (acc []))
+            (if (or (null? files) (>= n *recent-files-max*))
+              (reverse acc)
+              (loop (cdr files) (+ n 1) (cons (car files) acc)))))))))
+
+(def (recent-files-save!)
+  "Save recent files list to disk."
+  (with-catch
+    (lambda (e) #f)
+    (lambda ()
+      (call-with-output-file (persist-path *recent-files-file*)
+        (lambda (port)
+          (for-each (lambda (f)
+                      (display f port)
+                      (newline port))
+                    *recent-files*))))))
+
+(def (recent-files-load!)
+  "Load recent files list from disk."
+  (with-catch
+    (lambda (e) #f)
+    (lambda ()
+      (let ((path (persist-path *recent-files-file*)))
+        (when (file-exists? path)
+          (set! *recent-files*
+            (call-with-input-file path
+              (lambda (port)
+                (let loop ((acc []))
+                  (let ((line (read-line port)))
+                    (if (eof-object? line)
+                      (reverse acc)
+                      (if (> (string-length line) 0)
+                        (loop (cons line acc))
+                        (loop acc)))))))))))))
+
+(def (recent-files-cleanup!)
+  "Remove non-existent files from recent files list."
+  (let* ((before (length *recent-files*))
+         (cleaned (filter file-exists? *recent-files*))
+         (removed (- before (length cleaned))))
+    (set! *recent-files* cleaned)
+    (recent-files-save!)
+    removed))
+
+;;;============================================================================
+;;; Savehist (minibuffer history persistence)
+;;;============================================================================
+
+(def (savehist-save! history)
+  "Save minibuffer history list to disk."
+  (with-catch
+    (lambda (e) #f)
+    (lambda ()
+      (call-with-output-file (persist-path *savehist-file*)
+        (lambda (port)
+          (for-each (lambda (entry)
+                      (display entry port)
+                      (newline port))
+                    history))))))
+
+(def (savehist-load!)
+  "Load minibuffer history from disk. Returns list of strings."
+  (with-catch
+    (lambda (e) [])
+    (lambda ()
+      (let ((path (persist-path *savehist-file*)))
+        (if (file-exists? path)
+          (call-with-input-file path
+            (lambda (port)
+              (let loop ((acc []))
+                (let ((line (read-line port)))
+                  (if (eof-object? line)
+                    (reverse acc)
+                    (if (> (string-length line) 0)
+                      (loop (cons line acc))
+                      (loop acc)))))))
+          [])))))
+
+;;;============================================================================
+;;; Desktop (session persistence)
+;;;============================================================================
+
+(defstruct desktop-entry
+  (buffer-name   ; string
+   file-path     ; string or #f
+   cursor-pos    ; integer
+   major-mode)   ; symbol or #f
+  transparent: #t)
+
+(def (desktop-save! entries)
+  "Save desktop entries (buffer list with positions) to disk.
+   entries: list of desktop-entry structs."
+  (with-catch
+    (lambda (e) #f)
+    (lambda ()
+      (call-with-output-file (persist-path *desktop-file*)
+        (lambda (port)
+          (for-each
+            (lambda (entry)
+              ;; Format: file-path\tcursor-pos\tbuffer-name\tmajor-mode
+              (let ((fp (or (desktop-entry-file-path entry) ""))
+                    (pos (number->string (desktop-entry-cursor-pos entry)))
+                    (name (desktop-entry-buffer-name entry))
+                    (mode (let ((m (desktop-entry-major-mode entry)))
+                            (if m (symbol->string m) ""))))
+                (display fp port)
+                (display "\t" port)
+                (display pos port)
+                (display "\t" port)
+                (display name port)
+                (display "\t" port)
+                (display mode port)
+                (newline port)))
+            entries))))))
+
+(def (desktop-load)
+  "Load desktop entries from disk. Returns list of desktop-entry structs."
+  (with-catch
+    (lambda (e) [])
+    (lambda ()
+      (let ((path (persist-path *desktop-file*)))
+        (if (file-exists? path)
+          (call-with-input-file path
+            (lambda (port)
+              (let loop ((acc []))
+                (let ((line (read-line port)))
+                  (if (eof-object? line)
+                    (reverse acc)
+                    (let ((parts (string-split line #\tab)))
+                      (if (>= (length parts) 3)
+                        (let ((fp (car parts))
+                              (pos (string->number (cadr parts)))
+                              (name (caddr parts))
+                              (mode (if (>= (length parts) 4)
+                                      (let ((m (cadddr parts)))
+                                        (if (> (string-length m) 0)
+                                          (string->symbol m)
+                                          #f))
+                                      #f)))
+                          (loop (cons (make-desktop-entry
+                                        name
+                                        (if (string=? fp "") #f fp)
+                                        (or pos 0)
+                                        mode)
+                                      acc)))
+                        (loop acc))))))))
+          [])))))
+
+;;;============================================================================
+;;; Buffer-local variables
+;;;============================================================================
+
+;; Side table: buffer -> hash-table of local bindings
+(def *buffer-locals* (make-hash-table))
+
+(def (buffer-local-get buf key (default #f))
+  "Get a buffer-local variable value."
+  (let ((locals (hash-get *buffer-locals* buf)))
+    (if locals
+      (let ((val (hash-get locals key)))
+        (if val val default))
+      default)))
+
+(def (buffer-local-set! buf key value)
+  "Set a buffer-local variable."
+  (let ((locals (hash-get *buffer-locals* buf)))
+    (unless locals
+      (set! locals (make-hash-table))
+      (hash-put! *buffer-locals* buf locals))
+    (hash-put! locals key value)))
+
+(def (buffer-local-delete! buf)
+  "Remove all buffer-local variables for a buffer."
+  (hash-remove! *buffer-locals* buf))
+
+(def (buffer-locals-for buf)
+  "Get the hash table of buffer-local variables, or #f."
+  (hash-get *buffer-locals* buf))
+
+;;;============================================================================
+;;; Auto-mode-alist
+;;;============================================================================
+
+;; Maps file extensions to major mode symbols
+(def *auto-mode-alist*
+  '(;; Lisps
+    (".ss"    . gerbil-mode)
+    (".scm"   . scheme-mode)
+    (".sld"   . scheme-mode)
+    (".el"    . emacs-lisp-mode)
+    (".clj"   . clojure-mode)
+    (".lisp"  . lisp-mode)
+    (".cl"    . lisp-mode)
+    ;; Org/Markdown
+    (".org"   . org-mode)
+    (".md"    . markdown-mode)
+    (".markdown" . markdown-mode)
+    ;; Web
+    (".html"  . html-mode)
+    (".htm"   . html-mode)
+    (".css"   . css-mode)
+    (".js"    . js-mode)
+    (".jsx"   . js-mode)
+    (".ts"    . typescript-mode)
+    (".tsx"   . typescript-mode)
+    (".json"  . json-mode)
+    ;; Systems
+    (".c"     . c-mode)
+    (".h"     . c-mode)
+    (".cpp"   . c++-mode)
+    (".cc"    . c++-mode)
+    (".cxx"   . c++-mode)
+    (".hpp"   . c++-mode)
+    (".java"  . java-mode)
+    (".rs"    . rust-mode)
+    (".go"    . go-mode)
+    (".zig"   . zig-mode)
+    ;; Scripting
+    (".py"    . python-mode)
+    (".rb"    . ruby-mode)
+    (".lua"   . lua-mode)
+    (".pl"    . perl-mode)
+    (".pm"    . perl-mode)
+    (".sh"    . shell-mode)
+    (".bash"  . shell-mode)
+    (".zsh"   . shell-mode)
+    (".fish"  . fish-mode)
+    ;; Config
+    (".yml"   . yaml-mode)
+    (".yaml"  . yaml-mode)
+    (".toml"  . toml-mode)
+    (".ini"   . conf-mode)
+    (".cfg"   . conf-mode)
+    (".conf"  . conf-mode)
+    ;; Documents
+    (".tex"   . latex-mode)
+    (".bib"   . bibtex-mode)
+    (".rst"   . rst-mode)
+    ;; Data
+    (".xml"   . xml-mode)
+    (".sql"   . sql-mode)
+    (".csv"   . csv-mode)
+    ;; Make/Build
+    ("Makefile" . makefile-mode)
+    ("makefile" . makefile-mode)
+    ("GNUmakefile" . makefile-mode)
+    ("Dockerfile" . dockerfile-mode)
+    (".mk"    . makefile-mode)
+    (".cmake" . cmake-mode)
+    ;; Misc
+    (".diff"  . diff-mode)
+    (".patch" . diff-mode)
+    (".erl"   . erlang-mode)
+    (".ex"    . elixir-mode)
+    (".exs"   . elixir-mode)
+    (".hs"    . haskell-mode)
+    (".ml"    . ocaml-mode)
+    (".mli"   . ocaml-mode)
+    (".nix"   . nix-mode)
+    (".swift" . swift-mode)
+    (".kt"    . kotlin-mode)
+    (".scala" . scala-mode)
+    (".r"     . r-mode)
+    (".R"     . r-mode)
+    (".rkt"   . racket-mode)))
+
+(def (detect-major-mode filename)
+  "Detect major mode from filename using auto-mode-alist.
+   Returns a symbol like 'python-mode or #f."
+  (when (and (string? filename) (> (string-length filename) 0))
+    (let ((basename (path-strip-directory filename)))
+      ;; First check exact basename matches (Makefile, Dockerfile)
+      (let loop ((alist *auto-mode-alist*))
+        (cond
+          ((null? alist) #f)
+          ((string=? basename (caar alist))
+           (cdar alist))
+          ((string-suffix? (caar alist) filename)
+           (cdar alist))
+          (else (loop (cdr alist))))))))
+
+;;;============================================================================
+;;; Which-key (prefix key hints)
+;;;============================================================================
+
+(def (which-key-summary keymap (max-entries 20))
+  "Generate a summary string of available keys in a keymap.
+   Returns a string like 'C-s:save  C-f:find  b:switch  k:kill'."
+  (let* ((entries (hash->list keymap))
+         (sorted (sort entries (lambda (a b) (string<? (car a) (car b)))))
+         (items
+           (let loop ((es sorted) (acc []) (n 0))
+             (cond
+               ((null? es) (reverse acc))
+               ((>= n max-entries) (reverse (cons "..." acc)))
+               (else
+                 (let* ((key (caar es))
+                        (val (cdar es))
+                        (desc (cond
+                                ((hash-table? val) "+prefix")
+                                ((symbol? val) (symbol->string val))
+                                (else "?"))))
+                   (loop (cdr es)
+                         (cons (string-append key ":" desc) acc)
+                         (+ n 1))))))))
+    (string-join items "  ")))

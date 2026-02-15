@@ -850,5 +850,12 @@
   (register-command! 'ispell-region cmd-ispell-region)
   (register-command! 'term cmd-term)
   (register-command! 'ansi-term cmd-ansi-term)
+  ;; Persistence: recentf, desktop, savehist
+  (register-command! 'recentf-open cmd-recentf-open)
+  (register-command! 'recentf-cleanup cmd-recentf-cleanup)
+  (register-command! 'desktop-save cmd-desktop-save)
+  (register-command! 'desktop-read cmd-desktop-read)
+  (register-command! 'savehist-save cmd-savehist-save)
+  (register-command! 'savehist-load cmd-savehist-load)
   ;; Task #46+ (in editor-extra.ss)
   (register-extra-commands!))

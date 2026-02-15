@@ -24,6 +24,7 @@
         :gerbil-emacs/modeline
         :gerbil-emacs/echo
         :gerbil-emacs/highlight
+        :gerbil-emacs/persist
         :gerbil-emacs/editor-core
         :gerbil-emacs/editor-ui
         :gerbil-emacs/editor-text
@@ -1592,22 +1593,106 @@
       (string-append (number->string count) " buffers open"))))
 
 (def (cmd-list-recent-files app)
-  "List recently opened files (shows all file-backed buffers)."
-  (let* ((echo (app-state-echo app))
-         (files (filter-map (lambda (buf)
-                              (buffer-file-path buf))
-                            (buffer-list))))
-    (if (null? files)
-      (echo-message! echo "No file-backed buffers")
+  "List recently opened files from persistent recentf."
+  (let ((echo (app-state-echo app)))
+    (if (null? *recent-files*)
+      (echo-message! echo "No recent files")
       (begin
-        (open-output-buffer app "*recent-files*" (string-join files "\n"))
-        (echo-message! echo (string-append (number->string (length files)) " files"))))))
+        (open-output-buffer app "*recent-files*" (string-join *recent-files* "\n"))
+        (echo-message! echo (string-append (number->string (length *recent-files*)) " recent files"))))))
 
 (def (cmd-clear-recent-files app)
-  "Clear the recent files list."
-  ;; recent-files tracking not yet implemented
-  (void)
+  "Clear the recent files list and save."
+  (set! *recent-files* [])
+  (recent-files-save!)
   (echo-message! (app-state-echo app) "Recent files cleared"))
+
+(def (cmd-recentf-open app)
+  "Open a recently visited file with completion."
+  (let* ((echo (app-state-echo app))
+         (fr (app-state-frame app))
+         (row (- (frame-height fr) 1))
+         (width (frame-width fr)))
+    (if (null? *recent-files*)
+      (echo-message! echo "No recent files")
+      (let ((choice (echo-read-string-with-completion echo "Recent file: " *recent-files* row width)))
+        (when (and choice (> (string-length choice) 0) (file-exists? choice))
+          ;; Open the file (reuse find-file logic)
+          (let* ((name (path-strip-directory choice))
+                 (ed (current-editor app))
+                 (buf (buffer-create! name ed choice)))
+            (recent-files-add! choice)
+            (buffer-attach! ed buf)
+            (set! (edit-window-buffer (current-window fr)) buf)
+            (let ((text (read-file-as-string choice)))
+              (when text
+                (editor-set-text ed text)
+                (editor-set-save-point ed)
+                (editor-goto-pos ed 0)))
+            (echo-message! echo (string-append "Opened: " choice))))))))
+
+(def (cmd-recentf-cleanup app)
+  "Remove non-existent files from recent files list."
+  (let ((removed (recent-files-cleanup!)))
+    (echo-message! (app-state-echo app)
+      (string-append "Removed " (number->string removed) " stale entries"))))
+
+(def (cmd-desktop-save app)
+  "Save current session (open buffers and positions) to disk."
+  (let* ((entries
+           (filter-map
+             (lambda (buf)
+               (let ((path (buffer-file-path buf)))
+                 (when path
+                   (make-desktop-entry
+                     (buffer-name buf)
+                     path
+                     0  ;; cursor pos not easily accessible without editor ref
+                     (buffer-local-get buf 'major-mode)))))
+             (buffer-list))))
+    (desktop-save! entries)
+    (echo-message! (app-state-echo app)
+      (string-append "Desktop saved: " (number->string (length entries)) " buffers"))))
+
+(def (cmd-desktop-read app)
+  "Restore session from saved desktop."
+  (let ((entries (desktop-load)))
+    (if (null? entries)
+      (echo-message! (app-state-echo app) "No saved desktop")
+      (let ((count 0))
+        (for-each
+          (lambda (entry)
+            (let ((path (desktop-entry-file-path entry)))
+              (when (and path (file-exists? path))
+                ;; Open the file
+                (let* ((name (path-strip-directory path))
+                       (ed (current-editor app))
+                       (fr (app-state-frame app))
+                       (buf (buffer-create! name ed path)))
+                  (buffer-attach! ed buf)
+                  (set! (edit-window-buffer (current-window fr)) buf)
+                  (let ((text (read-file-as-string path)))
+                    (when text
+                      (editor-set-text ed text)
+                      (editor-set-save-point ed)
+                      (editor-goto-pos ed (desktop-entry-cursor-pos entry))))
+                  (set! count (+ count 1))))))
+          entries)
+        (echo-message! (app-state-echo app)
+          (string-append "Desktop restored: " (number->string count) " buffers"))))))
+
+(def (cmd-savehist-save app)
+  "Save minibuffer history to disk."
+  (savehist-save! *minibuffer-history*)
+  (echo-message! (app-state-echo app)
+    (string-append "History saved: " (number->string (length *minibuffer-history*)) " entries")))
+
+(def (cmd-savehist-load app)
+  "Load minibuffer history from disk."
+  (let ((hist (savehist-load!)))
+    (set! *minibuffer-history* hist)
+    (echo-message! (app-state-echo app)
+      (string-append "History loaded: " (number->string (length hist)) " entries"))))
 
 (def (cmd-show-keybinding-for app)
   "Show what key is bound to a command."

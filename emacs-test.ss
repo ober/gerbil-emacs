@@ -41,7 +41,8 @@
                  *minibuffer-history* minibuffer-history-add!)
         (only-in :gerbil-emacs/editor-core
                  make-auto-save-path file-mod-time
-                 *buffer-mod-times* update-buffer-mod-time!))
+                 *buffer-mod-times* update-buffer-mod-time!)
+)
 
 (export emacs-test)
 

@@ -18,7 +18,8 @@
         :gerbil-emacs/modeline
         :gerbil-emacs/echo
         :gerbil-emacs/editor
-        :gerbil-emacs/highlight)
+        :gerbil-emacs/highlight
+        :gerbil-emacs/persist)
 
 ;;;============================================================================
 ;;; Application initialization
@@ -36,6 +37,10 @@
   ;; Set up keybindings and commands
   (setup-default-bindings!)
   (register-all-commands!)
+
+  ;; Load persistent state: recent files, minibuffer history
+  (recent-files-load!)
+  (set! *minibuffer-history* (savehist-load!))
 
   ;; Install hook to restore per-buffer highlighting on every buffer switch
   (set! *post-buffer-attach-hook*
@@ -393,16 +398,20 @@
                    (app-state-macro-recording app))))
          (execute-command! app data))
         ((prefix)
-         ;; Show prefix in echo area
-         (let ((prefix-str (let loop ((keys (key-state-prefix-keys new-state))
-                                      (acc ""))
-                             (if (null? keys) acc
-                               (loop (cdr keys)
-                                     (if (string=? acc "")
-                                       (car keys)
-                                       (string-append acc " " (car keys))))))))
-           (echo-message! (app-state-echo app)
-                          (string-append prefix-str "-"))))
+         ;; Show prefix in echo area with which-key hints
+         (let* ((prefix-str (let loop ((keys (key-state-prefix-keys new-state))
+                                       (acc ""))
+                              (if (null? keys) acc
+                                (loop (cdr keys)
+                                      (if (string=? acc "")
+                                        (car keys)
+                                        (string-append acc " " (car keys)))))))
+                (current-km (key-state-keymap new-state))
+                (hints (which-key-summary current-km 12))
+                (display-str (if (> (string-length hints) 0)
+                               (string-append prefix-str "- " hints)
+                               (string-append prefix-str "-"))))
+           (echo-message! (app-state-echo app) display-str)))
         ((self-insert)
          (if (handle-prefix-digit-or-sign! app data)
            (void)
@@ -429,5 +438,8 @@
       (try
         (app-run! app)
         (finally
+          ;; Save persistent state before exit
+          (recent-files-save!)
+          (savehist-save! *minibuffer-history*)
           (frame-shutdown! (app-state-frame app))
           (tui-shutdown!))))))

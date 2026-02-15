@@ -24,7 +24,8 @@
         :gerbil-emacs/window
         :gerbil-emacs/modeline
         :gerbil-emacs/echo
-        :gerbil-emacs/highlight)
+        :gerbil-emacs/highlight
+        :gerbil-emacs/persist)
 
 ;;;============================================================================
 ;;; Shared state (used across editor sub-modules)
@@ -436,6 +437,12 @@
           (let* ((name (path-strip-directory filename))
                  (ed (current-editor app))
                  (buf (buffer-create! name ed filename)))
+            ;; Track in recent files
+            (recent-files-add! filename)
+            ;; Set major mode from auto-mode-alist
+            (let ((mode (detect-major-mode filename)))
+              (when mode
+                (buffer-local-set! buf 'major-mode mode)))
             (buffer-attach! ed buf)
             (set! (edit-window-buffer (current-window fr)) buf)
             (when (file-exists? filename)

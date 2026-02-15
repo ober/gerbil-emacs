@@ -67,6 +67,7 @@
 (defbuild-script
   `(;; Shared core (no backend dependencies)
     "core"
+    "persist"
     "repl"
     ;; Syntax highlighting (depends on gerbil-scintilla/lexer)
     "highlight"
@@ -105,6 +106,7 @@
     "editor"
     "app"
     "emacs-test"
+    "persist-test"
     (exe: "main" bin: "gerbil-emacs"
           "-cc-options" ,cc-opts
           "-ld-options" ,ld-opts)
