@@ -1172,7 +1172,7 @@
       (let* ((ed (create-scintilla-editor width: 80 height: 24))
              (buf (make-buffer "*scratch*" #f
                     (send-message ed SCI_GETDOCPOINTER) #f #f #f #f))
-             (win (make-edit-window ed buf 0 0 80 24))
+             (win (make-edit-window ed buf 0 0 80 24 0))
              (fr (make-frame [win] 0 80 24 'vertical))
              (app (new-app-state fr)))
         (check (app-state? app) => #t)
@@ -1183,7 +1183,7 @@
       (let* ((ed (create-scintilla-editor width: 80 height: 24))
              (buf (make-buffer "*scratch*" #f
                     (send-message ed SCI_GETDOCPOINTER) #f #f #f #f))
-             (win (make-edit-window ed buf 0 0 80 24))
+             (win (make-edit-window ed buf 0 0 80 24 0))
              (fr (make-frame [win] 0 80 24 'vertical))
              (app (new-app-state fr)))
         (editor-set-text ed "")
@@ -1204,7 +1204,7 @@
       (let* ((ed (create-scintilla-editor width: 80 height: 24))
              (buf (make-buffer "*scratch*" #f
                     (send-message ed SCI_GETDOCPOINTER) #f #f #f #f))
-             (win (make-edit-window ed buf 0 0 80 24))
+             (win (make-edit-window ed buf 0 0 80 24 0))
              (fr (make-frame [win] 0 80 24 'vertical))
              (app (new-app-state fr)))
         (editor-set-text ed "")
@@ -1220,7 +1220,7 @@
       (let* ((ed (create-scintilla-editor width: 80 height: 24))
              (buf (make-buffer "*scratch*" #f
                     (send-message ed SCI_GETDOCPOINTER) #f #f #f #f))
-             (win (make-edit-window ed buf 0 0 80 24))
+             (win (make-edit-window ed buf 0 0 80 24 0))
              (fr (make-frame [win] 0 80 24 'vertical))
              (app (new-app-state fr)))
         (editor-set-text ed "hello world")
@@ -1238,7 +1238,7 @@
       (let* ((ed (create-scintilla-editor width: 80 height: 24))
              (buf (make-buffer "*scratch*" #f
                     (send-message ed SCI_GETDOCPOINTER) #f #f #f #f))
-             (win (make-edit-window ed buf 0 0 80 24))
+             (win (make-edit-window ed buf 0 0 80 24 0))
              (fr (make-frame [win] 0 80 24 'vertical))
              (app (new-app-state fr)))
         (editor-set-text ed "hello world\nsecond line")
@@ -1252,7 +1252,7 @@
       (let* ((ed (create-scintilla-editor width: 80 height: 24))
              (buf (make-buffer "*scratch*" #f
                     (send-message ed SCI_GETDOCPOINTER) #f #f #f #f))
-             (win (make-edit-window ed buf 0 0 80 24))
+             (win (make-edit-window ed buf 0 0 80 24 0))
              (fr (make-frame [win] 0 80 24 'vertical))
              (app (new-app-state fr)))
         (editor-set-text ed "line one\nline two\nline three")
@@ -1269,7 +1269,7 @@
       (let* ((ed (create-scintilla-editor width: 80 height: 24))
              (buf (make-buffer "*scratch*" #f
                     (send-message ed SCI_GETDOCPOINTER) #f #f #f #f))
-             (win (make-edit-window ed buf 0 0 80 24))
+             (win (make-edit-window ed buf 0 0 80 24 0))
              (fr (make-frame [win] 0 80 24 'vertical))
              (app (new-app-state fr)))
         (editor-set-text ed "line one\nline two\nline three")
@@ -1284,7 +1284,7 @@
       (let* ((ed (create-scintilla-editor width: 80 height: 24))
              (buf (make-buffer "*scratch*" #f
                     (send-message ed SCI_GETDOCPOINTER) #f #f #f #f))
-             (win (make-edit-window ed buf 0 0 80 24))
+             (win (make-edit-window ed buf 0 0 80 24 0))
              (fr (make-frame [win] 0 80 24 'vertical))
              (app (new-app-state fr)))
         (editor-set-text ed "  indented")
@@ -1300,7 +1300,7 @@
       (let* ((ed (create-scintilla-editor width: 80 height: 24))
              (buf (make-buffer "*scratch*" #f
                     (send-message ed SCI_GETDOCPOINTER) #f #f #f #f))
-             (win (make-edit-window ed buf 0 0 80 24))
+             (win (make-edit-window ed buf 0 0 80 24 0))
              (fr (make-frame [win] 0 80 24 'vertical))
              (app (new-app-state fr)))
         (editor-set-text ed "hello world\nsecond line")
@@ -1319,7 +1319,7 @@
       (let* ((ed (create-scintilla-editor width: 80 height: 24))
              (buf (make-buffer "*scratch*" #f
                     (send-message ed SCI_GETDOCPOINTER) #f #f #f #f))
-             (win (make-edit-window ed buf 0 0 80 24))
+             (win (make-edit-window ed buf 0 0 80 24 0))
              (fr (make-frame [win] 0 80 24 'vertical))
              (app (new-app-state fr)))
         (editor-set-text ed "abcde")
@@ -1336,7 +1336,7 @@
       (let* ((ed (create-scintilla-editor width: 80 height: 24))
              (buf (make-buffer "*scratch*" #f
                     (send-message ed SCI_GETDOCPOINTER) #f #f #f #f))
-             (win (make-edit-window ed buf 0 0 80 24))
+             (win (make-edit-window ed buf 0 0 80 24 0))
              (fr (make-frame [win] 0 80 24 'vertical))
              (app (new-app-state fr)))
         (editor-set-text ed "")
@@ -1353,7 +1353,7 @@
       (let* ((ed (create-scintilla-editor width: 80 height: 24))
              (buf (make-buffer "*scratch*" #f
                     (send-message ed SCI_GETDOCPOINTER) #f #f #f #f))
-             (win (make-edit-window ed buf 0 0 80 24))
+             (win (make-edit-window ed buf 0 0 80 24 0))
              (fr (make-frame [win] 0 80 24 'vertical))
              (app (new-app-state fr)))
         (editor-set-text ed "hello world")
@@ -1372,7 +1372,7 @@
       (let* ((ed (create-scintilla-editor width: 80 height: 24))
              (buf (make-buffer "*scratch*" #f
                     (send-message ed SCI_GETDOCPOINTER) #f #f #f #f))
-             (win (make-edit-window ed buf 0 0 80 24))
+             (win (make-edit-window ed buf 0 0 80 24 0))
              (fr (make-frame [win] 0 80 24 'vertical))
              (app (new-app-state fr)))
         (editor-set-text ed "hello world")
@@ -1395,7 +1395,7 @@
       (let* ((ed (create-scintilla-editor width: 80 height: 24))
              (buf (make-buffer "*scratch*" #f
                     (send-message ed SCI_GETDOCPOINTER) #f #f #f #f))
-             (win (make-edit-window ed buf 0 0 80 24))
+             (win (make-edit-window ed buf 0 0 80 24 0))
              (fr (make-frame [win] 0 80 24 'vertical))
              (app (new-app-state fr)))
         (buffer-list-add! buf)
@@ -1422,7 +1422,7 @@
       (let* ((ed (create-scintilla-editor width: 80 height: 24))
              (buf (make-buffer "test.org" #f
                     (send-message ed SCI_GETDOCPOINTER) #f #f #f #f))
-             (win (make-edit-window ed buf 0 0 80 24))
+             (win (make-edit-window ed buf 0 0 80 24 0))
              (fr (make-frame [win] 0 80 24 'vertical))
              (app (new-app-state fr)))
         ;; Test: heading with no state -> add TODO
@@ -1443,7 +1443,7 @@
       (let* ((ed (create-scintilla-editor width: 80 height: 24))
              (buf (make-buffer "*dired*" #f
                     (send-message ed SCI_GETDOCPOINTER) #f #f 'dired #f))
-             (win (make-edit-window ed buf 0 0 80 24))
+             (win (make-edit-window ed buf 0 0 80 24 0))
              (fr (make-frame [win] 0 80 24 'vertical))
              (app (new-app-state fr)))
         (editor-set-text ed "  file1.txt\n  file2.txt\n")
@@ -1457,7 +1457,7 @@
       (let* ((ed (create-scintilla-editor width: 80 height: 24))
              (buf (make-buffer "*scratch*" #f
                     (send-message ed SCI_GETDOCPOINTER) #f #f #f #f))
-             (win (make-edit-window ed buf 0 0 80 24))
+             (win (make-edit-window ed buf 0 0 80 24 0))
              (fr (make-frame [win] 0 80 24 'vertical))
              (app (new-app-state fr)))
         (editor-set-text ed "hello")
@@ -1471,7 +1471,7 @@
       (let* ((ed (create-scintilla-editor width: 80 height: 24))
              (buf (make-buffer "*scratch*" #f
                     (send-message ed SCI_GETDOCPOINTER) #f #f #f #f))
-             (win (make-edit-window ed buf 0 0 80 24))
+             (win (make-edit-window ed buf 0 0 80 24 0))
              (fr (make-frame [win] 0 80 24 'vertical))
              (app (new-app-state fr)))
         (editor-set-text ed "hello world foo")
@@ -1486,7 +1486,7 @@
       (let* ((ed (create-scintilla-editor width: 80 height: 24))
              (buf (make-buffer "*dired*" #f
                     (send-message ed SCI_GETDOCPOINTER) #f #f 'dired #f))
-             (win (make-edit-window ed buf 0 0 80 24))
+             (win (make-edit-window ed buf 0 0 80 24 0))
              (fr (make-frame [win] 0 80 24 'vertical))
              (app (new-app-state fr)))
         (editor-set-text ed "dir listing")
@@ -1499,7 +1499,7 @@
       (let* ((ed (create-scintilla-editor width: 80 height: 24))
              (buf (make-buffer "*scratch*" #f
                     (send-message ed SCI_GETDOCPOINTER) #f #f #f #f))
-             (win (make-edit-window ed buf 0 0 80 24))
+             (win (make-edit-window ed buf 0 0 80 24 0))
              (fr (make-frame [win] 0 80 24 'vertical))
              (app (new-app-state fr)))
         (editor-set-text ed "")
@@ -1519,7 +1519,7 @@
       (let* ((ed (create-scintilla-editor width: 80 height: 24))
              (buf (make-buffer "*scratch*" #f
                     (send-message ed SCI_GETDOCPOINTER) #f #f #f #f))
-             (win (make-edit-window ed buf 0 0 80 24))
+             (win (make-edit-window ed buf 0 0 80 24 0))
              (fr (make-frame [win] 0 80 24 'vertical))
              (app (new-app-state fr)))
         (editor-set-text ed "first\nsecond")
@@ -1565,7 +1565,7 @@
       (let* ((ed (create-scintilla-editor width: 80 height: 24))
              (buf (make-buffer "test.org" #f
                     (send-message ed SCI_GETDOCPOINTER) #f #f #f #f))
-             (win (make-edit-window ed buf 0 0 80 24))
+             (win (make-edit-window ed buf 0 0 80 24 0))
              (fr (make-frame [win] 0 80 24 'vertical))
              (app (new-app-state fr)))
         ;; Test on ** sub-heading
@@ -1586,7 +1586,7 @@
       (let* ((ed (create-scintilla-editor width: 80 height: 24))
              (buf (make-buffer "test.org" #f
                     (send-message ed SCI_GETDOCPOINTER) #f #f #f #f))
-             (win (make-edit-window ed buf 0 0 80 24))
+             (win (make-edit-window ed buf 0 0 80 24 0))
              (fr (make-frame [win] 0 80 24 'vertical))
              (app (new-app-state fr)))
         ;; Demote: * -> **
@@ -1611,7 +1611,7 @@
       (let* ((ed (create-scintilla-editor width: 80 height: 24))
              (buf (make-buffer "test.org" #f
                     (send-message ed SCI_GETDOCPOINTER) #f #f #f #f))
-             (win (make-edit-window ed buf 0 0 80 24))
+             (win (make-edit-window ed buf 0 0 80 24 0))
              (fr (make-frame [win] 0 80 24 'vertical))
              (app (new-app-state fr)))
         (editor-set-text ed "* Already top")
@@ -1624,7 +1624,7 @@
       (let* ((ed (create-scintilla-editor width: 80 height: 24))
              (buf (make-buffer "test.org" #f
                     (send-message ed SCI_GETDOCPOINTER) #f #f #f #f))
-             (win (make-edit-window ed buf 0 0 80 24))
+             (win (make-edit-window ed buf 0 0 80 24 0))
              (fr (make-frame [win] 0 80 24 'vertical))
              (app (new-app-state fr)))
         ;; Unchecked -> checked
@@ -1641,7 +1641,7 @@
       (let* ((ed (create-scintilla-editor width: 80 height: 24))
              (buf (make-buffer "test.org" #f
                     (send-message ed SCI_GETDOCPOINTER) #f #f #f #f))
-             (win (make-edit-window ed buf 0 0 80 24))
+             (win (make-edit-window ed buf 0 0 80 24 0))
              (fr (make-frame [win] 0 80 24 'vertical))
              (app (new-app-state fr)))
         ;; No priority -> [#A]
@@ -1666,7 +1666,7 @@
       (let* ((ed (create-scintilla-editor width: 80 height: 24))
              (buf (make-buffer "test.org" #f
                     (send-message ed SCI_GETDOCPOINTER) #f #f #f #f))
-             (win (make-edit-window ed buf 0 0 80 24))
+             (win (make-edit-window ed buf 0 0 80 24 0))
              (fr (make-frame [win] 0 80 24 'vertical))
              (app (new-app-state fr)))
         ;; TODO heading: priority goes after keyword
@@ -1679,7 +1679,7 @@
       (let* ((ed (create-scintilla-editor width: 80 height: 24))
              (buf (make-buffer "test.org" #f
                     (send-message ed SCI_GETDOCPOINTER) #f #f #f #f))
-             (win (make-edit-window ed buf 0 0 80 24))
+             (win (make-edit-window ed buf 0 0 80 24 0))
              (fr (make-frame [win] 0 80 24 'vertical))
              (app (new-app-state fr)))
         ;; Two headings with content
@@ -1692,7 +1692,7 @@
       (let* ((ed (create-scintilla-editor width: 80 height: 24))
              (buf (make-buffer "test.org" #f
                     (send-message ed SCI_GETDOCPOINTER) #f #f #f #f))
-             (win (make-edit-window ed buf 0 0 80 24))
+             (win (make-edit-window ed buf 0 0 80 24 0))
              (fr (make-frame [win] 0 80 24 'vertical))
              (app (new-app-state fr)))
         ;; Position on second heading
@@ -1706,7 +1706,7 @@
       (let* ((ed (create-scintilla-editor width: 80 height: 24))
              (buf (make-buffer "test.org" #f
                     (send-message ed SCI_GETDOCPOINTER) #f #f #f #f))
-             (win (make-edit-window ed buf 0 0 80 24))
+             (win (make-edit-window ed buf 0 0 80 24 0))
              (fr (make-frame [win] 0 80 24 'vertical))
              (app (new-app-state fr)))
         ;; On a level-1 heading, insert new level-1 heading after subtree
@@ -1721,7 +1721,7 @@
       (let* ((ed (create-scintilla-editor width: 80 height: 24))
              (buf (make-buffer "test.org" #f
                     (send-message ed SCI_GETDOCPOINTER) #f #f #f #f))
-             (win (make-edit-window ed buf 0 0 80 24))
+             (win (make-edit-window ed buf 0 0 80 24 0))
              (fr (make-frame [win] 0 80 24 'vertical))
              (app (new-app-state fr)))
         (editor-set-text ed "** Sub heading\nBody")
@@ -1735,7 +1735,7 @@
       (let* ((ed (create-scintilla-editor width: 80 height: 24))
              (buf (make-buffer "test.org" #f
                     (send-message ed SCI_GETDOCPOINTER) #f #f #f #f))
-             (win (make-edit-window ed buf 0 0 80 24))
+             (win (make-edit-window ed buf 0 0 80 24 0))
              (fr (make-frame [win] 0 80 24 'vertical))
              (app (new-app-state fr)))
         (editor-set-text ed "* My Heading\nBody text here\n** Sub Heading")
@@ -1754,7 +1754,7 @@
       (let* ((ed (create-scintilla-editor width: 80 height: 24))
              (buf (make-buffer "test.org" #f
                     (send-message ed SCI_GETDOCPOINTER) #f #f #f #f))
-             (win (make-edit-window ed buf 0 0 80 24))
+             (win (make-edit-window ed buf 0 0 80 24 0))
              (fr (make-frame [win] 0 80 24 'vertical))
              (app (new-app-state fr)))
         (editor-set-text ed "* Heading\nChild line 1\nChild line 2\n* Next")
@@ -1779,7 +1779,7 @@
       (let* ((ed (create-scintilla-editor width: 80 height: 24))
              (buf (make-buffer "test.org" #f
                     (send-message ed SCI_GETDOCPOINTER) #f #f #f #f))
-             (win (make-edit-window ed buf 0 0 80 24))
+             (win (make-edit-window ed buf 0 0 80 24 0))
              (fr (make-frame [win] 0 80 24 'vertical))
              (app (new-app-state fr)))
         (editor-set-text ed "* H1\nBody1\n* H2\nBody2")
@@ -1800,7 +1800,7 @@
       (let* ((ed (create-scintilla-editor width: 80 height: 24))
              (buf (make-buffer "test.org" "/tmp/test.org"
                     (send-message ed SCI_GETDOCPOINTER) #f #f #f #f))
-             (win (make-edit-window ed buf 0 0 80 24))
+             (win (make-edit-window ed buf 0 0 80 24 0))
              (fr (make-frame [win] 0 80 24 'vertical))
              (app (new-app-state fr)))
         (editor-set-text ed "* Heading\nLine 2")
@@ -1814,7 +1814,7 @@
       (let* ((ed (create-scintilla-editor width: 80 height: 24))
              (buf (make-buffer "test.org" #f
                     (send-message ed SCI_GETDOCPOINTER) #f #f #f #f))
-             (win (make-edit-window ed buf 0 0 80 24))
+             (win (make-edit-window ed buf 0 0 80 24 0))
              (fr (make-frame [win] 0 80 24 'vertical))
              (app (new-app-state fr)))
         ;; cmd-org-insert-src-block requires interactive prompt, so test
@@ -1831,7 +1831,7 @@
       (let* ((ed (create-scintilla-editor width: 80 height: 24))
              (buf (make-buffer "test.org" #f
                     (send-message ed SCI_GETDOCPOINTER) #f #f #f #f))
-             (win (make-edit-window ed buf 0 0 80 24))
+             (win (make-edit-window ed buf 0 0 80 24 0))
              (fr (make-frame [win] 0 80 24 'vertical))
              (app (new-app-state fr)))
         (editor-set-text ed "<s")
@@ -1847,7 +1847,7 @@
       (let* ((ed (create-scintilla-editor width: 80 height: 24))
              (buf (make-buffer "test.org" #f
                     (send-message ed SCI_GETDOCPOINTER) #f #f #f #f))
-             (win (make-edit-window ed buf 0 0 80 24))
+             (win (make-edit-window ed buf 0 0 80 24 0))
              (fr (make-frame [win] 0 80 24 'vertical))
              (app (new-app-state fr)))
         (editor-set-text ed "<e")
@@ -1861,7 +1861,7 @@
       (let* ((ed (create-scintilla-editor width: 80 height: 24))
              (buf (make-buffer "test.org" #f
                     (send-message ed SCI_GETDOCPOINTER) #f #f #f #f))
-             (win (make-edit-window ed buf 0 0 80 24))
+             (win (make-edit-window ed buf 0 0 80 24 0))
              (fr (make-frame [win] 0 80 24 'vertical))
              (app (new-app-state fr)))
         (editor-set-text ed "<q")
@@ -1875,7 +1875,7 @@
       (let* ((ed (create-scintilla-editor width: 80 height: 24))
              (buf (make-buffer "test.org" #f
                     (send-message ed SCI_GETDOCPOINTER) #f #f #f #f))
-             (win (make-edit-window ed buf 0 0 80 24))
+             (win (make-edit-window ed buf 0 0 80 24 0))
              (fr (make-frame [win] 0 80 24 'vertical))
              (app (new-app-state fr)))
         ;; Indented template
@@ -1891,7 +1891,7 @@
       (let* ((ed (create-scintilla-editor width: 80 height: 24))
              (buf (make-buffer "test.org" #f
                     (send-message ed SCI_GETDOCPOINTER) #f #f #f #f))
-             (win (make-edit-window ed buf 0 0 80 24))
+             (win (make-edit-window ed buf 0 0 80 24 0))
              (fr (make-frame [win] 0 80 24 'vertical))
              (app (new-app-state fr)))
         (editor-set-text ed "<l")
@@ -1907,7 +1907,7 @@
       (let* ((ed (create-scintilla-editor width: 80 height: 24))
              (buf (make-buffer "test.org" #f
                     (send-message ed SCI_GETDOCPOINTER) #f #f #f #f))
-             (win (make-edit-window ed buf 0 0 80 24))
+             (win (make-edit-window ed buf 0 0 80 24 0))
              (fr (make-frame [win] 0 80 24 'vertical))
              (app (new-app-state fr)))
         ;; Unknown template key - should not expand

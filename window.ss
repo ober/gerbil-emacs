@@ -22,7 +22,11 @@
   frame-delete-window!
   frame-delete-other-windows!
   frame-other-window!
-  frame-draw-dividers!)
+  frame-draw-dividers!
+  frame-enlarge-window!
+  frame-shrink-window!
+  frame-enlarge-window-horizontally!
+  frame-shrink-window-horizontally!)
 
 (import :std/sugar
         :gerbil-scintilla/scintilla
@@ -36,7 +40,8 @@
 (defstruct edit-window
   (editor   ; scintilla-editor instance
    buffer   ; buffer struct
-   x y w h) ; position and size in terminal cells
+   x y w h  ; position and size in terminal cells
+   size-bias) ; integer offset for window resize (default 0)
   transparent: #t)
 
 (defstruct frame
@@ -63,7 +68,7 @@
   (let* ((edit-h (max 1 (- height 2)))  ; 1 row modeline, 1 row echo
          (ed (create-scintilla-editor width: width height: edit-h))
          (buf (buffer-create-from-editor! buffer-scratch-name ed))
-         (win (make-edit-window ed buf 0 0 width (- height 1))))
+         (win (make-edit-window ed buf 0 0 width (- height 1) 0)))
     (make-frame (list win) 0 width height 'vertical)))
 
 (def (frame-shutdown! fr)
@@ -87,19 +92,41 @@
          (n (length windows))
          (avail (- height 1))          ; 1 row for echo area
          (per-win (quotient avail n))
-         (extra (remainder avail n)))
-    (let loop ((wins windows) (y 0) (i 0))
-      (when (pair? wins)
+         (extra (remainder avail n))
+         ;; Compute bias-adjusted sizes, ensuring minimum of 2 rows per window
+         (raw-sizes (let loop ((ws windows) (i 0) (acc []))
+                      (if (null? ws) (reverse acc)
+                        (let ((win (car ws)))
+                          (loop (cdr ws) (+ i 1)
+                                (cons (+ per-win
+                                         (if (< i extra) 1 0)
+                                         (or (edit-window-size-bias win) 0))
+                                      acc))))))
+         ;; Clamp to minimum 2 (1 edit + 1 modeline)
+         (clamped (map (lambda (s) (max 2 s)) raw-sizes))
+         ;; Normalize: ensure total equals avail
+         (total (apply + clamped))
+         (sizes (if (= total avail)
+                  clamped
+                  ;; Adjust last window to make total correct
+                  (let ((delta (- avail total)))
+                    (let loop2 ((ss (reverse clamped)) (acc []) (d delta))
+                      (if (null? ss) (reverse acc)
+                        (if (= d 0) (append (reverse ss) acc)
+                          (let ((new-s (max 2 (+ (car ss) d))))
+                            (loop2 (cdr ss) (cons new-s acc) 0)))))))))
+    (let loop ((wins windows) (szs sizes) (y 0))
+      (when (and (pair? wins) (pair? szs))
         (let* ((win (car wins))
-               (h (+ per-win (if (< i extra) 1 0)))
-               (edit-h (max 1 (- h 1))))  ; at least 1 row edit, 1 for modeline
+               (h (car szs))
+               (edit-h (max 1 (- h 1))))
           (set! (edit-window-x win) 0)
           (set! (edit-window-y win) y)
           (set! (edit-window-w win) width)
           (set! (edit-window-h win) h)
           (editor-resize (edit-window-editor win) width edit-h)
           (editor-move (edit-window-editor win) 0 y)
-          (loop (cdr wins) (+ y h) (+ i 1)))))))
+          (loop (cdr wins) (cdr szs) (+ y h)))))))
 
 (def (frame-layout-horizontal! fr)
   "Side-by-side layout: each window gets a share of the width."
@@ -113,19 +140,37 @@
          (dividers (max 0 (- n 1)))
          (avail-w (- width dividers))
          (per-win (quotient avail-w n))
-         (extra (remainder avail-w n)))
-    (let loop ((wins windows) (x 0) (i 0))
-      (when (pair? wins)
+         (extra (remainder avail-w n))
+         ;; Compute bias-adjusted widths
+         (raw-widths (let loop ((ws windows) (i 0) (acc []))
+                       (if (null? ws) (reverse acc)
+                         (let ((win (car ws)))
+                           (loop (cdr ws) (+ i 1)
+                                 (cons (+ per-win
+                                          (if (< i extra) 1 0)
+                                          (or (edit-window-size-bias win) 0))
+                                       acc))))))
+         (clamped (map (lambda (w) (max 4 w)) raw-widths))
+         (total (apply + clamped))
+         (sizes (if (= total avail-w)
+                  clamped
+                  (let ((delta (- avail-w total)))
+                    (let loop2 ((ss (reverse clamped)) (acc []) (d delta))
+                      (if (null? ss) (reverse acc)
+                        (if (= d 0) (append (reverse ss) acc)
+                          (let ((new-s (max 4 (+ (car ss) d))))
+                            (loop2 (cdr ss) (cons new-s acc) 0)))))))))
+    (let loop ((wins windows) (szs sizes) (x 0))
+      (when (and (pair? wins) (pair? szs))
         (let* ((win (car wins))
-               (w (+ per-win (if (< i extra) 1 0))))
+               (w (car szs)))
           (set! (edit-window-x win) x)
           (set! (edit-window-y win) 0)
           (set! (edit-window-w win) w)
           (set! (edit-window-h win) win-h)
           (editor-resize (edit-window-editor win) w edit-h)
           (editor-move (edit-window-editor win) x 0)
-          ;; Skip past window width + 1 divider column
-          (loop (cdr wins) (+ x w 1) (+ i 1)))))))
+          (loop (cdr wins) (cdr szs) (+ x w 1)))))))
 
 ;;;============================================================================
 ;;; Resize (terminal size changed)
@@ -155,7 +200,7 @@
   (let* ((cur (current-window fr))
          (buf (edit-window-buffer cur))
          (new-ed (create-scintilla-editor))
-         (new-win (make-edit-window new-ed buf 0 0 0 0)))
+         (new-win (make-edit-window new-ed buf 0 0 0 0 0)))
     (buffer-attach! new-ed buf)
     (set! (frame-windows fr)
           (append (frame-windows fr) (list new-win)))
@@ -168,7 +213,7 @@
   (let* ((cur (current-window fr))
          (buf (edit-window-buffer cur))
          (new-ed (create-scintilla-editor))
-         (new-win (make-edit-window new-ed buf 0 0 0 0)))
+         (new-win (make-edit-window new-ed buf 0 0 0 0 0)))
     (buffer-attach! new-ed buf)
     (set! (frame-windows fr)
           (append (frame-windows fr) (list new-win)))
@@ -236,3 +281,34 @@
                 (tui-change-cell! x y (char->integer #\│) fg bg)
                 (yloop (+ y 1)))))
           (loop (cdr wins)))))))
+
+;;;============================================================================
+;;; Window resizing
+;;;============================================================================
+
+(def (frame-enlarge-window! fr (delta 1))
+  "Make the current window taller (vertical) or wider (horizontal) by delta rows/cols.
+   Steals space from the next window (or previous if current is last)."
+  (let* ((windows (frame-windows fr))
+         (n (length windows)))
+    (when (> n 1)
+      (let* ((idx (frame-current-idx fr))
+             (cur (list-ref windows idx))
+             ;; Steal from neighbor
+             (neighbor-idx (if (< idx (- n 1)) (+ idx 1) (- idx 1)))
+             (neighbor (list-ref windows neighbor-idx)))
+        (set! (edit-window-size-bias cur) (+ (or (edit-window-size-bias cur) 0) delta))
+        (set! (edit-window-size-bias neighbor) (- (or (edit-window-size-bias neighbor) 0) delta))
+        (frame-layout! fr)))))
+
+(def (frame-shrink-window! fr (delta 1))
+  "Make the current window smaller by delta rows/cols."
+  (frame-enlarge-window! fr (- delta)))
+
+(def (frame-enlarge-window-horizontally! fr (delta 1))
+  "Enlarge current window horizontally (alias for enlarge when in h-split)."
+  (frame-enlarge-window! fr delta))
+
+(def (frame-shrink-window-horizontally! fr (delta 1))
+  "Shrink current window horizontally."
+  (frame-shrink-window! fr delta))

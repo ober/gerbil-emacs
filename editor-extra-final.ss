@@ -186,4 +186,51 @@
   (let ((on (toggle-mode! 'auto-compression)))
     (echo-message! (app-state-echo app) (if on "Auto-compression: on" "Auto-compression: off"))))
 
+;;;============================================================================
+;;; Window resize commands
+;;;============================================================================
+
+(def (cmd-enlarge-window app)
+  "Make current window taller (C-x ^)."
+  (let* ((fr (app-state-frame app))
+         (n (get-prefix-arg app)))
+    (if (> (length (frame-windows fr)) 1)
+      (begin
+        (frame-enlarge-window! fr n)
+        (echo-message! (app-state-echo app)
+          (string-append "Window enlarged by " (number->string n))))
+      (echo-error! (app-state-echo app) "Only one window"))))
+
+(def (cmd-shrink-window app)
+  "Make current window shorter."
+  (let* ((fr (app-state-frame app))
+         (n (get-prefix-arg app)))
+    (if (> (length (frame-windows fr)) 1)
+      (begin
+        (frame-shrink-window! fr n)
+        (echo-message! (app-state-echo app)
+          (string-append "Window shrunk by " (number->string n))))
+      (echo-error! (app-state-echo app) "Only one window"))))
+
+(def (cmd-enlarge-window-horizontally app)
+  "Make current window wider (C-x })."
+  (let* ((fr (app-state-frame app))
+         (n (get-prefix-arg app)))
+    (if (> (length (frame-windows fr)) 1)
+      (begin
+        (frame-enlarge-window-horizontally! fr n)
+        (echo-message! (app-state-echo app)
+          (string-append "Window widened by " (number->string n))))
+      (echo-error! (app-state-echo app) "Only one window"))))
+
+(def (cmd-shrink-window-horizontally app)
+  "Make current window narrower (C-x {)."
+  (let* ((fr (app-state-frame app))
+         (n (get-prefix-arg app)))
+    (if (> (length (frame-windows fr)) 1)
+      (begin
+        (frame-shrink-window-horizontally! fr n)
+        (echo-message! (app-state-echo app)
+          (string-append "Window narrowed by " (number->string n))))
+      (echo-error! (app-state-echo app) "Only one window"))))
 

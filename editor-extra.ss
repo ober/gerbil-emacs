@@ -674,4 +674,9 @@
   (register-command! 'file-name-shadow-mode cmd-file-name-shadow-mode)
   (register-command! 'midnight-mode cmd-midnight-mode)
   (register-command! 'cursor-intangible-mode cmd-cursor-intangible-mode)
-  (register-command! 'auto-compression-mode cmd-auto-compression-mode))
+  (register-command! 'auto-compression-mode cmd-auto-compression-mode)
+  ;; Window resize
+  (register-command! 'enlarge-window cmd-enlarge-window)
+  (register-command! 'shrink-window cmd-shrink-window)
+  (register-command! 'enlarge-window-horizontally cmd-enlarge-window-horizontally)
+  (register-command! 'shrink-window-horizontally cmd-shrink-window-horizontally))

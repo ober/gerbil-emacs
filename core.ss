@@ -288,8 +288,7 @@
   ;; Write file (save as)
   (keymap-bind! *ctrl-x-map* "C-w" 'write-file)
 
-  ;; Revert buffer
-  (keymap-bind! *ctrl-x-map* "C-r" 'revert-buffer)
+  ;; Revert buffer — accessible via M-x revert-buffer or C-c R (revert-buffer-quick)
 
   ;; Beginning/end of defun
   (keymap-bind! *global-keymap* "M-a" 'beginning-of-defun)
@@ -622,6 +621,11 @@
 
   ;; Balance windows
   (keymap-bind! *ctrl-x-map* "+" 'balance-windows)
+
+  ;; Window resize (C-x ^, C-x {, C-x })
+  (keymap-bind! *ctrl-x-map* "^" 'enlarge-window)
+  (keymap-bind! *ctrl-x-map* "{" 'shrink-window-horizontally)
+  (keymap-bind! *ctrl-x-map* "}" 'enlarge-window-horizontally)
 
   ;; Move to window line (M-r — cycle top/center/bottom)
   (keymap-bind! *global-keymap* "M-r" 'move-to-window-line)

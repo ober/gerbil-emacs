@@ -1524,4 +1524,10 @@
   ;; Find file at line
   (register-command! 'find-file-at-line cmd-find-file-at-line)
   ;; Toggle line comment
-  (register-command! 'toggle-line-comment cmd-toggle-line-comment))
+  (register-command! 'toggle-line-comment cmd-toggle-line-comment)
+  ;; Window resize
+  (register-command! 'enlarge-window cmd-enlarge-window)
+  (register-command! 'shrink-window cmd-shrink-window)
+  (register-command! 'enlarge-window-horizontally cmd-enlarge-window)
+  (register-command! 'shrink-window-horizontally cmd-shrink-window)
+  (register-command! 'balance-windows cmd-balance-windows))
