@@ -1821,6 +1821,29 @@
                (when (< target-idx (length (qt-frame-windows fr)))
                  (set! (qt-frame-current-idx fr) target-idx)))
              (echo-message! echo "Window configuration restored")))
+          ;; File register (file . path)
+          ((and (pair? val) (eq? (car val) 'file))
+           (let ((path (cdr val)))
+             (if (file-exists? path)
+               (let* ((name (path-strip-directory path))
+                      (fr (app-state-frame app))
+                      (ed (current-qt-editor app))
+                      ;; Reuse existing buffer or create new
+                      (existing (buffer-by-name name))
+                      (buf (or existing
+                               (qt-buffer-create! name ed path))))
+                 (qt-buffer-attach! ed buf)
+                 (set! (qt-edit-window-buffer (qt-current-window fr)) buf)
+                 (unless existing
+                   (let ((text (read-file-as-string path)))
+                     (when text
+                       (qt-plain-text-edit-set-text! ed text)
+                       (qt-text-document-set-modified!
+                         (buffer-doc-pointer buf) #f)
+                       (qt-plain-text-edit-set-cursor-position! ed 0))))
+                 (echo-message! echo (string-append "Opened file: " path)))
+               (echo-error! echo
+                 (string-append "File not found: " path)))))
           ;; Point register (buffer-name . position)
           ((pair? val)
            (let ((buf (buffer-by-name (car val))))
@@ -1868,6 +1891,21 @@
         (hash-put! (app-state-registers app) reg cfg)
         (echo-message! echo
           (string-append "Window config saved to register " (string reg)))))))
+
+(def (cmd-file-to-register app)
+  "Save a file path to a register for quick jumping."
+  (let* ((input (qt-echo-read-string app "File to register (register char): "))
+         (echo (app-state-echo app)))
+    (when (and input (> (string-length input) 0))
+      (let* ((reg (string-ref input 0))
+             (buf (current-qt-buffer app))
+             (path (buffer-file-path buf)))
+        (if path
+          (begin
+            (hash-put! (app-state-registers app) reg (cons 'file path))
+            (echo-message! echo
+              (string-append "File " path " saved to register " (string reg))))
+          (echo-error! echo "Buffer has no file"))))))
 
 ;;;============================================================================
 ;;; Paragraph navigation

@@ -391,6 +391,7 @@
   (keymap-bind! *ctrl-x-r-map* "SPC" 'point-to-register)
   (keymap-bind! *ctrl-x-r-map* "j" 'jump-to-register)
   (keymap-bind! *ctrl-x-r-map* "w" 'window-configuration-to-register)
+  (keymap-bind! *ctrl-x-r-map* "f" 'file-to-register)
 
   ;; Backward kill word
   (keymap-bind! *global-keymap* "M-DEL" 'backward-kill-word)

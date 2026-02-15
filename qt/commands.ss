@@ -714,6 +714,7 @@
   (register-command! 'point-to-register cmd-point-to-register)
   (register-command! 'jump-to-register cmd-jump-to-register)
   (register-command! 'window-configuration-to-register cmd-window-configuration-to-register)
+  (register-command! 'file-to-register cmd-file-to-register)
   ;; Paragraph navigation
   (register-command! 'forward-paragraph cmd-forward-paragraph)
   (register-command! 'backward-paragraph cmd-backward-paragraph)
