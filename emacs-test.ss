@@ -65,7 +65,12 @@
                  *cursor-type* *modeline-visible*
                  *indent-guide-mode* *rainbow-mode*
                  *electric-quote-mode* *visible-mark-mode*
-                 *fringe-mode*)
+                 *fringe-mode*
+                 *show-paren-style* *auto-insert-mode*
+                 *global-visual-line-mode* *scroll-conservatively*
+                 *show-keystroke-mode* *auto-revert-tail-mode*
+                 *flyspell-prog-mode* *auto-save-buffers-mode*
+                 *global-linum-mode*)
         (only-in :gerbil-emacs/editor-extra-web
                  url-encode url-decode
                  html-encode-entities html-decode-entities
@@ -1884,6 +1889,40 @@
       (check (procedure? (find-command 'toggle-auto-dim-other-buffers)) => #t)
       (check (procedure? (find-command 'toggle-global-eldoc)) => #t)
       (check (procedure? (find-command 'open-line-below)) => #t))
+
+    ;; -- Batch 36 tests --
+    (test-case "batch 36: mode toggles"
+      (check (eq? *show-paren-style* 'parenthesis) => #t)
+      (set! *auto-insert-mode* #f)
+      (check *auto-insert-mode* => #f)
+      (set! *global-visual-line-mode* #f)
+      (check *global-visual-line-mode* => #f)
+      (check (number? *scroll-conservatively*) => #t)
+      (set! *show-keystroke-mode* #f)
+      (check *show-keystroke-mode* => #f)
+      (set! *auto-revert-tail-mode* #f)
+      (check *auto-revert-tail-mode* => #f)
+      (set! *flyspell-prog-mode* #f)
+      (check *flyspell-prog-mode* => #f)
+      (set! *auto-save-buffers-mode* #f)
+      (check *auto-save-buffers-mode* => #f)
+      (set! *global-linum-mode* #f)
+      (check *global-linum-mode* => #f))
+
+    ;; -- Command registration batch 36 --
+    (test-case "command registration: batch 36 features"
+      (register-all-commands!)
+      (check (procedure? (find-command 'toggle-show-paren-style)) => #t)
+      (check (procedure? (find-command 'insert-uuid-v4)) => #t)
+      (check (procedure? (find-command 'toggle-auto-insert-mode)) => #t)
+      (check (procedure? (find-command 'toggle-global-visual-line)) => #t)
+      (check (procedure? (find-command 'toggle-scroll-conservatively)) => #t)
+      (check (procedure? (find-command 'toggle-show-keystroke)) => #t)
+      (check (procedure? (find-command 'toggle-auto-revert-tail)) => #t)
+      (check (procedure? (find-command 'toggle-flyspell-prog)) => #t)
+      (check (procedure? (find-command 'toggle-auto-save-buffers)) => #t)
+      (check (procedure? (find-command 'insert-backslash)) => #t)
+      (check (procedure? (find-command 'toggle-global-linum)) => #t))
 
     ;;=========================================================================
     ;; Headless Scintilla editor tests

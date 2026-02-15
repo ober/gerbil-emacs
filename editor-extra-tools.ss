@@ -1409,3 +1409,139 @@
         "Fringe indicators on"
         "Fringe indicators off"))))
 
+;;; =========================================================================
+;;; Batch 36: show-paren style, UUID, visual line, scroll, etc.
+;;; =========================================================================
+
+(def *show-paren-style* 'parenthesis)  ;; 'parenthesis, 'expression, or 'mixed
+(def *auto-insert-mode* #f)
+(def *global-visual-line-mode* #f)
+(def *scroll-conservatively* 0)
+(def *show-keystroke-mode* #f)
+(def *auto-revert-tail-mode* #f)
+(def *flyspell-prog-mode* #f)
+(def *auto-save-buffers-mode* #f)
+(def *global-linum-mode* #f)
+
+(def (cmd-toggle-show-paren-style app)
+  "Cycle show-paren-style: parenthesis -> expression -> mixed."
+  (let ((echo (app-state-echo app)))
+    (set! *show-paren-style*
+      (case *show-paren-style*
+        ((parenthesis) 'expression)
+        ((expression) 'mixed)
+        (else 'parenthesis)))
+    (echo-message! echo
+      (string-append "Show-paren style: " (symbol->string *show-paren-style*)))))
+
+(def (cmd-insert-uuid-v4 app)
+  "Insert a UUID v4 at point (random-based)."
+  (let* ((echo (app-state-echo app))
+         (ed (current-editor app))
+         ;; Generate 16 random hex pairs
+         (hex-chars "0123456789abcdef")
+         (rand-hex (lambda ()
+                     (string (string-ref hex-chars (random-integer 16))
+                             (string-ref hex-chars (random-integer 16)))))
+         ;; Build UUID: 8-4-4-4-12
+         (p1 (string-append (rand-hex) (rand-hex) (rand-hex) (rand-hex)))
+         (p2 (string-append (rand-hex) (rand-hex)))
+         (p3 (string-append "4" (substring (rand-hex) 1 2) (rand-hex)))
+         (p4-first (string-ref hex-chars (+ 8 (random-integer 4))))
+         (p4 (string-append (string p4-first) (substring (rand-hex) 1 2) (rand-hex)))
+         (p5 (string-append (rand-hex) (rand-hex) (rand-hex) (rand-hex) (rand-hex) (rand-hex)))
+         (uuid (string-append p1 "-" p2 "-" p3 "-" p4 "-" p5)))
+    (editor-replace-selection ed uuid)
+    (echo-message! echo (string-append "UUID: " uuid))))
+
+(def (cmd-toggle-auto-insert-mode app)
+  "Toggle auto-insert-mode (auto templates for new files)."
+  (let ((echo (app-state-echo app)))
+    (set! *auto-insert-mode* (not *auto-insert-mode*))
+    (echo-message! echo (if *auto-insert-mode*
+                          "Auto-insert mode ON"
+                          "Auto-insert mode OFF"))))
+
+(def (cmd-toggle-global-visual-line app)
+  "Toggle global visual-line-mode (word wrap with visual movement)."
+  (let* ((echo (app-state-echo app))
+         (ed (current-editor app)))
+    (set! *global-visual-line-mode* (not *global-visual-line-mode*))
+    (if *global-visual-line-mode*
+      (begin
+        ;; SCI_SETWRAPMODE = 2268, SC_WRAP_WORD = 1
+        (send-message ed 2268 1 0)
+        (echo-message! echo "Global visual-line mode ON"))
+      (begin
+        ;; SCI_SETWRAPMODE = 2268, SC_WRAP_NONE = 0
+        (send-message ed 2268 0 0)
+        (echo-message! echo "Global visual-line mode OFF")))))
+
+(def (cmd-toggle-scroll-conservatively app)
+  "Toggle conservative scrolling (scroll just enough to show cursor)."
+  (let* ((echo (app-state-echo app))
+         (ed (current-editor app)))
+    (if (= *scroll-conservatively* 0)
+      (begin
+        (set! *scroll-conservatively* 101)
+        ;; SCI_SETVISIBLEPOLICY = 2394, VISIBLE_STRICT = 4
+        (send-message ed 2394 4 2)
+        (echo-message! echo "Scroll conservatively ON"))
+      (begin
+        (set! *scroll-conservatively* 0)
+        ;; SCI_SETVISIBLEPOLICY = 2394, VISIBLE_SLOP = 1
+        (send-message ed 2394 1 5)
+        (echo-message! echo "Scroll conservatively OFF")))))
+
+(def (cmd-toggle-show-keystroke app)
+  "Toggle showing keystrokes in the echo area."
+  (let ((echo (app-state-echo app)))
+    (set! *show-keystroke-mode* (not *show-keystroke-mode*))
+    (echo-message! echo (if *show-keystroke-mode*
+                          "Show keystrokes ON"
+                          "Show keystrokes OFF"))))
+
+(def (cmd-toggle-auto-revert-tail app)
+  "Toggle auto-revert-tail-mode (tail -f behavior for log files)."
+  (let ((echo (app-state-echo app)))
+    (set! *auto-revert-tail-mode* (not *auto-revert-tail-mode*))
+    (echo-message! echo (if *auto-revert-tail-mode*
+                          "Auto-revert tail mode ON"
+                          "Auto-revert tail mode OFF"))))
+
+(def (cmd-toggle-flyspell-prog app)
+  "Toggle flyspell-prog-mode (spell-check comments and strings only)."
+  (let ((echo (app-state-echo app)))
+    (set! *flyspell-prog-mode* (not *flyspell-prog-mode*))
+    (echo-message! echo (if *flyspell-prog-mode*
+                          "Flyspell-prog mode ON"
+                          "Flyspell-prog mode OFF"))))
+
+(def (cmd-toggle-auto-save-buffers app)
+  "Toggle auto-save-buffers (periodically save all modified buffers)."
+  (let ((echo (app-state-echo app)))
+    (set! *auto-save-buffers-mode* (not *auto-save-buffers-mode*))
+    (echo-message! echo (if *auto-save-buffers-mode*
+                          "Auto-save buffers ON"
+                          "Auto-save buffers OFF"))))
+
+(def (cmd-insert-backslash app)
+  "Insert a backslash character at point."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app)))
+    (editor-replace-selection ed "\\")
+    (echo-message! echo "Backslash inserted")))
+
+(def (cmd-toggle-global-linum app)
+  "Toggle global linum-mode (line numbers in all buffers)."
+  (let* ((echo (app-state-echo app))
+         (ed (current-editor app)))
+    (set! *global-linum-mode* (not *global-linum-mode*))
+    (if *global-linum-mode*
+      (begin
+        ;; SCI_SETMARGINWIDTHN = 2242
+        (send-message ed 2242 0 48)
+        (echo-message! echo "Global linum mode ON"))
+      (begin
+        (send-message ed 2242 0 0)
+        (echo-message! echo "Global linum mode OFF")))))
