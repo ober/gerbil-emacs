@@ -1203,3 +1203,31 @@ Returns (path . line) or #f. Handles file:line format."
       "Centered cursor mode ON"
       "Centered cursor mode OFF")))
 
+;;;============================================================================
+;;; Tab insertion (Qt)
+;;;============================================================================
+
+(def *qt-tab-width* 4)
+
+(def (cmd-tab-to-tab-stop app)
+  "Insert spaces (or tab) to the next tab stop."
+  (let* ((ed (current-qt-editor app))
+         (col (qt-plain-text-edit-cursor-column ed))
+         (next-stop (* (+ 1 (quotient col *qt-tab-width*)) *qt-tab-width*))
+         (spaces (- next-stop col))
+         (str (make-string spaces #\space)))
+    (qt-plain-text-edit-insert-text! ed str)))
+
+(def (cmd-set-tab-width app)
+  "Set the tab width for the current buffer."
+  (let* ((input (qt-echo-read-string app
+                  (string-append "Tab width (" (number->string *qt-tab-width*) "): "))))
+    (when (and input (> (string-length input) 0))
+      (let ((n (string->number input)))
+        (if (and n (exact? n) (> n 0) (<= n 16))
+          (begin
+            (set! *qt-tab-width* n)
+            (echo-message! (app-state-echo app)
+              (string-append "Tab width: " (number->string n))))
+          (echo-error! (app-state-echo app) "Invalid tab width (1-16)"))))))
+

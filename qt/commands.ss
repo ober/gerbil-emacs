@@ -204,6 +204,8 @@
           (when (file-exists? filename)
             (let ((text (read-file-as-string filename)))
               (when text
+                ;; Cache line ending style for modeline
+                (hash-put! *buffer-eol-cache* name (detect-eol-from-text text))
                 (qt-plain-text-edit-set-text! ed2 text)
                 (qt-text-document-set-modified! (buffer-doc-pointer buf) #f)
                 (if default-line
@@ -265,6 +267,8 @@
             (when (file-exists? filename)
               (let ((text (read-file-as-string filename)))
                 (when text
+                  ;; Cache line ending style for modeline
+                  (hash-put! *buffer-eol-cache* name (detect-eol-from-text text))
                   (qt-plain-text-edit-set-text! ed text)
                   (qt-text-document-set-modified! (buffer-doc-pointer buf) #f)
                   ;; Restore saved cursor position if save-place is enabled
@@ -912,6 +916,9 @@
   (register-command! 'toggle-highlighting cmd-toggle-highlighting)
   (register-command! 'toggle-fill-column-indicator cmd-toggle-fill-column-indicator)
   (register-command! 'toggle-indent-tabs-mode cmd-toggle-indent-tabs-mode)
+  ;; Tab insertion
+  (register-command! 'tab-to-tab-stop cmd-tab-to-tab-stop)
+  (register-command! 'set-tab-width cmd-set-tab-width)
   ;; Fill column
   (register-command! 'set-fill-column cmd-set-fill-column)
   ;; Calculator

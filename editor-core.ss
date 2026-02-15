@@ -33,6 +33,26 @@
 (def *auto-pair-mode* #t)
 
 ;;;============================================================================
+;;; Uniquify buffer name helper
+;;;============================================================================
+
+(def (uniquify-buffer-name path)
+  "Generate a unique buffer name for a file path by adding parent dir when needed."
+  (let* ((basename (path-strip-directory path))
+         (existing (filter (lambda (b)
+                             (and (buffer-file-path b)
+                                  (not (string=? (buffer-file-path b) path))
+                                  (string=? (path-strip-directory (buffer-file-path b))
+                                            basename)))
+                           (buffer-list))))
+    (if (null? existing)
+      basename
+      (let ((parent (path-strip-directory
+                      (path-strip-trailing-directory-separator
+                        (path-directory path)))))
+        (string-append basename "<" parent ">")))))
+
+;;;============================================================================
 ;;; File modification tracking and auto-save
 ;;;============================================================================
 
@@ -434,7 +454,7 @@
                  (eq? 'directory (file-info-type (file-info filename))))
           (dired-open-directory! app filename)
           ;; Regular file
-          (let* ((name (path-strip-directory filename))
+          (let* ((name (uniquify-buffer-name filename))
                  (ed (current-editor app))
                  (buf (buffer-create! name ed filename)))
             ;; Track in recent files
@@ -1144,3 +1164,26 @@
                            (cons (car r) (trim (cdr r) (- n 1)))))
                        ring))))
     (set! (app-state-mark-ring app) new-ring)))
+
+;;;============================================================================
+;;; Tab insertion command
+;;;============================================================================
+
+(def (cmd-tab-to-tab-stop app)
+  "Insert spaces (or tab) to the next tab stop."
+  (let* ((ed (current-editor app))
+         (pos (editor-get-current-pos ed))
+         (col (editor-get-column ed pos))
+         (tw (send-message ed SCI_GETTABWIDTH 0 0))
+         (tw (if (> tw 0) tw 4)) ;; default 4 if unset
+         (use-tabs (= 1 (send-message ed SCI_GETUSETABS 0 0))))
+    (if use-tabs
+      (begin
+        (editor-insert-text ed pos "\t")
+        (editor-goto-pos ed (+ pos 1)))
+      (let* ((next-stop (* (+ 1 (quotient col tw)) tw))
+             (spaces (- next-stop col))
+             (str (make-string spaces #\space)))
+        (editor-insert-text ed pos str)
+        (editor-goto-pos ed (+ pos spaces))))))
+

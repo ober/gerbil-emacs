@@ -4,7 +4,9 @@
 ;;; Shows buffer name, line, column, modified indicator, mode,
 ;;; position percentage, and git branch in the main window's status bar.
 
-(export qt-modeline-update!)
+(export qt-modeline-update!
+        detect-eol-from-text
+        *buffer-eol-cache*)
 
 (import :std/sugar
         :gerbil-qt/qt
@@ -85,6 +87,31 @@
       (else "Text"))))
 
 ;;;============================================================================
+;;; Line ending detection
+;;;============================================================================
+
+(def *buffer-eol-cache* (make-hash-table)) ;; buffer-name -> "LF"/"CRLF"/"CR"
+
+(def (detect-eol-from-text text)
+  "Detect line ending style from first newline in text."
+  (let loop ((i 0))
+    (if (>= i (string-length text))
+      "LF" ;; default
+      (let ((ch (string-ref text i)))
+        (cond
+          ((char=? ch #\return)
+           (if (and (< (+ i 1) (string-length text))
+                    (char=? (string-ref text (+ i 1)) #\newline))
+             "CRLF"
+             "CR"))
+          ((char=? ch #\newline) "LF")
+          (else (loop (+ i 1))))))))
+
+(def (buffer-eol-indicator buf)
+  "Get cached EOL indicator for a buffer."
+  (or (hash-get *buffer-eol-cache* (buffer-name buf)) "LF"))
+
+;;;============================================================================
 ;;; Modeline rendering
 ;;;============================================================================
 
@@ -117,16 +144,18 @@
                       (else "--")))
          ;; Mode name
          (mode (mode-name-for-buffer buf))
+         ;; Line ending style
+         (eol (buffer-eol-indicator buf))
          ;; Git branch
          (branch (git-branch-for-file (buffer-file-path buf)))
          ;; Build the modeline string
          (info (string-append
-                 "-UU-:" state-str "-  "
+                 "-U:" state-str "-  "
                  (buffer-name buf) "    "
                  "L" (number->string line)
                  " C" (number->string col)
                  "  " pct
-                 "  (" mode ")"
+                 "  (" mode " " eol ")"
                  (if branch
                    (string-append "  " branch)
                    ""))))

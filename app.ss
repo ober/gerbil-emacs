@@ -18,6 +18,7 @@
         :gerbil-emacs/modeline
         :gerbil-emacs/echo
         :gerbil-emacs/editor
+        :gerbil-emacs/editor-core
         :gerbil-emacs/highlight
         :gerbil-emacs/persist)
 
@@ -59,11 +60,18 @@
          (fr (frame-init! width height))
          (app (new-app-state fr)))
 
-    ;; Configure dark theme and scroll margin on all editors
+    ;; Configure dark theme, scroll margin, and current-line highlight on all editors
     (for-each (lambda (win)
                 (let ((ed (edit-window-editor win)))
                   (setup-editor-theme! ed)
-                  (setup-scroll-margin! ed)))
+                  (setup-scroll-margin! ed)
+                  ;; Highlight the current line with a subtle background
+                  (send-message ed SCI_SETCARETLINEVISIBLE 1 0)
+                  (send-message ed SCI_SETCARETLINEBACK
+                    (rgb->scintilla #x28 #x28 #x3e) 0) ;; dark blue tint
+                  ;; Set default tab width
+                  (send-message ed SCI_SETTABWIDTH 4 0)
+                  (send-message ed SCI_SETUSETABS 0 0))) ;; use spaces by default
               (frame-windows fr))
 
     ;; Restore scratch buffer from persistent storage, or set default
@@ -83,7 +91,7 @@
 
 (def (open-file-in-app! app filename)
   "Open a file in a new buffer."
-  (let* ((name (path-strip-directory filename))
+  (let* ((name (uniquify-buffer-name filename))
          (ed (current-editor app))
          (buf (buffer-create! name ed filename))
          (fr (app-state-frame app)))

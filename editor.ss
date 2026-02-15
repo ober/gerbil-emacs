@@ -277,6 +277,8 @@
   (register-command! 'digit-argument-7 cmd-digit-argument-7)
   (register-command! 'digit-argument-8 cmd-digit-argument-8)
   (register-command! 'digit-argument-9 cmd-digit-argument-9)
+  ;; Tab insertion
+  (register-command! 'tab-to-tab-stop cmd-tab-to-tab-stop)
   ;; Text transforms
   (register-command! 'tabify cmd-tabify)
   (register-command! 'untabify cmd-untabify)
