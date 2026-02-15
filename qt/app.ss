@@ -225,6 +225,9 @@
                (let ((code (qt-last-key-code))
                      (mods (qt-last-key-modifiers))
                      (text (qt-last-key-text)))
+                ;; Record keystroke in lossage ring
+                (let ((ks (qt-key-event->string code mods text)))
+                  (when ks (key-lossage-record! app ks)))
                 ;; Modal mode intercepts: isearch and query-replace
                 (cond
                  (*isearch-active*

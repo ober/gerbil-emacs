@@ -911,20 +911,25 @@
 ;;; Window commands
 ;;;============================================================================
 
+(def (setup-new-editor-defaults! ed)
+  "Apply dark theme, line numbers, and defaults to a new Scintilla editor."
+  (editor-style-set-foreground ed STYLE_DEFAULT #xd8d8d8)
+  (editor-style-set-background ed STYLE_DEFAULT #x181818)
+  (send-message ed SCI_STYLECLEARALL)
+  (editor-set-caret-foreground ed #xFFFFFF)
+  ;; Line numbers
+  (send-message ed SCI_SETMARGINTYPEN 0 SC_MARGIN_NUMBER)
+  (send-message ed SCI_SETMARGINWIDTHN 0 5)
+  (editor-style-set-foreground ed STYLE_LINENUMBER #x808080)
+  (editor-style-set-background ed STYLE_LINENUMBER #x181818))
+
 (def (cmd-split-window app)
   (let ((new-ed (frame-split! (app-state-frame app))))
-    ;; Apply dark theme to the new editor
-    (editor-style-set-foreground new-ed STYLE_DEFAULT #xd8d8d8)
-    (editor-style-set-background new-ed STYLE_DEFAULT #x181818)
-    (send-message new-ed SCI_STYLECLEARALL)
-    (editor-set-caret-foreground new-ed #xFFFFFF)))
+    (setup-new-editor-defaults! new-ed)))
 
 (def (cmd-split-window-right app)
   (let ((new-ed (frame-split-right! (app-state-frame app))))
-    (editor-style-set-foreground new-ed STYLE_DEFAULT #xd8d8d8)
-    (editor-style-set-background new-ed STYLE_DEFAULT #x181818)
-    (send-message new-ed SCI_STYLECLEARALL)
-    (editor-set-caret-foreground new-ed #xFFFFFF)))
+    (setup-new-editor-defaults! new-ed)))
 
 (def (cmd-other-window app)
   (frame-other-window! (app-state-frame app)))
@@ -1474,4 +1479,5 @@
              (str (make-string spaces #\space)))
         (editor-insert-text ed pos str)
         (editor-goto-pos ed (+ pos spaces))))))
+
 

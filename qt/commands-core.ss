@@ -1289,3 +1289,4 @@ Returns (path . line) or #f. Handles file:line format."
               (string-append "Tab width: " (number->string n))))
           (echo-error! (app-state-echo app) "Invalid tab width (1-16)"))))))
 
+

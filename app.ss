@@ -70,7 +70,13 @@
                   (send-message ed SCI_SETUSETABS 0 0)
                   ;; Enable indentation guides
                   (send-message ed SCI_SETINDENTATIONGUIDES SC_IV_LOOKBOTH 0)
-                  (send-message ed SCI_SETINDENT 4 0)))
+                  (send-message ed SCI_SETINDENT 4 0)
+                  ;; Enable line numbers in margin 0
+                  (send-message ed SCI_SETMARGINTYPEN 0 SC_MARGIN_NUMBER)
+                  (send-message ed SCI_SETMARGINWIDTHN 0 5)
+                  ;; Style line number margin: dark gray on very dark background
+                  (editor-style-set-foreground ed STYLE_LINENUMBER #x808080)
+                  (editor-style-set-background ed STYLE_LINENUMBER #x181818)))
               (frame-windows fr))
 
     ;; Restore scratch buffer from persistent storage, or set default
@@ -425,6 +431,9 @@
 (def (dispatch-key! app ev)
   "Process a key event through the keymap state machine."
   (let ((echo (app-state-echo app)))
+    ;; Record keystroke in lossage ring
+    (key-lossage-record! app (key-event->string ev))
+
     ;; Clear echo message on next key press (unless in prefix)
     (when (and (echo-state-message echo)
                (null? (key-state-prefix-keys (app-state-key-state app))))

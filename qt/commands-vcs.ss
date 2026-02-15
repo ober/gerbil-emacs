@@ -429,8 +429,18 @@
   (cmd-select-all app))
 
 (def (cmd-view-lossage app)
-  "View recent keystrokes."
-  (echo-message! (app-state-echo app) "Lossage not recorded in Qt backend"))
+  "Display recent keystrokes in a *Help* buffer."
+  (let* ((text (string-append "Recent keystrokes:\n\n"
+                              (key-lossage->string app)
+                              "\n"))
+         (fr (app-state-frame app))
+         (ed (qt-current-editor fr))
+         (buf (qt-buffer-create! "*Help*" ed #f)))
+    (qt-buffer-attach! ed buf)
+    (set! (qt-edit-window-buffer (qt-current-window fr)) buf)
+    (qt-plain-text-edit-set-text! ed text)
+    (qt-text-document-set-modified! (buffer-doc-pointer buf) #f)
+    (qt-plain-text-edit-set-cursor-position! ed 0)))
 
 (def (cmd-bookmark-rename app)
   "Rename a bookmark."

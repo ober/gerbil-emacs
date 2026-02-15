@@ -883,6 +883,25 @@
       ;; Alternative undo
       (check (keymap-lookup *global-keymap* "C-/") => 'undo))
 
+    (test-case "new keybindings: view-lossage"
+      (setup-default-bindings!)
+      (check (keymap-lookup *help-map* "l") => 'view-lossage))
+
+    (test-case "key lossage recording"
+      (let ((app (new-app-state #f)))
+        ;; Starts empty
+        (check (app-state-key-lossage app) => [])
+        ;; Record some keys
+        (key-lossage-record! app "C-x")
+        (key-lossage-record! app "C-f")
+        (check (length (app-state-key-lossage app)) => 2)
+        ;; Most recent first
+        (check (car (app-state-key-lossage app)) => "C-f")
+        ;; Format includes both keys
+        (let ((s (key-lossage->string app)))
+          (check (not (not (string-contains s "C-x"))) => #t)
+          (check (not (not (string-contains s "C-f"))) => #t))))
+
     ;;=========================================================================
     ;; Feature implementation tests
     ;;=========================================================================

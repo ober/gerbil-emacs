@@ -50,6 +50,10 @@
   buffer-by-name
   buffer-scratch-name
 
+  ;; Key lossage
+  key-lossage-record!
+  key-lossage->string
+
   ;; Shared helpers
   brace-char?
 
@@ -782,6 +786,7 @@
   (keymap-bind! *help-map* "d" 'describe-function)
   (keymap-bind! *help-map* "v" 'describe-variable)
   (keymap-bind! *help-map* "i" 'info)
+  (keymap-bind! *help-map* "l" 'view-lossage)
 
   ;; All other new commands accessible via M-x
   )
@@ -886,7 +891,8 @@
    winner-history      ; list of window configs: ((num-windows current-idx buffers) ...)
    winner-history-idx  ; integer: current position in winner-history for redo
    tabs                ; list of tabs: ((name buffer-names current-idx) ...)
-   current-tab-idx)    ; integer: current tab index
+   current-tab-idx     ; integer: current tab index
+   key-lossage)        ; list of key strings (most recent first), max 300
   transparent: #t)
 
 (def (new-app-state frame)
@@ -915,7 +921,8 @@
    []                    ; winner-history
    0                     ; winner-history-idx
    (list (list "Tab 1" '("*scratch*") 0)) ; tabs - initial tab
-   0))                   ; current-tab-idx
+   0                     ; current-tab-idx
+   []))                  ; key-lossage
 
 (def (get-prefix-arg app (default 1))
   "Get the numeric value of the current prefix argument."
@@ -926,6 +933,42 @@
      ((list? arg) (car arg))
      ((eq? arg '-) -1)
      (else default))))
+
+;;;============================================================================
+;;; Key lossage (last 300 keystrokes)
+;;;============================================================================
+
+(def *key-lossage-max* 300)
+
+(def (key-lossage-record! app key-str)
+  "Record a keystroke in the lossage ring."
+  (let ((lossage (app-state-key-lossage app)))
+    (set! (app-state-key-lossage app)
+      (if (>= (length lossage) *key-lossage-max*)
+        (cons key-str (list-head lossage (- *key-lossage-max* 1)))
+        (cons key-str lossage)))))
+
+(def (key-lossage->string app)
+  "Format key lossage for display, 10 keys per line."
+  (let ((keys (reverse (app-state-key-lossage app))))
+    (if (null? keys)
+      "(no keystrokes recorded)"
+      (let loop ((ks keys) (col 0) (acc ""))
+        (if (null? ks)
+          acc
+          (let* ((k (car ks))
+                 (sep (if (and (> col 0) (= (modulo col 10) 0)) "\n" " "))
+                 (new-acc (if (string=? acc "")
+                            k
+                            (string-append acc sep k))))
+            (loop (cdr ks) (+ col 1) new-acc)))))))
+
+(def (list-head lst n)
+  "Return the first n elements of lst."
+  (let loop ((l lst) (i 0) (acc []))
+    (if (or (null? l) (>= i n))
+      (reverse acc)
+      (loop (cdr l) (+ i 1) (cons (car l) acc)))))
 
 ;;;============================================================================
 ;;; Command registry

@@ -893,8 +893,17 @@
 ;;;============================================================================
 
 (def (cmd-view-lossage app)
-  "Display recent key sequences in *Lossage* buffer."
-  (echo-message! (app-state-echo app) "Key lossage tracking not yet implemented"))
+  "Display recent keystrokes in a *Help* buffer."
+  (let* ((text (string-append "Recent keystrokes:\n\n"
+                              (key-lossage->string app)
+                              "\n"))
+         (ed (current-editor app))
+         (buf (buffer-create! "*Help*" ed #f)))
+    (buffer-attach! ed buf)
+    (set! (edit-window-buffer (current-window (app-state-frame app))) buf)
+    (editor-set-text ed text)
+    (editor-goto-pos ed 0)
+    (editor-set-save-point ed)))
 
 (def (cmd-display-time app)
   "Display current time in echo area."

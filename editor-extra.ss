@@ -682,4 +682,5 @@
   (register-command! 'shrink-window-horizontally cmd-shrink-window-horizontally)
   ;; Regex search
   (register-command! 'isearch-forward-regexp cmd-search-forward-regexp)
-  (register-command! 'query-replace-regexp-interactive cmd-query-replace-regexp-interactive))
+  (register-command! 'query-replace-regexp-interactive cmd-query-replace-regexp-interactive)
+)
