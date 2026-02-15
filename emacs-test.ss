@@ -27,7 +27,10 @@
                  cmd-org-toggle-checkbox cmd-org-priority
                  cmd-org-insert-heading cmd-org-insert-src-block
                  cmd-org-template-expand
-                 org-heading-level org-find-subtree-end org-on-checkbox-line?)
+                 org-heading-level org-find-subtree-end org-on-checkbox-line?
+                 *focus-mode* *zen-mode* *killed-buffers*
+                 remember-killed-buffer! *which-key-mode*
+                 *dedicated-windows* *new-buffer-counter*)
         (only-in :gerbil-emacs/editor register-all-commands!)
         (only-in :gerbil-emacs/editor-extra-editing
                  occur-parse-source-name
@@ -1533,6 +1536,56 @@
       (check (procedure? (find-command 'insert-scratch-message)) => #t)
       (check (procedure? (find-command 'count-lines-region)) => #t)
       (check (procedure? (find-command 'cycle-spacing)) => #t))
+
+    ;; -- Batch 27 state tests --
+    (test-case "batch 27 mode toggles"
+      ;; Focus mode
+      (set! *focus-mode* #f)
+      (check *focus-mode* => #f)
+      (set! *focus-mode* #t)
+      (check *focus-mode* => #t)
+      ;; Zen mode
+      (set! *zen-mode* #f)
+      (check *zen-mode* => #f)
+      (set! *zen-mode* #t)
+      (check *zen-mode* => #t)
+      ;; Which-key mode
+      (set! *which-key-mode* #f)
+      (check *which-key-mode* => #f)
+      (set! *which-key-mode* #t)
+      (check *which-key-mode* => #t))
+
+    (test-case "killed buffer stack: remember and recall"
+      (set! *killed-buffers* '())
+      (remember-killed-buffer! "test.ss" "/tmp/test.ss" "hello world")
+      (check (length *killed-buffers*) => 1)
+      (check (car (car *killed-buffers*)) => "test.ss")
+      (remember-killed-buffer! "foo.ss" "/tmp/foo.ss" "foo content")
+      (check (length *killed-buffers*) => 2)
+      (check (car (car *killed-buffers*)) => "foo.ss"))
+
+    (test-case "dedicated windows: hash operations"
+      (set! *dedicated-windows* (make-hash-table))
+      (hash-put! *dedicated-windows* "test-buf" #t)
+      (check (hash-get *dedicated-windows* "test-buf") => #t)
+      (hash-remove! *dedicated-windows* "test-buf")
+      (check (hash-get *dedicated-windows* "test-buf") => #f))
+
+    ;; -- Command registration batch 27 --
+    (test-case "command registration: batch 27 features"
+      (register-all-commands!)
+      (check (procedure? (find-command 'toggle-focus-mode)) => #t)
+      (check (procedure? (find-command 'toggle-zen-mode)) => #t)
+      (check (procedure? (find-command 'reopen-killed-buffer)) => #t)
+      (check (procedure? (find-command 'copy-file-name-only)) => #t)
+      (check (procedure? (find-command 'open-containing-folder)) => #t)
+      (check (procedure? (find-command 'new-empty-buffer)) => #t)
+      (check (procedure? (find-command 'toggle-window-dedicated)) => #t)
+      (check (procedure? (find-command 'toggle-which-key-mode)) => #t)
+      (check (procedure? (find-command 'which-key-describe-prefix)) => #t)
+      (check (procedure? (find-command 'transpose-windows)) => #t)
+      (check (procedure? (find-command 'fold-toggle-at-point)) => #t)
+      (check (procedure? (find-command 'imenu-list)) => #t))
 
     ;;=========================================================================
     ;; Headless Scintilla editor tests

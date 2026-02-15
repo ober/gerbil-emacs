@@ -941,3 +941,298 @@
         (editor-goto-pos ed 0)
         (editor-set-read-only ed #t))
       (echo-message! echo "No diary file (~/.diary)"))))
+
+;;;============================================================================
+;;; Batch 27: focus mode, zen mode, killed buffers, file operations, etc.
+;;;============================================================================
+
+;;; --- Focus/Olivetti mode: center text with margins ---
+
+(def *focus-mode* #f)
+(def *focus-margin-width* 20)
+
+(def (cmd-toggle-focus-mode app)
+  "Toggle focus mode (center text by adding margins)."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app)))
+    (set! *focus-mode* (not *focus-mode*))
+    (if *focus-mode*
+      (begin
+        (send-message ed SCI_SETMARGINWIDTHN 0 0)  ; hide line numbers
+        (send-message ed SCI_SETMARGINWIDTHN 1 *focus-margin-width*)
+        (editor-set-wrap-mode ed 1)  ; enable word wrap
+        (echo-message! echo "Focus mode enabled"))
+      (begin
+        (send-message ed SCI_SETMARGINWIDTHN 1 0)
+        (echo-message! echo "Focus mode disabled")))))
+
+;;; --- Zen/Writeroom mode: distraction-free writing ---
+
+(def *zen-mode* #f)
+
+(def (cmd-toggle-zen-mode app)
+  "Toggle zen/writeroom mode for distraction-free editing."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app)))
+    (set! *zen-mode* (not *zen-mode*))
+    (if *zen-mode*
+      (begin
+        ;; Hide line numbers, fold margin, etc.
+        (send-message ed SCI_SETMARGINWIDTHN 0 0)
+        (send-message ed SCI_SETMARGINWIDTHN 1 0)
+        (send-message ed SCI_SETMARGINWIDTHN 2 0)
+        (editor-set-wrap-mode ed 1)
+        (echo-message! echo "Zen mode on — press again to exit"))
+      (begin
+        ;; Restore defaults
+        (send-message ed SCI_SETMARGINWIDTHN 0 40)  ; line numbers
+        (send-message ed SCI_SETMARGINWIDTHN 2 16)  ; fold margin
+        (echo-message! echo "Zen mode off")))))
+
+;;; --- Killed buffer stack for undo ---
+
+(def *killed-buffers* '())   ; list of (name file-path text) triples
+(def *max-killed-buffers* 20)
+
+(def (remember-killed-buffer! name file-path text)
+  "Record a killed buffer for potential reopening."
+  (set! *killed-buffers*
+    (let ((new (cons (list name file-path text) *killed-buffers*)))
+      (if (> (length new) *max-killed-buffers*)
+        (let loop ((ls new) (n 0) (acc []))
+          (if (or (null? ls) (>= n *max-killed-buffers*))
+            (reverse acc)
+            (loop (cdr ls) (+ n 1) (cons (car ls) acc))))
+        new))))
+
+(def (cmd-reopen-killed-buffer app)
+  "Reopen the most recently killed buffer."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app)))
+    (if (null? *killed-buffers*)
+      (echo-message! echo "No killed buffers to reopen")
+      (let* ((entry (car *killed-buffers*))
+             (name (car entry))
+             (file-path (cadr entry))
+             (text (caddr entry)))
+        (set! *killed-buffers* (cdr *killed-buffers*))
+        (editor-set-text ed text)
+        (editor-goto-pos ed 0)
+        (echo-message! echo (string-append "Reopened: " name))))))
+
+;;; --- Copy just the filename (not full path) ---
+
+(def (cmd-copy-file-name-only app)
+  "Copy just the filename (without directory path) to kill ring."
+  (let* ((echo (app-state-echo app))
+         (buf (current-buffer-from-app app))
+         (filepath (buffer-file-path buf)))
+    (if (not filepath)
+      (echo-message! echo "Buffer has no file")
+      (let* ((parts (string-split filepath #\/))
+             (name (if (null? parts) filepath (last parts))))
+        (app-state-kill-ring-set! app (cons name (app-state-kill-ring app)))
+        (echo-message! echo (string-append "Copied: " name))))))
+
+;;; --- Open containing folder in file manager ---
+
+(def (cmd-open-containing-folder app)
+  "Open the directory containing the current file."
+  (let* ((echo (app-state-echo app))
+         (buf (current-buffer-from-app app))
+         (filepath (buffer-file-path buf)))
+    (if (not filepath)
+      (echo-message! echo "Buffer has no file")
+      (let* ((parts (string-split filepath #\/))
+             (dir (if (<= (length parts) 1) "."
+                    (string-join
+                      (let loop ((ls parts) (acc []))
+                        (if (null? (cdr ls)) (reverse acc)
+                          (loop (cdr ls) (cons (car ls) acc))))
+                      "/"))))
+        (with-catch
+          (lambda (e) (echo-message! echo "Cannot open folder"))
+          (lambda ()
+            (let ((opener (cond
+                            ((file-exists? "/usr/bin/xdg-open") "xdg-open")
+                            ((file-exists? "/usr/bin/open") "open")
+                            (else #f))))
+              (if opener
+                (begin
+                  (open-process (list path: opener
+                                      arguments: (list dir)
+                                      stdin-redirection: #f
+                                      stdout-redirection: #f))
+                  (echo-message! echo (string-append "Opened: " dir)))
+                (echo-message! echo "No file manager found")))))))))
+
+;;; --- New empty buffer ---
+
+(def *new-buffer-counter* 0)
+
+(def (cmd-new-empty-buffer app)
+  "Create a new empty buffer with a unique name."
+  (let* ((fr (app-state-frame app))
+         (win (current-window fr))
+         (ed (edit-window-editor win))
+         (echo (app-state-echo app)))
+    (set! *new-buffer-counter* (+ *new-buffer-counter* 1))
+    (let* ((name (string-append "*new-"
+                   (number->string *new-buffer-counter*) "*"))
+           (buf (buffer-create! name ed)))
+      (buffer-attach! ed buf)
+      (set! (edit-window-buffer win) buf)
+      (editor-set-text ed "")
+      (echo-message! echo (string-append "Created new buffer: " name)))))
+
+;;; --- Toggle window dedicated ---
+
+(def *dedicated-windows* (make-hash-table))
+
+(def (cmd-toggle-window-dedicated app)
+  "Toggle whether the current window is dedicated to its buffer."
+  (let* ((fr (app-state-frame app))
+         (win (current-window fr))
+         (echo (app-state-echo app))
+         (buf-name (buffer-name (edit-window-buffer win)))
+         (currently-dedicated (hash-get *dedicated-windows* buf-name)))
+    (if currently-dedicated
+      (begin
+        (hash-remove! *dedicated-windows* buf-name)
+        (echo-message! echo
+          (string-append "Window undedicated from: " buf-name)))
+      (begin
+        (hash-put! *dedicated-windows* buf-name #t)
+        (echo-message! echo
+          (string-append "Window dedicated to: " buf-name))))))
+
+;;; --- Which-key mode: show available prefixed key bindings ---
+
+(def *which-key-mode* #f)
+
+(def (cmd-toggle-which-key-mode app)
+  "Toggle which-key mode (show key completions after prefix)."
+  (set! *which-key-mode* (not *which-key-mode*))
+  (echo-message! (app-state-echo app)
+    (if *which-key-mode*
+      "Which-key mode enabled"
+      "Which-key mode disabled")))
+
+(def (cmd-which-key-describe-prefix app)
+  "Show all bindings under the current prefix."
+  (let* ((echo (app-state-echo app))
+         (prefix (app-read-string app "Describe prefix: ")))
+    (when (and prefix (> (string-length prefix) 0))
+      (let* ((ed (current-editor app))
+             (entries (keymap-entries *global-keymap*))
+             (matches (filter
+                        (lambda (e) (string-prefix? prefix (car e)))
+                        entries))
+             (text (if (null? matches)
+                     (string-append "No bindings for prefix: " prefix)
+                     (with-output-to-string
+                       (lambda ()
+                         (display (string-append "Bindings for prefix '" prefix "':\n"))
+                         (display (make-string 50 #\-))
+                         (display "\n")
+                         (for-each
+                           (lambda (e)
+                             (display "  ")
+                             (display (car e))
+                             (display "  ->  ")
+                             (display (cdr e))
+                             (display "\n"))
+                           (sort matches (lambda (a b) (string<? (car a) (car b))))))))))
+        (editor-set-text ed text)
+        (editor-goto-pos ed 0)
+        (echo-message! echo
+          (string-append (number->string (length matches)) " bindings found"))))))
+
+;;; --- Transpose windows (swap content of two windows) ---
+
+(def (cmd-transpose-windows app)
+  "Swap the buffers displayed in the current and next window."
+  (let* ((fr (app-state-frame app))
+         (wins (frame-windows fr))
+         (echo (app-state-echo app)))
+    (if (< (length wins) 2)
+      (echo-message! echo "Need at least 2 windows to transpose")
+      (let* ((cur (current-window fr))
+             ;; Find the other window
+             (other (let loop ((ws wins))
+                      (cond
+                        ((null? ws) (car wins))
+                        ((not (eq? (car ws) cur)) (car ws))
+                        (else (loop (cdr ws))))))
+             (buf1 (edit-window-buffer cur))
+             (buf2 (edit-window-buffer other))
+             (ed1 (edit-window-editor cur))
+             (ed2 (edit-window-editor other)))
+        ;; Swap buffers
+        (buffer-attach! ed1 buf2)
+        (buffer-attach! ed2 buf1)
+        (set! (edit-window-buffer cur) buf2)
+        (set! (edit-window-buffer other) buf1)
+        (echo-message! echo "Windows transposed")))))
+
+;;; --- Fold toggle at point ---
+
+(def (cmd-fold-toggle-at-point app)
+  "Toggle code folding at the current line."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app))
+         (line (editor-line-from-position ed (editor-get-current-pos ed))))
+    (send-message ed SCI_TOGGLEFOLD line 0)
+    (echo-message! echo
+      (string-append "Toggled fold at line "
+        (number->string (+ line 1))))))
+
+;;; --- Imenu list: show function/definition index ---
+
+(def (cmd-imenu-list app)
+  "Show a list of function/definition names in the buffer."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app))
+         (text (editor-get-text ed))
+         (lines (string-split text #\newline))
+         (defs (let loop ((ls lines) (n 1) (acc []))
+                 (if (null? ls) (reverse acc)
+                   (let ((line (string-trim (car ls))))
+                     (loop (cdr ls) (+ n 1)
+                       (if (or (string-prefix? "(def " line)
+                               (string-prefix? "(def* " line)
+                               (string-prefix? "(defstruct " line)
+                               (string-prefix? "(defclass " line)
+                               (string-prefix? "(defrule " line)
+                               (string-prefix? "(defsyntax " line)
+                               (string-prefix? "(defmethod " line)
+                               (string-prefix? "function " line)
+                               (string-prefix? "def " line)
+                               (string-prefix? "class " line))
+                         (cons (cons n line) acc)
+                         acc))))))
+         (report (with-output-to-string
+                   (lambda ()
+                     (display "Definitions:\n")
+                     (display (make-string 60 #\-))
+                     (display "\n")
+                     (for-each
+                       (lambda (d)
+                         (display (string-pad (number->string (car d)) 6))
+                         (display ": ")
+                         (let ((s (cdr d)))
+                           (display (if (> (string-length s) 70)
+                                      (substring s 0 70)
+                                      s)))
+                         (display "\n"))
+                       defs)
+                     (display (make-string 60 #\-))
+                     (display "\n")
+                     (display (number->string (length defs)))
+                     (display " definitions found\n")))))
+    (editor-set-text ed report)
+    (editor-goto-pos ed 0)
+    (echo-message! echo
+      (string-append (number->string (length defs)) " definitions"))))
+
+
