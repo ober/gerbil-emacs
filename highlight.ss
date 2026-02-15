@@ -7,6 +7,7 @@
 (export setup-gerbil-highlighting!
         setup-highlighting-for-file!
         detect-file-language
+        detect-language-from-shebang
         gerbil-file-extension?)
 
 (import :std/sugar
@@ -924,6 +925,30 @@
                   (string=? ext ".sld")
                   (string=? ext ".sls"))))))
 
+(def (detect-language-from-shebang text)
+  "Detect language from a shebang line (first line starting with #!).
+   Returns a symbol or #f."
+  (and text
+       (> (string-length text) 2)
+       (char=? (string-ref text 0) #\#)
+       (char=? (string-ref text 1) #\!)
+       (let* ((nl (string-index text #\newline))
+              (line (if nl (substring text 0 nl) text)))
+         (cond
+           ((or (string-contains line "/bash")
+                (string-contains line "/sh")
+                (string-contains line "/zsh")
+                (string-contains line "/ksh")
+                (string-contains line "/ash")
+                (string-contains line "/dash"))
+            'bash)
+           ((string-contains line "python") 'python)
+           ((string-contains line "ruby") 'ruby)
+           ((string-contains line "perl") 'perl)
+           ((string-contains line "node") 'javascript)
+           ((string-contains line "lua") 'lua)
+           (else 'bash)))))  ; default shebang = shell script
+
 (def (detect-file-language path)
   "Detect language from file extension or filename. Returns a symbol or #f."
   (and path
@@ -934,46 +959,69 @@
             ;; Check full filename for extensionless files
             (cond
               ((member base '("Makefile" "makefile" "GNUmakefile")) 'makefile)
-              ((string=? base "Dockerfile") 'bash)
+              ((member base '("Dockerfile" "Containerfile")) 'bash)
+              ((member base '("Rakefile" "Gemfile")) 'ruby)
+              ((member base '("CMakeLists.txt")) 'makefile)
+              ((member base '("Vagrantfile")) 'ruby)
               (else #f)))
            ;; Scheme / Gerbil
-           ((member ext '(".ss" ".scm" ".sld" ".sls")) 'scheme)
+           ((member ext '(".ss" ".scm" ".sld" ".sls" ".rkt")) 'scheme)
            ;; C / C++
-           ((member ext '(".c" ".h" ".cpp" ".hpp" ".cc" ".cxx" ".hh")) 'c)
+           ((member ext '(".c" ".h" ".cpp" ".hpp" ".cc" ".cxx" ".hh" ".hxx" ".ino")) 'c)
            ;; Python
-           ((member ext '(".py" ".pyw")) 'python)
+           ((member ext '(".py" ".pyw" ".pyi")) 'python)
            ;; JavaScript
            ((member ext '(".js" ".jsx" ".mjs" ".cjs")) 'javascript)
            ;; TypeScript
            ((member ext '(".ts" ".tsx" ".mts" ".cts")) 'typescript)
            ;; HTML
-           ((member ext '(".html" ".htm" ".xhtml")) 'html)
+           ((member ext '(".html" ".htm" ".xhtml" ".svelte" ".vue")) 'html)
            ;; CSS
-           ((string=? ext ".css") 'css)
+           ((member ext '(".css" ".scss" ".sass" ".less")) 'css)
            ;; JSON
-           ((string=? ext ".json") 'json)
+           ((member ext '(".json" ".jsonl" ".jsonc")) 'json)
            ;; YAML
            ((member ext '(".yaml" ".yml")) 'yaml)
            ;; TOML
            ((string=? ext ".toml") 'toml)
            ;; Markdown
-           ((member ext '(".md" ".markdown" ".mkd")) 'markdown)
+           ((member ext '(".md" ".markdown" ".mkd" ".rst")) 'markdown)
            ;; Shell / Bash
-           ((member ext '(".sh" ".bash" ".zsh" ".ksh")) 'bash)
+           ((member ext '(".sh" ".bash" ".zsh" ".ksh" ".fish")) 'bash)
            ;; Ruby
-           ((member ext '(".rb" ".rake" ".gemspec")) 'ruby)
+           ((member ext '(".rb" ".rake" ".gemspec" ".erb")) 'ruby)
            ;; Rust
            ((string=? ext ".rs") 'rust)
            ;; Go
            ((string=? ext ".go") 'go)
            ;; Java
-           ((string=? ext ".java") 'java)
+           ((member ext '(".java" ".kt" ".kts" ".scala")) 'java)
            ;; Lua
            ((string=? ext ".lua") 'lua)
            ;; SQL
            ((string=? ext ".sql") 'sql)
+           ;; Perl
+           ((member ext '(".pl" ".pm" ".t")) 'perl)
+           ;; Haskell
+           ((member ext '(".hs" ".lhs")) 'haskell)
+           ;; Elixir / Erlang
+           ((member ext '(".ex" ".exs" ".erl" ".hrl")) 'elixir)
+           ;; Swift
+           ((string=? ext ".swift") 'swift)
+           ;; Zig
+           ((string=? ext ".zig") 'c)
+           ;; Nim
+           ((string=? ext ".nim") 'python)  ; similar indentation style
+           ;; R
+           ((string=? ext ".r") 'python)  ; similar commenting style
            ;; Makefile
            ((string=? ext ".mk") 'makefile)
+           ;; XML
+           ((member ext '(".xml" ".xsl" ".xsd" ".plist" ".svg")) 'html)
+           ;; Conf / INI
+           ((member ext '(".ini" ".conf" ".cfg" ".properties")) 'toml)
+           ;; Dockerfile
+           ((member ext '(".dockerfile")) 'bash)
            ;; Diff / Patch
            ((member ext '(".diff" ".patch")) 'diff)
            (else #f)))))
@@ -987,7 +1035,7 @@
       ((c)      (setup-c-highlighting! ed))
       ((python) (setup-python-highlighting! ed))
       ((javascript typescript) (setup-js-highlighting! ed lang))
-      ((java go) (setup-c-family-highlighting! ed lang))
+      ((java go swift elixir haskell perl) (setup-c-family-highlighting! ed lang))
       ((html)     (setup-html-highlighting! ed))
       ((css)      (setup-css-highlighting! ed))
       ((json)     (setup-json-highlighting! ed))

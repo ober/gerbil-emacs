@@ -104,8 +104,17 @@
           (editor-goto-pos ed 0))))
     ;; Record file modification time for external change detection
     (update-buffer-mod-time! buf)
-    ;; Apply syntax highlighting based on file type
-    (setup-highlighting-for-file! ed filename)))
+    ;; Apply syntax highlighting: extension first, then shebang fallback
+    (let ((lang (detect-file-language filename)))
+      (if lang
+        (setup-highlighting-for-file! ed filename)
+        ;; Try shebang detection from file content
+        (let ((text (editor-get-text ed)))
+          (when (and text (> (string-length text) 2))
+            (let ((shebang-lang (detect-language-from-shebang text)))
+              (when shebang-lang
+                (setup-highlighting-for-file! ed
+                  (string-append "shebang." (symbol->string shebang-lang)))))))))))
 
 ;;;============================================================================
 ;;; REPL output polling
@@ -220,6 +229,9 @@
 
       ;; Poll terminal PTY output
       (poll-terminal-output! app)
+
+      ;; Tick pulse highlight countdown
+      (pulse-tick!)
 
       ;; Auto-save and external modification check (~30s at 50ms poll)
       (set! *auto-save-counter* (+ *auto-save-counter* 1))

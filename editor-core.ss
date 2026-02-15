@@ -33,6 +33,110 @@
 (def *auto-pair-mode* #t)
 
 ;;;============================================================================
+;;; Pulse/flash highlight on jump (beacon-like)
+;;;============================================================================
+;; Uses indicator #1 (indicator #0 is for search highlights)
+(def *pulse-indicator* 1)
+(def *pulse-countdown* 0)   ; ticks remaining before clearing indicator
+(def *pulse-editor* #f)     ; editor that has the active pulse
+
+(def (pulse-line! ed line-num)
+  "Flash-highlight the given line number temporarily.
+   The highlight is cleared after ~500ms (10 ticks at 50ms poll)."
+  (let* ((start (editor-position-from-line ed line-num))
+         (end (editor-get-line-end-position ed line-num))
+         (len (- end start)))
+    (when (> len 0)
+      ;; Clear any previous pulse
+      (when *pulse-editor*
+        (pulse-clear! *pulse-editor*))
+      ;; Set up indicator style: INDIC_FULLBOX with yellow/gold color
+      (send-message ed SCI_INDICSETSTYLE *pulse-indicator* INDIC_FULLBOX)
+      (send-message ed SCI_INDICSETFORE *pulse-indicator* #x00A5FF) ; golden/orange
+      (send-message ed SCI_SETINDICATORCURRENT *pulse-indicator* 0)
+      (send-message ed SCI_INDICATORFILLRANGE start len)
+      (set! *pulse-editor* ed)
+      (set! *pulse-countdown* 10))))  ; 10 * 50ms = 500ms
+
+(def (pulse-tick!)
+  "Called each main loop iteration. Decrements pulse countdown and clears when done."
+  (when (> *pulse-countdown* 0)
+    (set! *pulse-countdown* (- *pulse-countdown* 1))
+    (when (= *pulse-countdown* 0)
+      (when *pulse-editor*
+        (pulse-clear! *pulse-editor*)))))
+
+(def (pulse-clear! ed)
+  "Remove the pulse indicator from the editor."
+  (let ((len (editor-get-text-length ed)))
+    (send-message ed SCI_SETINDICATORCURRENT *pulse-indicator* 0)
+    (send-message ed SCI_INDICATORCLEARRANGE 0 len))
+  (when (eq? *pulse-editor* ed)
+    (set! *pulse-editor* #f)
+    (set! *pulse-countdown* 0)))
+
+;;;============================================================================
+;;; System clipboard integration (xclip/xsel/wl-copy)
+;;;============================================================================
+
+(def *clipboard-command* #f)  ; cached clipboard command, or 'none
+
+(def (find-clipboard-command!)
+  "Detect available clipboard command. Caches result."
+  (unless *clipboard-command*
+    (set! *clipboard-command*
+      (cond
+        ((file-exists? "/usr/bin/wl-copy") 'wl-copy)     ; Wayland
+        ((file-exists? "/usr/bin/xclip") 'xclip)         ; X11
+        ((file-exists? "/usr/bin/xsel") 'xsel)            ; X11 alt
+        (else 'none))))
+  *clipboard-command*)
+
+(def (clipboard-set! text)
+  "Copy text to system clipboard if a clipboard tool is available."
+  (let ((cmd (find-clipboard-command!)))
+    (unless (eq? cmd 'none)
+      (with-catch
+        (lambda (e) #f)  ; silently ignore clipboard errors
+        (lambda ()
+          (let ((args (case cmd
+                        ((wl-copy) '("wl-copy"))
+                        ((xclip)  '("xclip" "-selection" "clipboard"))
+                        ((xsel)   '("xsel" "--clipboard" "--input")))))
+            (let ((proc (open-process
+                          (list path: (car args)
+                                arguments: (cdr args)
+                                stdin-redirection: #t
+                                stdout-redirection: #f
+                                stderr-redirection: #f))))
+              (display text proc)
+              (close-output-port proc)
+              (process-status proc))))))))
+
+(def (clipboard-get)
+  "Get text from system clipboard. Returns string or #f."
+  (let ((cmd (find-clipboard-command!)))
+    (if (eq? cmd 'none)
+      #f
+      (with-catch
+        (lambda (e) #f)
+        (lambda ()
+          (let ((args (case cmd
+                        ((wl-copy) '("wl-paste" "--no-newline"))
+                        ((xclip)  '("xclip" "-selection" "clipboard" "-o"))
+                        ((xsel)   '("xsel" "--clipboard" "--output")))))
+            (let ((proc (open-process
+                          (list path: (car args)
+                                arguments: (cdr args)
+                                stdin-redirection: #f
+                                stdout-redirection: #t
+                                stderr-redirection: #f))))
+              (let ((text (read-line proc #f)))
+                (close-input-port proc)
+                (process-status proc)
+                text))))))))
+
+;;;============================================================================
 ;;; Uniquify buffer name helper
 ;;;============================================================================
 
@@ -400,11 +504,12 @@
       (begin
         (editor-set-selection ed pos line-end)
         (editor-cut ed)
-        ;; Store in kill ring
+        ;; Store in kill ring and sync to system clipboard
         (let ((clip (editor-get-clipboard ed)))
           (when (> (string-length clip) 0)
             (set! (app-state-kill-ring app)
-                  (cons clip (app-state-kill-ring app)))))))))
+                  (cons clip (app-state-kill-ring app)))
+            (clipboard-set! clip)))))))
 
 (def (cmd-yank app)
   "Yank (paste) and track position for yank-pop."
@@ -439,6 +544,10 @@
       (let ((pos (editor-get-current-pos ed)))
         (editor-set-selection ed (min mark pos) (max mark pos))
         (editor-cut ed)
+        ;; Sync to system clipboard
+        (let ((clip (editor-get-clipboard ed)))
+          (when (> (string-length clip) 0)
+            (clipboard-set! clip)))
         (set! (buffer-mark buf) #f))
       (echo-error! (app-state-echo app) "No mark set"))))
 
@@ -450,6 +559,10 @@
       (let ((pos (editor-get-current-pos ed)))
         (editor-set-selection ed (min mark pos) (max mark pos))
         (editor-copy ed)
+        ;; Sync to system clipboard
+        (let ((clip (editor-get-clipboard ed)))
+          (when (> (string-length clip) 0)
+            (clipboard-set! clip)))
         ;; Deselect
         (editor-set-selection ed pos pos)
         (set! (buffer-mark buf) #f)
@@ -497,7 +610,18 @@
                         (editor-scroll-caret ed))
                       (editor-goto-pos ed 0))))))
             ;; Apply syntax highlighting for all recognized file types
-            (setup-highlighting-for-file! ed filename)
+            ;; Try extension-based detection first, fall back to shebang
+            (let ((lang (detect-file-language filename)))
+              (if lang
+                (setup-highlighting-for-file! ed filename)
+                ;; No extension match: try shebang from file content
+                (when (file-exists? filename)
+                  (let ((text (editor-get-text ed)))
+                    (when (and text (> (string-length text) 2))
+                      (let ((shebang-lang (detect-language-from-shebang text)))
+                        (when shebang-lang
+                          (setup-highlighting-for-file! ed
+                            (string-append "shebang." (symbol->string shebang-lang))))))))))
             ;; Auto-detect and set line ending mode from file content
             (when (file-exists? filename)
               (let ((text (editor-get-text ed)))
@@ -505,9 +629,12 @@
                   (let ((eol-mode (detect-eol-mode text)))
                     (send-message ed SCI_SETEOLMODE eol-mode 0)))))
             ;; Enable line numbers for code files (any non-Fundamental mode)
-            (when (detect-file-language filename)
-              (send-message ed SCI_SETMARGINTYPEN 0 SC_MARGIN_NUMBER)
-              (send-message ed SCI_SETMARGINWIDTHN 0 5))
+            (let ((lang (or (detect-file-language filename)
+                            (and (file-exists? filename)
+                                 (detect-language-from-shebang (editor-get-text ed))))))
+              (when lang
+                (send-message ed SCI_SETMARGINTYPEN 0 SC_MARGIN_NUMBER)
+                (send-message ed SCI_SETMARGINWIDTHN 0 5)))
             (echo-message! echo (string-append "Opened: " filename))))))))
 
 (def (cmd-save-buffer app)
@@ -778,7 +905,8 @@
           (begin
             (editor-goto-pos ed found)
             (editor-set-selection ed found
-                                  (+ found (string-length query))))
+                                  (+ found (string-length query)))
+            (pulse-line! ed (editor-line-from-position ed found)))
           ;; Wrap around from beginning
           (begin
             (send-message ed SCI_SETTARGETSTART 0)
@@ -789,6 +917,7 @@
                   (editor-goto-pos ed found2)
                   (editor-set-selection ed found2
                                         (+ found2 (string-length query)))
+                  (pulse-line! ed (editor-line-from-position ed found2))
                   (echo-message! echo "Wrapped"))
                 (echo-error! echo
                              (string-append "Not found: " query))))))))))
@@ -844,7 +973,8 @@
                 (begin
                   (editor-goto-pos ed found)
                   (editor-set-selection ed found
-                                        (+ found (string-length query))))
+                                        (+ found (string-length query)))
+                  (pulse-line! ed (editor-line-from-position ed found)))
                 (echo-error! echo
                              (string-append "Not found: " query))))))))))
 

@@ -39,9 +39,11 @@
     (when (and input (> (string-length input) 0))
       (let ((line-num (string->number input)))
         (if (and line-num (> line-num 0))
-          (let ((ed (current-editor app)))
-            (editor-goto-line ed (- line-num 1))  ; 0-based
+          (let* ((ed (current-editor app))
+                 (target (- line-num 1)))  ; 0-based
+            (editor-goto-line ed target)
             (editor-scroll-caret ed)
+            (pulse-line! ed target)
             (echo-message! echo (string-append "Line " input)))
           (echo-error! echo "Invalid line number"))))))
 
