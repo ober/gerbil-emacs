@@ -1155,4 +1155,12 @@
   (register-command! 'toggle-global-popper cmd-toggle-global-popper)
   (register-command! 'toggle-global-posframe cmd-toggle-global-posframe)
   (register-command! 'toggle-global-childframe cmd-toggle-global-childframe)
+  ;; batch 59
+  (register-command! 'toggle-global-helpful cmd-toggle-global-helpful)
+  (register-command! 'toggle-global-elisp-demos cmd-toggle-global-elisp-demos)
+  (register-command! 'toggle-global-suggest cmd-toggle-global-suggest)
+  (register-command! 'toggle-global-buttercup cmd-toggle-global-buttercup)
+  (register-command! 'toggle-global-ert-runner cmd-toggle-global-ert-runner)
+  (register-command! 'toggle-global-undercover cmd-toggle-global-undercover)
+  (register-command! 'toggle-global-benchmark-init cmd-toggle-global-benchmark-init)
 )

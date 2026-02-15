@@ -1723,3 +1723,62 @@
     (set! *global-smartparens* (not *global-smartparens*))
     (echo-message! echo (if *global-smartparens*
                           "Smartparens global ON" "Smartparens global OFF"))))
+
+;;; ---- batch 59: help and testing framework toggles ----
+
+(def *global-helpful* #f)
+(def *global-elisp-demos* #f)
+(def *global-suggest* #f)
+(def *global-buttercup* #f)
+(def *global-ert-runner* #f)
+(def *global-undercover* #f)
+(def *global-benchmark-init* #f)
+
+(def (cmd-toggle-global-helpful app)
+  "Toggle global helpful-mode (better help buffers)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-helpful* (not *global-helpful*))
+    (echo-message! echo (if *global-helpful*
+                          "Global helpful ON" "Global helpful OFF"))))
+
+(def (cmd-toggle-global-elisp-demos app)
+  "Toggle global elisp-demos-mode (code examples in help)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-elisp-demos* (not *global-elisp-demos*))
+    (echo-message! echo (if *global-elisp-demos*
+                          "Elisp demos ON" "Elisp demos OFF"))))
+
+(def (cmd-toggle-global-suggest app)
+  "Toggle global suggest-mode (discover functions by example)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-suggest* (not *global-suggest*))
+    (echo-message! echo (if *global-suggest*
+                          "Global suggest ON" "Global suggest OFF"))))
+
+(def (cmd-toggle-global-buttercup app)
+  "Toggle global buttercup-mode (BDD testing framework)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-buttercup* (not *global-buttercup*))
+    (echo-message! echo (if *global-buttercup*
+                          "Global buttercup ON" "Global buttercup OFF"))))
+
+(def (cmd-toggle-global-ert-runner app)
+  "Toggle global ert-runner-mode (ERT test runner)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-ert-runner* (not *global-ert-runner*))
+    (echo-message! echo (if *global-ert-runner*
+                          "ERT runner ON" "ERT runner OFF"))))
+
+(def (cmd-toggle-global-undercover app)
+  "Toggle global undercover-mode (code coverage tool)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-undercover* (not *global-undercover*))
+    (echo-message! echo (if *global-undercover*
+                          "Global undercover ON" "Global undercover OFF"))))
+
+(def (cmd-toggle-global-benchmark-init app)
+  "Toggle global benchmark-init-mode (startup timing)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-benchmark-init* (not *global-benchmark-init*))
+    (echo-message! echo (if *global-benchmark-init*
+                          "Benchmark init ON" "Benchmark init OFF"))))

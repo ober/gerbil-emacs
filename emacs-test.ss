@@ -99,7 +99,11 @@
                  *global-auto-revert-non-file* *global-tree-sitter*
                  *global-copilot* *global-lsp-mode*
                  *global-format-on-save* *global-yas*
-                 *global-smartparens*)
+                 *global-smartparens*
+                 *global-helpful* *global-elisp-demos*
+                 *global-suggest* *global-buttercup*
+                 *global-ert-runner* *global-undercover*
+                 *global-benchmark-init*)
         (only-in :gerbil-emacs/editor-extra-tools2
                  *highlight-changes-mode* *saved-window-layouts*
                  *known-modes* *password-chars*
@@ -2559,6 +2563,25 @@
       (check (procedure? (find-command 'toggle-global-popper)) => #t)
       (check (procedure? (find-command 'toggle-global-posframe)) => #t)
       (check (procedure? (find-command 'toggle-global-childframe)) => #t))
+
+    (test-case "batch 59: mode toggles"
+      (check *global-helpful* => #f)
+      (check *global-elisp-demos* => #f)
+      (check *global-suggest* => #f)
+      (check *global-buttercup* => #f)
+      (check *global-ert-runner* => #f)
+      (check *global-undercover* => #f)
+      (check *global-benchmark-init* => #f))
+
+    (test-case "command registration: batch 59 features"
+      (register-all-commands!)
+      (check (procedure? (find-command 'toggle-global-helpful)) => #t)
+      (check (procedure? (find-command 'toggle-global-elisp-demos)) => #t)
+      (check (procedure? (find-command 'toggle-global-suggest)) => #t)
+      (check (procedure? (find-command 'toggle-global-buttercup)) => #t)
+      (check (procedure? (find-command 'toggle-global-ert-runner)) => #t)
+      (check (procedure? (find-command 'toggle-global-undercover)) => #t)
+      (check (procedure? (find-command 'toggle-global-benchmark-init)) => #t))
 
     ;;=========================================================================
     ;; Headless Scintilla editor tests
