@@ -103,7 +103,12 @@
                  *company-mode* *ivy-mode* *helm-mode*
                  *projectile-mode* *evil-mode* *doom-modeline*
                  *treesit-mode* *eglot-mode*
-                 *display-time* *display-battery*)
+                 *display-time* *display-battery*
+                 *auto-save-on-idle* *delete-active-region*
+                 *shift-select-mode* *cua-selection-mode*
+                 *global-goto-address* *global-reveal-mode*
+                 *global-auto-composition* *global-display-line-numbers*
+                 *blink-cursor-mode*)
         (only-in :gerbil-emacs/editor-extra-web
                  url-encode url-decode
                  html-encode-entities html-decode-entities
@@ -2282,6 +2287,31 @@
       (check (procedure? (find-command 'toggle-ad-activate-all)) => #t)
       (check (procedure? (find-command 'toggle-global-hi-lock-mode)) => #t)
       (check (procedure? (find-command 'toggle-next-line-add-newlines)) => #t))
+
+    ;; -- Batch 48 tests --
+    (test-case "batch 48: mode toggles"
+      (check *auto-save-on-idle* => #f)
+      (check *delete-active-region* => #t)
+      (check *shift-select-mode* => #t)
+      (check *cua-selection-mode* => #f)
+      (check *global-goto-address* => #f)
+      (check *global-reveal-mode* => #f)
+      (check *global-auto-composition* => #t)
+      (check *global-display-line-numbers* => #f)
+      (check *blink-cursor-mode* => #t))
+
+    ;; -- Command registration batch 48 --
+    (test-case "command registration: batch 48 features"
+      (register-all-commands!)
+      (check (procedure? (find-command 'toggle-auto-save-on-idle)) => #t)
+      (check (procedure? (find-command 'toggle-delete-active-region)) => #t)
+      (check (procedure? (find-command 'toggle-shift-select-mode)) => #t)
+      (check (procedure? (find-command 'toggle-cua-selection-mode)) => #t)
+      (check (procedure? (find-command 'toggle-global-goto-address)) => #t)
+      (check (procedure? (find-command 'toggle-global-reveal-mode)) => #t)
+      (check (procedure? (find-command 'toggle-global-auto-composition)) => #t)
+      (check (procedure? (find-command 'toggle-global-display-line-numbers)) => #t)
+      (check (procedure? (find-command 'toggle-blink-cursor-mode)) => #t))
 
     ;;=========================================================================
     ;; Headless Scintilla editor tests

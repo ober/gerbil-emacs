@@ -1627,3 +1627,88 @@
     (set! *display-battery* (not *display-battery*))
     (echo-message! echo (if *display-battery*
                           "Display battery ON" "Display battery OFF"))))
+
+;; ── batch 48: selection and display toggles ─────────────────────────
+(def *auto-save-on-idle* #f)
+(def *delete-active-region* #t)
+(def *shift-select-mode* #t)
+(def *cua-selection-mode* #f)
+(def *global-goto-address* #f)
+(def *global-reveal-mode* #f)
+(def *global-auto-composition* #t)
+(def *global-display-line-numbers* #f)
+(def *blink-cursor-mode* #t)
+
+(def (cmd-toggle-auto-save-on-idle app)
+  "Toggle auto-save on idle timer."
+  (let ((echo (app-state-echo app)))
+    (set! *auto-save-on-idle* (not *auto-save-on-idle*))
+    (echo-message! echo (if *auto-save-on-idle*
+                          "Auto-save on idle ON" "Auto-save on idle OFF"))))
+
+(def (cmd-toggle-delete-active-region app)
+  "Toggle delete-active-region (typing replaces selection)."
+  (let ((echo (app-state-echo app)))
+    (set! *delete-active-region* (not *delete-active-region*))
+    (echo-message! echo (if *delete-active-region*
+                          "Delete active region ON" "Delete active region OFF"))))
+
+(def (cmd-toggle-shift-select-mode app)
+  "Toggle shift-select-mode (shift+arrow selects text)."
+  (let ((echo (app-state-echo app)))
+    (set! *shift-select-mode* (not *shift-select-mode*))
+    (echo-message! echo (if *shift-select-mode*
+                          "Shift select mode ON" "Shift select mode OFF"))))
+
+(def (cmd-toggle-cua-selection-mode app)
+  "Toggle CUA selection mode (C-c/C-v/C-x for copy/paste/cut)."
+  (let ((echo (app-state-echo app)))
+    (set! *cua-selection-mode* (not *cua-selection-mode*))
+    (echo-message! echo (if *cua-selection-mode*
+                          "CUA selection mode ON" "CUA selection mode OFF"))))
+
+(def (cmd-toggle-global-goto-address app)
+  "Toggle global-goto-address-mode (clickable URLs)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-goto-address* (not *global-goto-address*))
+    (echo-message! echo (if *global-goto-address*
+                          "Goto address mode ON" "Goto address mode OFF"))))
+
+(def (cmd-toggle-global-reveal-mode app)
+  "Toggle global-reveal-mode (reveal hidden text on cursor)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-reveal-mode* (not *global-reveal-mode*))
+    (echo-message! echo (if *global-reveal-mode*
+                          "Global reveal mode ON" "Global reveal mode OFF"))))
+
+(def (cmd-toggle-global-auto-composition app)
+  "Toggle global auto-composition (character composition)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-auto-composition* (not *global-auto-composition*))
+    (echo-message! echo (if *global-auto-composition*
+                          "Auto-composition ON" "Auto-composition OFF"))))
+
+(def (cmd-toggle-global-display-line-numbers app)
+  "Toggle global-display-line-numbers-mode."
+  (let* ((echo (app-state-echo app))
+         (ed (current-editor app)))
+    (set! *global-display-line-numbers* (not *global-display-line-numbers*))
+    (if *global-display-line-numbers*
+      (begin
+        ;; SCI_SETMARGINWIDTHN = 2242
+        (send-message ed 2242 0 48)
+        (echo-message! echo "Global line numbers ON"))
+      (begin
+        (send-message ed 2242 0 0)
+        (echo-message! echo "Global line numbers OFF")))))
+
+(def (cmd-toggle-blink-cursor-mode app)
+  "Toggle blink-cursor-mode."
+  (let* ((echo (app-state-echo app))
+         (ed (current-editor app)))
+    (set! *blink-cursor-mode* (not *blink-cursor-mode*))
+    ;; SCI_SETCARETPERIOD = 2076
+    (send-message ed 2076 (if *blink-cursor-mode* 500 0) 0)
+    (echo-message! echo (if *blink-cursor-mode*
+                          "Blink cursor ON" "Blink cursor OFF"))))
+
