@@ -1712,3 +1712,62 @@
     (echo-message! echo (if *blink-cursor-mode*
                           "Blink cursor ON" "Blink cursor OFF"))))
 
+;;; ---- batch 56: keybinding and package management framework toggles ----
+
+(def *global-which-key* #f)
+(def *global-hydra* #f)
+(def *global-transient* #f)
+(def *global-general* #f)
+(def *global-use-package* #f)
+(def *global-diminish* #f)
+(def *global-delight* #f)
+
+(def (cmd-toggle-global-which-key app)
+  "Toggle global which-key-mode (display available keybindings)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-which-key* (not *global-which-key*))
+    (echo-message! echo (if *global-which-key*
+                          "Global which-key ON" "Global which-key OFF"))))
+
+(def (cmd-toggle-global-hydra app)
+  "Toggle global hydra-mode (sticky keybinding menus)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-hydra* (not *global-hydra*))
+    (echo-message! echo (if *global-hydra*
+                          "Global hydra ON" "Global hydra OFF"))))
+
+(def (cmd-toggle-global-transient app)
+  "Toggle global transient-mode (temporary command groups)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-transient* (not *global-transient*))
+    (echo-message! echo (if *global-transient*
+                          "Global transient ON" "Global transient OFF"))))
+
+(def (cmd-toggle-global-general app)
+  "Toggle global general.el-mode (keybinding framework)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-general* (not *global-general*))
+    (echo-message! echo (if *global-general*
+                          "Global general.el ON" "Global general.el OFF"))))
+
+(def (cmd-toggle-global-use-package app)
+  "Toggle global use-package-mode (package configuration framework)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-use-package* (not *global-use-package*))
+    (echo-message! echo (if *global-use-package*
+                          "Global use-package ON" "Global use-package OFF"))))
+
+(def (cmd-toggle-global-diminish app)
+  "Toggle global diminish-mode (hide minor mode lighters)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-diminish* (not *global-diminish*))
+    (echo-message! echo (if *global-diminish*
+                          "Global diminish ON" "Global diminish OFF"))))
+
+(def (cmd-toggle-global-delight app)
+  "Toggle global delight-mode (customize mode lighters)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-delight* (not *global-delight*))
+    (echo-message! echo (if *global-delight*
+                          "Global delight ON" "Global delight OFF"))))
+

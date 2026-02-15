@@ -135,7 +135,10 @@
                  *shift-select-mode* *cua-selection-mode*
                  *global-goto-address* *global-reveal-mode*
                  *global-auto-composition* *global-display-line-numbers*
-                 *blink-cursor-mode*)
+                 *blink-cursor-mode*
+                 *global-which-key* *global-hydra* *global-transient*
+                 *global-general* *global-use-package*
+                 *global-diminish* *global-delight*)
         (only-in :gerbil-emacs/editor-extra-web
                  url-encode url-decode
                  html-encode-entities html-decode-entities
@@ -2492,6 +2495,25 @@
       (check (procedure? (find-command 'toggle-global-counsel)) => #t)
       (check (procedure? (find-command 'toggle-global-swiper)) => #t)
       (check (procedure? (find-command 'toggle-global-prescient)) => #t))
+
+    (test-case "batch 56: mode toggles"
+      (check *global-which-key* => #f)
+      (check *global-hydra* => #f)
+      (check *global-transient* => #f)
+      (check *global-general* => #f)
+      (check *global-use-package* => #f)
+      (check *global-diminish* => #f)
+      (check *global-delight* => #f))
+
+    (test-case "command registration: batch 56 features"
+      (register-all-commands!)
+      (check (procedure? (find-command 'toggle-global-which-key)) => #t)
+      (check (procedure? (find-command 'toggle-global-hydra)) => #t)
+      (check (procedure? (find-command 'toggle-global-transient)) => #t)
+      (check (procedure? (find-command 'toggle-global-general)) => #t)
+      (check (procedure? (find-command 'toggle-global-use-package)) => #t)
+      (check (procedure? (find-command 'toggle-global-diminish)) => #t)
+      (check (procedure? (find-command 'toggle-global-delight)) => #t))
 
     ;;=========================================================================
     ;; Headless Scintilla editor tests

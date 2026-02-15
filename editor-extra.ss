@@ -1131,4 +1131,12 @@
   (register-command! 'toggle-global-counsel cmd-toggle-global-counsel)
   (register-command! 'toggle-global-swiper cmd-toggle-global-swiper)
   (register-command! 'toggle-global-prescient cmd-toggle-global-prescient)
+  ;; batch 56
+  (register-command! 'toggle-global-which-key cmd-toggle-global-which-key)
+  (register-command! 'toggle-global-hydra cmd-toggle-global-hydra)
+  (register-command! 'toggle-global-transient cmd-toggle-global-transient)
+  (register-command! 'toggle-global-general cmd-toggle-global-general)
+  (register-command! 'toggle-global-use-package cmd-toggle-global-use-package)
+  (register-command! 'toggle-global-diminish cmd-toggle-global-diminish)
+  (register-command! 'toggle-global-delight cmd-toggle-global-delight)
 )
