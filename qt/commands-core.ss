@@ -544,9 +544,11 @@ Returns #t if changed, #f if not or if no record exists."
          (line-text (if (< line (length lines))
                       (list-ref lines line)
                       "")))
-    (let* ((trimmed (string-trim line-text))
-           (tab-pos (string-index trimmed #\tab))
-           (name (if tab-pos (substring trimmed 0 tab-pos) trimmed)))
+    ;; Line format: "  CM NNNNNNNNNNNNNNNNNNNNNNNNMMMMMMMMMMMMMPATH"
+    ;; Name field is 24 chars starting at column 5
+    (let* ((name (if (>= (string-length line-text) 29)
+                   (string-trim (substring line-text 5 29))
+                   "")))
       (if (and (> (string-length name) 0)
                (not (string=? name "Buffer"))
                (not (string=? name "------")))
@@ -1031,6 +1033,7 @@ Returns (path . line) or #f. Handles file:line format."
       (qt-plain-text-edit-set-text! ed text)
       (qt-text-document-set-modified! (buffer-doc-pointer buf) #f)
       (qt-plain-text-edit-set-cursor-position! ed 0)
+      (qt-plain-text-edit-set-read-only! ed #t)
       (echo-message! (app-state-echo app) "*Buffer List*"))))
 
 ;;;============================================================================

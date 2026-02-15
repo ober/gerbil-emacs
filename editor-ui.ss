@@ -171,6 +171,7 @@
       (editor-set-text ed text)
       (editor-set-save-point ed)
       (editor-goto-pos ed 0)
+      (editor-set-read-only ed #t)
       (echo-message! (app-state-echo app) "*Buffer List*"))))
 
 ;;;============================================================================

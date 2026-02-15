@@ -90,7 +90,10 @@
                  *global-avy*
                  *global-nyan-cat* *global-parrot* *global-zone*
                  *global-fireplace* *global-snow*
-                 *global-power-mode* *global-animate-typing*)
+                 *global-power-mode* *global-animate-typing*
+                 *global-r-mode* *global-ess*
+                 *global-sql-mode* *global-ein*
+                 *global-conda* *global-pyvenv* *global-pipenv*)
         (only-in :gerbil-emacs/editor-extra-vcs
                  fuzzy-match? fuzzy-score)
         (only-in :gerbil-emacs/editor-extra-final
@@ -244,6 +247,7 @@
         (only-in :gerbil-emacs/editor-core
                  make-auto-save-path file-mod-time
                  *buffer-mod-times* update-buffer-mod-time!)
+        (only-in :gerbil-emacs/editor-ui cmd-list-buffers)
 )
 
 (export emacs-test)
@@ -2858,6 +2862,25 @@
       (check (procedure? (find-command 'toggle-global-dart-mode)) => #t)
       (check (procedure? (find-command 'toggle-global-julia-mode)) => #t))
 
+    (test-case "batch 72: mode toggles"
+      (check *global-r-mode* => #f)
+      (check *global-ess* => #f)
+      (check *global-sql-mode* => #f)
+      (check *global-ein* => #f)
+      (check *global-conda* => #f)
+      (check *global-pyvenv* => #f)
+      (check *global-pipenv* => #f))
+
+    (test-case "command registration: batch 72 features"
+      (register-all-commands!)
+      (check (procedure? (find-command 'toggle-global-r-mode)) => #t)
+      (check (procedure? (find-command 'toggle-global-ess)) => #t)
+      (check (procedure? (find-command 'toggle-global-sql-mode)) => #t)
+      (check (procedure? (find-command 'toggle-global-ein)) => #t)
+      (check (procedure? (find-command 'toggle-global-conda)) => #t)
+      (check (procedure? (find-command 'toggle-global-pyvenv)) => #t)
+      (check (procedure? (find-command 'toggle-global-pipenv)) => #t))
+
     ;;=========================================================================
     ;; Headless Scintilla editor tests
     ;; These create real Scintilla editors without a terminal and test
@@ -3114,6 +3137,43 @@
           (buffer-list-remove! buf)
           (buffer-list-remove! buf2)
           (buffer-list-remove! bl-buf))))
+
+    (test-case "headless: cmd-list-buffers then select (end-to-end)"
+      ;; Regression: cmd-list-buffers formats with tabs, cmd-buffer-list-select
+      ;; must parse that format correctly. This catches format/parse mismatches.
+      (let* ((ed (create-scintilla-editor width: 80 height: 24))
+             (buf (make-buffer "*scratch*" #f
+                    (send-message ed SCI_GETDOCPOINTER) #f #f #f #f))
+             (win (make-edit-window ed buf 0 0 80 24 0))
+             (fr (make-frame [win] 0 80 24 'vertical))
+             (app (new-app-state fr)))
+        (buffer-list-add! buf)
+        (let ((buf2 (buffer-create! "myfile.ss" ed "/tmp/myfile.ss")))
+          ;; Run cmd-list-buffers to generate the *Buffer List*
+          (cmd-list-buffers app)
+          ;; Should now be viewing *Buffer List*
+          (check (buffer-name (edit-window-buffer win)) => "*Buffer List*")
+          ;; Buffer list should be read-only
+          (check (editor-get-read-only? ed) => #t)
+          ;; Find the line containing "myfile.ss" and position cursor there
+          (let* ((text (editor-get-text ed))
+                 (lines (string-split text #\newline))
+                 (target-line
+                  (let loop ((ls lines) (i 0))
+                    (cond ((null? ls) #f)
+                          ((string-contains (car ls) "myfile.ss") i)
+                          (else (loop (cdr ls) (+ i 1)))))))
+            (check (not (eq? target-line #f)) => #t)
+            (let ((pos (editor-position-from-line ed target-line)))
+              (editor-goto-pos ed pos)
+              ;; Select buffer — this must switch to myfile.ss
+              (cmd-buffer-list-select app)
+              (check (buffer-name (edit-window-buffer win)) => "myfile.ss")))
+          ;; Cleanup
+          (buffer-list-remove! buf)
+          (buffer-list-remove! buf2)
+          (let ((bl (buffer-by-name "*Buffer List*")))
+            (when bl (buffer-list-remove! bl))))))
 
     (test-case "headless: org-todo cycling"
       (let* ((ed (create-scintilla-editor width: 80 height: 24))
