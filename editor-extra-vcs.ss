@@ -1557,4 +1557,98 @@
         "Visual line movement"
         "Logical line movement"))))
 
+;;; =========================================================================
+;;; Batch 37: highlight-indentation, hungry-delete, type-break, etc.
+;;; =========================================================================
 
+(def *highlight-indentation-mode* #f)
+(def *hungry-delete-mode* #f)
+(def *type-break-mode* #f)
+(def *delete-trailing-on-save* #f)
+(def *cursor-in-non-selected* #t)
+(def *blink-matching-paren* #t)
+(def *next-error-follow* #f)
+
+(def (cmd-toggle-highlight-indentation app)
+  "Toggle highlight-indentation-mode (show indentation guides)."
+  (let* ((echo (app-state-echo app))
+         (ed (current-editor app)))
+    (set! *highlight-indentation-mode* (not *highlight-indentation-mode*))
+    (if *highlight-indentation-mode*
+      (begin
+        ;; SCI_SETINDENTATIONGUIDES = 2132, SC_IV_LOOKBOTH = 3
+        (send-message ed 2132 3 0)
+        (echo-message! echo "Highlight-indentation ON"))
+      (begin
+        ;; SC_IV_NONE = 0
+        (send-message ed 2132 0 0)
+        (echo-message! echo "Highlight-indentation OFF")))))
+
+(def (cmd-toggle-hungry-delete app)
+  "Toggle hungry-delete-mode (delete all whitespace at once)."
+  (let ((echo (app-state-echo app)))
+    (set! *hungry-delete-mode* (not *hungry-delete-mode*))
+    (echo-message! echo (if *hungry-delete-mode*
+                          "Hungry delete ON"
+                          "Hungry delete OFF"))))
+
+(def (cmd-toggle-type-break app)
+  "Toggle type-break-mode (remind to take typing breaks)."
+  (let ((echo (app-state-echo app)))
+    (set! *type-break-mode* (not *type-break-mode*))
+    (echo-message! echo (if *type-break-mode*
+                          "Type-break mode ON"
+                          "Type-break mode OFF"))))
+
+(def (cmd-insert-zero-width-space app)
+  "Insert a zero-width space (U+200B) at point."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app))
+         (zws (string (integer->char #x200B))))
+    (editor-replace-selection ed zws)
+    (echo-message! echo "Zero-width space inserted")))
+
+(def (cmd-toggle-delete-trailing-on-save app)
+  "Toggle automatic deletion of trailing whitespace on save."
+  (let ((echo (app-state-echo app)))
+    (set! *delete-trailing-on-save* (not *delete-trailing-on-save*))
+    (echo-message! echo (if *delete-trailing-on-save*
+                          "Delete trailing whitespace on save ON"
+                          "Delete trailing whitespace on save OFF"))))
+
+(def (cmd-toggle-cursor-in-non-selected-windows app)
+  "Toggle cursor visibility in non-selected windows."
+  (let ((echo (app-state-echo app)))
+    (set! *cursor-in-non-selected* (not *cursor-in-non-selected*))
+    (echo-message! echo (if *cursor-in-non-selected*
+                          "Cursor in non-selected windows ON"
+                          "Cursor in non-selected windows OFF"))))
+
+(def (cmd-toggle-blink-matching-paren app)
+  "Toggle blinking of matching parenthesis."
+  (let* ((echo (app-state-echo app))
+         (ed (current-editor app)))
+    (set! *blink-matching-paren* (not *blink-matching-paren*))
+    (if *blink-matching-paren*
+      (begin
+        ;; SCI_BRACEBADLIGHT uses position -1 to clear
+        ;; Brace matching is handled by the event loop;
+        ;; this flag controls whether it blinks
+        (echo-message! echo "Blink matching paren ON"))
+      (echo-message! echo "Blink matching paren OFF"))))
+
+(def (cmd-toggle-next-error-follow app)
+  "Toggle next-error-follow-minor-mode (auto-visit errors on navigate)."
+  (let ((echo (app-state-echo app)))
+    (set! *next-error-follow* (not *next-error-follow*))
+    (echo-message! echo (if *next-error-follow*
+                          "Next-error follow ON"
+                          "Next-error follow OFF"))))
+
+(def (cmd-insert-page-break app)
+  "Insert a page break (form feed) character at point."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app))
+         (ff (string (integer->char 12))))
+    (editor-replace-selection ed ff)
+    (echo-message! echo "Page break inserted")))

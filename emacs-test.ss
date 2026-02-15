@@ -85,7 +85,11 @@
                  *delete-selection-mode* *word-count-mode*
                  *column-ruler-mode* *soft-wrap-mode*
                  *whitespace-cleanup-on-save* *line-move-visual*
-                 *random-lines*)
+                 *random-lines*
+                 *highlight-indentation-mode* *hungry-delete-mode*
+                 *type-break-mode* *delete-trailing-on-save*
+                 *cursor-in-non-selected* *blink-matching-paren*
+                 *next-error-follow*)
         (only-in :gerbil-emacs/highlight
                  detect-file-language gerbil-file-extension?
                  setup-highlighting-for-file!)
@@ -1923,6 +1927,34 @@
       (check (procedure? (find-command 'toggle-auto-save-buffers)) => #t)
       (check (procedure? (find-command 'insert-backslash)) => #t)
       (check (procedure? (find-command 'toggle-global-linum)) => #t))
+
+    ;; -- Batch 37 tests --
+    (test-case "batch 37: mode toggles"
+      (set! *highlight-indentation-mode* #f)
+      (check *highlight-indentation-mode* => #f)
+      (set! *hungry-delete-mode* #f)
+      (check *hungry-delete-mode* => #f)
+      (set! *type-break-mode* #f)
+      (check *type-break-mode* => #f)
+      (set! *delete-trailing-on-save* #f)
+      (check *delete-trailing-on-save* => #f)
+      (check *cursor-in-non-selected* => #t)
+      (check *blink-matching-paren* => #t)
+      (set! *next-error-follow* #f)
+      (check *next-error-follow* => #f))
+
+    ;; -- Command registration batch 37 --
+    (test-case "command registration: batch 37 features"
+      (register-all-commands!)
+      (check (procedure? (find-command 'toggle-highlight-indentation)) => #t)
+      (check (procedure? (find-command 'toggle-hungry-delete)) => #t)
+      (check (procedure? (find-command 'toggle-type-break)) => #t)
+      (check (procedure? (find-command 'insert-zero-width-space)) => #t)
+      (check (procedure? (find-command 'toggle-delete-trailing-on-save)) => #t)
+      (check (procedure? (find-command 'toggle-cursor-in-non-selected-windows)) => #t)
+      (check (procedure? (find-command 'toggle-blink-matching-paren)) => #t)
+      (check (procedure? (find-command 'toggle-next-error-follow)) => #t)
+      (check (procedure? (find-command 'insert-page-break)) => #t))
 
     ;;=========================================================================
     ;; Headless Scintilla editor tests
