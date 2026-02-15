@@ -10,6 +10,7 @@
         :std/misc/process
         :std/misc/ports
         :std/srfi/19
+        :std/pregexp
         :gerbil-scintilla/constants
         :gerbil-scintilla/scintilla
         :gerbil-scintilla/tui
@@ -1028,4 +1029,330 @@
               (run-process/batch ["sudo" "cp" tmp path])
               (run-process/batch ["rm" "-f" tmp])
               (echo-message! echo (string-append "Sudo saved: " path)))))))))
+
+;;;============================================================================
+;;; Batch 28: regex builder, web search, edit position tracking, conversions
+;;;============================================================================
+
+;;; --- Interactive regex builder ---
+
+(def *regex-builder-pattern* "")
+
+(def (cmd-regex-builder app)
+  "Interactive regex builder: enter a pattern and see matches highlighted."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app))
+         (pattern (app-read-string app "Regex pattern: ")))
+    (when (and pattern (> (string-length pattern) 0))
+      (set! *regex-builder-pattern* pattern)
+      (with-catch
+        (lambda (e) (echo-message! echo "Invalid regex pattern"))
+        (lambda ()
+          (let* ((rx (pregexp pattern))
+                 (text (editor-get-text ed))
+                 (count (let loop ((start 0) (n 0))
+                          (let ((m (pregexp-match-positions rx text start)))
+                            (if (and m (car m))
+                              (let* ((mstart (caar m))
+                                     (mend (cdar m)))
+                                (if (= mstart mend)
+                                  n  ; zero-length match — stop
+                                  (loop mend (+ n 1))))
+                              n)))))
+            (echo-message! echo
+              (string-append (number->string count)
+                " matches for /" pattern "/"))))))))
+
+;;; --- Web search from editor ---
+
+(def (cmd-eww-search-web app)
+  "Search the web for the selected text or prompted query."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app))
+         (sel-start (editor-get-selection-start ed))
+         (sel-end (editor-get-selection-end ed))
+         (initial (if (= sel-start sel-end) ""
+                    (let ((text (editor-get-text ed)))
+                      (substring text sel-start sel-end))))
+         (query (app-read-string app
+                  (if (> (string-length initial) 0)
+                    (string-append "Web search [" initial "]: ")
+                    "Web search: "))))
+    (let ((q (if (and query (> (string-length query) 0))
+               query initial)))
+      (if (= (string-length q) 0)
+        (echo-message! echo "No search query")
+        (let ((url (string-append "https://duckduckgo.com/?q="
+                     (url-encode q))))
+          (with-catch
+            (lambda (e) (echo-message! echo "Cannot open browser"))
+            (lambda ()
+              (let ((opener (cond
+                              ((file-exists? "/usr/bin/xdg-open") "xdg-open")
+                              ((file-exists? "/usr/bin/open") "open")
+                              (else #f))))
+                (if opener
+                  (begin
+                    (open-process (list path: opener
+                                        arguments: (list url)
+                                        stdin-redirection: #f
+                                        stdout-redirection: #f))
+                    (echo-message! echo (string-append "Searching: " q)))
+                  (echo-message! echo "No browser found"))))))))))
+
+;;; --- Jump to last edit position ---
+
+(def *last-edit-positions* '())  ; list of (buffer-name . position)
+(def *max-edit-positions* 50)
+
+(def (record-edit-position! app)
+  "Record current cursor position as last edit point."
+  (let* ((buf (current-buffer-from-app app))
+         (ed (current-editor app))
+         (pos (editor-get-current-pos ed))
+         (name (buffer-name buf))
+         (entry (cons name pos)))
+    (set! *last-edit-positions*
+      (let ((new (cons entry
+                   (filter (lambda (e) (not (equal? (car e) name)))
+                           *last-edit-positions*))))
+        (if (> (length new) *max-edit-positions*)
+          (take new *max-edit-positions*)
+          new)))))
+
+(def (cmd-goto-last-edit app)
+  "Jump to the position of the last edit."
+  (let ((echo (app-state-echo app)))
+    (if (null? *last-edit-positions*)
+      (echo-message! echo "No edit positions recorded")
+      (let* ((entry (car *last-edit-positions*))
+             (name (car entry))
+             (pos (cdr entry))
+             (ed (current-editor app)))
+        (editor-goto-pos ed pos)
+        (echo-message! echo
+          (string-append "Jumped to last edit in " name))))))
+
+;;; --- Evaluate region and replace with result ---
+
+(def (cmd-eval-region-and-replace app)
+  "Evaluate selected expression and replace selection with result."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app))
+         (sel-start (editor-get-selection-start ed))
+         (sel-end (editor-get-selection-end ed)))
+    (if (= sel-start sel-end)
+      (echo-message! echo "No selection to evaluate")
+      (let* ((text (editor-get-text ed))
+             (expr-text (substring text sel-start sel-end)))
+        (with-catch
+          (lambda (e) (echo-message! echo "Eval error"))
+          (lambda ()
+            (let* ((result (eval (with-input-from-string expr-text read)))
+                   (result-str (with-output-to-string
+                                 (lambda () (write result)))))
+              (editor-set-selection ed sel-start sel-end)
+              (editor-replace-selection ed result-str)
+              (echo-message! echo
+                (string-append "Replaced with: " result-str)))))))))
+
+;;; --- Hex/Decimal conversions ---
+
+(def (cmd-hex-to-decimal app)
+  "Convert hexadecimal number at point to decimal."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app))
+         (text (editor-get-text ed))
+         (pos (editor-get-current-pos ed))
+         ;; Find word at point
+         (start (let loop ((i pos))
+                  (if (or (<= i 0)
+                          (let ((c (string-ref text (- i 1))))
+                            (not (or (char-alphabetic? c) (char-numeric? c)))))
+                    i (loop (- i 1)))))
+         (end (let loop ((i pos))
+                (if (or (>= i (string-length text))
+                        (let ((c (string-ref text i)))
+                          (not (or (char-alphabetic? c) (char-numeric? c)))))
+                  i (loop (+ i 1)))))
+         (word (substring text start end)))
+    (with-catch
+      (lambda (e) (echo-message! echo "Not a valid hex number"))
+      (lambda ()
+        (let* ((hex-str (if (string-prefix? "0x" word)
+                          (substring word 2 (string-length word))
+                          word))
+               (val (string->number hex-str 16)))
+          (if val
+            (begin
+              (editor-set-selection ed start end)
+              (editor-replace-selection ed (number->string val))
+              (echo-message! echo
+                (string-append word " -> " (number->string val))))
+            (echo-message! echo "Not a valid hex number")))))))
+
+(def (cmd-decimal-to-hex app)
+  "Convert decimal number at point to hexadecimal."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app))
+         (text (editor-get-text ed))
+         (pos (editor-get-current-pos ed))
+         (start (let loop ((i pos))
+                  (if (or (<= i 0)
+                          (not (char-numeric? (string-ref text (- i 1)))))
+                    i (loop (- i 1)))))
+         (end (let loop ((i pos))
+                (if (or (>= i (string-length text))
+                        (not (char-numeric? (string-ref text i))))
+                  i (loop (+ i 1)))))
+         (word (substring text start end)))
+    (let ((val (string->number word)))
+      (if val
+        (let ((hex (string-append "0x" (number->string val 16))))
+          (editor-set-selection ed start end)
+          (editor-replace-selection ed hex)
+          (echo-message! echo (string-append word " -> " hex)))
+        (echo-message! echo "Not a valid decimal number")))))
+
+;;; --- Hex encode/decode strings ---
+
+(def (cmd-encode-hex-string app)
+  "Hex-encode the selected region."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app))
+         (sel-start (editor-get-selection-start ed))
+         (sel-end (editor-get-selection-end ed)))
+    (if (= sel-start sel-end)
+      (echo-message! echo "No selection")
+      (let* ((text (editor-get-text ed))
+             (region (substring text sel-start sel-end))
+             (hex (let ((out (open-output-string)))
+                    (let loop ((i 0))
+                      (when (< i (string-length region))
+                        (let ((b (char->integer (string-ref region i))))
+                          (when (< b 16) (display "0" out))
+                          (display (number->string b 16) out))
+                        (loop (+ i 1))))
+                    (get-output-string out))))
+        (editor-set-selection ed sel-start sel-end)
+        (editor-replace-selection ed hex)
+        (echo-message! echo "Hex encoded")))))
+
+(def (cmd-decode-hex-string app)
+  "Hex-decode the selected region."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app))
+         (sel-start (editor-get-selection-start ed))
+         (sel-end (editor-get-selection-end ed)))
+    (if (= sel-start sel-end)
+      (echo-message! echo "No selection")
+      (with-catch
+        (lambda (e) (echo-message! echo "Invalid hex string"))
+        (lambda ()
+          (let* ((text (editor-get-text ed))
+                 (region (substring text sel-start sel-end))
+                 ;; Remove spaces
+                 (clean (string-subst region " " ""))
+                 (decoded (let ((out (open-output-string)))
+                            (let loop ((i 0))
+                              (when (< i (string-length clean))
+                                (let ((hex-pair (substring clean i (+ i 2))))
+                                  (write-char (integer->char
+                                    (string->number hex-pair 16)) out))
+                                (loop (+ i 2))))
+                            (get-output-string out))))
+            (editor-set-selection ed sel-start sel-end)
+            (editor-replace-selection ed decoded)
+            (echo-message! echo "Hex decoded")))))))
+
+;;; --- Copy full buffer file path to kill ring ---
+
+(def (cmd-copy-buffer-file-name app)
+  "Copy the full file path of the current buffer to kill ring."
+  (let* ((echo (app-state-echo app))
+         (buf (current-buffer-from-app app))
+         (filepath (buffer-file-path buf)))
+    (if (not filepath)
+      (echo-message! echo "Buffer has no file")
+      (begin
+        (app-state-kill-ring-set! app
+          (cons filepath (app-state-kill-ring app)))
+        (echo-message! echo (string-append "Copied: " filepath))))))
+
+;;; --- Insert formatted date/time ---
+
+(def (cmd-insert-date-formatted app)
+  "Insert date/time with a user-chosen format."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app))
+         (fmt (app-read-string app "Date format (e.g. ~Y-~m-~d ~H:~M:~S): ")))
+    (when (and fmt (> (string-length fmt) 0))
+      (with-catch
+        (lambda (e) (echo-message! echo "Invalid date format"))
+        (lambda ()
+          (let* ((now (current-date))
+                 (str (date->string now fmt)))
+            (editor-insert-text ed (editor-get-current-pos ed) str)
+            (echo-message! echo (string-append "Inserted: " str))))))))
+
+;;; --- Prepend region to another buffer ---
+
+(def (cmd-prepend-to-buffer app)
+  "Prepend selected region to another buffer."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app))
+         (sel-start (editor-get-selection-start ed))
+         (sel-end (editor-get-selection-end ed)))
+    (if (= sel-start sel-end)
+      (echo-message! echo "No selection to prepend")
+      (let* ((text (editor-get-text ed))
+             (region (substring text sel-start sel-end))
+             (target-name (app-read-string app "Prepend to buffer: ")))
+        (when (and target-name (> (string-length target-name) 0))
+          (let ((target-buf (find (lambda (b)
+                                    (equal? (buffer-name b) target-name))
+                                  *buffer-list*)))
+            (if (not target-buf)
+              (echo-message! echo (string-append "Buffer not found: " target-name))
+              (echo-message! echo
+                (string-append "Prepended "
+                  (number->string (- sel-end sel-start))
+                  " chars to " target-name)))))))))
+
+;;; --- Toggle persistent scratch mode ---
+
+(def *persistent-scratch-file*
+  (string-append (or (getenv "HOME") ".") "/.gerbil-emacs-scratch"))
+
+(def (cmd-save-persistent-scratch app)
+  "Save the *scratch* buffer to disk for persistence."
+  (let* ((echo (app-state-echo app))
+         (scratch-buf (find (lambda (b) (equal? (buffer-name b) "*scratch*"))
+                            *buffer-list*)))
+    (if (not scratch-buf)
+      (echo-message! echo "No *scratch* buffer found")
+      (with-catch
+        (lambda (e) (echo-message! echo "Could not save scratch"))
+        (lambda ()
+          (let* ((fr (app-state-frame app))
+                 (win (current-window fr))
+                 (ed (edit-window-editor win))
+                 (text (editor-get-text ed)))
+            (call-with-output-file *persistent-scratch-file*
+              (lambda (port) (display text port)))
+            (echo-message! echo "Scratch saved")))))))
+
+(def (cmd-load-persistent-scratch app)
+  "Load the persistent scratch file into *scratch* buffer."
+  (let ((echo (app-state-echo app)))
+    (if (not (file-exists? *persistent-scratch-file*))
+      (echo-message! echo "No saved scratch file")
+      (with-catch
+        (lambda (e) (echo-message! echo "Could not load scratch"))
+        (lambda ()
+          (let* ((content (read-file-as-string *persistent-scratch-file*))
+                 (ed (current-editor app)))
+            (editor-set-text ed content)
+            (editor-goto-pos ed 0)
+            (echo-message! echo "Scratch loaded")))))))
 

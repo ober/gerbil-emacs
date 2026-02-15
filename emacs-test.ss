@@ -44,7 +44,9 @@
                  find-url-at-point collect-buffer-words
                  *command-history* command-history-add!
                  *named-macros* *buffer-access-times*
-                 record-buffer-access!)
+                 record-buffer-access!
+                 *regex-builder-pattern* *last-edit-positions*
+                 record-edit-position! *persistent-scratch-file*)
         (only-in :gerbil-emacs/editor-extra-web
                  url-encode url-decode
                  html-encode-entities html-decode-entities
@@ -1586,6 +1588,43 @@
       (check (procedure? (find-command 'transpose-windows)) => #t)
       (check (procedure? (find-command 'fold-toggle-at-point)) => #t)
       (check (procedure? (find-command 'imenu-list)) => #t))
+
+    ;; -- Batch 28 state tests --
+    (test-case "batch 28: regex builder pattern state"
+      (set! *regex-builder-pattern* "")
+      (check (string? *regex-builder-pattern*) => #t)
+      (set! *regex-builder-pattern* "foo.*bar")
+      (check *regex-builder-pattern* => "foo.*bar"))
+
+    (test-case "batch 28: edit position tracking"
+      (set! *last-edit-positions* '())
+      (check (null? *last-edit-positions*) => #t)
+      (set! *last-edit-positions*
+        (cons (cons "test.ss" 42) *last-edit-positions*))
+      (check (length *last-edit-positions*) => 1)
+      (check (caar *last-edit-positions*) => "test.ss")
+      (check (cdar *last-edit-positions*) => 42))
+
+    (test-case "batch 28: persistent scratch file path"
+      (check (string? *persistent-scratch-file*) => #t)
+      (check (number? (string-contains *persistent-scratch-file* "scratch")) => #t))
+
+    ;; -- Command registration batch 28 --
+    (test-case "command registration: batch 28 features"
+      (register-all-commands!)
+      (check (procedure? (find-command 'regex-builder)) => #t)
+      (check (procedure? (find-command 'eww-search-web)) => #t)
+      (check (procedure? (find-command 'goto-last-edit)) => #t)
+      (check (procedure? (find-command 'eval-region-and-replace)) => #t)
+      (check (procedure? (find-command 'hex-to-decimal)) => #t)
+      (check (procedure? (find-command 'decimal-to-hex)) => #t)
+      (check (procedure? (find-command 'encode-hex-string)) => #t)
+      (check (procedure? (find-command 'decode-hex-string)) => #t)
+      (check (procedure? (find-command 'copy-buffer-file-name)) => #t)
+      (check (procedure? (find-command 'insert-date-formatted)) => #t)
+      (check (procedure? (find-command 'prepend-to-buffer)) => #t)
+      (check (procedure? (find-command 'save-persistent-scratch)) => #t)
+      (check (procedure? (find-command 'load-persistent-scratch)) => #t))
 
     ;;=========================================================================
     ;; Headless Scintilla editor tests
