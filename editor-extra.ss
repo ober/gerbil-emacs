@@ -1235,4 +1235,12 @@
   (register-command! 'toggle-global-ruby-mode cmd-toggle-global-ruby-mode)
   (register-command! 'toggle-global-php-mode cmd-toggle-global-php-mode)
   (register-command! 'toggle-global-swift-mode cmd-toggle-global-swift-mode)
+  ;; batch 69
+  (register-command! 'toggle-global-yaml-mode cmd-toggle-global-yaml-mode)
+  (register-command! 'toggle-global-toml-mode cmd-toggle-global-toml-mode)
+  (register-command! 'toggle-global-json-mode cmd-toggle-global-json-mode)
+  (register-command! 'toggle-global-csv-mode cmd-toggle-global-csv-mode)
+  (register-command! 'toggle-global-protobuf-mode cmd-toggle-global-protobuf-mode)
+  (register-command! 'toggle-global-graphql-mode cmd-toggle-global-graphql-mode)
+  (register-command! 'toggle-global-nix-mode cmd-toggle-global-nix-mode)
 )

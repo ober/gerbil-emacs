@@ -1782,3 +1782,62 @@
     (set! *global-interaction-log* (not *global-interaction-log*))
     (echo-message! echo (if *global-interaction-log*
                           "Interaction log ON" "Interaction log OFF"))))
+
+;;; ---- batch 69: data format and configuration language toggles ----
+
+(def *global-yaml-mode* #f)
+(def *global-toml-mode* #f)
+(def *global-json-mode* #f)
+(def *global-csv-mode* #f)
+(def *global-protobuf-mode* #f)
+(def *global-graphql-mode* #f)
+(def *global-nix-mode* #f)
+
+(def (cmd-toggle-global-yaml-mode app)
+  "Toggle global yaml-mode (YAML file editing)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-yaml-mode* (not *global-yaml-mode*))
+    (echo-message! echo (if *global-yaml-mode*
+                          "YAML mode ON" "YAML mode OFF"))))
+
+(def (cmd-toggle-global-toml-mode app)
+  "Toggle global toml-mode (TOML file editing)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-toml-mode* (not *global-toml-mode*))
+    (echo-message! echo (if *global-toml-mode*
+                          "TOML mode ON" "TOML mode OFF"))))
+
+(def (cmd-toggle-global-json-mode app)
+  "Toggle global json-mode (JSON file editing)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-json-mode* (not *global-json-mode*))
+    (echo-message! echo (if *global-json-mode*
+                          "JSON mode ON" "JSON mode OFF"))))
+
+(def (cmd-toggle-global-csv-mode app)
+  "Toggle global csv-mode (CSV file editing with alignment)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-csv-mode* (not *global-csv-mode*))
+    (echo-message! echo (if *global-csv-mode*
+                          "CSV mode ON" "CSV mode OFF"))))
+
+(def (cmd-toggle-global-protobuf-mode app)
+  "Toggle global protobuf-mode (Protocol Buffers editing)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-protobuf-mode* (not *global-protobuf-mode*))
+    (echo-message! echo (if *global-protobuf-mode*
+                          "Protobuf mode ON" "Protobuf mode OFF"))))
+
+(def (cmd-toggle-global-graphql-mode app)
+  "Toggle global graphql-mode (GraphQL schema editing)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-graphql-mode* (not *global-graphql-mode*))
+    (echo-message! echo (if *global-graphql-mode*
+                          "GraphQL mode ON" "GraphQL mode OFF"))))
+
+(def (cmd-toggle-global-nix-mode app)
+  "Toggle global nix-mode (Nix expression editing)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-nix-mode* (not *global-nix-mode*))
+    (echo-message! echo (if *global-nix-mode*
+                          "Nix mode ON" "Nix mode OFF"))))

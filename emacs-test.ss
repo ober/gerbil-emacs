@@ -46,7 +46,11 @@
                  *global-native-compile* *global-gcmh*
                  *global-esup* *global-explain-pause*
                  *global-keyfreq* *global-command-log*
-                 *global-interaction-log*)
+                 *global-interaction-log*
+                 *global-yaml-mode* *global-toml-mode*
+                 *global-json-mode* *global-csv-mode*
+                 *global-protobuf-mode* *global-graphql-mode*
+                 *global-nix-mode*)
         (only-in :gerbil-emacs/editor register-all-commands!)
         (only-in :gerbil-emacs/editor-extra-media
                  *consult-mode* *orderless-mode* *embark-mode*
@@ -2788,6 +2792,25 @@
       (check (procedure? (find-command 'toggle-global-ruby-mode)) => #t)
       (check (procedure? (find-command 'toggle-global-php-mode)) => #t)
       (check (procedure? (find-command 'toggle-global-swift-mode)) => #t))
+
+    (test-case "batch 69: mode toggles"
+      (check *global-yaml-mode* => #f)
+      (check *global-toml-mode* => #f)
+      (check *global-json-mode* => #f)
+      (check *global-csv-mode* => #f)
+      (check *global-protobuf-mode* => #f)
+      (check *global-graphql-mode* => #f)
+      (check *global-nix-mode* => #f))
+
+    (test-case "command registration: batch 69 features"
+      (register-all-commands!)
+      (check (procedure? (find-command 'toggle-global-yaml-mode)) => #t)
+      (check (procedure? (find-command 'toggle-global-toml-mode)) => #t)
+      (check (procedure? (find-command 'toggle-global-json-mode)) => #t)
+      (check (procedure? (find-command 'toggle-global-csv-mode)) => #t)
+      (check (procedure? (find-command 'toggle-global-protobuf-mode)) => #t)
+      (check (procedure? (find-command 'toggle-global-graphql-mode)) => #t)
+      (check (procedure? (find-command 'toggle-global-nix-mode)) => #t))
 
     ;;=========================================================================
     ;; Headless Scintilla editor tests
