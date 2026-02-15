@@ -60,18 +60,17 @@
          (fr (frame-init! width height))
          (app (new-app-state fr)))
 
-    ;; Configure dark theme, scroll margin, and current-line highlight on all editors
+    ;; Configure dark theme, scroll margin, and editor defaults on all editors
     (for-each (lambda (win)
                 (let ((ed (edit-window-editor win)))
                   (setup-editor-theme! ed)
                   (setup-scroll-margin! ed)
-                  ;; Highlight the current line with a subtle background
-                  (send-message ed SCI_SETCARETLINEVISIBLE 1 0)
-                  (send-message ed SCI_SETCARETLINEBACK
-                    (rgb->scintilla #x28 #x28 #x3e) 0) ;; dark blue tint
-                  ;; Set default tab width
+                  ;; Set default tab width and use spaces
                   (send-message ed SCI_SETTABWIDTH 4 0)
-                  (send-message ed SCI_SETUSETABS 0 0))) ;; use spaces by default
+                  (send-message ed SCI_SETUSETABS 0 0)
+                  ;; Enable indentation guides
+                  (send-message ed SCI_SETINDENTATIONGUIDES SC_IV_LOOKBOTH 0)
+                  (send-message ed SCI_SETINDENT 4 0)))
               (frame-windows fr))
 
     ;; Restore scratch buffer from persistent storage, or set default

@@ -53,6 +53,25 @@
         (string-append basename "<" parent ">")))))
 
 ;;;============================================================================
+;;; Line ending detection
+;;;============================================================================
+
+(def (detect-eol-mode text)
+  "Detect line ending mode from text content. Returns SC_EOL_* constant."
+  (let loop ((i 0))
+    (if (>= i (string-length text))
+      SC_EOL_LF  ;; default
+      (let ((ch (string-ref text i)))
+        (cond
+          ((char=? ch #\return)
+           (if (and (< (+ i 1) (string-length text))
+                    (char=? (string-ref text (+ i 1)) #\newline))
+             SC_EOL_CRLF
+             SC_EOL_CR))
+          ((char=? ch #\newline) SC_EOL_LF)
+          (else (loop (+ i 1))))))))
+
+;;;============================================================================
 ;;; File modification tracking and auto-save
 ;;;============================================================================
 
@@ -477,12 +496,18 @@
                         (editor-goto-pos ed saved-pos)
                         (editor-scroll-caret ed))
                       (editor-goto-pos ed 0))))))
-            ;; Apply syntax highlighting for Gerbil files
-            (when (gerbil-file-extension? filename)
-              (setup-gerbil-highlighting! ed)
-              ;; Enable line numbers for code files
+            ;; Apply syntax highlighting for all recognized file types
+            (setup-highlighting-for-file! ed filename)
+            ;; Auto-detect and set line ending mode from file content
+            (when (file-exists? filename)
+              (let ((text (editor-get-text ed)))
+                (when (and text (> (string-length text) 0))
+                  (let ((eol-mode (detect-eol-mode text)))
+                    (send-message ed SCI_SETEOLMODE eol-mode 0)))))
+            ;; Enable line numbers for code files (any non-Fundamental mode)
+            (when (detect-file-language filename)
               (send-message ed SCI_SETMARGINTYPEN 0 SC_MARGIN_NUMBER)
-              (send-message ed SCI_SETMARGINWIDTHN 0 4))
+              (send-message ed SCI_SETMARGINWIDTHN 0 5))
             (echo-message! echo (string-append "Opened: " filename))))))))
 
 (def (cmd-save-buffer app)
