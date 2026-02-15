@@ -723,13 +723,17 @@
                 (when (and text (> (string-length text) 0))
                   (let ((eol-mode (detect-eol-mode text)))
                     (send-message ed SCI_SETEOLMODE eol-mode 0)))))
-            ;; Enable line numbers for code files (any non-Fundamental mode)
+            ;; Enable line numbers for code files with adaptive width
             (let ((lang (or (detect-file-language filename)
                             (and (file-exists? filename)
                                  (detect-language-from-shebang (editor-get-text ed))))))
               (when lang
                 (send-message ed SCI_SETMARGINTYPEN 0 SC_MARGIN_NUMBER)
-                (send-message ed SCI_SETMARGINWIDTHN 0 5)))
+                (let* ((lines (send-message ed SCI_GETLINECOUNT 0 0))
+                       (width (cond ((> lines 9999) 6)
+                                    ((> lines 999) 5)
+                                    (else 4))))
+                  (send-message ed SCI_SETMARGINWIDTHN 0 width))))
             (echo-message! echo (string-append "Opened: " filename)))))))))
 
 (def (cmd-save-buffer app)

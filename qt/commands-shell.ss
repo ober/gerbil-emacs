@@ -537,7 +537,7 @@ S=sort by name, z=sort by size, q=quit."
 ;;; Delete trailing whitespace on save
 ;;; ========================================================================
 
-(def *delete-trailing-whitespace-on-save* #f)
+(def *delete-trailing-whitespace-on-save* #t)
 
 (def (cmd-toggle-delete-trailing-whitespace-on-save app)
   "Toggle automatic deletion of trailing whitespace when saving."

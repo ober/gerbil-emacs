@@ -577,7 +577,7 @@
 ;;; Clean-on-save settings
 ;;;============================================================================
 
-(def *delete-trailing-whitespace-on-save* #f)
+(def *delete-trailing-whitespace-on-save* #t)
 (def *require-final-newline* #t)
 
 ;;;============================================================================

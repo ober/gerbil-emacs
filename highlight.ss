@@ -1026,8 +1026,9 @@
            ((member ext '(".diff" ".patch")) 'diff)
            (else #f)))))
 
-(def (enable-fold-properties! ed)
-  "Enable folding for the current lexer."
+(def (enable-code-file-features! ed)
+  "Enable folding, indent guides, and column indicator for code files."
+  ;; Fold properties
   (editor-set-property ed "fold" "1")
   (editor-set-property ed "fold.compact" "0")
   (editor-set-property ed "fold.comment" "1")
@@ -1050,7 +1051,14 @@
   (send-message ed SCI_MARKERSETFORE SC_MARKNUM_FOLDEROPEN #x808080)
   (send-message ed SCI_MARKERSETBACK SC_MARKNUM_FOLDEROPEN #x282828)
   ;; Auto-fold on margin clicks
-  (send-message ed SCI_SETAUTOMATICFOLD 7 0))  ;; SC_AUTOMATICFOLD_SHOW|CLICK|CHANGE
+  (send-message ed SCI_SETAUTOMATICFOLD 7 0)  ;; SC_AUTOMATICFOLD_SHOW|CLICK|CHANGE
+  ;; Indent guides (SC_IV_LOOKBOTH = 3)
+  (send-message ed SCI_SETINDENTATIONGUIDES 3 0)
+  ;; Column indicator at column 80 (SCI_SETEDGEMODE=2363 EDGE_LINE=1, SCI_SETEDGECOLUMN=2361)
+  (send-message ed 2363 1 0)
+  (send-message ed 2361 80 0)
+  ;; Edge color: subtle dark line
+  (send-message ed 2364 #x333333 0))  ;; SCI_SETEDGECOLOUR
 
 (def (setup-highlighting-for-file! ed filename)
   "Set up syntax highlighting based on file extension.
@@ -1076,6 +1084,6 @@
       ((makefile)  (setup-makefile-highlighting! ed))
       ((diff)     (setup-diff-highlighting! ed))
       (else (void)))
-    ;; Enable folding for all recognized languages
+    ;; Enable folding, indent guides, and column indicator for code files
     (when lang
-      (enable-fold-properties! ed))))
+      (enable-code-file-features! ed))))
