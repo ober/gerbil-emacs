@@ -1187,4 +1187,12 @@
   (register-command! 'toggle-global-moody cmd-toggle-global-moody)
   (register-command! 'toggle-global-rich-minority cmd-toggle-global-rich-minority)
   (register-command! 'toggle-global-smart-mode-line cmd-toggle-global-smart-mode-line)
+  ;; batch 63
+  (register-command! 'toggle-global-nyan-cat cmd-toggle-global-nyan-cat)
+  (register-command! 'toggle-global-parrot cmd-toggle-global-parrot)
+  (register-command! 'toggle-global-zone cmd-toggle-global-zone)
+  (register-command! 'toggle-global-fireplace cmd-toggle-global-fireplace)
+  (register-command! 'toggle-global-snow cmd-toggle-global-snow)
+  (register-command! 'toggle-global-power-mode cmd-toggle-global-power-mode)
+  (register-command! 'toggle-global-animate-typing cmd-toggle-global-animate-typing)
 )

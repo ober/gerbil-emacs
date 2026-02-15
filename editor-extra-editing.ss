@@ -1762,3 +1762,62 @@
     (echo-message! echo (if *global-avy*
                           "Global avy ON" "Global avy OFF"))))
 
+;;; ---- batch 63: fun and entertainment toggles ----
+
+(def *global-nyan-cat* #f)
+(def *global-parrot* #f)
+(def *global-zone* #f)
+(def *global-fireplace* #f)
+(def *global-snow* #f)
+(def *global-power-mode* #f)
+(def *global-animate-typing* #f)
+
+(def (cmd-toggle-global-nyan-cat app)
+  "Toggle global nyan-cat-mode (Nyan Cat in modeline)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-nyan-cat* (not *global-nyan-cat*))
+    (echo-message! echo (if *global-nyan-cat*
+                          "Nyan cat ON" "Nyan cat OFF"))))
+
+(def (cmd-toggle-global-parrot app)
+  "Toggle global parrot-mode (party parrot in modeline)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-parrot* (not *global-parrot*))
+    (echo-message! echo (if *global-parrot*
+                          "Party parrot ON" "Party parrot OFF"))))
+
+(def (cmd-toggle-global-zone app)
+  "Toggle global zone-mode (screensaver when idle)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-zone* (not *global-zone*))
+    (echo-message! echo (if *global-zone*
+                          "Zone mode ON" "Zone mode OFF"))))
+
+(def (cmd-toggle-global-fireplace app)
+  "Toggle global fireplace-mode (cozy fireplace animation)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-fireplace* (not *global-fireplace*))
+    (echo-message! echo (if *global-fireplace*
+                          "Fireplace ON" "Fireplace OFF"))))
+
+(def (cmd-toggle-global-snow app)
+  "Toggle global snow-mode (let it snow animation)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-snow* (not *global-snow*))
+    (echo-message! echo (if *global-snow*
+                          "Snow ON" "Snow OFF"))))
+
+(def (cmd-toggle-global-power-mode app)
+  "Toggle global power-mode (screen shake and particles on typing)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-power-mode* (not *global-power-mode*))
+    (echo-message! echo (if *global-power-mode*
+                          "Power mode ON" "Power mode OFF"))))
+
+(def (cmd-toggle-global-animate-typing app)
+  "Toggle global animate-typing-mode (typing animation effect)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-animate-typing* (not *global-animate-typing*))
+    (echo-message! echo (if *global-animate-typing*
+                          "Animate typing ON" "Animate typing OFF"))))
+

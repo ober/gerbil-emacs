@@ -79,7 +79,10 @@
                  *global-visual-regexp* *global-move-dup*
                  *global-expand-region* *global-multiple-cursors*
                  *global-undo-propose* *global-goto-chg*
-                 *global-avy*)
+                 *global-avy*
+                 *global-nyan-cat* *global-parrot* *global-zone*
+                 *global-fireplace* *global-snow*
+                 *global-power-mode* *global-animate-typing*)
         (only-in :gerbil-emacs/editor-extra-vcs
                  fuzzy-match? fuzzy-score)
         (only-in :gerbil-emacs/editor-extra-final
@@ -2651,6 +2654,25 @@
       (check (procedure? (find-command 'toggle-global-moody)) => #t)
       (check (procedure? (find-command 'toggle-global-rich-minority)) => #t)
       (check (procedure? (find-command 'toggle-global-smart-mode-line)) => #t))
+
+    (test-case "batch 63: mode toggles"
+      (check *global-nyan-cat* => #f)
+      (check *global-parrot* => #f)
+      (check *global-zone* => #f)
+      (check *global-fireplace* => #f)
+      (check *global-snow* => #f)
+      (check *global-power-mode* => #f)
+      (check *global-animate-typing* => #f))
+
+    (test-case "command registration: batch 63 features"
+      (register-all-commands!)
+      (check (procedure? (find-command 'toggle-global-nyan-cat)) => #t)
+      (check (procedure? (find-command 'toggle-global-parrot)) => #t)
+      (check (procedure? (find-command 'toggle-global-zone)) => #t)
+      (check (procedure? (find-command 'toggle-global-fireplace)) => #t)
+      (check (procedure? (find-command 'toggle-global-snow)) => #t)
+      (check (procedure? (find-command 'toggle-global-power-mode)) => #t)
+      (check (procedure? (find-command 'toggle-global-animate-typing)) => #t))
 
     ;;=========================================================================
     ;; Headless Scintilla editor tests
