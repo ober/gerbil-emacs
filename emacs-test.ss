@@ -42,7 +42,11 @@
                  *vertico-mode* *marginalia-mode*
                  *global-cwarn* *global-hideshow* *global-abbrev*
                  *global-diff-auto-refine* *global-eldoc-box*
-                 *global-flyspell-lazy* *global-so-clean*)
+                 *global-flyspell-lazy* *global-so-clean*
+                 *global-native-compile* *global-gcmh*
+                 *global-esup* *global-explain-pause*
+                 *global-keyfreq* *global-command-log*
+                 *global-interaction-log*)
         (only-in :gerbil-emacs/editor register-all-commands!)
         (only-in :gerbil-emacs/editor-extra-media
                  *consult-mode* *orderless-mode* *embark-mode*
@@ -2582,6 +2586,25 @@
       (check (procedure? (find-command 'toggle-global-ert-runner)) => #t)
       (check (procedure? (find-command 'toggle-global-undercover)) => #t)
       (check (procedure? (find-command 'toggle-global-benchmark-init)) => #t))
+
+    (test-case "batch 60: mode toggles"
+      (check *global-native-compile* => #f)
+      (check *global-gcmh* => #f)
+      (check *global-esup* => #f)
+      (check *global-explain-pause* => #f)
+      (check *global-keyfreq* => #f)
+      (check *global-command-log* => #f)
+      (check *global-interaction-log* => #f))
+
+    (test-case "command registration: batch 60 features"
+      (register-all-commands!)
+      (check (procedure? (find-command 'toggle-global-native-compile)) => #t)
+      (check (procedure? (find-command 'toggle-global-gcmh)) => #t)
+      (check (procedure? (find-command 'toggle-global-esup)) => #t)
+      (check (procedure? (find-command 'toggle-global-explain-pause)) => #t)
+      (check (procedure? (find-command 'toggle-global-keyfreq)) => #t)
+      (check (procedure? (find-command 'toggle-global-command-log)) => #t)
+      (check (procedure? (find-command 'toggle-global-interaction-log)) => #t))
 
     ;;=========================================================================
     ;; Headless Scintilla editor tests

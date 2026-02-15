@@ -1163,4 +1163,12 @@
   (register-command! 'toggle-global-ert-runner cmd-toggle-global-ert-runner)
   (register-command! 'toggle-global-undercover cmd-toggle-global-undercover)
   (register-command! 'toggle-global-benchmark-init cmd-toggle-global-benchmark-init)
+  ;; batch 60
+  (register-command! 'toggle-global-native-compile cmd-toggle-global-native-compile)
+  (register-command! 'toggle-global-gcmh cmd-toggle-global-gcmh)
+  (register-command! 'toggle-global-esup cmd-toggle-global-esup)
+  (register-command! 'toggle-global-explain-pause cmd-toggle-global-explain-pause)
+  (register-command! 'toggle-global-keyfreq cmd-toggle-global-keyfreq)
+  (register-command! 'toggle-global-command-log cmd-toggle-global-command-log)
+  (register-command! 'toggle-global-interaction-log cmd-toggle-global-interaction-log)
 )

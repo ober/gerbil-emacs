@@ -1723,3 +1723,62 @@
     (set! *global-so-clean* (not *global-so-clean*))
     (echo-message! echo (if *global-so-clean*
                           "So-clean ON" "So-clean OFF"))))
+
+;;; ---- batch 60: performance and profiling toggles ----
+
+(def *global-native-compile* #f)
+(def *global-gcmh* #f)
+(def *global-esup* #f)
+(def *global-explain-pause* #f)
+(def *global-keyfreq* #f)
+(def *global-command-log* #f)
+(def *global-interaction-log* #f)
+
+(def (cmd-toggle-global-native-compile app)
+  "Toggle global native-compile-mode (ahead-of-time native compilation)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-native-compile* (not *global-native-compile*))
+    (echo-message! echo (if *global-native-compile*
+                          "Native compile ON" "Native compile OFF"))))
+
+(def (cmd-toggle-global-gcmh app)
+  "Toggle global GCMH-mode (garbage collection magic hack)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-gcmh* (not *global-gcmh*))
+    (echo-message! echo (if *global-gcmh*
+                          "GCMH ON" "GCMH OFF"))))
+
+(def (cmd-toggle-global-esup app)
+  "Toggle global ESUP-mode (startup profiler)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-esup* (not *global-esup*))
+    (echo-message! echo (if *global-esup*
+                          "ESUP ON" "ESUP OFF"))))
+
+(def (cmd-toggle-global-explain-pause app)
+  "Toggle global explain-pause-mode (explain UI freezes)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-explain-pause* (not *global-explain-pause*))
+    (echo-message! echo (if *global-explain-pause*
+                          "Explain pause ON" "Explain pause OFF"))))
+
+(def (cmd-toggle-global-keyfreq app)
+  "Toggle global keyfreq-mode (track key usage statistics)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-keyfreq* (not *global-keyfreq*))
+    (echo-message! echo (if *global-keyfreq*
+                          "Keyfreq ON" "Keyfreq OFF"))))
+
+(def (cmd-toggle-global-command-log app)
+  "Toggle global command-log-mode (log executed commands)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-command-log* (not *global-command-log*))
+    (echo-message! echo (if *global-command-log*
+                          "Command log ON" "Command log OFF"))))
+
+(def (cmd-toggle-global-interaction-log app)
+  "Toggle global interaction-log-mode (log all user interaction)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-interaction-log* (not *global-interaction-log*))
+    (echo-message! echo (if *global-interaction-log*
+                          "Interaction log ON" "Interaction log OFF"))))
