@@ -1543,3 +1543,92 @@
     (editor-set-selection ed line-start line-end)
     (editor-replace-selection ed new-text)
     (echo-message! echo "Words sorted")))
+
+;;; =========================================================================
+;;; Batch 40: delete-pair-blink, show-paren-inside, recursive minibuffers, etc.
+;;; =========================================================================
+
+(def *delete-pair-blink* #t)
+(def *show-paren-when-point-inside* #f)
+(def *enable-recursive-minibuffers* #f)
+(def *use-dialog-box* #f)
+(def *use-short-answers* #t)
+(def *ring-bell-function* 'ignore)  ;; 'ignore, 'beep, or 'flash
+(def *sentence-end-double-space* #t)
+(def *colon-double-space* #f)
+(def *comment-auto-fill* #f)
+
+(def (cmd-toggle-delete-pair-blink app)
+  "Toggle blinking when deleting matching pairs."
+  (let ((echo (app-state-echo app)))
+    (set! *delete-pair-blink* (not *delete-pair-blink*))
+    (echo-message! echo (if *delete-pair-blink*
+                          "Delete-pair blink ON"
+                          "Delete-pair blink OFF"))))
+
+(def (cmd-toggle-show-paren-when-point-inside app)
+  "Toggle highlighting parens when cursor is inside."
+  (let ((echo (app-state-echo app)))
+    (set! *show-paren-when-point-inside* (not *show-paren-when-point-inside*))
+    (echo-message! echo (if *show-paren-when-point-inside*
+                          "Show-paren when inside ON"
+                          "Show-paren when inside OFF"))))
+
+(def (cmd-toggle-enable-recursive-minibuffers app)
+  "Toggle allowing recursive minibuffer invocations."
+  (let ((echo (app-state-echo app)))
+    (set! *enable-recursive-minibuffers* (not *enable-recursive-minibuffers*))
+    (echo-message! echo (if *enable-recursive-minibuffers*
+                          "Recursive minibuffers ON"
+                          "Recursive minibuffers OFF"))))
+
+(def (cmd-toggle-use-dialog-box app)
+  "Toggle using dialog boxes for yes/no questions."
+  (let ((echo (app-state-echo app)))
+    (set! *use-dialog-box* (not *use-dialog-box*))
+    (echo-message! echo (if *use-dialog-box*
+                          "Dialog boxes ON"
+                          "Dialog boxes OFF"))))
+
+(def (cmd-toggle-use-short-answers app)
+  "Toggle using short y/n answers instead of yes/no."
+  (let ((echo (app-state-echo app)))
+    (set! *use-short-answers* (not *use-short-answers*))
+    (echo-message! echo (if *use-short-answers*
+                          "Short answers (y/n) ON"
+                          "Short answers (y/n) OFF"))))
+
+(def (cmd-toggle-ring-bell-function app)
+  "Cycle bell function: ignore -> beep -> flash."
+  (let ((echo (app-state-echo app)))
+    (set! *ring-bell-function*
+      (case *ring-bell-function*
+        ((ignore) 'beep)
+        ((beep) 'flash)
+        (else 'ignore)))
+    (echo-message! echo
+      (string-append "Bell: " (symbol->string *ring-bell-function*)))))
+
+(def (cmd-toggle-sentence-end-double-space app)
+  "Toggle requiring double space after period to end a sentence."
+  (let ((echo (app-state-echo app)))
+    (set! *sentence-end-double-space* (not *sentence-end-double-space*))
+    (echo-message! echo (if *sentence-end-double-space*
+                          "Sentence end double-space ON"
+                          "Sentence end double-space OFF"))))
+
+(def (cmd-toggle-colon-double-space app)
+  "Toggle requiring double space after colon."
+  (let ((echo (app-state-echo app)))
+    (set! *colon-double-space* (not *colon-double-space*))
+    (echo-message! echo (if *colon-double-space*
+                          "Colon double-space ON"
+                          "Colon double-space OFF"))))
+
+(def (cmd-toggle-comment-auto-fill app)
+  "Toggle auto-fill in comments only."
+  (let ((echo (app-state-echo app)))
+    (set! *comment-auto-fill* (not *comment-auto-fill*))
+    (echo-message! echo (if *comment-auto-fill*
+                          "Comment auto-fill ON"
+                          "Comment auto-fill OFF"))))

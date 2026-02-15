@@ -66,7 +66,12 @@
                  *highlight-changes-mode* *saved-window-layouts*
                  *known-modes* *password-chars*
                  *cursor-blink* *header-line-mode*
-                 *auto-save-visited-mode* *hl-todo-mode*)
+                 *auto-save-visited-mode* *hl-todo-mode*
+                 *delete-pair-blink* *show-paren-when-point-inside*
+                 *enable-recursive-minibuffers* *use-dialog-box*
+                 *use-short-answers* *ring-bell-function*
+                 *sentence-end-double-space* *colon-double-space*
+                 *comment-auto-fill*)
         (only-in :gerbil-emacs/editor-extra-tools
                  *cursor-type* *modeline-visible*
                  *indent-guide-mode* *rainbow-mode*
@@ -2028,6 +2033,36 @@
       (check (procedure? (find-command 'toggle-file-name-shadow)) => #t)
       (check (procedure? (find-command 'toggle-minibuffer-electric-default)) => #t)
       (check (procedure? (find-command 'toggle-history-delete-duplicates)) => #t))
+
+    ;; -- Batch 40 tests --
+    (test-case "batch 40: mode toggles"
+      (check *delete-pair-blink* => #t)
+      (set! *show-paren-when-point-inside* #f)
+      (check *show-paren-when-point-inside* => #f)
+      (set! *enable-recursive-minibuffers* #f)
+      (check *enable-recursive-minibuffers* => #f)
+      (set! *use-dialog-box* #f)
+      (check *use-dialog-box* => #f)
+      (check *use-short-answers* => #t)
+      (check (eq? *ring-bell-function* 'ignore) => #t)
+      (check *sentence-end-double-space* => #t)
+      (set! *colon-double-space* #f)
+      (check *colon-double-space* => #f)
+      (set! *comment-auto-fill* #f)
+      (check *comment-auto-fill* => #f))
+
+    ;; -- Command registration batch 40 --
+    (test-case "command registration: batch 40 features"
+      (register-all-commands!)
+      (check (procedure? (find-command 'toggle-delete-pair-blink)) => #t)
+      (check (procedure? (find-command 'toggle-show-paren-when-point-inside)) => #t)
+      (check (procedure? (find-command 'toggle-enable-recursive-minibuffers)) => #t)
+      (check (procedure? (find-command 'toggle-use-dialog-box)) => #t)
+      (check (procedure? (find-command 'toggle-use-short-answers)) => #t)
+      (check (procedure? (find-command 'toggle-ring-bell-function)) => #t)
+      (check (procedure? (find-command 'toggle-sentence-end-double-space)) => #t)
+      (check (procedure? (find-command 'toggle-colon-double-space)) => #t)
+      (check (procedure? (find-command 'toggle-comment-auto-fill)) => #t))
 
     ;;=========================================================================
     ;; Headless Scintilla editor tests
