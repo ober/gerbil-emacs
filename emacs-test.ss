@@ -55,7 +55,12 @@
                  *truncate-partial-width* *inhibit-startup-screen*
                  *visible-cursor* *transient-mark-mode*
                  *global-whitespace-mode*
-                 *hide-ifdef-mode* *allout-mode*)
+                 *hide-ifdef-mode* *allout-mode*
+                 *indent-guide-global* *rainbow-delimiters-global*
+                 *global-display-fill-column* *global-flycheck*
+                 *global-company* *global-diff-hl*
+                 *global-git-gutter* *global-page-break-lines*
+                 *global-anzu*)
         (only-in :gerbil-emacs/editor-extra-vcs
                  fuzzy-match? fuzzy-score)
         (only-in :gerbil-emacs/editor-extra-final
@@ -2312,6 +2317,31 @@
       (check (procedure? (find-command 'toggle-global-auto-composition)) => #t)
       (check (procedure? (find-command 'toggle-global-display-line-numbers)) => #t)
       (check (procedure? (find-command 'toggle-blink-cursor-mode)) => #t))
+
+    ;; -- Batch 49 tests --
+    (test-case "batch 49: mode toggles"
+      (check *indent-guide-global* => #f)
+      (check *rainbow-delimiters-global* => #f)
+      (check *global-display-fill-column* => #f)
+      (check *global-flycheck* => #f)
+      (check *global-company* => #f)
+      (check *global-diff-hl* => #f)
+      (check *global-git-gutter* => #f)
+      (check *global-page-break-lines* => #f)
+      (check *global-anzu* => #f))
+
+    ;; -- Command registration batch 49 --
+    (test-case "command registration: batch 49 features"
+      (register-all-commands!)
+      (check (procedure? (find-command 'toggle-indent-guide-global)) => #t)
+      (check (procedure? (find-command 'toggle-rainbow-delimiters-global)) => #t)
+      (check (procedure? (find-command 'toggle-global-display-fill-column)) => #t)
+      (check (procedure? (find-command 'toggle-global-flycheck)) => #t)
+      (check (procedure? (find-command 'toggle-global-company)) => #t)
+      (check (procedure? (find-command 'toggle-global-diff-hl)) => #t)
+      (check (procedure? (find-command 'toggle-global-git-gutter)) => #t)
+      (check (procedure? (find-command 'toggle-global-page-break-lines)) => #t)
+      (check (procedure? (find-command 'toggle-global-anzu)) => #t))
 
     ;;=========================================================================
     ;; Headless Scintilla editor tests

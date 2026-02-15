@@ -1630,3 +1630,77 @@
     (echo-message! echo (if *allout-mode*
                           "Allout mode ON" "Allout mode OFF"))))
 
+;; ── batch 49: global minor mode toggles ─────────────────────────────
+(def *indent-guide-global* #f)
+(def *rainbow-delimiters-global* #f)
+(def *global-display-fill-column* #f)
+(def *global-flycheck* #f)
+(def *global-company* #f)
+(def *global-diff-hl* #f)
+(def *global-git-gutter* #f)
+(def *global-page-break-lines* #f)
+(def *global-anzu* #f)
+
+(def (cmd-toggle-indent-guide-global app)
+  "Toggle global indent guides display."
+  (let ((echo (app-state-echo app)))
+    (set! *indent-guide-global* (not *indent-guide-global*))
+    (echo-message! echo (if *indent-guide-global*
+                          "Indent guide global ON" "Indent guide global OFF"))))
+
+(def (cmd-toggle-rainbow-delimiters-global app)
+  "Toggle global rainbow-delimiters-mode."
+  (let ((echo (app-state-echo app)))
+    (set! *rainbow-delimiters-global* (not *rainbow-delimiters-global*))
+    (echo-message! echo (if *rainbow-delimiters-global*
+                          "Rainbow delimiters ON" "Rainbow delimiters OFF"))))
+
+(def (cmd-toggle-global-display-fill-column app)
+  "Toggle global display of fill column indicator."
+  (let ((echo (app-state-echo app)))
+    (set! *global-display-fill-column* (not *global-display-fill-column*))
+    (echo-message! echo (if *global-display-fill-column*
+                          "Fill column indicator ON" "Fill column indicator OFF"))))
+
+(def (cmd-toggle-global-flycheck app)
+  "Toggle global flycheck-mode (on-the-fly syntax checking)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-flycheck* (not *global-flycheck*))
+    (echo-message! echo (if *global-flycheck*
+                          "Global flycheck ON" "Global flycheck OFF"))))
+
+(def (cmd-toggle-global-company app)
+  "Toggle global company-mode (completion)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-company* (not *global-company*))
+    (echo-message! echo (if *global-company*
+                          "Global company ON" "Global company OFF"))))
+
+(def (cmd-toggle-global-diff-hl app)
+  "Toggle global diff-hl-mode (VCS diff in fringe)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-diff-hl* (not *global-diff-hl*))
+    (echo-message! echo (if *global-diff-hl*
+                          "Global diff-hl ON" "Global diff-hl OFF"))))
+
+(def (cmd-toggle-global-git-gutter app)
+  "Toggle global git-gutter-mode."
+  (let ((echo (app-state-echo app)))
+    (set! *global-git-gutter* (not *global-git-gutter*))
+    (echo-message! echo (if *global-git-gutter*
+                          "Global git-gutter ON" "Global git-gutter OFF"))))
+
+(def (cmd-toggle-global-page-break-lines app)
+  "Toggle global page-break-lines-mode (display ^L as lines)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-page-break-lines* (not *global-page-break-lines*))
+    (echo-message! echo (if *global-page-break-lines*
+                          "Page break lines ON" "Page break lines OFF"))))
+
+(def (cmd-toggle-global-anzu app)
+  "Toggle global anzu-mode (show search match count)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-anzu* (not *global-anzu*))
+    (echo-message! echo (if *global-anzu*
+                          "Global anzu ON" "Global anzu OFF"))))
+
