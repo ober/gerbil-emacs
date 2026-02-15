@@ -1147,4 +1147,12 @@
   (register-command! 'toggle-global-ws-trim cmd-toggle-global-ws-trim)
   (register-command! 'toggle-global-auto-compile cmd-toggle-global-auto-compile)
   (register-command! 'toggle-global-no-littering cmd-toggle-global-no-littering)
+  ;; batch 58
+  (register-command! 'toggle-global-golden-ratio cmd-toggle-global-golden-ratio)
+  (register-command! 'toggle-global-zoom-window cmd-toggle-global-zoom-window)
+  (register-command! 'toggle-global-shackle cmd-toggle-global-shackle)
+  (register-command! 'toggle-global-popwin cmd-toggle-global-popwin)
+  (register-command! 'toggle-global-popper cmd-toggle-global-popper)
+  (register-command! 'toggle-global-posframe cmd-toggle-global-posframe)
+  (register-command! 'toggle-global-childframe cmd-toggle-global-childframe)
 )

@@ -157,7 +157,10 @@
                  *global-subword-mode* *global-superword-mode*
                  *delete-by-moving-to-trash* *create-lockfiles*
                  *mode-line-compact* *use-file-dialog*
-                 *xterm-mouse-mode*)
+                 *xterm-mouse-mode*
+                 *global-golden-ratio* *global-zoom-window*
+                 *global-shackle* *global-popwin* *global-popper*
+                 *global-posframe* *global-childframe*)
         (only-in :gerbil-emacs/editor-extra-modes
                  *global-envrc* *global-direnv* *global-editorconfig*
                  *global-dtrt-indent* *global-ws-trim*
@@ -2537,6 +2540,25 @@
       (check (procedure? (find-command 'toggle-global-ws-trim)) => #t)
       (check (procedure? (find-command 'toggle-global-auto-compile)) => #t)
       (check (procedure? (find-command 'toggle-global-no-littering)) => #t))
+
+    (test-case "batch 58: mode toggles"
+      (check *global-golden-ratio* => #f)
+      (check *global-zoom-window* => #f)
+      (check *global-shackle* => #f)
+      (check *global-popwin* => #f)
+      (check *global-popper* => #f)
+      (check *global-posframe* => #f)
+      (check *global-childframe* => #f))
+
+    (test-case "command registration: batch 58 features"
+      (register-all-commands!)
+      (check (procedure? (find-command 'toggle-global-golden-ratio)) => #t)
+      (check (procedure? (find-command 'toggle-global-zoom-window)) => #t)
+      (check (procedure? (find-command 'toggle-global-shackle)) => #t)
+      (check (procedure? (find-command 'toggle-global-popwin)) => #t)
+      (check (procedure? (find-command 'toggle-global-popper)) => #t)
+      (check (procedure? (find-command 'toggle-global-posframe)) => #t)
+      (check (procedure? (find-command 'toggle-global-childframe)) => #t))
 
     ;;=========================================================================
     ;; Headless Scintilla editor tests

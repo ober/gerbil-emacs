@@ -1718,3 +1718,62 @@
     (set! *xterm-mouse-mode* (not *xterm-mouse-mode*))
     (echo-message! echo (if *xterm-mouse-mode*
                           "Xterm mouse mode ON" "Xterm mouse mode OFF"))))
+
+;;; ---- batch 58: window management and popup framework toggles ----
+
+(def *global-golden-ratio* #f)
+(def *global-zoom-window* #f)
+(def *global-shackle* #f)
+(def *global-popwin* #f)
+(def *global-popper* #f)
+(def *global-posframe* #f)
+(def *global-childframe* #f)
+
+(def (cmd-toggle-global-golden-ratio app)
+  "Toggle global golden-ratio-mode (auto-resize windows)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-golden-ratio* (not *global-golden-ratio*))
+    (echo-message! echo (if *global-golden-ratio*
+                          "Golden ratio ON" "Golden ratio OFF"))))
+
+(def (cmd-toggle-global-zoom-window app)
+  "Toggle global zoom-window-mode (auto-zoom focused window)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-zoom-window* (not *global-zoom-window*))
+    (echo-message! echo (if *global-zoom-window*
+                          "Zoom window ON" "Zoom window OFF"))))
+
+(def (cmd-toggle-global-shackle app)
+  "Toggle global shackle-mode (control popup placement)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-shackle* (not *global-shackle*))
+    (echo-message! echo (if *global-shackle*
+                          "Global shackle ON" "Global shackle OFF"))))
+
+(def (cmd-toggle-global-popwin app)
+  "Toggle global popwin-mode (popup window management)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-popwin* (not *global-popwin*))
+    (echo-message! echo (if *global-popwin*
+                          "Global popwin ON" "Global popwin OFF"))))
+
+(def (cmd-toggle-global-popper app)
+  "Toggle global popper-mode (smart popup handling)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-popper* (not *global-popper*))
+    (echo-message! echo (if *global-popper*
+                          "Global popper ON" "Global popper OFF"))))
+
+(def (cmd-toggle-global-posframe app)
+  "Toggle global posframe-mode (display in child frames)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-posframe* (not *global-posframe*))
+    (echo-message! echo (if *global-posframe*
+                          "Global posframe ON" "Global posframe OFF"))))
+
+(def (cmd-toggle-global-childframe app)
+  "Toggle global childframe-mode (use child frames for popups)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-childframe* (not *global-childframe*))
+    (echo-message! echo (if *global-childframe*
+                          "Global childframe ON" "Global childframe OFF"))))
