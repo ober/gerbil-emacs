@@ -94,7 +94,11 @@
                  *enable-recursive-minibuffers* *use-dialog-box*
                  *use-short-answers* *ring-bell-function*
                  *sentence-end-double-space* *colon-double-space*
-                 *comment-auto-fill*)
+                 *comment-auto-fill*
+                 *global-prettify* *global-hl-todo*
+                 *global-color-identifiers* *global-aggressive-indent*
+                 *global-origami* *global-centered-cursor*
+                 *global-beacon* *global-dimmer* *global-focus*)
         (only-in :gerbil-emacs/editor-extra-tools
                  *cursor-type* *modeline-visible*
                  *indent-guide-mode* *rainbow-mode*
@@ -2342,6 +2346,31 @@
       (check (procedure? (find-command 'toggle-global-git-gutter)) => #t)
       (check (procedure? (find-command 'toggle-global-page-break-lines)) => #t)
       (check (procedure? (find-command 'toggle-global-anzu)) => #t))
+
+    ;; -- Batch 50 tests --
+    (test-case "batch 50: mode toggles"
+      (check *global-prettify* => #f)
+      (check *global-hl-todo* => #f)
+      (check *global-color-identifiers* => #f)
+      (check *global-aggressive-indent* => #f)
+      (check *global-origami* => #f)
+      (check *global-centered-cursor* => #f)
+      (check *global-beacon* => #f)
+      (check *global-dimmer* => #f)
+      (check *global-focus* => #f))
+
+    ;; -- Command registration batch 50 --
+    (test-case "command registration: batch 50 features"
+      (register-all-commands!)
+      (check (procedure? (find-command 'toggle-global-prettify)) => #t)
+      (check (procedure? (find-command 'toggle-global-hl-todo)) => #t)
+      (check (procedure? (find-command 'toggle-global-color-identifiers)) => #t)
+      (check (procedure? (find-command 'toggle-global-aggressive-indent)) => #t)
+      (check (procedure? (find-command 'toggle-global-origami)) => #t)
+      (check (procedure? (find-command 'toggle-global-centered-cursor)) => #t)
+      (check (procedure? (find-command 'toggle-global-beacon)) => #t)
+      (check (procedure? (find-command 'toggle-global-dimmer)) => #t)
+      (check (procedure? (find-command 'toggle-global-focus)) => #t))
 
     ;;=========================================================================
     ;; Headless Scintilla editor tests

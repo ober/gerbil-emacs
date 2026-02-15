@@ -1632,3 +1632,77 @@
     (echo-message! echo (if *comment-auto-fill*
                           "Comment auto-fill ON"
                           "Comment auto-fill OFF"))))
+
+;; ── batch 50: visual enhancement toggles ────────────────────────────
+(def *global-prettify* #f)
+(def *global-hl-todo* #f)
+(def *global-color-identifiers* #f)
+(def *global-aggressive-indent* #f)
+(def *global-origami* #f)
+(def *global-centered-cursor* #f)
+(def *global-beacon* #f)
+(def *global-dimmer* #f)
+(def *global-focus* #f)
+
+(def (cmd-toggle-global-prettify app)
+  "Toggle global prettify-symbols-mode."
+  (let ((echo (app-state-echo app)))
+    (set! *global-prettify* (not *global-prettify*))
+    (echo-message! echo (if *global-prettify*
+                          "Global prettify ON" "Global prettify OFF"))))
+
+(def (cmd-toggle-global-hl-todo app)
+  "Toggle global hl-todo-mode (highlight TODO/FIXME)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-hl-todo* (not *global-hl-todo*))
+    (echo-message! echo (if *global-hl-todo*
+                          "Global hl-todo ON" "Global hl-todo OFF"))))
+
+(def (cmd-toggle-global-color-identifiers app)
+  "Toggle global color-identifiers-mode."
+  (let ((echo (app-state-echo app)))
+    (set! *global-color-identifiers* (not *global-color-identifiers*))
+    (echo-message! echo (if *global-color-identifiers*
+                          "Color identifiers ON" "Color identifiers OFF"))))
+
+(def (cmd-toggle-global-aggressive-indent app)
+  "Toggle global aggressive-indent-mode."
+  (let ((echo (app-state-echo app)))
+    (set! *global-aggressive-indent* (not *global-aggressive-indent*))
+    (echo-message! echo (if *global-aggressive-indent*
+                          "Aggressive indent ON" "Aggressive indent OFF"))))
+
+(def (cmd-toggle-global-origami app)
+  "Toggle global origami-mode (code folding)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-origami* (not *global-origami*))
+    (echo-message! echo (if *global-origami*
+                          "Global origami ON" "Global origami OFF"))))
+
+(def (cmd-toggle-global-centered-cursor app)
+  "Toggle global centered-cursor-mode."
+  (let ((echo (app-state-echo app)))
+    (set! *global-centered-cursor* (not *global-centered-cursor*))
+    (echo-message! echo (if *global-centered-cursor*
+                          "Centered cursor ON" "Centered cursor OFF"))))
+
+(def (cmd-toggle-global-beacon app)
+  "Toggle global beacon-mode (flash cursor position)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-beacon* (not *global-beacon*))
+    (echo-message! echo (if *global-beacon*
+                          "Global beacon ON" "Global beacon OFF"))))
+
+(def (cmd-toggle-global-dimmer app)
+  "Toggle global dimmer-mode (dim inactive buffers)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-dimmer* (not *global-dimmer*))
+    (echo-message! echo (if *global-dimmer*
+                          "Global dimmer ON" "Global dimmer OFF"))))
+
+(def (cmd-toggle-global-focus app)
+  "Toggle global focus-mode (dim unfocused paragraphs)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-focus* (not *global-focus*))
+    (echo-message! echo (if *global-focus*
+                          "Global focus ON" "Global focus OFF"))))
