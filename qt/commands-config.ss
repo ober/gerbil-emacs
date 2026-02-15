@@ -8,7 +8,7 @@
         :std/sort
         :std/srfi/13
         :std/text/base64
-        :gerbil-emacs/qt/sci-shim
+        :gerbil-qt/qt
         :gerbil-emacs/core
         :gerbil-emacs/editor
         :gerbil-emacs/repl

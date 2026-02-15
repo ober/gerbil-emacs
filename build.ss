@@ -112,7 +112,6 @@
           "-ld-options" ,ld-opts)
     ;; Qt backend
     (gxc: "qt/keymap"   "-cc-options" ,qt-cc-opts "-ld-options" ,qt-ld-opts)
-    (gxc: "qt/sci-shim" "-cc-options" ,qt-cc-opts "-ld-options" ,qt-ld-opts)
     (gxc: "qt/buffer"   "-cc-options" ,qt-cc-opts "-ld-options" ,qt-ld-opts)
     (gxc: "qt/window"   "-cc-options" ,qt-cc-opts "-ld-options" ,qt-ld-opts)
     (gxc: "qt/modeline" "-cc-options" ,qt-cc-opts "-ld-options" ,qt-ld-opts)

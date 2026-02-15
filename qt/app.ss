@@ -4,7 +4,7 @@
 (export qt-main qt-open-file!)
 
 (import :std/sugar
-        :gerbil-emacs/qt/sci-shim
+        :gerbil-qt/qt
         :gerbil-emacs/core
         :gerbil-emacs/editor
         :gerbil-emacs/repl
