@@ -73,7 +73,16 @@
   ;; REPL shared logic
   repl-buffer?
   *repl-state*
-  eval-expression-string)
+  eval-expression-string
+
+  ;; Key-chord system
+  *chord-map*
+  *chord-first-chars*
+  *chord-timeout*
+  *chord-mode*
+  key-chord-define-global
+  chord-lookup
+  chord-start-char?)
 
 (import :std/sugar
         :std/sort
@@ -1151,3 +1160,35 @@
              (result (eval expr))
              (output (with-output-to-string (lambda () (write result)))))
         (values output #f)))))
+
+;;;============================================================================
+;;; Key-chord system
+;;;============================================================================
+
+;; Chord map: "AB" → command-symbol (always uppercase keys)
+(def *chord-map* (make-hash-table))
+
+;; Set of characters that can start a chord (uppercase)
+(def *chord-first-chars* (make-hash-table))
+
+;; Time window in milliseconds for second key of chord
+(def *chord-timeout* 200)
+
+;; Master toggle
+(def *chord-mode* #t)
+
+(def (key-chord-define-global two-char-str cmd)
+  "Bind a 2-character chord to a command symbol.
+   The string is uppercased for matching."
+  (let ((upper (string-upcase two-char-str)))
+    (hash-put! *chord-map* upper cmd)
+    (hash-put! *chord-first-chars* (string-ref upper 0) #t)))
+
+(def (chord-lookup ch1 ch2)
+  "Look up a chord by two characters. Returns command symbol or #f."
+  (hash-get *chord-map* (string (char-upcase ch1) (char-upcase ch2))))
+
+(def (chord-start-char? ch)
+  "Can this character start a chord? Only when chord-mode is on."
+  (and *chord-mode*
+       (hash-get *chord-first-chars* (char-upcase ch))))

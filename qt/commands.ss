@@ -1531,4 +1531,47 @@
   (register-command! 'shrink-window cmd-shrink-window)
   (register-command! 'enlarge-window-horizontally cmd-enlarge-window)
   (register-command! 'shrink-window-horizontally cmd-shrink-window)
-  (register-command! 'balance-windows cmd-balance-windows))
+  (register-command! 'balance-windows cmd-balance-windows)
+  ;; Key-chord commands
+  (register-command! 'key-chord-mode cmd-key-chord-mode)
+  (register-command! 'key-chord-define cmd-key-chord-define)
+  (register-command! 'key-chord-list cmd-key-chord-list))
+
+;;;============================================================================
+;;; Key-chord commands
+;;;============================================================================
+
+(def (cmd-key-chord-mode app)
+  "Toggle key-chord detection mode."
+  (set! *chord-mode* (not *chord-mode*))
+  (echo-message! (app-state-echo app)
+    (if *chord-mode* "Key-chord mode enabled" "Key-chord mode disabled")))
+
+(def (cmd-key-chord-define app)
+  "Define a new key chord binding interactively."
+  (let ((chord-str (qt-echo-read-string app "Chord (2 chars): ")))
+    (when (and chord-str (= (string-length chord-str) 2))
+      (let ((cmd-name (qt-echo-read-string app "Command: ")))
+        (when (and cmd-name (> (string-length cmd-name) 0))
+          (let ((sym (string->symbol cmd-name)))
+            (if (find-command sym)
+              (begin
+                (key-chord-define-global chord-str sym)
+                (echo-message! (app-state-echo app)
+                  (string-append (string-upcase chord-str) " → " cmd-name)))
+              (echo-error! (app-state-echo app)
+                (string-append "Unknown command: " cmd-name)))))))))
+
+(def (cmd-key-chord-list app)
+  "List all defined key chord bindings."
+  (let* ((entries (hash->list *chord-map*))
+         (sorted (sort entries (lambda (a b) (string<? (car a) (car b)))))
+         (lines (map (lambda (e)
+                       (string-append "  " (car e) " → "
+                                      (symbol->string (cdr e))))
+                     sorted))
+         (text (if (null? lines)
+                 "No key chords defined."
+                 (string-append "Key Chords:\n"
+                                (string-join lines "\n")))))
+    (echo-message! (app-state-echo app) text)))

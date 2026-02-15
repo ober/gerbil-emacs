@@ -69,6 +69,13 @@
                                  acc)))))))
     (string-append prefix-str "- " (string-join strs "  "))))
 
+;; Key-chord state — detect two rapid keystrokes as a chord
+(def *chord-timer* #f)
+(def *chord-pending-char* #f)  ;; first char of potential chord, or #f
+(def *chord-pending-code* #f)  ;; saved raw Qt event for replay
+(def *chord-pending-mods* #f)
+(def *chord-pending-text* #f)
+
 ;; Tab bar state — populated during qt-main, used by qt-tabbar-update!
 (def *tab-bar-layout* #f)
 (def *tab-bar-buttons* '())  ;; list of (buffer . button) pairs
@@ -250,122 +257,173 @@
                   (qt-modeline-update! app)
                   (qt-echo-draw! (app-state-echo app) echo-label))
                  (else
-                ;; Normal key processing
-                 (let-values (((action data new-state)
-                               (qt-key-state-feed! (app-state-key-state app)
-                                                   code mods text)))
-                   (set! (app-state-key-state app) new-state)
-                   ;; Cancel which-key timer on any non-prefix action
-                   (when (and *which-key-timer* (not (eq? action 'prefix)))
-                     (qt-timer-stop! *which-key-timer*)
-                     (set! *which-key-pending-keymap* #f))
-                   (case action
-                     ((command)
-                      ;; Record for keyboard macro
-                      (when (and (app-state-macro-recording app)
-                                 (not (memq data '(start-kbd-macro end-kbd-macro
-                                                   call-last-kbd-macro))))
-                        (set! (app-state-macro-recording app)
-                          (cons (cons 'command data)
-                                (app-state-macro-recording app))))
-                      ;; Clear echo on command
-                      (when (and (echo-state-message (app-state-echo app))
-                                 (null? (key-state-prefix-keys new-state)))
-                        (echo-clear! (app-state-echo app)))
-                      (execute-command! app data))
-                     ((self-insert)
-                      ;; Check mode keymap first — special modes override self-insert
-                      (let* ((buf (qt-current-buffer (app-state-frame app)))
-                             (mode-cmd (mode-keymap-lookup buf data)))
-                        (if mode-cmd
-                          ;; Mode keymap has a binding for this key — execute as command
-                          (execute-command! app mode-cmd)
-                          ;; No mode binding — normal self-insert
-                          (begin
-                      (when (app-state-macro-recording app)
-                        (set! (app-state-macro-recording app)
-                          (cons (cons 'self-insert data)
-                                (app-state-macro-recording app))))
-                      ;; Handle self-insert directly here for Qt
-                      (let* ((ed (qt-current-editor (app-state-frame app)))
-                             (ch (string-ref data 0))
-                             (close-ch (and *auto-pair-mode*
-                                            (let ((cc (auto-pair-char (char->integer ch))))
-                                              (and cc (integer->char cc)))))
-                             (n (get-prefix-arg app))) ; Get prefix arg
-                        (cond
-                          ;; Suppress in dired buffers
-                          ((dired-buffer? buf) (void))
-                          ;; In REPL buffers, only allow after the prompt
-                          ((repl-buffer? buf)
-                           (let* ((pos (qt-plain-text-edit-cursor-position ed))
-                                  (rs (hash-get *repl-state* buf)))
-                             (when (and rs (>= pos (repl-state-prompt-pos rs)))
+                ;; Normal key processing — with chord detection
+                (letrec
+                  ((do-normal-key!
+                    (lambda (code mods text)
+                     (let-values (((action data new-state)
+                                   (qt-key-state-feed! (app-state-key-state app)
+                                                       code mods text)))
+                       (set! (app-state-key-state app) new-state)
+                       ;; Cancel which-key timer on any non-prefix action
+                       (when (and *which-key-timer* (not (eq? action 'prefix)))
+                         (qt-timer-stop! *which-key-timer*)
+                         (set! *which-key-pending-keymap* #f))
+                       (case action
+                         ((command)
+                          ;; Record for keyboard macro
+                          (when (and (app-state-macro-recording app)
+                                     (not (memq data '(start-kbd-macro end-kbd-macro
+                                                       call-last-kbd-macro))))
+                            (set! (app-state-macro-recording app)
+                              (cons (cons 'command data)
+                                    (app-state-macro-recording app))))
+                          ;; Clear echo on command
+                          (when (and (echo-state-message (app-state-echo app))
+                                     (null? (key-state-prefix-keys new-state)))
+                            (echo-clear! (app-state-echo app)))
+                          (execute-command! app data))
+                         ((self-insert)
+                          ;; Check mode keymap first — special modes override self-insert
+                          (let* ((buf (qt-current-buffer (app-state-frame app)))
+                                 (mode-cmd (mode-keymap-lookup buf data)))
+                            (if mode-cmd
+                              ;; Mode keymap has a binding for this key — execute as command
+                              (execute-command! app mode-cmd)
+                              ;; No mode binding — normal self-insert
+                              (begin
+                          (when (app-state-macro-recording app)
+                            (set! (app-state-macro-recording app)
+                              (cons (cons 'self-insert data)
+                                    (app-state-macro-recording app))))
+                          ;; Handle self-insert directly here for Qt
+                          (let* ((ed (qt-current-editor (app-state-frame app)))
+                                 (ch (string-ref data 0))
+                                 (close-ch (and *auto-pair-mode*
+                                                (let ((cc (auto-pair-char (char->integer ch))))
+                                                  (and cc (integer->char cc)))))
+                                 (n (get-prefix-arg app))) ; Get prefix arg
+                            (cond
+                              ;; Suppress in dired buffers
+                              ((dired-buffer? buf) (void))
+                              ;; In REPL buffers, only allow after the prompt
+                              ((repl-buffer? buf)
+                               (let* ((pos (qt-plain-text-edit-cursor-position ed))
+                                      (rs (hash-get *repl-state* buf)))
+                                 (when (and rs (>= pos (repl-state-prompt-pos rs)))
+                                   (let loop ((i 0))
+                                     (when (< i n)
+                                       (qt-plain-text-edit-insert-text! ed (string ch))
+                                       (loop (+ i 1)))))))
+                              ;; Eshell: allow typing after the last prompt
+                              ((eshell-buffer? buf)
                                (let loop ((i 0))
                                  (when (< i n)
                                    (qt-plain-text-edit-insert-text! ed (string ch))
-                                   (loop (+ i 1)))))))
-                          ;; Eshell: allow typing after the last prompt
-                          ((eshell-buffer? buf)
-                           (let loop ((i 0))
-                             (when (< i n)
-                               (qt-plain-text-edit-insert-text! ed (string ch))
-                               (loop (+ i 1)))))
-                          ;; Terminal: send character directly to PTY
-                          ((terminal-buffer? buf)
-                           (let ((ts (hash-get *terminal-state* buf)))
-                             (when ts
-                               (terminal-send-raw! ts (string ch)))))
-                          ;; Shell: only after prompt-pos
-                          ((shell-buffer? buf)
-                           (let* ((pos (qt-plain-text-edit-cursor-position ed))
-                                  (ss (hash-get *shell-state* buf)))
-                             (when (and ss (>= pos (shell-state-prompt-pos ss)))
-                               (let loop ((i 0))
-                                 (when (< i n)
-                                   (qt-plain-text-edit-insert-text! ed (string ch))
-                                   (loop (+ i 1)))))))
-                          (else
-                           (if (and close-ch (= n 1)) ; Only auto-pair if n=1
-                             ;; Auto-pair: insert both chars and place cursor between
-                             (let ((pos (qt-plain-text-edit-cursor-position ed)))
-                               (qt-plain-text-edit-insert-text! ed (string ch close-ch))
-                               (qt-plain-text-edit-set-cursor-position! ed (+ pos 1)))
-                             ;; Insert character n times
-                             (let ((str (make-string n ch)))
-                               (qt-plain-text-edit-insert-text! ed str))))))
-                      ;; Auto-fill: break line if past fill-column
-                      (auto-fill-check! (qt-current-editor (app-state-frame app)))
-                      (set! (app-state-prefix-arg app) #f)
-                       (set! (app-state-prefix-digit-mode? app) #f))))) ; Reset prefix arg + close begin + close if
-                     ((prefix)
-                      (let ((prefix-str
-                             (let loop ((keys (key-state-prefix-keys new-state))
-                                        (acc ""))
-                               (if (null? keys) acc
-                                 (loop (cdr keys)
-                                       (if (string=? acc "")
-                                         (car keys)
-                                         (string-append acc " " (car keys))))))))
-                        (echo-message! (app-state-echo app)
-                                       (string-append prefix-str "-"))
-                        ;; Start which-key timer to show available bindings
-                        (set! *which-key-pending-keymap*
-                              (key-state-keymap new-state))
-                        (set! *which-key-pending-prefix* prefix-str)
-                        (qt-timer-start! *which-key-timer* 500)))
-                     ((undefined)
-                      (echo-error! (app-state-echo app)
-                                   (string-append data " is undefined")))
-                     ((ignore) (void)))  ;; bare modifier keys — do nothing
-                   ;; Update visual decorations (current-line + brace match)
-                   (qt-update-visual-decorations!
-                     (qt-current-editor (app-state-frame app)))
-                   ;; Update modeline, tab bar, title, and echo after each key
-                   (qt-modeline-update! app)
-                   (qt-tabbar-update! app)
-                   (qt-update-frame-title! app)
-                   (qt-echo-draw! (app-state-echo app) echo-label))))))))
+                                   (loop (+ i 1)))))
+                              ;; Terminal: send character directly to PTY
+                              ((terminal-buffer? buf)
+                               (let ((ts (hash-get *terminal-state* buf)))
+                                 (when ts
+                                   (terminal-send-raw! ts (string ch)))))
+                              ;; Shell: only after prompt-pos
+                              ((shell-buffer? buf)
+                               (let* ((pos (qt-plain-text-edit-cursor-position ed))
+                                      (ss (hash-get *shell-state* buf)))
+                                 (when (and ss (>= pos (shell-state-prompt-pos ss)))
+                                   (let loop ((i 0))
+                                     (when (< i n)
+                                       (qt-plain-text-edit-insert-text! ed (string ch))
+                                       (loop (+ i 1)))))))
+                              (else
+                               (if (and close-ch (= n 1)) ; Only auto-pair if n=1
+                                 ;; Auto-pair: insert both chars and place cursor between
+                                 (let ((pos (qt-plain-text-edit-cursor-position ed)))
+                                   (qt-plain-text-edit-insert-text! ed (string ch close-ch))
+                                   (qt-plain-text-edit-set-cursor-position! ed (+ pos 1)))
+                                 ;; Insert character n times
+                                 (let ((str (make-string n ch)))
+                                   (qt-plain-text-edit-insert-text! ed str))))))
+                          ;; Auto-fill: break line if past fill-column
+                          (auto-fill-check! (qt-current-editor (app-state-frame app)))
+                          (set! (app-state-prefix-arg app) #f)
+                           (set! (app-state-prefix-digit-mode? app) #f))))) ; Reset prefix arg
+                         ((prefix)
+                          (let ((prefix-str
+                                 (let loop ((keys (key-state-prefix-keys new-state))
+                                            (acc ""))
+                                   (if (null? keys) acc
+                                     (loop (cdr keys)
+                                           (if (string=? acc "")
+                                             (car keys)
+                                             (string-append acc " " (car keys))))))))
+                            (echo-message! (app-state-echo app)
+                                           (string-append prefix-str "-"))
+                            ;; Start which-key timer to show available bindings
+                            (set! *which-key-pending-keymap*
+                                  (key-state-keymap new-state))
+                            (set! *which-key-pending-prefix* prefix-str)
+                            (qt-timer-start! *which-key-timer* 500)))
+                         ((undefined)
+                          (echo-error! (app-state-echo app)
+                                       (string-append data " is undefined")))
+                         ((ignore) (void)))  ;; bare modifier keys — do nothing
+                       ;; Update visual decorations (current-line + brace match)
+                       (qt-update-visual-decorations!
+                         (qt-current-editor (app-state-frame app)))
+                       ;; Update modeline, tab bar, title, and echo after each key
+                       (qt-modeline-update! app)
+                       (qt-tabbar-update! app)
+                       (qt-update-frame-title! app)
+                       (qt-echo-draw! (app-state-echo app) echo-label)))))
+                  ;; Chord detection logic
+                  (cond
+                    ;; Case 1: A chord is pending and a new key arrived
+                    (*chord-pending-char*
+                     (qt-timer-stop! *chord-timer*)
+                     (let* ((ch1 *chord-pending-char*)
+                            (saved-code *chord-pending-code*)
+                            (saved-mods *chord-pending-mods*)
+                            (saved-text *chord-pending-text*)
+                            ;; Is the new key also a plain printable character?
+                            (ch2 (and (= (string-length text) 1)
+                                      (> (char->integer (string-ref text 0)) 31)
+                                      (zero? (bitwise-and mods QT_MOD_CTRL))
+                                      (zero? (bitwise-and mods QT_MOD_ALT))
+                                      (string-ref text 0)))
+                            (chord-cmd (and ch2 (chord-lookup ch1 ch2))))
+                       (set! *chord-pending-char* #f)
+                       (if chord-cmd
+                         ;; Chord matched — execute the chord command
+                         (begin
+                           (execute-command! app chord-cmd)
+                           (qt-update-visual-decorations!
+                             (qt-current-editor (app-state-frame app)))
+                           (qt-modeline-update! app)
+                           (qt-tabbar-update! app)
+                           (qt-update-frame-title! app)
+                           (qt-echo-draw! (app-state-echo app) echo-label))
+                         ;; No chord — replay saved key then process current key
+                         (begin
+                           (do-normal-key! saved-code saved-mods saved-text)
+                           (do-normal-key! code mods text)))))
+
+                    ;; Case 2: Printable key that could start a chord — save and wait
+                    ((and (= (string-length text) 1)
+                          (> (char->integer (string-ref text 0)) 31)
+                          (zero? (bitwise-and mods QT_MOD_CTRL))
+                          (zero? (bitwise-and mods QT_MOD_ALT))
+                          (null? (key-state-prefix-keys (app-state-key-state app)))
+                          (chord-start-char? (string-ref text 0)))
+                     (set! *chord-pending-char* (string-ref text 0))
+                     (set! *chord-pending-code* code)
+                     (set! *chord-pending-mods* mods)
+                     (set! *chord-pending-text* text)
+                     (qt-timer-start! *chord-timer* *chord-timeout*))
+
+                    ;; Case 3: Normal key — no chord involvement
+                    (else
+                     (do-normal-key! code mods text))))))))))
 
         ;; Install on the initial editor (consuming — editor doesn't see keys)
         (qt-on-key-press-consuming! (qt-current-editor fr) key-handler)
@@ -558,6 +616,41 @@
               (which-key-format-bindings
                 *which-key-pending-keymap*
                 *which-key-pending-prefix*)))))
+
+      ;; Key-chord timer (one-shot, replays pending key on timeout)
+      (set! *chord-timer* (qt-timer-create))
+      (qt-timer-set-single-shot! *chord-timer* #t)
+      (qt-on-timeout! *chord-timer*
+        (lambda ()
+          (when *chord-pending-char*
+            (let ((saved-code *chord-pending-code*)
+                  (saved-mods *chord-pending-mods*)
+                  (saved-text *chord-pending-text*))
+              (set! *chord-pending-char* #f)
+              ;; Replay the pending key through normal key processing
+              (let-values (((action data new-state)
+                            (qt-key-state-feed! (app-state-key-state app)
+                                                saved-code saved-mods saved-text)))
+                (set! (app-state-key-state app) new-state)
+                (case action
+                  ((self-insert)
+                   (let* ((buf (qt-current-buffer (app-state-frame app)))
+                          (mode-cmd (mode-keymap-lookup buf data)))
+                     (if mode-cmd
+                       (execute-command! app mode-cmd)
+                       (let* ((ed (qt-current-editor (app-state-frame app)))
+                              (ch (string-ref data 0)))
+                         (qt-plain-text-edit-insert-text! ed (string ch))))))
+                  ((command)
+                   (execute-command! app data))
+                  (else (void)))
+                ;; Update UI
+                (qt-update-visual-decorations!
+                  (qt-current-editor (app-state-frame app)))
+                (qt-modeline-update! app)
+                (qt-tabbar-update! app)
+                (qt-update-frame-title! app)
+                (qt-echo-draw! (app-state-echo app) echo-label))))))
 
       ;; Restore session if no files given on command line
       (when (null? args)
