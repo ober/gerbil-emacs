@@ -132,7 +132,12 @@
                  *highlight-indentation-mode* *hungry-delete-mode*
                  *type-break-mode* *delete-trailing-on-save*
                  *cursor-in-non-selected* *blink-matching-paren*
-                 *next-error-follow*)
+                 *next-error-follow*
+                 *auto-save-default* *make-pointer-invisible*
+                 *kill-whole-line* *set-mark-command-repeat-pop*
+                 *enable-local-variables* *enable-dir-local-variables*
+                 *ad-activate-all* *global-hi-lock-mode*
+                 *next-line-add-newlines*)
         (only-in :gerbil-emacs/highlight
                  detect-file-language gerbil-file-extension?
                  setup-highlighting-for-file!)
@@ -2252,6 +2257,31 @@
       (check (procedure? (find-command 'toggle-mode-line-compact)) => #t)
       (check (procedure? (find-command 'toggle-use-file-dialog)) => #t)
       (check (procedure? (find-command 'toggle-xterm-mouse-mode)) => #t))
+
+    ;; -- Batch 47 tests --
+    (test-case "batch 47: mode toggles"
+      (check *auto-save-default* => #t)
+      (check *make-pointer-invisible* => #t)
+      (check *kill-whole-line* => #f)
+      (check *set-mark-command-repeat-pop* => #f)
+      (check *enable-local-variables* => #t)
+      (check *enable-dir-local-variables* => #t)
+      (check *ad-activate-all* => #f)
+      (check *global-hi-lock-mode* => #f)
+      (check *next-line-add-newlines* => #f))
+
+    ;; -- Command registration batch 47 --
+    (test-case "command registration: batch 47 features"
+      (register-all-commands!)
+      (check (procedure? (find-command 'toggle-auto-save-default)) => #t)
+      (check (procedure? (find-command 'toggle-make-pointer-invisible)) => #t)
+      (check (procedure? (find-command 'toggle-kill-whole-line)) => #t)
+      (check (procedure? (find-command 'toggle-set-mark-command-repeat-pop)) => #t)
+      (check (procedure? (find-command 'toggle-enable-local-variables)) => #t)
+      (check (procedure? (find-command 'toggle-enable-dir-local-variables)) => #t)
+      (check (procedure? (find-command 'toggle-ad-activate-all)) => #t)
+      (check (procedure? (find-command 'toggle-global-hi-lock-mode)) => #t)
+      (check (procedure? (find-command 'toggle-next-line-add-newlines)) => #t))
 
     ;;=========================================================================
     ;; Headless Scintilla editor tests

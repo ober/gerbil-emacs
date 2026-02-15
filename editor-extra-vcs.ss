@@ -1652,3 +1652,77 @@
          (ff (string (integer->char 12))))
     (editor-replace-selection ed ff)
     (echo-message! echo "Page break inserted")))
+
+;; ── batch 47: safety and editing behavior toggles ───────────────────
+(def *auto-save-default* #t)
+(def *make-pointer-invisible* #t)
+(def *kill-whole-line* #f)
+(def *set-mark-command-repeat-pop* #f)
+(def *enable-local-variables* #t)
+(def *enable-dir-local-variables* #t)
+(def *ad-activate-all* #f)
+(def *global-hi-lock-mode* #f)
+(def *next-line-add-newlines* #f)
+
+(def (cmd-toggle-auto-save-default app)
+  "Toggle auto-save by default for new buffers."
+  (let ((echo (app-state-echo app)))
+    (set! *auto-save-default* (not *auto-save-default*))
+    (echo-message! echo (if *auto-save-default*
+                          "Auto-save default ON" "Auto-save default OFF"))))
+
+(def (cmd-toggle-make-pointer-invisible app)
+  "Toggle making pointer invisible while typing."
+  (let ((echo (app-state-echo app)))
+    (set! *make-pointer-invisible* (not *make-pointer-invisible*))
+    (echo-message! echo (if *make-pointer-invisible*
+                          "Pointer invisible ON" "Pointer invisible OFF"))))
+
+(def (cmd-toggle-kill-whole-line app)
+  "Toggle kill-whole-line (C-k at start kills newline too)."
+  (let ((echo (app-state-echo app)))
+    (set! *kill-whole-line* (not *kill-whole-line*))
+    (echo-message! echo (if *kill-whole-line*
+                          "Kill whole line ON" "Kill whole line OFF"))))
+
+(def (cmd-toggle-set-mark-command-repeat-pop app)
+  "Toggle set-mark-command-repeat-pop (C-SPC C-SPC pops mark ring)."
+  (let ((echo (app-state-echo app)))
+    (set! *set-mark-command-repeat-pop* (not *set-mark-command-repeat-pop*))
+    (echo-message! echo (if *set-mark-command-repeat-pop*
+                          "Mark repeat pop ON" "Mark repeat pop OFF"))))
+
+(def (cmd-toggle-enable-local-variables app)
+  "Toggle processing of local variables in files."
+  (let ((echo (app-state-echo app)))
+    (set! *enable-local-variables* (not *enable-local-variables*))
+    (echo-message! echo (if *enable-local-variables*
+                          "Local variables ON" "Local variables OFF"))))
+
+(def (cmd-toggle-enable-dir-local-variables app)
+  "Toggle processing of directory-local variables."
+  (let ((echo (app-state-echo app)))
+    (set! *enable-dir-local-variables* (not *enable-dir-local-variables*))
+    (echo-message! echo (if *enable-dir-local-variables*
+                          "Dir-local variables ON" "Dir-local variables OFF"))))
+
+(def (cmd-toggle-ad-activate-all app)
+  "Toggle activation of all advice."
+  (let ((echo (app-state-echo app)))
+    (set! *ad-activate-all* (not *ad-activate-all*))
+    (echo-message! echo (if *ad-activate-all*
+                          "Advice activate all ON" "Advice activate all OFF"))))
+
+(def (cmd-toggle-global-hi-lock-mode app)
+  "Toggle global-hi-lock-mode (persistent text highlighting)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-hi-lock-mode* (not *global-hi-lock-mode*))
+    (echo-message! echo (if *global-hi-lock-mode*
+                          "Global hi-lock mode ON" "Global hi-lock mode OFF"))))
+
+(def (cmd-toggle-next-line-add-newlines app)
+  "Toggle whether next-line adds newlines at end of buffer."
+  (let ((echo (app-state-echo app)))
+    (set! *next-line-add-newlines* (not *next-line-add-newlines*))
+    (echo-message! echo (if *next-line-add-newlines*
+                          "Next-line add newlines ON" "Next-line add newlines OFF"))))
