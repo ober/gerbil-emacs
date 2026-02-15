@@ -189,6 +189,10 @@
   (keymap-bind! *global-keymap* "C-s" 'search-forward)
   (keymap-bind! *global-keymap* "C-r" 'search-backward)
 
+  ;; Function keys
+  (keymap-bind! *global-keymap* "<f11>" 'uncomment-region)
+  (keymap-bind! *global-keymap* "<f12>" 'comment-region)
+
   ;; Universal argument
   (keymap-bind! *global-keymap* "C-u" 'universal-argument)
 
