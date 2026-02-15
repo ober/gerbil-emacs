@@ -47,6 +47,9 @@
                  record-buffer-access!
                  *regex-builder-pattern* *last-edit-positions*
                  record-edit-position! *persistent-scratch-file*)
+        (only-in :gerbil-emacs/editor-extra-tools2
+                 *highlight-changes-mode* *saved-window-layouts*
+                 *known-modes* *password-chars*)
         (only-in :gerbil-emacs/editor-extra-web
                  url-encode url-decode
                  html-encode-entities html-decode-entities
@@ -1625,6 +1628,44 @@
       (check (procedure? (find-command 'prepend-to-buffer)) => #t)
       (check (procedure? (find-command 'save-persistent-scratch)) => #t)
       (check (procedure? (find-command 'load-persistent-scratch)) => #t))
+
+    ;; -- Batch 29 state tests --
+    (test-case "batch 29: highlight changes mode"
+      (set! *highlight-changes-mode* #f)
+      (check *highlight-changes-mode* => #f)
+      (set! *highlight-changes-mode* #t)
+      (check *highlight-changes-mode* => #t))
+
+    (test-case "batch 29: window layouts hash"
+      (set! *saved-window-layouts* (make-hash-table))
+      (hash-put! *saved-window-layouts* "main" '("*scratch*" "foo.ss"))
+      (check (hash-get *saved-window-layouts* "main") => '("*scratch*" "foo.ss"))
+      (check (hash-get *saved-window-layouts* "nonexistent") => #f))
+
+    (test-case "batch 29: known modes hash"
+      (check (hash-get *known-modes* "scheme") => "scheme")
+      (check (hash-get *known-modes* "python") => "python")
+      (check (hash-get *known-modes* "nonexistent") => #f))
+
+    (test-case "batch 29: password chars length"
+      (check (> (string-length *password-chars*) 60) => #t))
+
+    ;; -- Command registration batch 29 --
+    (test-case "command registration: batch 29 features"
+      (register-all-commands!)
+      (check (procedure? (find-command 'memory-usage)) => #t)
+      (check (procedure? (find-command 'generate-password)) => #t)
+      (check (procedure? (find-command 'insert-sequential-numbers)) => #t)
+      (check (procedure? (find-command 'insert-env-var)) => #t)
+      (check (procedure? (find-command 'untabify-region)) => #t)
+      (check (procedure? (find-command 'tabify-region)) => #t)
+      (check (procedure? (find-command 'shell-command-to-string)) => #t)
+      (check (procedure? (find-command 'toggle-highlight-changes)) => #t)
+      (check (procedure? (find-command 'window-save-layout)) => #t)
+      (check (procedure? (find-command 'window-restore-layout)) => #t)
+      (check (procedure? (find-command 'set-buffer-mode)) => #t)
+      (check (procedure? (find-command 'canonically-space-region)) => #t)
+      (check (procedure? (find-command 'list-packages)) => #t))
 
     ;;=========================================================================
     ;; Headless Scintilla editor tests

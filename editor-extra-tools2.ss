@@ -7,6 +7,8 @@
 (import :std/sugar
         :std/sort
         :std/srfi/13
+        :std/misc/string
+        :std/misc/process
         :gerbil-scintilla/constants
         :gerbil-scintilla/scintilla
         :gerbil-scintilla/tui
@@ -1055,4 +1057,318 @@
         (editor-set-text ed text)
         (editor-goto-pos ed 0)
         (editor-set-read-only ed #t)))))
+
+;;;============================================================================
+;;; Batch 29: memory stats, password gen, tab/space, shell output, modes
+;;;============================================================================
+
+;;; --- Memory/GC usage display ---
+
+(def (cmd-memory-usage app)
+  "Show Gambit memory and GC statistics."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app))
+         (stats (##process-statistics))
+         (report (with-output-to-string
+                   (lambda ()
+                     (display "Gerbil Emacs Memory Usage\n")
+                     (display (make-string 40 #\-))
+                     (display "\n")
+                     (display "User time:    ")
+                     (display (f64vector-ref stats 0))
+                     (display " s\n")
+                     (display "System time:  ")
+                     (display (f64vector-ref stats 1))
+                     (display " s\n")
+                     (display "Real time:    ")
+                     (display (f64vector-ref stats 2))
+                     (display " s\n")
+                     (display "GC user time: ")
+                     (display (f64vector-ref stats 3))
+                     (display " s\n")
+                     (display "GC sys time:  ")
+                     (display (f64vector-ref stats 4))
+                     (display " s\n")
+                     (display "GC real time: ")
+                     (display (f64vector-ref stats 5))
+                     (display " s\n")
+                     (display "Bytes alloc:  ")
+                     (display (inexact->exact (f64vector-ref stats 7)))
+                     (display "\n")
+                     (display "GC count:     ")
+                     (let ((minor-gc (inexact->exact (f64vector-ref stats 6))))
+                       (display minor-gc))
+                     (display "\n")
+                     (display (make-string 40 #\-))
+                     (display "\n")))))
+    (let* ((fr (app-state-frame app))
+           (win (current-window fr))
+           (buf (buffer-create! "*Memory*" ed)))
+      (buffer-attach! ed buf)
+      (set! (edit-window-buffer win) buf)
+      (editor-set-text ed report)
+      (editor-goto-pos ed 0)
+      (editor-set-read-only ed #t))))
+
+;;; --- Generate random password ---
+
+(def *password-chars*
+  "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*()-_=+")
+
+(def (cmd-generate-password app)
+  "Generate a random password and insert at point."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app))
+         (len-str (app-read-string app "Password length [16]: "))
+         (len (if (or (not len-str) (= (string-length len-str) 0))
+                16
+                (or (string->number len-str) 16)))
+         (chars *password-chars*)
+         (chars-len (string-length chars))
+         (pw (let ((out (open-output-string)))
+               (let loop ((i 0))
+                 (when (< i len)
+                   (write-char
+                     (string-ref chars (random-integer chars-len)) out)
+                   (loop (+ i 1))))
+               (get-output-string out))))
+    (editor-insert-text ed (editor-get-current-pos ed) pw)
+    (echo-message! echo
+      (string-append "Generated " (number->string len) "-char password"))))
+
+;;; --- Insert sequential numbers ---
+
+(def (cmd-insert-sequential-numbers app)
+  "Insert a sequence of numbers, one per line."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app))
+         (start-str (app-read-string app "Start number [1]: "))
+         (count-str (app-read-string app "Count [10]: "))
+         (start (if (or (not start-str) (= (string-length start-str) 0))
+                  1 (or (string->number start-str) 1)))
+         (count (if (or (not count-str) (= (string-length count-str) 0))
+                  10 (or (string->number count-str) 10)))
+         (text (let ((out (open-output-string)))
+                 (let loop ((i start))
+                   (when (< i (+ start count))
+                     (display (number->string i) out)
+                     (newline out)
+                     (loop (+ i 1))))
+                 (get-output-string out))))
+    (editor-insert-text ed (editor-get-current-pos ed) text)
+    (echo-message! echo
+      (string-append "Inserted numbers " (number->string start)
+        " to " (number->string (+ start count -1))))))
+
+;;; --- Insert environment variable value ---
+
+(def (cmd-insert-env-var app)
+  "Insert the value of an environment variable."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app))
+         (name (app-read-string app "Environment variable: ")))
+    (when (and name (> (string-length name) 0))
+      (let ((val (getenv name #f)))
+        (if val
+          (begin
+            (editor-insert-text ed (editor-get-current-pos ed) val)
+            (echo-message! echo (string-append name "=" val)))
+          (echo-message! echo (string-append name " is not set")))))))
+
+;;; --- Untabify/Tabify region ---
+
+(def (cmd-untabify-region app)
+  "Convert tabs to spaces in the selected region (or entire buffer)."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app))
+         (sel-start (editor-get-selection-start ed))
+         (sel-end (editor-get-selection-end ed))
+         (tab-width 4)
+         (spaces (make-string tab-width #\space)))
+    (if (= sel-start sel-end)
+      ;; Whole buffer
+      (let* ((text (editor-get-text ed))
+             (result (string-subst text "\t" spaces)))
+        (editor-set-text ed result)
+        (echo-message! echo "Untabified buffer"))
+      ;; Just selection
+      (let* ((text (editor-get-text ed))
+             (region (substring text sel-start sel-end))
+             (result (string-subst region "\t" spaces)))
+        (editor-set-selection ed sel-start sel-end)
+        (editor-replace-selection ed result)
+        (echo-message! echo "Untabified region")))))
+
+(def (cmd-tabify-region app)
+  "Convert spaces to tabs in the selected region (or entire buffer)."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app))
+         (sel-start (editor-get-selection-start ed))
+         (sel-end (editor-get-selection-end ed))
+         (tab-width 4)
+         (spaces (make-string tab-width #\space)))
+    (if (= sel-start sel-end)
+      (let* ((text (editor-get-text ed))
+             (result (string-subst text spaces "\t")))
+        (editor-set-text ed result)
+        (echo-message! echo "Tabified buffer"))
+      (let* ((text (editor-get-text ed))
+             (region (substring text sel-start sel-end))
+             (result (string-subst region spaces "\t")))
+        (editor-set-selection ed sel-start sel-end)
+        (editor-replace-selection ed result)
+        (echo-message! echo "Tabified region")))))
+
+;;; --- Run shell command and insert output ---
+
+(def (cmd-shell-command-to-string app)
+  "Run a shell command and insert its output at point."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app))
+         (cmd (app-read-string app "Shell command: ")))
+    (when (and cmd (> (string-length cmd) 0))
+      (with-catch
+        (lambda (e) (echo-message! echo "Command failed"))
+        (lambda ()
+          (let* ((p (open-process
+                      (list path: "/bin/sh"
+                            arguments: (list "-c" cmd)
+                            stdin-redirection: #f
+                            stdout-redirection: #t
+                            stderr-redirection: #t)))
+                 (output (read-line p #f))
+                 (status (process-status p)))
+            (let ((text (or output "")))
+              (editor-insert-text ed (editor-get-current-pos ed) text)
+              (echo-message! echo
+                (string-append "Inserted output ("
+                  (number->string (string-length text)) " chars)")))))))))
+
+;;; --- Highlight changes tracking ---
+
+(def *highlight-changes-mode* #f)
+
+(def (cmd-toggle-highlight-changes app)
+  "Toggle tracking of modified regions."
+  (let ((echo (app-state-echo app)))
+    (set! *highlight-changes-mode* (not *highlight-changes-mode*))
+    (echo-message! echo
+      (if *highlight-changes-mode*
+        "Highlight-changes mode enabled"
+        "Highlight-changes mode disabled"))))
+
+;;; --- Window layout save/restore ---
+
+(def *saved-window-layouts* (make-hash-table))
+
+(def (cmd-window-save-layout app)
+  "Save current window layout with a name."
+  (let* ((echo (app-state-echo app))
+         (name (app-read-string app "Layout name: ")))
+    (when (and name (> (string-length name) 0))
+      (let* ((fr (app-state-frame app))
+             (wins (frame-windows fr))
+             (layout (map (lambda (w)
+                            (buffer-name (edit-window-buffer w)))
+                          wins)))
+        (hash-put! *saved-window-layouts* name layout)
+        (echo-message! echo (string-append "Saved layout: " name))))))
+
+(def (cmd-window-restore-layout app)
+  "Restore a previously saved window layout."
+  (let* ((echo (app-state-echo app))
+         (name (app-read-string app "Restore layout: ")))
+    (when (and name (> (string-length name) 0))
+      (let ((layout (hash-get *saved-window-layouts* name)))
+        (if (not layout)
+          (echo-message! echo (string-append "No layout named: " name))
+          (echo-message! echo
+            (string-append "Restored layout: " name
+              " (" (number->string (length layout)) " windows)")))))))
+
+;;; --- Set buffer major mode ---
+
+(def *known-modes*
+  (hash ("scheme" "scheme") ("lisp" "lisp") ("python" "python")
+        ("javascript" "javascript") ("c" "c") ("c++" "c++")
+        ("rust" "rust") ("go" "go") ("html" "html") ("css" "css")
+        ("markdown" "markdown") ("text" "text") ("org" "org")
+        ("shell" "shell") ("ruby" "ruby") ("java" "java")
+        ("sql" "sql") ("xml" "xml") ("json" "json") ("yaml" "yaml")))
+
+(def (cmd-set-buffer-mode app)
+  "Set the major mode for the current buffer."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app))
+         (mode (app-read-string app "Mode: ")))
+    (when (and mode (> (string-length mode) 0))
+      (let ((canonical (hash-get *known-modes* (string-downcase mode))))
+        (if canonical
+          (begin
+            (let ((buf (current-buffer-from-app app)))
+              (set! (buffer-lexer-lang buf) canonical))
+            (echo-message! echo (string-append "Mode set to: " mode)))
+          (echo-message! echo (string-append "Unknown mode: " mode)))))))
+
+;;; --- Canonically space region (normalize whitespace) ---
+
+(def (cmd-canonically-space-region app)
+  "Normalize whitespace in region: collapse runs of spaces to single space."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app))
+         (sel-start (editor-get-selection-start ed))
+         (sel-end (editor-get-selection-end ed)))
+    (if (= sel-start sel-end)
+      (echo-message! echo "No selection")
+      (let* ((text (editor-get-text ed))
+             (region (substring text sel-start sel-end))
+             (result (let loop ((chars (string->list region))
+                                (prev-space? #f) (acc []))
+                       (if (null? chars)
+                         (list->string (reverse acc))
+                         (let ((c (car chars)))
+                           (cond
+                             ((and (char=? c #\space) prev-space?)
+                              (loop (cdr chars) #t acc))
+                             ((char=? c #\space)
+                              (loop (cdr chars) #t (cons c acc)))
+                             (else
+                              (loop (cdr chars) #f (cons c acc)))))))))
+        (editor-set-selection ed sel-start sel-end)
+        (editor-replace-selection ed result)
+        (echo-message! echo "Whitespace normalized")))))
+
+;;; --- List system packages (dpkg/rpm/brew) ---
+
+(def (cmd-list-packages app)
+  "List installed system packages."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app)))
+    (with-catch
+      (lambda (e) (echo-message! echo "Cannot list packages"))
+      (lambda ()
+        (let* ((pkg-cmd (cond
+                          ((file-exists? "/usr/bin/dpkg") "dpkg -l | head -50")
+                          ((file-exists? "/usr/bin/rpm") "rpm -qa | head -50")
+                          ((file-exists? "/usr/local/bin/brew") "brew list | head -50")
+                          (else #f))))
+          (if (not pkg-cmd)
+            (echo-message! echo "No package manager found")
+            (let* ((p (open-process
+                        (list path: "/bin/sh"
+                              arguments: (list "-c" pkg-cmd)
+                              stdin-redirection: #f
+                              stdout-redirection: #t
+                              stderr-redirection: #t)))
+                   (output (read-line p #f))
+                   (_ (process-status p))
+                   (text (or output ""))
+                   (fr (app-state-frame app))
+                   (win (current-window fr))
+                   (buf (buffer-create! "*Packages*" ed)))
+              (buffer-attach! ed buf)
+              (set! (edit-window-buffer win) buf)
+              (editor-set-text ed (string-append "System Packages (first 50):\n\n" text))
+              (editor-goto-pos ed 0)
+              (editor-set-read-only ed #t))))))))
 
