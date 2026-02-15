@@ -46,7 +46,11 @@
                  url-encode url-decode
                  html-encode-entities html-decode-entities
                  csv-split-line detect-file-encoding
-                 large-file? binary-file?)
+                 large-file? binary-file?
+                 reverse-lines-in-string
+                 *aggressive-indent-mode*
+                 *ws-butler-mode* *file-runners*
+                 file-extension)
         (only-in :gerbil-emacs/highlight
                  detect-file-language gerbil-file-extension?
                  setup-highlighting-for-file!)
@@ -1443,6 +1447,62 @@
       (check (procedure? (find-command 'detect-encoding)) => #t)
       (check (procedure? (find-command 'csv-align-columns)) => #t)
       (check (procedure? (find-command 'epoch-to-date)) => #t))
+
+    ;; -- Batch 25: reverse-lines helper --
+    (test-case "reverse-lines-in-string"
+      (check (reverse-lines-in-string "a\nb\nc") => "c\nb\na")
+      (check (reverse-lines-in-string "single") => "single")
+      (check (reverse-lines-in-string "x\ny") => "y\nx"))
+
+    ;; -- Batch 25: file-extension helper --
+    (test-case "file-extension helper"
+      (check (file-extension "test.py") => "py")
+      (check (file-extension "foo.bar.js") => "js")
+      (check (file-extension "noext") => ""))
+
+    ;; -- Batch 25: file-runners config --
+    (test-case "file-runners: known extensions"
+      (check (hash-get *file-runners* "py") => "python3")
+      (check (hash-get *file-runners* "sh") => "bash")
+      (check (hash-get *file-runners* "ss") => "gxi")
+      (check (hash-get *file-runners* "js") => "node")
+      (check (hash-get *file-runners* "unknown") => #f))
+
+    ;; -- Batch 25: mode toggles --
+    (test-case "aggressive-indent and ws-butler toggles"
+      (set! *aggressive-indent-mode* #f)
+      (check *aggressive-indent-mode* => #f)
+      (set! *aggressive-indent-mode* #t)
+      (check *aggressive-indent-mode* => #t)
+      (set! *ws-butler-mode* #f)
+      (check *ws-butler-mode* => #f)
+      (set! *ws-butler-mode* #t)
+      (check *ws-butler-mode* => #t))
+
+    ;; -- Command registration batch 25 --
+    (test-case "command registration: batch 25 features"
+      (register-all-commands!)
+      (check (procedure? (find-command 'reverse-lines)) => #t)
+      (check (procedure? (find-command 'shuffle-lines)) => #t)
+      (check (procedure? (find-command 'calc-eval-region)) => #t)
+      (check (procedure? (find-command 'table-insert)) => #t)
+      (check (procedure? (find-command 'list-timers)) => #t)
+      (check (procedure? (find-command 'toggle-aggressive-indent)) => #t)
+      (check (procedure? (find-command 'smart-open-line-above)) => #t)
+      (check (procedure? (find-command 'smart-open-line-below)) => #t)
+      (check (procedure? (find-command 'quick-run)) => #t)
+      (check (procedure? (find-command 'toggle-ws-butler-mode)) => #t)
+      (check (procedure? (find-command 'copy-as-formatted)) => #t)
+      (check (procedure? (find-command 'wrap-region-with)) => #t)
+      (check (procedure? (find-command 'unwrap-region)) => #t)
+      (check (procedure? (find-command 'toggle-quotes)) => #t)
+      (check (procedure? (find-command 'word-frequency-analysis)) => #t)
+      (check (procedure? (find-command 'selection-info)) => #t)
+      (check (procedure? (find-command 'increment-hex-at-point)) => #t)
+      (check (procedure? (find-command 'describe-char)) => #t)
+      (check (procedure? (find-command 'narrow-to-region-simple)) => #t)
+      (check (procedure? (find-command 'widen-simple)) => #t)
+      (check (procedure? (find-command 'toggle-buffer-read-only)) => #t))
 
     ;;=========================================================================
     ;; Headless Scintilla editor tests

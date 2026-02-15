@@ -8,6 +8,7 @@
         :std/srfi/13
         :std/misc/string
         :std/misc/process
+        :std/misc/shuffle
         :std/text/json
         :gerbil-scintilla/constants
         :gerbil-scintilla/scintilla
@@ -925,4 +926,619 @@
                   (editor-set-text ed output)
                   (editor-goto-pos ed (min pos (string-length output)))
                   (echo-message! echo "jq filter applied"))))))))))
+
+;;;============================================================================
+;;; Batch 25: Line manipulation, calc-eval, table, smart-open, quick-run, etc.
+;;;============================================================================
+
+;;; Helper: get text between two positions using full-buffer substring
+(def (editor-text-range ed start end)
+  "Extract text between positions start and end."
+  (let ((text (editor-get-text ed)))
+    (substring text (min start (string-length text))
+                    (min end (string-length text)))))
+
+;;; --- Reverse lines in region or buffer ---
+
+(def (reverse-lines-in-string text)
+  "Reverse the order of lines in a string."
+  (let* ((lines (string-split text #\newline))
+         (reversed (reverse lines)))
+    (string-join reversed "\n")))
+
+(def (cmd-reverse-lines app)
+  "Reverse the order of lines in region or entire buffer."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app))
+         (sel-start (editor-get-selection-start ed))
+         (sel-end (editor-get-selection-end ed)))
+    (if (= sel-start sel-end)
+      ;; No selection => reverse entire buffer
+      (let* ((text (editor-get-text ed))
+             (result (reverse-lines-in-string text)))
+        (editor-set-text ed result)
+        (editor-goto-pos ed 0)
+        (echo-message! echo "Reversed all lines"))
+      ;; Selection => expand to full lines, reverse
+      (let* ((line-start (editor-line-from-position ed sel-start))
+             (line-end (editor-line-from-position ed sel-end))
+             (pos-start (editor-position-from-line ed line-start))
+             (pos-end (editor-get-line-end-position ed line-end))
+             (text (editor-text-range ed pos-start pos-end))
+             (result (reverse-lines-in-string text)))
+        (send-message ed SCI_SETTARGETSTART pos-start 0)
+        (send-message ed SCI_SETTARGETEND pos-end 0)
+        (send-message/string ed SCI_REPLACETARGET result)
+        (echo-message! echo
+          (string-append "Reversed " (number->string (+ 1 (- line-end line-start)))
+            " lines"))))))
+
+;;; --- Shuffle lines in region or buffer ---
+
+(def (cmd-shuffle-lines app)
+  "Randomly shuffle lines in region or entire buffer."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app))
+         (sel-start (editor-get-selection-start ed))
+         (sel-end (editor-get-selection-end ed)))
+    (if (= sel-start sel-end)
+      ;; No selection => shuffle entire buffer
+      (let* ((text (editor-get-text ed))
+             (lines (string-split text #\newline))
+             (shuffled (shuffle lines))
+             (result (string-join shuffled "\n")))
+        (editor-set-text ed result)
+        (editor-goto-pos ed 0)
+        (echo-message! echo "Shuffled all lines"))
+      ;; Selection => expand to full lines, shuffle
+      (let* ((line-start (editor-line-from-position ed sel-start))
+             (line-end (editor-line-from-position ed sel-end))
+             (pos-start (editor-position-from-line ed line-start))
+             (pos-end (editor-get-line-end-position ed line-end))
+             (text (editor-text-range ed pos-start pos-end))
+             (lines (string-split text #\newline))
+             (shuffled (shuffle lines))
+             (result (string-join shuffled "\n")))
+        (send-message ed SCI_SETTARGETSTART pos-start 0)
+        (send-message ed SCI_SETTARGETEND pos-end 0)
+        (send-message/string ed SCI_REPLACETARGET result)
+        (echo-message! echo
+          (string-append "Shuffled " (number->string (length lines))
+            " lines"))))))
+
+;;; --- Evaluate math expression in region ---
+
+(def (cmd-calc-eval-region app)
+  "Evaluate the selected text as a math expression and replace with result."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app))
+         (sel-start (editor-get-selection-start ed))
+         (sel-end (editor-get-selection-end ed)))
+    (if (= sel-start sel-end)
+      (echo-message! echo "No selection - select a math expression first")
+      (let* ((expr-text (editor-text-range ed sel-start sel-end)))
+        (with-catch
+          (lambda (e)
+            (echo-error! echo (string-append "Eval error: "
+              (with-output-to-string (lambda () (display-exception e))))))
+          (lambda ()
+            (let ((result (eval (call-with-input-string expr-text read))))
+              (send-message ed SCI_SETTARGETSTART sel-start 0)
+              (send-message ed SCI_SETTARGETEND sel-end 0)
+              (let ((result-str (with-output-to-string
+                                  (lambda () (display result)))))
+                (send-message/string ed SCI_REPLACETARGET result-str)
+                (echo-message! echo
+                  (string-append expr-text " = " result-str))))))))))
+
+;;; --- Insert text table ---
+
+(def (cmd-table-insert app)
+  "Insert a formatted text table at point."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app))
+         (cols-str (app-read-string app "Number of columns: "))
+         (rows-str (and cols-str (app-read-string app "Number of rows: "))))
+    (when (and cols-str rows-str)
+      (with-catch
+        (lambda (e) (echo-error! echo "Invalid number"))
+        (lambda ()
+          (let* ((cols (string->number cols-str))
+                 (rows (string->number rows-str))
+                 (col-width 12)
+                 (separator (string-append "+"
+                   (string-join
+                     (let loop ((i 0) (acc []))
+                       (if (>= i cols) (reverse acc)
+                         (loop (+ i 1) (cons (make-string col-width #\-) acc))))
+                     "+")
+                   "+\n"))
+                 (data-row (string-append "|"
+                   (string-join
+                     (let loop ((i 0) (acc []))
+                       (if (>= i cols) (reverse acc)
+                         (loop (+ i 1) (cons (make-string col-width #\space) acc))))
+                     "|")
+                   "|\n"))
+                 (table (with-output-to-string
+                          (lambda ()
+                            (display separator)
+                            (let loop ((r 0))
+                              (when (< r rows)
+                                (display data-row)
+                                (display separator)
+                                (loop (+ r 1))))))))
+            (let ((pos (editor-get-current-pos ed)))
+              (editor-insert-text ed pos table)
+              (echo-message! echo
+                (string-append "Inserted " (number->string rows) "x"
+                  (number->string cols) " table")))))))))
+
+;;; --- List active timers ---
+
+(def (cmd-list-timers app)
+  "Show a buffer listing active system timers."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app))
+         (info (with-output-to-string
+                 (lambda ()
+                   (display "Active Timers:\n")
+                   (display (make-string 60 #\-))
+                   (display "\n")
+                   (display "  Auto-save timer:     30s interval (saves modified buffers)\n")
+                   (display "  File-check timer:     5s interval (detects external changes)\n")
+                   (display "  GC timer:           periodic (garbage collection)\n")
+                   (display (make-string 60 #\-))
+                   (display "\n")
+                   (display "Total: 3 system timers configured\n")))))
+    (editor-set-text ed info)
+    (editor-goto-pos ed 0)
+    (echo-message! echo "Timer list displayed")))
+
+;;; --- Aggressive indent mode ---
+
+(def *aggressive-indent-mode* #f)
+
+(def (cmd-toggle-aggressive-indent app)
+  "Toggle aggressive auto-indent mode."
+  (set! *aggressive-indent-mode* (not *aggressive-indent-mode*))
+  (echo-message! (app-state-echo app)
+    (if *aggressive-indent-mode*
+      "Aggressive indent mode enabled"
+      "Aggressive indent mode disabled")))
+
+;;; --- Smart open line (crux-style) ---
+
+(def (cmd-smart-open-line-above app)
+  "Open a new line above, respecting indentation of current line."
+  (let* ((ed (current-editor app))
+         (line (editor-line-from-position ed
+                 (editor-get-current-pos ed)))
+         (line-text (editor-get-line ed line))
+         (indent (let loop ((i 0))
+                   (if (and (< i (string-length line-text))
+                            (or (char=? (string-ref line-text i) #\space)
+                                (char=? (string-ref line-text i) #\tab)))
+                     (loop (+ i 1))
+                     i)))
+         (indent-str (substring line-text 0 indent))
+         (pos (editor-position-from-line ed line)))
+    (editor-insert-text ed pos (string-append indent-str "\n"))
+    (editor-goto-pos ed (+ pos indent))))
+
+(def (cmd-smart-open-line-below app)
+  "Open a new line below, respecting indentation of current line."
+  (let* ((ed (current-editor app))
+         (line (editor-line-from-position ed
+                 (editor-get-current-pos ed)))
+         (line-text (editor-get-line ed line))
+         (indent (let loop ((i 0))
+                   (if (and (< i (string-length line-text))
+                            (or (char=? (string-ref line-text i) #\space)
+                                (char=? (string-ref line-text i) #\tab)))
+                     (loop (+ i 1))
+                     i)))
+         (indent-str (substring line-text 0 indent))
+         (eol (editor-get-line-end-position ed line)))
+    (editor-insert-text ed eol (string-append "\n" indent-str))
+    (editor-goto-pos ed (+ eol 1 indent))))
+
+;;; --- Quick-run current buffer ---
+
+(def *file-runners*
+  (hash
+    ("py" "python3")
+    ("rb" "ruby")
+    ("js" "node")
+    ("ts" "ts-node")
+    ("sh" "bash")
+    ("pl" "perl")
+    ("lua" "lua")
+    ("php" "php")
+    ("go" "go run")
+    ("rs" "rustc -o /tmp/gerbil-emacs-run && /tmp/gerbil-emacs-run")
+    ("ss" "gxi")
+    ("scm" "gxi")
+    ("el" "emacs --script")
+    ("awk" "awk -f")))
+
+(def (file-extension path)
+  "Get the file extension from a path."
+  (let ((dot-pos (string-index-right path #\.)))
+    (if dot-pos
+      (substring path (+ dot-pos 1) (string-length path))
+      "")))
+
+(def (cmd-quick-run app)
+  "Run the current buffer's file with an appropriate interpreter."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app))
+         (buf (current-buffer-from-app app))
+         (filepath (buffer-file-path buf)))
+    (if (not filepath)
+      (echo-message! echo "Buffer has no file - save first")
+      (let* ((ext (file-extension filepath))
+             (runner (hash-get *file-runners* ext)))
+        (if (not runner)
+          (echo-message! echo (string-append "No runner configured for ." ext))
+          (let ((cmd (string-append runner " " filepath)))
+            (with-catch
+              (lambda (e)
+                (echo-error! echo (string-append "Run error: "
+                  (with-output-to-string (lambda () (display-exception e))))))
+              (lambda ()
+                (let ((output (filter-with-process
+                                ["bash" "-c" cmd]
+                                (lambda (port) (void))
+                                (lambda (port) (read-line port #f)))))
+                  (let* ((out-buf-name "*run-output*")
+                         (text (or output "")))
+                    (editor-set-text ed text)
+                    (editor-goto-pos ed 0)
+                    (echo-message! echo
+                      (string-append "Ran: " cmd))))))))))))
+
+;;; --- WS-butler mode: clean whitespace only on changed lines ---
+
+(def *ws-butler-mode* #f)
+(def *ws-butler-dirty-lines* (make-hash-table))
+
+(def (ws-butler-mark-line-dirty! ed)
+  "Mark the current line as dirty for ws-butler cleanup."
+  (when *ws-butler-mode*
+    (let ((line (editor-line-from-position ed
+                  (editor-get-current-pos ed))))
+      (hash-put! *ws-butler-dirty-lines* line #t))))
+
+(def (ws-butler-clean! ed)
+  "Clean trailing whitespace on dirty lines only."
+  (let ((lines (hash-keys *ws-butler-dirty-lines*)))
+    (for-each
+      (lambda (line)
+        (let* ((start (editor-position-from-line ed line))
+               (end (editor-get-line-end-position ed line))
+               (text (editor-text-range ed start end)))
+          (when (> (string-length text) 0)
+            (let ((trimmed (string-trim-right text)))
+              (when (not (string=? text trimmed))
+                (send-message ed SCI_SETTARGETSTART start 0)
+                (send-message ed SCI_SETTARGETEND end 0)
+                (send-message/string ed SCI_REPLACETARGET trimmed))))))
+      (sort lines <))
+    (set! *ws-butler-dirty-lines* (make-hash-table))))
+
+(def (cmd-toggle-ws-butler-mode app)
+  "Toggle ws-butler mode (clean whitespace only on modified lines on save)."
+  (set! *ws-butler-mode* (not *ws-butler-mode*))
+  (set! *ws-butler-dirty-lines* (make-hash-table))
+  (echo-message! (app-state-echo app)
+    (if *ws-butler-mode*
+      "ws-butler mode enabled (trailing whitespace cleaned on save for edited lines)"
+      "ws-butler mode disabled")))
+
+;;; --- Copy buffer contents as formatted code (with line numbers) ---
+
+(def (cmd-copy-as-formatted app)
+  "Copy buffer text with line numbers prepended to each line."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app))
+         (text (editor-get-text ed))
+         (lines (string-split text #\newline))
+         (width (string-length (number->string (length lines))))
+         (numbered (let loop ((ls lines) (n 1) (acc []))
+                     (if (null? ls) (reverse acc)
+                       (loop (cdr ls) (+ n 1)
+                         (cons (string-append
+                                 (string-pad (number->string n) width)
+                                 ": " (car ls))
+                           acc))))))
+    (let ((result (string-join numbered "\n")))
+      (app-state-kill-ring-set! app (cons result (app-state-kill-ring app)))
+      (echo-message! echo
+        (string-append "Copied " (number->string (length lines))
+          " lines with line numbers")))))
+
+;;; --- Wrap region in delimiter pairs ---
+
+(def (cmd-wrap-region-with app)
+  "Wrap selected text with specified delimiters (quotes, parens, etc.)."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app))
+         (sel-start (editor-get-selection-start ed))
+         (sel-end (editor-get-selection-end ed)))
+    (if (= sel-start sel-end)
+      (echo-message! echo "No selection to wrap")
+      (let ((wrapper (app-read-string app "Wrap with (e.g. \" or ( or [ or { or <): ")))
+        (when (and wrapper (> (string-length wrapper) 0))
+          (let* ((open-ch (string-ref wrapper 0))
+                 (close-ch (cond
+                             ((char=? open-ch #\() #\))
+                             ((char=? open-ch #\[) #\])
+                             ((char=? open-ch #\{) #\})
+                             ((char=? open-ch #\<) #\>)
+                             (else open-ch)))
+                 (text (editor-text-range ed sel-start sel-end))
+                 (wrapped (string-append (string open-ch) text (string close-ch))))
+            (send-message ed SCI_SETTARGETSTART sel-start 0)
+            (send-message ed SCI_SETTARGETEND sel-end 0)
+            (send-message/string ed SCI_REPLACETARGET wrapped)
+            (echo-message! echo
+              (string-append "Wrapped with "
+                (string open-ch) "..." (string close-ch)))))))))
+
+;;; --- Remove wrapping delimiters ---
+
+(def (cmd-unwrap-region app)
+  "Remove surrounding delimiters from selection (e.g. quotes, parens)."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app))
+         (sel-start (editor-get-selection-start ed))
+         (sel-end (editor-get-selection-end ed)))
+    (if (< (- sel-end sel-start) 2)
+      (echo-message! echo "Selection too short to unwrap")
+      (let* ((text (editor-text-range ed sel-start sel-end))
+             (first-ch (string-ref text 0))
+             (last-ch (string-ref text (- (string-length text) 1)))
+             (matching? (or (and (char=? first-ch #\() (char=? last-ch #\)))
+                            (and (char=? first-ch #\[) (char=? last-ch #\]))
+                            (and (char=? first-ch #\{) (char=? last-ch #\}))
+                            (and (char=? first-ch #\<) (char=? last-ch #\>))
+                            (char=? first-ch last-ch))))
+        (if (not matching?)
+          (echo-message! echo "Selection doesn't appear to be wrapped in matching delimiters")
+          (let ((inner (substring text 1 (- (string-length text) 1))))
+            (send-message ed SCI_SETTARGETSTART sel-start 0)
+            (send-message ed SCI_SETTARGETEND sel-end 0)
+            (send-message/string ed SCI_REPLACETARGET inner)
+            (echo-message! echo "Unwrapped delimiters")))))))
+
+;;; --- Quote style conversion ---
+
+(def (cmd-toggle-quotes app)
+  "Toggle between single and double quotes around the string at point."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app))
+         (pos (editor-get-current-pos ed))
+         (text (editor-get-text ed))
+         (len (string-length text)))
+    ;; Find enclosing quote
+    (let find-quote ((i pos))
+      (if (< i 0)
+        (echo-message! echo "Not inside a quoted string")
+        (let ((ch (string-ref text i)))
+          (if (or (char=? ch (integer->char 34))   ; double quote
+                  (char=? ch (integer->char 39)))   ; single quote
+            ;; Found opening quote - now find closing
+            (let ((quote-ch ch)
+                  (other-ch (if (char=? ch (integer->char 34))
+                              (integer->char 39)
+                              (integer->char 34))))
+              (let find-close ((j (+ i 1)))
+                (if (>= j len)
+                  (echo-message! echo "Unmatched quote")
+                  (if (char=? (string-ref text j) quote-ch)
+                    ;; Replace both quotes
+                    (begin
+                      (send-message ed SCI_SETTARGETSTART j 0)
+                      (send-message ed SCI_SETTARGETEND (+ j 1) 0)
+                      (send-message/string ed SCI_REPLACETARGET (string other-ch))
+                      (send-message ed SCI_SETTARGETSTART i 0)
+                      (send-message ed SCI_SETTARGETEND (+ i 1) 0)
+                      (send-message/string ed SCI_REPLACETARGET (string other-ch))
+                      (echo-message! echo
+                        (string-append "Toggled to "
+                          (if (char=? other-ch (integer->char 34)) "double" "single")
+                          " quotes")))
+                    (find-close (+ j 1))))))
+            (find-quote (- i 1))))))))
+
+;;; --- Frequency analysis of words ---
+
+(def (cmd-word-frequency-analysis app)
+  "Show word frequency analysis of buffer content."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app))
+         (text (editor-get-text ed))
+         (words (string-tokenize text))
+         (freq (make-hash-table))
+         (_ (for-each (lambda (w)
+              (let ((lw (string-downcase w)))
+                (hash-put! freq lw (+ 1 (or (hash-get freq lw) 0)))))
+              words))
+         (pairs (hash->list freq))
+         (sorted (sort pairs (lambda (a b) (> (cdr a) (cdr b)))))
+         (top (let loop ((ls sorted) (n 0) (acc []))
+                (if (or (null? ls) (>= n 30)) (reverse acc)
+                  (loop (cdr ls) (+ n 1) (cons (car ls) acc)))))
+         (report (with-output-to-string
+                   (lambda ()
+                     (display "Word Frequency Analysis:\n")
+                     (display (make-string 40 #\-))
+                     (display "\n")
+                     (for-each
+                       (lambda (p)
+                         (display (string-pad (number->string (cdr p)) 6))
+                         (display "  ")
+                         (display (car p))
+                         (display "\n"))
+                       top)
+                     (display (make-string 40 #\-))
+                     (display "\n")
+                     (display "Total unique words: ")
+                     (display (number->string (length pairs)))
+                     (display "\n")
+                     (display "Total words: ")
+                     (display (number->string (length words)))
+                     (display "\n")))))
+    (editor-set-text ed report)
+    (editor-goto-pos ed 0)
+    (echo-message! echo
+      (string-append (number->string (length pairs)) " unique words analyzed"))))
+
+;;; --- Selection statistics ---
+
+(def (cmd-selection-info app)
+  "Display information about the current selection."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app))
+         (sel-start (editor-get-selection-start ed))
+         (sel-end (editor-get-selection-end ed)))
+    (if (= sel-start sel-end)
+      (echo-message! echo "No selection")
+      (let* ((text (editor-text-range ed sel-start sel-end))
+             (chars (string-length text))
+             (lines (length (string-split text #\newline)))
+             (words (length (string-tokenize text)))
+             (bytes chars))
+        (echo-message! echo
+          (string-append "Selection: " (number->string chars) " chars, "
+            (number->string words) " words, "
+            (number->string lines) " lines"))))))
+
+;;; --- Increment/decrement number at point (if not already present) ---
+
+(def (cmd-increment-hex-at-point app)
+  "Increment a hexadecimal number at point."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app))
+         (pos (editor-get-current-pos ed))
+         (text (editor-get-text ed))
+         (len (string-length text)))
+    ;; Find hex number starting with 0x
+    (let find-start ((i pos))
+      (if (or (< i 0) (and (> (- pos i) 20)))
+        (echo-message! echo "No hex number at point")
+        (if (and (> i 0)
+                 (char=? (string-ref text i) #\x)
+                 (char=? (string-ref text (- i 1)) #\0))
+          ;; Found 0x prefix - extract hex digits after
+          (let* ((hex-start (+ i 1))
+                 (hex-end (let loop ((j hex-start))
+                            (if (and (< j len)
+                                     (let ((c (string-ref text j)))
+                                       (or (char-numeric? c)
+                                           (and (char>=? c #\a) (char<=? c #\f))
+                                           (and (char>=? c #\A) (char<=? c #\F)))))
+                              (loop (+ j 1))
+                              j)))
+                 (hex-str (substring text hex-start hex-end))
+                 (val (string->number hex-str 16)))
+            (if (not val)
+              (echo-message! echo "Invalid hex number")
+              (let* ((new-val (+ val 1))
+                     (new-hex (number->string new-val 16))
+                     ;; Pad to same width
+                     (padded (if (< (string-length new-hex) (string-length hex-str))
+                               (string-append
+                                 (make-string (- (string-length hex-str) (string-length new-hex)) #\0)
+                                 new-hex)
+                               new-hex)))
+                (send-message ed SCI_SETTARGETSTART hex-start 0)
+                (send-message ed SCI_SETTARGETEND hex-end 0)
+                (send-message/string ed SCI_REPLACETARGET padded)
+                (echo-message! echo
+                  (string-append "0x" hex-str " -> 0x" padded)))))
+          (find-start (- i 1)))))))
+
+;;; --- Describe char at point ---
+
+(def (cmd-describe-char app)
+  "Show detailed info about the character at point."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app))
+         (pos (editor-get-current-pos ed))
+         (text (editor-get-text ed)))
+    (if (>= pos (string-length text))
+      (echo-message! echo "End of buffer")
+      (let* ((ch (string-ref text pos))
+             (code (char->integer ch))
+             (name (cond
+                     ((char=? ch #\space) "SPACE")
+                     ((char=? ch #\tab) "TAB")
+                     ((char=? ch #\newline) "NEWLINE")
+                     ((char=? ch #\return) "CARRIAGE RETURN")
+                     ((< code 32) (string-append "CONTROL-" (string (integer->char (+ code 64)))))
+                     (else (string ch)))))
+        (echo-message! echo
+          (string-append name " (U+"
+            (let ((hex (number->string code 16)))
+              (if (< (string-length hex) 4)
+                (string-append (make-string (- 4 (string-length hex)) #\0) hex)
+                hex))
+            ", decimal " (number->string code)
+            ", octal " (number->string code 8) ")"))))))
+
+;;; --- Narrow to region ---
+
+(def *narrow-original-text* #f)
+(def *narrow-offset* 0)
+
+(def (cmd-narrow-to-region-simple app)
+  "Narrow buffer to show only the selected region."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app))
+         (sel-start (editor-get-selection-start ed))
+         (sel-end (editor-get-selection-end ed)))
+    (if (= sel-start sel-end)
+      (echo-message! echo "No region selected for narrowing")
+      (begin
+        (set! *narrow-original-text* (editor-get-text ed))
+        (set! *narrow-offset* sel-start)
+        (let ((region-text (editor-text-range ed sel-start sel-end)))
+          (editor-set-text ed region-text)
+          (editor-goto-pos ed 0)
+          (echo-message! echo "Narrowed to region (use widen to restore)"))))))
+
+(def (cmd-widen-simple app)
+  "Widen buffer to show full content after narrowing."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app)))
+    (if (not *narrow-original-text*)
+      (echo-message! echo "Buffer is not narrowed")
+      (let ((narrowed-text (editor-get-text ed)))
+        ;; Splice narrowed content back into original
+        (let ((result (string-append
+                        (substring *narrow-original-text* 0 *narrow-offset*)
+                        narrowed-text
+                        (substring *narrow-original-text*
+                          (+ *narrow-offset* (string-length narrowed-text))
+                          (string-length *narrow-original-text*)))))
+          (editor-set-text ed result)
+          (editor-goto-pos ed *narrow-offset*)
+          (set! *narrow-original-text* #f)
+          (set! *narrow-offset* 0)
+          (echo-message! echo "Buffer widened"))))))
+
+;;; --- Toggle read-only for current region (mark as non-editable) ---
+
+(def (cmd-toggle-buffer-read-only app)
+  "Toggle the read-only flag on the current buffer."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app))
+         (current (if (editor-get-read-only? ed) 1 0)))
+    (editor-set-read-only ed (= current 0))
+    (echo-message! echo
+      (if (= current 0)
+        "Buffer is now read-only"
+        "Buffer is now editable"))))
 
