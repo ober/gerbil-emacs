@@ -7,6 +7,7 @@
 (import :std/sugar
         :std/sort
         :std/srfi/13
+        :std/misc/string
         :gerbil-scintilla/constants
         :gerbil-scintilla/scintilla
         :gerbil-scintilla/tui
@@ -880,4 +881,142 @@
              (echo-message! echo "No file header found in diff"))
             (else
              (loop (+ i 1) #f))))))))
+
+;;;============================================================================
+;;; Fuzzy command matching for M-x
+;;;============================================================================
+
+(def (fuzzy-match? query target)
+  "Check if query fuzzy-matches target. Characters must appear in order."
+  (let ((qlen (string-length query))
+        (tlen (string-length target)))
+    (let loop ((qi 0) (ti 0))
+      (cond
+        ((>= qi qlen) #t) ;; All query chars matched
+        ((>= ti tlen) #f) ;; Target exhausted
+        ((char=? (char-downcase (string-ref query qi))
+                 (char-downcase (string-ref target ti)))
+         (loop (+ qi 1) (+ ti 1)))
+        (else
+         (loop qi (+ ti 1)))))))
+
+(def (fuzzy-score query target)
+  "Score a fuzzy match. Higher is better. Rewards consecutive matches and prefix matches."
+  (let ((qlen (string-length query))
+        (tlen (string-length target)))
+    (let loop ((qi 0) (ti 0) (score 0) (consecutive 0))
+      (cond
+        ((>= qi qlen) score)
+        ((>= ti tlen) -1) ;; No match
+        ((char=? (char-downcase (string-ref query qi))
+                 (char-downcase (string-ref target ti)))
+         (let ((bonus (+ 1
+                        (if (= ti 0) 3 0) ;; prefix bonus
+                        (* consecutive 2) ;; consecutive bonus
+                        (if (and (> ti 0)
+                                 (memv (string-ref target (- ti 1))
+                                       '(#\- #\_ #\/ #\space)))
+                          2 0)))) ;; word boundary bonus
+           (loop (+ qi 1) (+ ti 1) (+ score bonus) (+ consecutive 1))))
+        (else
+         (loop qi (+ ti 1) score 0))))))
+
+(def (cmd-execute-extended-command-fuzzy app)
+  "Execute command by name with fuzzy matching (M-x alternative)."
+  (let* ((echo (app-state-echo app))
+         (fr (app-state-frame app))
+         (row (- (frame-height fr) 1))
+         (width (frame-width fr))
+         (cmd-names (sort (map symbol->string (hash-keys *all-commands*))
+                          string<?))
+         (input (echo-read-string-with-completion echo "M-x " cmd-names row width)))
+    (when (and input (> (string-length input) 0))
+      ;; Try exact match first
+      (let ((exact-cmd (find-command (string->symbol input))))
+        (if exact-cmd
+          (execute-command! app (string->symbol input))
+          ;; Try fuzzy match
+          (let* ((matches (filter (lambda (name) (fuzzy-match? input name))
+                                  cmd-names))
+                 (scored (map (lambda (name) (cons (fuzzy-score input name) name))
+                              matches))
+                 (sorted (sort scored (lambda (a b) (> (car a) (car b))))))
+            (if (null? sorted)
+              (echo-error! echo (string-append input " not found"))
+              ;; Execute best match
+              (let ((best (cdar sorted)))
+                (execute-command! app (string->symbol best))
+                (echo-message! echo (string-append "Ran: " best))))))))))
+
+;;;============================================================================
+;;; Scratch buffer with language
+;;;============================================================================
+
+(def (cmd-scratch-with-mode app)
+  "Create a new scratch buffer with a specified language mode."
+  (let* ((echo (app-state-echo app))
+         (mode (app-read-string app "Mode (e.g. python, scheme, js): "))
+         (name (if (and mode (not (string-empty? mode)))
+                 (string-append "*scratch-" mode "*")
+                 "*scratch*")))
+    (let* ((fr (app-state-frame app))
+           (win (current-window fr))
+           (ed (edit-window-editor win))
+           (buf (buffer-create! name ed)))
+      (buffer-attach! ed buf)
+      (set! (edit-window-buffer win) buf)
+      ;; Insert header comment based on mode
+      (let ((header (cond
+                      ((and mode (or (string=? mode "python") (string=? mode "py")))
+                       "# Python scratch buffer\n\n")
+                      ((and mode (or (string=? mode "scheme") (string=? mode "gerbil")))
+                       ";; Gerbil Scheme scratch buffer\n\n")
+                      ((and mode (or (string=? mode "js") (string=? mode "javascript")))
+                       "// JavaScript scratch buffer\n\n")
+                      ((and mode (or (string=? mode "c") (string=? mode "cpp")))
+                       "/* C/C++ scratch buffer */\n\n")
+                      ((and mode (or (string=? mode "shell") (string=? mode "bash")))
+                       "#!/bin/bash\n# Shell scratch buffer\n\n")
+                      ((and mode (or (string=? mode "markdown") (string=? mode "md")))
+                       "# Scratch\n\n")
+                      (else (string-append ";; " (or mode "Scratch") " buffer\n\n")))))
+        (editor-set-text ed header)
+        (editor-goto-pos ed (string-length header))
+        (echo-message! echo (string-append "New scratch: " name))))))
+
+;;;============================================================================
+;;; Buffer navigation helpers
+;;;============================================================================
+
+(def (cmd-switch-to-buffer-other-window app)
+  "Switch to a buffer in the other window."
+  (let* ((echo (app-state-echo app))
+         (fr (app-state-frame app))
+         (row (- (frame-height fr) 1))
+         (width (frame-width fr))
+         (buf-names (map buffer-name (buffer-list)))
+         (choice (echo-read-string-with-completion echo "Buffer (other window): "
+                   buf-names row width)))
+    (when (and choice (> (string-length choice) 0))
+      (let ((buf (buffer-by-name choice)))
+        (if (not buf)
+          (echo-error! echo (string-append "No buffer: " choice))
+          ;; Split window if only one, then switch
+          (let* ((wins (frame-windows fr))
+                 (other-win (if (> (length wins) 1)
+                              (let ((cur (current-window fr)))
+                                (let loop ((ws wins))
+                                  (cond
+                                    ((null? ws) (car wins))
+                                    ((not (eq? (car ws) cur)) (car ws))
+                                    (else (loop (cdr ws))))))
+                              ;; Only one window — just switch in place
+                              (current-window fr))))
+            (let ((ed (edit-window-editor other-win)))
+              (buffer-attach! ed buf)
+              (set! (edit-window-buffer other-win) buf)
+              (echo-message! echo (string-append "Buffer: " choice)))))))))
+
+
+
 

@@ -731,4 +731,10 @@
   (register-command! 'convert-line-endings cmd-convert-line-endings)
   ;; Statistics
   (register-command! 'buffer-statistics cmd-buffer-statistics)
+  ;; Fuzzy M-x
+  (register-command! 'execute-extended-command-fuzzy cmd-execute-extended-command-fuzzy)
+  ;; Scratch with mode
+  (register-command! 'scratch-with-mode cmd-scratch-with-mode)
+  ;; Buffer navigation
+  (register-command! 'switch-to-buffer-other-window cmd-switch-to-buffer-other-window)
 )

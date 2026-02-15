@@ -34,6 +34,8 @@
                  text-find-matching-close text-sexp-end
                  parse-grep-line-text find-number-at-pos
                  *dired-marks*)
+        (only-in :gerbil-emacs/editor-extra-vcs
+                 fuzzy-match? fuzzy-score)
         (only-in :gerbil-emacs/highlight
                  detect-file-language gerbil-file-extension?
                  setup-highlighting-for-file!)
@@ -1302,6 +1304,30 @@
       (check (length (hash-keys *dired-marks*)) => 1)
       (set! *dired-marks* (make-hash-table))
       (check (length (hash-keys *dired-marks*)) => 0))
+
+    ;; -- Fuzzy matching --
+    (test-case "fuzzy-match? basic"
+      (check (fuzzy-match? "fb" "find-buffer") => #t)
+      (check (fuzzy-match? "abc" "aXbXc") => #t)
+      (check (fuzzy-match? "xyz" "hello") => #f)
+      (check (fuzzy-match? "" "anything") => #t)
+      (check (fuzzy-match? "FB" "find-buffer") => #t)) ;; case insensitive
+
+    (test-case "fuzzy-score ranking"
+      ;; Prefix match should score higher than non-prefix
+      (let ((s1 (fuzzy-score "fi" "find-file"))
+            (s2 (fuzzy-score "fi" "xfind")))
+        (check (> s1 s2) => #t))
+      ;; Consecutive matches should score higher
+      (let ((s1 (fuzzy-score "abc" "abcdef"))
+            (s2 (fuzzy-score "abc" "aXbXc")))
+        (check (> s1 s2) => #t)))
+
+    (test-case "command registration: fuzzy M-x and scratch"
+      (register-all-commands!)
+      (check (procedure? (find-command 'execute-extended-command-fuzzy)) => #t)
+      (check (procedure? (find-command 'scratch-with-mode)) => #t)
+      (check (procedure? (find-command 'switch-to-buffer-other-window)) => #t))
 
     ;;=========================================================================
     ;; Headless Scintilla editor tests
