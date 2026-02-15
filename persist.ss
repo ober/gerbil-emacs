@@ -461,8 +461,9 @@
   "Load init file and apply settings.
    Format: one setting per line, KEY VALUE (space-separated).
    Lines starting with ; or # are comments.
-   Supported settings: scroll-margin, fill-column, tab-width,
-   auto-pair-mode, auto-save-enabled."
+   Supported settings: scroll-margin, save-place,
+   delete-trailing-whitespace-on-save, require-final-newline,
+   centered-cursor, bind KEY COMMAND."
   (with-catch
     (lambda (e) #f)
     (lambda ()
@@ -499,6 +500,17 @@
                               ((string=? key "centered-cursor")
                                (set! *centered-cursor-mode*
                                  (or (string=? val "true") (string=? val "1"))))
+                              ;; Custom keybinding: bind KEY COMMAND
+                              ;; e.g. "bind C-c a align-regexp"
+                              ((string=? key "bind")
+                               (let ((sp2 (string-index val #\space)))
+                                 (when sp2
+                                   (let ((key-str (substring val 0 sp2))
+                                         (cmd-str (string-trim-both
+                                                    (substring val (+ sp2 1) (string-length val)))))
+                                     (when (> (string-length cmd-str) 0)
+                                       (keymap-bind! *global-keymap* key-str
+                                         (string->symbol cmd-str)))))))
                               ))))))
                   (loop))))))))))
 

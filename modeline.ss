@@ -16,6 +16,40 @@
         :gerbil-emacs/highlight)
 
 ;;;============================================================================
+;;; Git branch detection (cached)
+;;;============================================================================
+
+(def *git-branch-cache* (make-hash-table))
+(def *git-branch-cache-time* (make-hash-table))
+(def *git-cache-ttl* 5.0)
+
+(def (git-branch-for-file file-path)
+  "Get current git branch for a file's directory, with caching."
+  (if (not file-path) #f
+    (let ((dir (path-directory file-path)))
+      (let ((cached-time (hash-get *git-branch-cache-time* dir)))
+        (if (and cached-time
+                 (< (- (time->seconds (current-time)) cached-time) *git-cache-ttl*))
+          (hash-get *git-branch-cache* dir)
+          (let ((branch (with-catch
+                          (lambda (e) #f)
+                          (lambda ()
+                            (let* ((proc (open-process
+                                          (list path: "/usr/bin/git"
+                                                arguments: ["rev-parse" "--abbrev-ref" "HEAD"]
+                                                directory: dir
+                                                stdin-redirection: #f
+                                                stdout-redirection: #t
+                                                stderr-redirection: #f)))
+                                   (result (read-line proc)))
+                              (process-status proc)
+                              (close-port proc)
+                              (if (string? result) result #f))))))
+            (hash-put! *git-branch-cache* dir branch)
+            (hash-put! *git-branch-cache-time* dir (time->seconds (current-time)))
+            branch))))))
+
+;;;============================================================================
 ;;; Mode name detection
 ;;;============================================================================
 
@@ -111,8 +145,10 @@
                       (else "--")))
          (left (string-append
                 "-U:" state-str "-  " name "  "))
+         (branch (git-branch-for-file (buffer-file-path buf)))
+         (branch-str (if branch (string-append " " branch) ""))
          (right (string-append
-                 "(" mode " " eol ") "
+                 "(" mode " " eol ")" branch-str " "
                  "L" (number->string line)
                  " C" (number->string col)
                  "  " pct))

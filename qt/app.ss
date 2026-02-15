@@ -159,9 +159,10 @@
       (set! *tab-bar-widget* tab-bar)
 
       ;; Echo label: ensure visible with minimum height and distinct style
-      (qt-widget-set-minimum-height! echo-label 24)
+      ;; Must be tall enough to display text clearly (not clipped)
+      (qt-widget-set-minimum-height! echo-label 28)
       (qt-widget-set-style-sheet! echo-label
-        "color: #d8d8d8; background: #282828; font-family: monospace; font-size: 10pt; padding: 2px 4px;")
+        "color: #d8d8d8; background: #1e1e1e; font-family: monospace; font-size: 10pt; padding: 4px 6px; border-top: 1px solid #484848;")
 
       ;; Layout: tab-bar at top, splitter takes remaining space, echo-label at bottom
       (qt-layout-add-widget! layout tab-bar)

@@ -192,6 +192,7 @@
   ;; C-x commands
   (keymap-bind! *ctrl-x-map* "C-s" 'save-buffer)
   (keymap-bind! *ctrl-x-map* "C-f" 'find-file)
+  (keymap-bind! *ctrl-x-map* "C-r" 'recentf-open)
   (keymap-bind! *ctrl-x-map* "C-c" 'quit)
   (keymap-bind! *ctrl-x-map* "b"   'switch-buffer)
   (keymap-bind! *ctrl-x-map* "k"   'kill-buffer-cmd)
