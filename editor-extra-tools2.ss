@@ -1765,3 +1765,62 @@
     (set! *global-prescient* (not *global-prescient*))
     (echo-message! echo (if *global-prescient*
                           "Global prescient ON" "Global prescient OFF"))))
+
+;;; ---- batch 64: org-mode ecosystem toggles ----
+
+(def *global-org-roam* #f)
+(def *global-org-journal* #f)
+(def *global-org-super-agenda* #f)
+(def *global-org-noter* #f)
+(def *global-org-download* #f)
+(def *global-org-cliplink* #f)
+(def *global-org-present* #f)
+
+(def (cmd-toggle-global-org-roam app)
+  "Toggle global org-roam-mode (Zettelkasten note-taking)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-org-roam* (not *global-org-roam*))
+    (echo-message! echo (if *global-org-roam*
+                          "Org-roam ON" "Org-roam OFF"))))
+
+(def (cmd-toggle-global-org-journal app)
+  "Toggle global org-journal-mode (daily journaling)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-org-journal* (not *global-org-journal*))
+    (echo-message! echo (if *global-org-journal*
+                          "Org-journal ON" "Org-journal OFF"))))
+
+(def (cmd-toggle-global-org-super-agenda app)
+  "Toggle global org-super-agenda-mode (grouped agenda views)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-org-super-agenda* (not *global-org-super-agenda*))
+    (echo-message! echo (if *global-org-super-agenda*
+                          "Org super-agenda ON" "Org super-agenda OFF"))))
+
+(def (cmd-toggle-global-org-noter app)
+  "Toggle global org-noter-mode (annotate documents with org)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-org-noter* (not *global-org-noter*))
+    (echo-message! echo (if *global-org-noter*
+                          "Org-noter ON" "Org-noter OFF"))))
+
+(def (cmd-toggle-global-org-download app)
+  "Toggle global org-download-mode (drag-and-drop images to org)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-org-download* (not *global-org-download*))
+    (echo-message! echo (if *global-org-download*
+                          "Org-download ON" "Org-download OFF"))))
+
+(def (cmd-toggle-global-org-cliplink app)
+  "Toggle global org-cliplink-mode (paste URLs as org links)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-org-cliplink* (not *global-org-cliplink*))
+    (echo-message! echo (if *global-org-cliplink*
+                          "Org-cliplink ON" "Org-cliplink OFF"))))
+
+(def (cmd-toggle-global-org-present app)
+  "Toggle global org-present-mode (presentations from org files)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-org-present* (not *global-org-present*))
+    (echo-message! echo (if *global-org-present*
+                          "Org-present ON" "Org-present OFF"))))

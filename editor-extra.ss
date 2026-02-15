@@ -1195,4 +1195,12 @@
   (register-command! 'toggle-global-snow cmd-toggle-global-snow)
   (register-command! 'toggle-global-power-mode cmd-toggle-global-power-mode)
   (register-command! 'toggle-global-animate-typing cmd-toggle-global-animate-typing)
+  ;; batch 64
+  (register-command! 'toggle-global-org-roam cmd-toggle-global-org-roam)
+  (register-command! 'toggle-global-org-journal cmd-toggle-global-org-journal)
+  (register-command! 'toggle-global-org-super-agenda cmd-toggle-global-org-super-agenda)
+  (register-command! 'toggle-global-org-noter cmd-toggle-global-org-noter)
+  (register-command! 'toggle-global-org-download cmd-toggle-global-org-download)
+  (register-command! 'toggle-global-org-cliplink cmd-toggle-global-org-cliplink)
+  (register-command! 'toggle-global-org-present cmd-toggle-global-org-present)
 )

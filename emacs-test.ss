@@ -131,7 +131,11 @@
                  *global-beacon* *global-dimmer* *global-focus*
                  *global-wgrep* *global-deadgrep* *global-ripgrep*
                  *global-projectile-ripgrep* *global-counsel*
-                 *global-swiper* *global-prescient*)
+                 *global-swiper* *global-prescient*
+                 *global-org-roam* *global-org-journal*
+                 *global-org-super-agenda* *global-org-noter*
+                 *global-org-download* *global-org-cliplink*
+                 *global-org-present*)
         (only-in :gerbil-emacs/editor-extra-tools
                  *cursor-type* *modeline-visible*
                  *indent-guide-mode* *rainbow-mode*
@@ -2673,6 +2677,25 @@
       (check (procedure? (find-command 'toggle-global-snow)) => #t)
       (check (procedure? (find-command 'toggle-global-power-mode)) => #t)
       (check (procedure? (find-command 'toggle-global-animate-typing)) => #t))
+
+    (test-case "batch 64: mode toggles"
+      (check *global-org-roam* => #f)
+      (check *global-org-journal* => #f)
+      (check *global-org-super-agenda* => #f)
+      (check *global-org-noter* => #f)
+      (check *global-org-download* => #f)
+      (check *global-org-cliplink* => #f)
+      (check *global-org-present* => #f))
+
+    (test-case "command registration: batch 64 features"
+      (register-all-commands!)
+      (check (procedure? (find-command 'toggle-global-org-roam)) => #t)
+      (check (procedure? (find-command 'toggle-global-org-journal)) => #t)
+      (check (procedure? (find-command 'toggle-global-org-super-agenda)) => #t)
+      (check (procedure? (find-command 'toggle-global-org-noter)) => #t)
+      (check (procedure? (find-command 'toggle-global-org-download)) => #t)
+      (check (procedure? (find-command 'toggle-global-org-cliplink)) => #t)
+      (check (procedure? (find-command 'toggle-global-org-present)) => #t))
 
     ;;=========================================================================
     ;; Headless Scintilla editor tests
