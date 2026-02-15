@@ -1251,4 +1251,12 @@
   (register-command! 'toggle-global-groovy-mode cmd-toggle-global-groovy-mode)
   (register-command! 'toggle-global-kotlin-mode cmd-toggle-global-kotlin-mode)
   (register-command! 'toggle-global-scala-mode cmd-toggle-global-scala-mode)
+  ;; batch 71
+  (register-command! 'toggle-global-erlang-mode cmd-toggle-global-erlang-mode)
+  (register-command! 'toggle-global-elixir-mode cmd-toggle-global-elixir-mode)
+  (register-command! 'toggle-global-zig-mode cmd-toggle-global-zig-mode)
+  (register-command! 'toggle-global-ocaml-mode cmd-toggle-global-ocaml-mode)
+  (register-command! 'toggle-global-fsharp-mode cmd-toggle-global-fsharp-mode)
+  (register-command! 'toggle-global-dart-mode cmd-toggle-global-dart-mode)
+  (register-command! 'toggle-global-julia-mode cmd-toggle-global-julia-mode)
 )

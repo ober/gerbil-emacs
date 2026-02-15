@@ -1803,3 +1803,62 @@
     (echo-message! echo (if *global-smart-mode-line*
                           "Smart mode-line ON" "Smart mode-line OFF"))))
 
+;;; ---- batch 71: BEAM and systems programming language toggles ----
+
+(def *global-erlang-mode* #f)
+(def *global-elixir-mode* #f)
+(def *global-zig-mode* #f)
+(def *global-ocaml-mode* #f)
+(def *global-fsharp-mode* #f)
+(def *global-dart-mode* #f)
+(def *global-julia-mode* #f)
+
+(def (cmd-toggle-global-erlang-mode app)
+  "Toggle global erlang-mode (Erlang development)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-erlang-mode* (not *global-erlang-mode*))
+    (echo-message! echo (if *global-erlang-mode*
+                          "Erlang mode ON" "Erlang mode OFF"))))
+
+(def (cmd-toggle-global-elixir-mode app)
+  "Toggle global elixir-mode (Elixir development)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-elixir-mode* (not *global-elixir-mode*))
+    (echo-message! echo (if *global-elixir-mode*
+                          "Elixir mode ON" "Elixir mode OFF"))))
+
+(def (cmd-toggle-global-zig-mode app)
+  "Toggle global zig-mode (Zig development)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-zig-mode* (not *global-zig-mode*))
+    (echo-message! echo (if *global-zig-mode*
+                          "Zig mode ON" "Zig mode OFF"))))
+
+(def (cmd-toggle-global-ocaml-mode app)
+  "Toggle global ocaml-mode (OCaml development with tuareg)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-ocaml-mode* (not *global-ocaml-mode*))
+    (echo-message! echo (if *global-ocaml-mode*
+                          "OCaml mode ON" "OCaml mode OFF"))))
+
+(def (cmd-toggle-global-fsharp-mode app)
+  "Toggle global fsharp-mode (F# development)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-fsharp-mode* (not *global-fsharp-mode*))
+    (echo-message! echo (if *global-fsharp-mode*
+                          "F# mode ON" "F# mode OFF"))))
+
+(def (cmd-toggle-global-dart-mode app)
+  "Toggle global dart-mode (Dart/Flutter development)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-dart-mode* (not *global-dart-mode*))
+    (echo-message! echo (if *global-dart-mode*
+                          "Dart mode ON" "Dart mode OFF"))))
+
+(def (cmd-toggle-global-julia-mode app)
+  "Toggle global julia-mode (Julia scientific computing)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-julia-mode* (not *global-julia-mode*))
+    (echo-message! echo (if *global-julia-mode*
+                          "Julia mode ON" "Julia mode OFF"))))
+

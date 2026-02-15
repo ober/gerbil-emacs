@@ -64,7 +64,11 @@
                  *global-solaire* *global-spaceline*
                  *global-doom-modeline-env* *global-minions*
                  *global-moody* *global-rich-minority*
-                 *global-smart-mode-line*)
+                 *global-smart-mode-line*
+                 *global-erlang-mode* *global-elixir-mode*
+                 *global-zig-mode* *global-ocaml-mode*
+                 *global-fsharp-mode* *global-dart-mode*
+                 *global-julia-mode*)
         (only-in :gerbil-emacs/editor-extra-editing
                  occur-parse-source-name
                  text-find-matching-close text-sexp-end
@@ -2834,6 +2838,25 @@
       (check (procedure? (find-command 'toggle-global-groovy-mode)) => #t)
       (check (procedure? (find-command 'toggle-global-kotlin-mode)) => #t)
       (check (procedure? (find-command 'toggle-global-scala-mode)) => #t))
+
+    (test-case "batch 71: mode toggles"
+      (check *global-erlang-mode* => #f)
+      (check *global-elixir-mode* => #f)
+      (check *global-zig-mode* => #f)
+      (check *global-ocaml-mode* => #f)
+      (check *global-fsharp-mode* => #f)
+      (check *global-dart-mode* => #f)
+      (check *global-julia-mode* => #f))
+
+    (test-case "command registration: batch 71 features"
+      (register-all-commands!)
+      (check (procedure? (find-command 'toggle-global-erlang-mode)) => #t)
+      (check (procedure? (find-command 'toggle-global-elixir-mode)) => #t)
+      (check (procedure? (find-command 'toggle-global-zig-mode)) => #t)
+      (check (procedure? (find-command 'toggle-global-ocaml-mode)) => #t)
+      (check (procedure? (find-command 'toggle-global-fsharp-mode)) => #t)
+      (check (procedure? (find-command 'toggle-global-dart-mode)) => #t)
+      (check (procedure? (find-command 'toggle-global-julia-mode)) => #t))
 
     ;;=========================================================================
     ;; Headless Scintilla editor tests
