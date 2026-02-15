@@ -502,6 +502,39 @@ Returns #t if changed, #f if not or if no record exists."
                                           mode: QT_KEEP_ANCHOR)
          (qt-plain-text-edit-remove-selected-text! ed))))))
 
+(def (cmd-backward-delete-char-untabify app)
+  "Delete backward, converting tabs to spaces if in leading whitespace."
+  (let* ((ed (current-qt-editor app))
+         (pos (qt-plain-text-edit-cursor-position ed)))
+    (when (> pos 0)
+      (let* ((text (qt-plain-text-edit-text ed))
+             (line (qt-plain-text-edit-cursor-line ed))
+             ;; Find line start
+             (line-start (let loop ((i 0) (ln 0))
+                           (if (>= ln line) i
+                             (let ((nl (string-index text #\newline i)))
+                               (if nl (loop (+ nl 1) (+ ln 1)) i)))))
+             (ch-before (if (> pos 0)
+                          (string-ref text (- pos 1))
+                          #\nul)))
+        ;; If char before is tab and we're in leading whitespace
+        (if (and (char=? ch-before #\tab)
+                 (let loop ((p line-start))
+                   (or (>= p pos)
+                       (let ((c (string-ref text p)))
+                         (and (or (char=? c #\space) (char=? c #\tab))
+                              (loop (+ p 1)))))))
+          ;; Delete the tab
+          (begin
+            (qt-plain-text-edit-move-cursor! ed QT_CURSOR_PREVIOUS_CHAR
+                                              mode: QT_KEEP_ANCHOR)
+            (qt-plain-text-edit-remove-selected-text! ed))
+          ;; Normal backspace
+          (begin
+            (qt-plain-text-edit-move-cursor! ed QT_CURSOR_PREVIOUS_CHAR
+                                              mode: QT_KEEP_ANCHOR)
+            (qt-plain-text-edit-remove-selected-text! ed)))))))
+
 (def (cmd-buffer-list-select app)
   "Switch to the buffer named on the current line in *Buffer List*."
   (let* ((ed (current-qt-editor app))
@@ -813,7 +846,8 @@ Returns (path . line) or #f. Handles file:line format."
   (let* ((echo (app-state-echo app))
          (filename (qt-echo-read-string app "Write file: ")))
     (when (and filename (> (string-length filename) 0))
-      (let* ((buf (current-qt-buffer app))
+      (let* ((filename (expand-filename filename))
+             (buf (current-qt-buffer app))
              (ed (current-qt-editor app))
              (text (qt-plain-text-edit-text ed)))
         (set! (buffer-file-path buf) filename)

@@ -512,10 +512,11 @@
   (let* ((echo (app-state-echo app))
          (dir (qt-echo-read-string app "Dired: ")))
     (when (and dir (> (string-length dir) 0))
-      (if (and (file-exists? dir)
-               (eq? 'directory (file-info-type (file-info dir))))
-        (dired-open-directory! app dir)
-        (echo-error! echo (string-append "Not a directory: " dir))))))
+      (let ((dir (expand-filename dir)))
+        (if (and (file-exists? dir)
+                 (eq? 'directory (file-info-type (file-info dir))))
+          (dired-open-directory! app dir)
+          (echo-error! echo (string-append "Not a directory: " dir)))))))
 
 ;;;============================================================================
 ;;; Unfill paragraph (join lines in paragraph)

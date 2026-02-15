@@ -15,6 +15,7 @@
   auto-pair-char
   register-all-commands!
   read-file-as-string
+  expand-filename
   position-cursor-for-replace!
   ;; Auto-save and file modification tracking
   *auto-save-enabled*
@@ -59,6 +60,7 @@
   ;; Editing
   (register-command! 'delete-char cmd-delete-char)
   (register-command! 'backward-delete-char cmd-backward-delete-char)
+  (register-command! 'backward-delete-char-untabify cmd-backward-delete-char-untabify)
   (register-command! 'newline cmd-newline)
   (register-command! 'open-line cmd-open-line)
   (register-command! 'undo cmd-undo)

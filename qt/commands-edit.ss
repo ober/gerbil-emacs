@@ -1301,12 +1301,13 @@
   (let* ((echo (app-state-echo app))
          (filename (qt-echo-read-string app "Insert file: ")))
     (when (and filename (> (string-length filename) 0))
-      (if (file-exists? filename)
-        (let ((content (read-file-as-string filename)))
-          (when content
-            (qt-plain-text-edit-insert-text! (current-qt-editor app) content)
-            (echo-message! echo (string-append "Inserted " filename))))
-        (echo-error! echo (string-append "File not found: " filename))))))
+      (let ((filename (expand-filename filename)))
+        (if (file-exists? filename)
+          (let ((content (read-file-as-string filename)))
+            (when content
+              (qt-plain-text-edit-insert-text! (current-qt-editor app) content)
+              (echo-message! echo (string-append "Inserted " filename))))
+          (echo-error! echo (string-append "File not found: " filename)))))))
 
 ;;;============================================================================
 ;;; Shell command (M-!)

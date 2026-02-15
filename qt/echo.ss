@@ -40,12 +40,13 @@
 
 (def (make-minibuffer-dialog parent prompt)
   "Create a compact dark dialog for minibuffer input.
+   Positioned at the bottom of the parent window to look like Emacs minibuffer.
    Returns (values dialog line-edit)."
   (let* ((dlg (qt-dialog-create parent: parent))
          (layout (qt-hbox-layout-create dlg))
          (label (qt-label-create prompt))
          (line-edit (qt-line-edit-create)))
-    (qt-dialog-set-title! dlg prompt)
+    (qt-dialog-set-title! dlg "")
     (qt-widget-set-style-sheet! dlg *minibuffer-style*)
     ;; Tight layout: prompt label + input field side by side
     (qt-layout-set-margins! layout 4 2 4 2)
@@ -54,9 +55,15 @@
     (qt-layout-add-widget! layout line-edit)
     (qt-layout-set-stretch-factor! layout label 0)
     (qt-layout-set-stretch-factor! layout line-edit 1)
-    ;; Match width of parent window
-    (let ((pw (qt-widget-width parent)))
-      (qt-widget-resize! dlg (max 500 (inexact->exact (round (* pw 0.7)))) 36))
+    ;; Full width of parent, minimal height, positioned at bottom
+    (let* ((pw (qt-widget-width parent))
+           (ph (qt-widget-height parent))
+           (px (qt-widget-x parent))
+           (py (qt-widget-y parent))
+           (dlg-h 36)
+           (dlg-w pw))
+      (qt-widget-resize! dlg dlg-w dlg-h)
+      (qt-widget-move! dlg px (+ py (- ph dlg-h))))
     ;; Enter accepts, Escape rejects
     (qt-on-return-pressed! line-edit (lambda () (qt-dialog-accept! dlg)))
     (values dlg line-edit)))

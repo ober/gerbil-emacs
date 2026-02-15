@@ -441,6 +441,28 @@
       (else
        (editor-send-key (current-editor app) SCK_BACK)))))
 
+(def (cmd-backward-delete-char-untabify app)
+  "Delete backward, converting tabs to spaces if in leading whitespace."
+  (let* ((ed (current-editor app))
+         (pos (editor-get-current-pos ed)))
+    (when (> pos 0)
+      (let* ((line (editor-line-from-position ed pos))
+             (line-start (editor-position-from-line ed line))
+             (col (- pos line-start))
+             (ch-before (send-message ed SCI_GETCHARAT (- pos 1) 0)))
+        ;; If char before cursor is a tab and we're in leading whitespace
+        (if (and (= ch-before 9) ;; tab
+                 (let loop ((p line-start))
+                   (or (>= p pos)
+                       (let ((c (send-message ed SCI_GETCHARAT p 0)))
+                         (and (or (= c 32) (= c 9))
+                              (loop (+ p 1)))))))
+          ;; Delete the tab character
+          (begin
+            (editor-send-key ed SCK_BACK))
+          ;; Normal backspace
+          (editor-send-key ed SCK_BACK))))))
+
 (def (get-line-indent text line-start)
   "Count leading whitespace chars starting at line-start in text."
   (let ((len (string-length text)))
@@ -601,6 +623,36 @@
 ;;; File operations
 ;;;============================================================================
 
+(def (expand-filename path)
+  "Expand ~ and environment variables in a file path.
+   ~/foo -> /home/user/foo, $HOME/foo -> /home/user/foo"
+  (cond
+    ;; ~/path -> home directory
+    ((and (> (string-length path) 0)
+          (char=? (string-ref path 0) #\~))
+     (let ((home (or (getenv "HOME")
+                     (user-info-home (user-info (user-name))))))
+       (if (= (string-length path) 1)
+         home
+         (if (char=? (string-ref path 1) #\/)
+           (string-append home (substring path 1 (string-length path)))
+           path))))  ; ~user not supported
+    ;; $VAR/path -> environment variable expansion
+    ((and (> (string-length path) 1)
+          (char=? (string-ref path 0) #\$))
+     (let* ((slash-pos (string-index path #\/))
+            (var-name (if slash-pos
+                        (substring path 1 slash-pos)
+                        (substring path 1 (string-length path))))
+            (rest (if slash-pos
+                     (substring path slash-pos (string-length path))
+                     ""))
+            (value (getenv var-name)))
+       (if value
+         (string-append value rest)
+         path)))
+    (else path)))
+
 (def (list-directory-files dir)
   "List files in a directory for completion. Returns sorted list of basenames."
   (with-catch (lambda (e) [])
@@ -620,6 +672,7 @@
                       files row width)))
     (when filename
       (when (> (string-length filename) 0)
+        (let ((filename (expand-filename filename)))
         ;; Check if it's a directory
         (if (and (file-exists? filename)
                  (eq? 'directory (file-info-type (file-info filename))))
@@ -674,7 +727,7 @@
               (when lang
                 (send-message ed SCI_SETMARGINTYPEN 0 SC_MARGIN_NUMBER)
                 (send-message ed SCI_SETMARGINWIDTHN 0 5)))
-            (echo-message! echo (string-append "Opened: " filename))))))))
+            (echo-message! echo (string-append "Opened: " filename)))))))))
 
 (def (cmd-save-buffer app)
   (let* ((ed (current-editor app))

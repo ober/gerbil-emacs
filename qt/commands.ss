@@ -191,6 +191,7 @@
                      default-path
                      input)))
     (when (and filename (> (string-length filename) 0))
+      (let ((filename (expand-filename filename)))
       (recent-files-add! filename)
       (if (and (file-exists? filename)
                (eq? 'directory (file-info-type (file-info filename))))
@@ -221,13 +222,14 @@
             (file-mtime-record! filename))
           (qt-setup-highlighting! app buf)
           (apply-dir-locals! app filename)
-          (echo-message! echo (string-append "Opened: " filename)))))))
+          (echo-message! echo (string-append "Opened: " filename))))))))
 
 (def (cmd-find-file app)
   (let* ((echo (app-state-echo app))
          (filename (qt-echo-read-string app "Find file: ")))
     (when filename
       (when (> (string-length filename) 0)
+        (let ((filename (expand-filename filename)))
         ;; Check for remote path first
         (if (tramp-path? filename)
           (let-values (((host remote-path) (tramp-parse-path filename)))
@@ -279,7 +281,7 @@
                       (qt-plain-text-edit-set-cursor-position! ed 0)))))
               (file-mtime-record! filename))
             (qt-setup-highlighting! app buf)
-            (echo-message! echo (string-append "Opened: " filename))))))))))
+            (echo-message! echo (string-append "Opened: " filename)))))))))))
 
 (def (cmd-save-buffer app)
   (let* ((ed (current-qt-editor app))
@@ -572,6 +574,7 @@
   ;; Editing
   (register-command! 'delete-char cmd-delete-char)
   (register-command! 'backward-delete-char cmd-backward-delete-char)
+  (register-command! 'backward-delete-char-untabify cmd-backward-delete-char-untabify)
   (register-command! 'newline cmd-newline)
   (register-command! 'open-line cmd-open-line)
   (register-command! 'undo cmd-undo)
