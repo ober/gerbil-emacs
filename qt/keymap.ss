@@ -8,7 +8,7 @@
         qt-key-state-feed!)
 
 (import :std/sugar
-        :gerbil-qt/qt
+        :gerbil-emacs/qt/sci-shim
         :gerbil-emacs/core)
 
 ;;;============================================================================

@@ -1,8 +1,8 @@
 ;;; -*- Gerbil -*-
 ;;; Qt syntax highlighting for gerbil-emacs
 ;;;
-;;; Configurable QSyntaxHighlighter-based highlighting for multiple languages.
-;;; Detects language from file extension and applies regex-based rules.
+;;; Uses QScintilla's built-in Lexilla lexers for syntax highlighting.
+;;; Detects language from file extension and configures lexer + style colors.
 
 (export qt-setup-highlighting!
         qt-remove-highlighting!
@@ -13,17 +13,11 @@
 
 (import :std/sugar
         :std/srfi/13
-        :gerbil-qt/qt
+        :gerbil-emacs/qt/sci-shim
         :gerbil-emacs/core)
 
 ;;;============================================================================
-;;; Highlighter lifecycle tracking
-;;;============================================================================
-
-(def *qt-highlighters* (make-hash-table))
-
-;;;============================================================================
-;;; Color constants (matching TUI dark theme from highlight.ss)
+;;; Color constants (dark theme)
 ;;;============================================================================
 
 ;; Keywords: purple, bold
@@ -46,7 +40,7 @@
 (def ty-r #xff) (def ty-g #xcc) (def ty-b #x66)
 
 ;;;============================================================================
-;;; File extension → language detection
+;;; File extension -> language detection
 ;;;============================================================================
 
 (def (detect-language path)
@@ -55,7 +49,6 @@
           (base (path-strip-directory path)))
       (cond
         ((or (not ext) (string=? ext ""))
-         ;; Check extensionless filenames
          (cond
            ((member base '("Makefile" "makefile" "GNUmakefile" "CMakeLists.txt")) 'makefile)
            ((member base '("Dockerfile" "Containerfile")) 'shell)
@@ -94,8 +87,58 @@
         ((string=? ext ".mk") 'makefile)
         (else #f)))))
 
+(def (detect-language-from-shebang-qt text)
+  "Detect language from shebang line."
+  (and text
+       (> (string-length text) 2)
+       (char=? (string-ref text 0) #\#)
+       (char=? (string-ref text 1) #\!)
+       (let* ((nl (string-index text #\newline))
+              (line (if nl (substring text 0 nl) text)))
+         (cond
+           ((or (string-contains line "/bash")
+                (string-contains line "/sh")
+                (string-contains line "/zsh"))
+            'shell)
+           ((string-contains line "python") 'python)
+           ((string-contains line "ruby") 'ruby)
+           ((string-contains line "node") 'javascript)
+           ((string-contains line "lua") 'lua)
+           (else 'shell)))))
+
 ;;;============================================================================
-;;; Gerbil/Scheme keyword lists (reused from highlight.ss)
+;;; Language -> QScintilla lexer name mapping
+;;;============================================================================
+
+(def (language->lexer-name lang)
+  (case lang
+    ((scheme lisp)      "lisp")
+    ((c)                "cpp")
+    ((python)           "python")
+    ((javascript)       "cpp")
+    ((shell)            "bash")
+    ((rust)             "rust")
+    ((go)               "cpp")
+    ((java)             "cpp")
+    ((ruby)             "ruby")
+    ((json)             "json")
+    ((yaml)             "yaml")
+    ((xml)              "xml")
+    ((css)              "css")
+    ((sql)              "sql")
+    ((lua)              "lua")
+    ((makefile)         "makefile")
+    ((diff)             "diff")
+    ((markdown)         "markdown")
+    ((perl)             "perl")
+    ((haskell)          "haskell")
+    ((zig nix swift elixir) "cpp")
+    ((toml)             "props")
+    ((org)              #f)
+    (else               #f)))
+
+;;;============================================================================
+;;; Keyword strings per language
 ;;;============================================================================
 
 (def *gerbil-keywords*
@@ -158,675 +201,260 @@
       "filter" "sort" "iota" "void" "raise-type-error")
     " "))
 
+(def *c-keywords*
+  "if else for while do switch case default break continue return goto struct union enum typedef sizeof static const volatile extern inline register auto signed unsigned class public private protected virtual override template typename namespace using new delete throw try catch noexcept constexpr nullptr true false this operator")
+
+(def *c-types*
+  "int char float double void long short bool size_t ssize_t int8_t int16_t int32_t int64_t uint8_t uint16_t uint32_t uint64_t FILE NULL EOF")
+
+(def *python-keywords*
+  "False None True and as assert async await break class continue def del elif else except finally for from global if import in is lambda nonlocal not or pass raise return try while with yield")
+
+(def *python-builtins*
+  "print len range int str float list dict tuple set bool type isinstance issubclass open input map filter zip enumerate sorted reversed sum min max abs any all super property staticmethod classmethod hasattr getattr setattr delattr ValueError TypeError KeyError IndexError Exception RuntimeError StopIteration")
+
+(def *js-keywords*
+  "function const let var if else for while do switch case default break continue return try catch finally throw new delete typeof instanceof in of class extends super this import export from as async await yield true false null undefined void interface type enum implements abstract public private protected readonly static")
+
+(def *js-builtins*
+  "console Math JSON Object Array String Number Boolean Date RegExp Error Promise Map Set parseInt parseFloat isNaN isFinite setTimeout setInterval fetch require")
+
+(def *shell-keywords*
+  "if then else elif fi for do done while until case esac in function return exit break continue local export readonly declare typeset source eval exec trap shift set unset")
+
+(def *go-keywords*
+  "break case chan const continue default defer else fallthrough for func go goto if import interface map package range return select struct switch type var true false nil iota")
+
+(def *go-types*
+  "int int8 int16 int32 int64 uint uint8 uint16 uint32 uint64 uintptr float32 float64 complex64 complex128 bool byte rune string error any comparable")
+
+(def *rust-keywords*
+  "fn let mut const static if else match for while loop break continue return struct enum impl trait type where pub mod use crate self super as in ref move unsafe async await true false Some None Ok Err")
+
+(def *rust-types*
+  "i8 i16 i32 i64 i128 isize u8 u16 u32 u64 u128 usize f32 f64 bool char str String Vec Box Rc Arc Option Result HashMap HashSet BTreeMap BTreeSet")
+
+(def *java-keywords*
+  "abstract assert break case catch class const continue default do else enum extends final finally for goto if implements import instanceof interface native new package private protected public return static strictfp super switch synchronized this throw throws transient try void volatile while true false null")
+
+(def *java-types*
+  "boolean byte char double float int long short String Object Integer Double Float Long List Map Set ArrayList HashMap HashSet")
+
+(def *ruby-keywords*
+  "def class module end if elsif else unless while until for do begin rescue ensure raise return yield break next redo retry and or not in then when case self super nil true false require require_relative include extend attr_reader attr_writer attr_accessor puts print p lambda proc")
+
+(def *lua-keywords*
+  "and break do else elseif end false for function goto if in local nil not or repeat return then true until while")
+
+(def *sql-keywords*
+  "SELECT FROM WHERE INSERT INTO VALUES UPDATE SET DELETE CREATE DROP ALTER TABLE INDEX VIEW JOIN INNER LEFT RIGHT OUTER ON AS AND OR NOT IN IS NULL LIKE BETWEEN ORDER BY GROUP HAVING LIMIT OFFSET UNION ALL DISTINCT EXISTS CASE WHEN THEN ELSE END BEGIN COMMIT ROLLBACK TRANSACTION PRIMARY KEY FOREIGN REFERENCES UNIQUE CHECK DEFAULT INTEGER TEXT REAL BLOB VARCHAR CHAR BOOLEAN DATE COUNT SUM AVG MIN MAX select from where insert into values update set delete create drop alter table index view join inner left right outer on as and or not in is null like between order by group having limit offset")
+
+(def *perl-keywords*
+  "if elsif else unless while until for foreach do sub my local our use require package return last next redo goto die warn print say open close chomp chop push pop shift unshift sort reverse map grep join split")
+
 ;;;============================================================================
-;;; Language rule setup functions
+;;; Apply base dark theme and reset styles
 ;;;============================================================================
 
-;;; --- Scheme / Lisp ---
+(def (apply-base-dark-theme! ed)
+  "Reset all styles to dark theme defaults."
+  (sci-send ed SCI_STYLESETBACK STYLE_DEFAULT (rgb->sci #x1e #x1e #x2e))
+  (sci-send ed SCI_STYLESETFORE STYLE_DEFAULT (rgb->sci #xd4 #xd4 #xd4))
+  (sci-send ed SCI_STYLECLEARALL)
+  ;; Restore line number margin style (STYLECLEARALL resets it)
+  (sci-send ed SCI_STYLESETBACK STYLE_LINENUMBER (rgb->sci #x20 #x20 #x20))
+  (sci-send ed SCI_STYLESETFORE STYLE_LINENUMBER (rgb->sci #x8c #x8c #x8c)))
 
-(def (setup-scheme-rules! h)
-  ;; Keywords (purple, bold)
-  (qt-syntax-highlighter-add-keywords! h *gerbil-keywords*
-    kw-r kw-g kw-b #t #f)
-  ;; Builtins (cyan)
-  (qt-syntax-highlighter-add-keywords! h *gerbil-builtins*
-    bi-r bi-g bi-b #f #f)
-  ;; Line comments
-  (qt-syntax-highlighter-add-rule! h ";.*$"
-    cm-r cm-g cm-b #f #t)
-  ;; Strings
-  (qt-syntax-highlighter-add-rule! h "\"[^\"\\\\]*(\\\\.[^\"\\\\]*)*\""
-    st-r st-g st-b #f #f)
-  ;; Numbers
-  (qt-syntax-highlighter-add-rule! h "\\b[0-9]+(\\.[0-9]+)?\\b"
-    nm-r nm-g nm-b #f #f)
-  ;; Hex numbers
-  (qt-syntax-highlighter-add-rule! h "#x[0-9a-fA-F]+"
-    nm-r nm-g nm-b #f #f)
-  ;; Character literals
-  (qt-syntax-highlighter-add-rule! h "#\\\\\\S+"
-    st-r st-g st-b #f #f)
-  ;; Booleans and special
-  (qt-syntax-highlighter-add-rule! h "#[tf]\\b"
-    hd-r hd-g hd-b #f #f)
-  ;; Multi-line comments #| ... |#
-  (qt-syntax-highlighter-add-multiline-rule! h "#\\|" "\\|#"
-    cm-r cm-g cm-b #f #t))
+;;;============================================================================
+;;; Lexer-specific style setup
+;;;============================================================================
 
-;;; --- C / C++ ---
+;;; --- C/C++/Java/JS/Go/Rust/Zig lexer ("cpp") ---
+;;; Style IDs: 1=comment, 2=commentline, 3=commentdoc, 4=number,
+;;; 5=keyword, 6=string, 7=character, 9=preprocessor, 10=operator, 16=keyword2
 
-(def (setup-c-rules! h)
-  ;; Keywords
-  (qt-syntax-highlighter-add-keywords! h
-    (string-join
-      '("if" "else" "for" "while" "do" "switch" "case" "default"
-        "break" "continue" "return" "goto" "struct" "union" "enum"
-        "typedef" "sizeof" "static" "const" "volatile" "extern"
-        "inline" "register" "auto" "signed" "unsigned"
-        "class" "public" "private" "protected" "virtual" "override"
-        "template" "typename" "namespace" "using" "new" "delete"
-        "throw" "try" "catch" "noexcept" "constexpr" "nullptr"
-        "true" "false" "this" "operator")
-      " ")
-    kw-r kw-g kw-b #t #f)
-  ;; Types
-  (qt-syntax-highlighter-add-keywords! h
-    (string-join
-      '("int" "char" "float" "double" "void" "long" "short"
-        "bool" "size_t" "ssize_t" "int8_t" "int16_t" "int32_t" "int64_t"
-        "uint8_t" "uint16_t" "uint32_t" "uint64_t"
-        "FILE" "NULL" "EOF")
-      " ")
-    ty-r ty-g ty-b #f #f)
-  ;; Line comments
-  (qt-syntax-highlighter-add-rule! h "//.*$"
-    cm-r cm-g cm-b #f #t)
-  ;; Strings
-  (qt-syntax-highlighter-add-rule! h "\"[^\"\\\\]*(\\\\.[^\"\\\\]*)*\""
-    st-r st-g st-b #f #f)
-  ;; Character literals
-  (qt-syntax-highlighter-add-rule! h "'[^'\\\\]*(\\\\.[^'\\\\]*)*'"
-    st-r st-g st-b #f #f)
-  ;; Preprocessor
-  (qt-syntax-highlighter-add-rule! h "^\\s*#\\s*\\w+"
-    pp-r pp-g pp-b #f #f)
-  ;; Numbers
-  (qt-syntax-highlighter-add-rule! h "\\b[0-9]+(\\.[0-9]+)?([eE][+-]?[0-9]+)?[fFlLuU]*\\b"
-    nm-r nm-g nm-b #f #f)
-  ;; Hex numbers
-  (qt-syntax-highlighter-add-rule! h "\\b0[xX][0-9a-fA-F]+[uUlL]*\\b"
-    nm-r nm-g nm-b #f #f)
-  ;; Block comments /* ... */
-  (qt-syntax-highlighter-add-multiline-rule! h "/\\*" "\\*/"
-    cm-r cm-g cm-b #f #t))
+(def (setup-cpp-styles! ed keywords (types #f))
+  ;; Comments: gray, italic
+  (for-each (lambda (s)
+              (sci-send ed SCI_STYLESETFORE s (rgb->sci cm-r cm-g cm-b))
+              (sci-send ed SCI_STYLESETITALIC s 1))
+            '(1 2 3 15))
+  ;; Numbers: orange
+  (sci-send ed SCI_STYLESETFORE 4 (rgb->sci nm-r nm-g nm-b))
+  ;; Keywords: purple, bold
+  (sci-send ed SCI_STYLESETFORE 5 (rgb->sci kw-r kw-g kw-b))
+  (sci-send ed SCI_STYLESETBOLD 5 1)
+  ;; Strings: green
+  (sci-send ed SCI_STYLESETFORE 6 (rgb->sci st-r st-g st-b))
+  (sci-send ed SCI_STYLESETFORE 7 (rgb->sci st-r st-g st-b))
+  ;; Preprocessor: orange
+  (sci-send ed SCI_STYLESETFORE 9 (rgb->sci pp-r pp-g pp-b))
+  ;; Operator: light gray
+  (sci-send ed SCI_STYLESETFORE 10 (rgb->sci op-r op-g op-b))
+  ;; Types/keyword2: yellow
+  (sci-send ed SCI_STYLESETFORE 16 (rgb->sci ty-r ty-g ty-b))
+  ;; Set keyword lists
+  (sci-send/string ed SCI_SETKEYWORDS keywords 0)
+  (when types
+    (sci-send/string ed SCI_SETKEYWORDS types 1)))
 
-;;; --- Python ---
+;;; --- Python lexer ("python") ---
+;;; Style IDs: 1=comment, 2=number, 3=string, 4=character, 5=keyword,
+;;; 6=triple, 7=tripledouble, 8=classname, 9=defname, 10=operator,
+;;; 12=commentblock, 14=keyword2, 15=decorator
 
-(def (setup-python-rules! h)
-  ;; Keywords
-  (qt-syntax-highlighter-add-keywords! h
-    (string-join
-      '("False" "None" "True" "and" "as" "assert" "async" "await"
-        "break" "class" "continue" "def" "del" "elif" "else" "except"
-        "finally" "for" "from" "global" "if" "import" "in" "is"
-        "lambda" "nonlocal" "not" "or" "pass" "raise" "return"
-        "try" "while" "with" "yield")
-      " ")
-    kw-r kw-g kw-b #t #f)
-  ;; Builtins
-  (qt-syntax-highlighter-add-keywords! h
-    (string-join
-      '("print" "len" "range" "int" "str" "float" "list" "dict"
-        "tuple" "set" "bool" "type" "isinstance" "issubclass"
-        "open" "input" "map" "filter" "zip" "enumerate"
-        "sorted" "reversed" "sum" "min" "max" "abs" "any" "all"
-        "super" "property" "staticmethod" "classmethod"
-        "hasattr" "getattr" "setattr" "delattr"
-        "ValueError" "TypeError" "KeyError" "IndexError"
-        "Exception" "RuntimeError" "StopIteration")
-      " ")
-    bi-r bi-g bi-b #f #f)
-  ;; Comments
-  (qt-syntax-highlighter-add-rule! h "#.*$"
-    cm-r cm-g cm-b #f #t)
-  ;; Strings (double-quoted)
-  (qt-syntax-highlighter-add-rule! h "\"[^\"\\\\]*(\\\\.[^\"\\\\]*)*\""
-    st-r st-g st-b #f #f)
-  ;; Strings (single-quoted)
-  (qt-syntax-highlighter-add-rule! h "'[^'\\\\]*(\\\\.[^'\\\\]*)*'"
-    st-r st-g st-b #f #f)
-  ;; Decorators
-  (qt-syntax-highlighter-add-rule! h "@\\w+"
-    pp-r pp-g pp-b #f #f)
-  ;; Numbers
-  (qt-syntax-highlighter-add-rule! h "\\b[0-9]+(\\.[0-9]+)?([eE][+-]?[0-9]+)?\\b"
-    nm-r nm-g nm-b #f #f)
-  ;; f-strings prefix
-  (qt-syntax-highlighter-add-rule! h "\\bf\"" st-r st-g st-b #f #f)
-  ;; Triple-quoted strings
-  (qt-syntax-highlighter-add-multiline-rule! h "\"\"\"" "\"\"\""
-    st-r st-g st-b #f #f)
-  (qt-syntax-highlighter-add-multiline-rule! h "'''" "'''"
-    st-r st-g st-b #f #f))
+(def (setup-python-styles! ed)
+  ;; Comments: gray, italic
+  (sci-send ed SCI_STYLESETFORE 1 (rgb->sci cm-r cm-g cm-b))
+  (sci-send ed SCI_STYLESETITALIC 1 1)
+  (sci-send ed SCI_STYLESETFORE 12 (rgb->sci cm-r cm-g cm-b))
+  (sci-send ed SCI_STYLESETITALIC 12 1)
+  ;; Numbers: orange
+  (sci-send ed SCI_STYLESETFORE 2 (rgb->sci nm-r nm-g nm-b))
+  ;; Strings: green (single, double, triple)
+  (for-each (lambda (s) (sci-send ed SCI_STYLESETFORE s (rgb->sci st-r st-g st-b)))
+            '(3 4 6 7))
+  ;; Keywords: purple, bold
+  (sci-send ed SCI_STYLESETFORE 5 (rgb->sci kw-r kw-g kw-b))
+  (sci-send ed SCI_STYLESETBOLD 5 1)
+  ;; Class/def names: yellow
+  (sci-send ed SCI_STYLESETFORE 8 (rgb->sci ty-r ty-g ty-b))
+  (sci-send ed SCI_STYLESETFORE 9 (rgb->sci ty-r ty-g ty-b))
+  ;; Operator: light gray
+  (sci-send ed SCI_STYLESETFORE 10 (rgb->sci op-r op-g op-b))
+  ;; Builtins/keyword2: cyan
+  (sci-send ed SCI_STYLESETFORE 14 (rgb->sci bi-r bi-g bi-b))
+  ;; Decorators: orange
+  (sci-send ed SCI_STYLESETFORE 15 (rgb->sci pp-r pp-g pp-b))
+  ;; Set keyword lists
+  (sci-send/string ed SCI_SETKEYWORDS *python-keywords* 0)
+  (sci-send/string ed SCI_SETKEYWORDS *python-builtins* 1))
 
-;;; --- JavaScript / TypeScript ---
+;;; --- Lisp/Scheme lexer ("lisp") ---
+;;; Style IDs: 1=comment, 2=number, 3=keyword, 4=keyword_kw,
+;;; 5=symbol, 6=string, 9=operator, 11=multi-comment
 
-(def (setup-javascript-rules! h)
-  ;; Keywords
-  (qt-syntax-highlighter-add-keywords! h
-    (string-join
-      '("function" "const" "let" "var" "if" "else" "for" "while"
-        "do" "switch" "case" "default" "break" "continue" "return"
-        "try" "catch" "finally" "throw" "new" "delete" "typeof"
-        "instanceof" "in" "of" "class" "extends" "super" "this"
-        "import" "export" "from" "as" "async" "await" "yield"
-        "true" "false" "null" "undefined" "void"
-        "interface" "type" "enum" "implements" "abstract"
-        "public" "private" "protected" "readonly" "static")
-      " ")
-    kw-r kw-g kw-b #t #f)
-  ;; Builtins
-  (qt-syntax-highlighter-add-keywords! h
-    (string-join
-      '("console" "Math" "JSON" "Object" "Array" "String" "Number"
-        "Boolean" "Date" "RegExp" "Error" "Promise" "Map" "Set"
-        "parseInt" "parseFloat" "isNaN" "isFinite"
-        "setTimeout" "setInterval" "fetch" "require")
-      " ")
-    bi-r bi-g bi-b #f #f)
-  ;; Line comments
-  (qt-syntax-highlighter-add-rule! h "//.*$"
-    cm-r cm-g cm-b #f #t)
-  ;; Strings
-  (qt-syntax-highlighter-add-rule! h "\"[^\"\\\\]*(\\\\.[^\"\\\\]*)*\""
-    st-r st-g st-b #f #f)
-  (qt-syntax-highlighter-add-rule! h "'[^'\\\\]*(\\\\.[^'\\\\]*)*'"
-    st-r st-g st-b #f #f)
-  ;; Template literals
-  (qt-syntax-highlighter-add-rule! h "`[^`]*`"
-    st-r st-g st-b #f #f)
-  ;; Numbers
-  (qt-syntax-highlighter-add-rule! h "\\b[0-9]+(\\.[0-9]+)?([eE][+-]?[0-9]+)?\\b"
-    nm-r nm-g nm-b #f #f)
-  ;; Block comments
-  (qt-syntax-highlighter-add-multiline-rule! h "/\\*" "\\*/"
-    cm-r cm-g cm-b #f #t))
+(def (setup-lisp-styles! ed)
+  ;; Comments: gray, italic
+  (sci-send ed SCI_STYLESETFORE 1 (rgb->sci cm-r cm-g cm-b))
+  (sci-send ed SCI_STYLESETITALIC 1 1)
+  (sci-send ed SCI_STYLESETFORE 11 (rgb->sci cm-r cm-g cm-b))
+  (sci-send ed SCI_STYLESETITALIC 11 1)
+  ;; Numbers: orange
+  (sci-send ed SCI_STYLESETFORE 2 (rgb->sci nm-r nm-g nm-b))
+  ;; Keywords: purple, bold
+  (sci-send ed SCI_STYLESETFORE 3 (rgb->sci kw-r kw-g kw-b))
+  (sci-send ed SCI_STYLESETBOLD 3 1)
+  ;; Keyword-kw (builtins): cyan
+  (sci-send ed SCI_STYLESETFORE 4 (rgb->sci bi-r bi-g bi-b))
+  ;; Strings: green
+  (sci-send ed SCI_STYLESETFORE 6 (rgb->sci st-r st-g st-b))
+  ;; Operator: light gray
+  (sci-send ed SCI_STYLESETFORE 9 (rgb->sci op-r op-g op-b))
+  ;; Set keyword lists
+  (sci-send/string ed SCI_SETKEYWORDS *gerbil-keywords* 0)
+  (sci-send/string ed SCI_SETKEYWORDS *gerbil-builtins* 1))
 
-;;; --- Org-mode ---
+;;; --- Bash lexer ("bash") ---
+;;; Style IDs: 2=comment, 3=number, 4=keyword, 5=string(dq),
+;;; 6=character(sq), 7=operator, 9=scalar($var), 10=param(${var}), 11=backticks
 
-(def (setup-org-rules! h)
-  ;; Headings (blue, bold)
-  (qt-syntax-highlighter-add-rule! h "^\\*+ .*$"
-    hd-r hd-g hd-b #t #f)
-  ;; Directives (#+...)
-  (qt-syntax-highlighter-add-rule! h "^#\\+.*$"
-    cm-r cm-g cm-b #f #f)
-  ;; Inline code ~code~ and =code=
-  (qt-syntax-highlighter-add-rule! h "~[^~]+~"
-    st-r st-g st-b #f #f)
-  (qt-syntax-highlighter-add-rule! h "=[^=]+="
-    st-r st-g st-b #f #f)
-  ;; Bold *text*
-  (qt-syntax-highlighter-add-rule! h "\\*[^*]+\\*"
-    op-r op-g op-b #t #f)
-  ;; Italic /text/
-  (qt-syntax-highlighter-add-rule! h "/[^/]+/"
-    op-r op-g op-b #f #t)
-  ;; Links [[...]]
-  (qt-syntax-highlighter-add-rule! h "\\[\\[.*?\\]\\]"
-    bi-r bi-g bi-b #f #f)
-  ;; Comments (lines starting with #, not #+)
-  (qt-syntax-highlighter-add-rule! h "^# [^+].*$"
-    cm-r cm-g cm-b #f #t)
-  ;; Source blocks
-  (qt-syntax-highlighter-add-multiline-rule! h
-    "^#\\+begin_src" "^#\\+end_src"
-    st-r st-g st-b #f #f)
-  ;; Example blocks
-  (qt-syntax-highlighter-add-multiline-rule! h
-    "^#\\+begin_example" "^#\\+end_example"
-    st-r st-g st-b #f #f))
+(def (setup-bash-styles! ed)
+  ;; Comment: gray, italic
+  (sci-send ed SCI_STYLESETFORE 2 (rgb->sci cm-r cm-g cm-b))
+  (sci-send ed SCI_STYLESETITALIC 2 1)
+  ;; Number: orange
+  (sci-send ed SCI_STYLESETFORE 3 (rgb->sci nm-r nm-g nm-b))
+  ;; Keyword: purple, bold
+  (sci-send ed SCI_STYLESETFORE 4 (rgb->sci kw-r kw-g kw-b))
+  (sci-send ed SCI_STYLESETBOLD 4 1)
+  ;; Strings: green
+  (sci-send ed SCI_STYLESETFORE 5 (rgb->sci st-r st-g st-b))
+  (sci-send ed SCI_STYLESETFORE 6 (rgb->sci st-r st-g st-b))
+  ;; Operator: light gray
+  (sci-send ed SCI_STYLESETFORE 7 (rgb->sci op-r op-g op-b))
+  ;; Variables: cyan
+  (sci-send ed SCI_STYLESETFORE 9 (rgb->sci bi-r bi-g bi-b))
+  (sci-send ed SCI_STYLESETFORE 10 (rgb->sci bi-r bi-g bi-b))
+  ;; Backticks: green
+  (sci-send ed SCI_STYLESETFORE 11 (rgb->sci st-r st-g st-b))
+  ;; Set keyword list
+  (sci-send/string ed SCI_SETKEYWORDS *shell-keywords* 0))
 
-;;; --- Markdown ---
+;;; --- Ruby lexer ("ruby") ---
+;;; Style IDs: 2=comment, 4=number, 5=keyword, 6=string(dq),
+;;; 7=character(sq), 10=symbol, 11=classvar, 12=instancevar
 
-(def (setup-markdown-rules! h)
-  ;; Headings (blue, bold)
-  (qt-syntax-highlighter-add-rule! h "^#{1,6} .*$"
-    hd-r hd-g hd-b #t #f)
-  ;; Inline code
-  (qt-syntax-highlighter-add-rule! h "`[^`]+`"
-    st-r st-g st-b #f #f)
-  ;; Bold **text**
-  (qt-syntax-highlighter-add-rule! h "\\*\\*[^*]+\\*\\*"
-    op-r op-g op-b #t #f)
-  ;; Italic *text*
-  (qt-syntax-highlighter-add-rule! h "\\*[^*]+\\*"
-    op-r op-g op-b #f #t)
-  ;; Links [text](url)
-  (qt-syntax-highlighter-add-rule! h "\\[.*?\\]\\(.*?\\)"
-    bi-r bi-g bi-b #f #f)
-  ;; Blockquote
-  (qt-syntax-highlighter-add-rule! h "^>.*$"
-    cm-r cm-g cm-b #f #t)
-  ;; List markers
-  (qt-syntax-highlighter-add-rule! h "^\\s*[-*+] "
-    op-r op-g op-b #t #f)
-  ;; Fenced code blocks
-  (qt-syntax-highlighter-add-multiline-rule! h "^```" "^```$"
-    st-r st-g st-b #f #f))
+(def (setup-ruby-styles! ed)
+  (sci-send ed SCI_STYLESETFORE 2 (rgb->sci cm-r cm-g cm-b))
+  (sci-send ed SCI_STYLESETITALIC 2 1)
+  (sci-send ed SCI_STYLESETFORE 4 (rgb->sci nm-r nm-g nm-b))
+  (sci-send ed SCI_STYLESETFORE 5 (rgb->sci kw-r kw-g kw-b))
+  (sci-send ed SCI_STYLESETBOLD 5 1)
+  (sci-send ed SCI_STYLESETFORE 6 (rgb->sci st-r st-g st-b))
+  (sci-send ed SCI_STYLESETFORE 7 (rgb->sci st-r st-g st-b))
+  (sci-send ed SCI_STYLESETFORE 10 (rgb->sci bi-r bi-g bi-b))
+  (sci-send ed SCI_STYLESETFORE 11 (rgb->sci bi-r bi-g bi-b))
+  (sci-send ed SCI_STYLESETFORE 12 (rgb->sci bi-r bi-g bi-b))
+  (sci-send/string ed SCI_SETKEYWORDS *ruby-keywords* 0))
 
-;;; --- Shell ---
+;;; --- Lua lexer ("lua") ---
+;;; Style IDs: 1=comment, 2=commentline, 3=commentdoc, 4=number,
+;;; 5=keyword, 6=string, 7=character, 10=operator
 
-(def (setup-shell-rules! h)
-  ;; Keywords
-  (qt-syntax-highlighter-add-keywords! h
-    (string-join
-      '("if" "then" "else" "elif" "fi" "for" "do" "done"
-        "while" "until" "case" "esac" "in" "function"
-        "return" "exit" "break" "continue"
-        "local" "export" "readonly" "declare" "typeset"
-        "source" "eval" "exec" "trap" "shift" "set" "unset")
-      " ")
-    kw-r kw-g kw-b #t #f)
-  ;; Comments
-  (qt-syntax-highlighter-add-rule! h "#.*$"
-    cm-r cm-g cm-b #f #t)
-  ;; Strings
-  (qt-syntax-highlighter-add-rule! h "\"[^\"\\\\]*(\\\\.[^\"\\\\]*)*\""
-    st-r st-g st-b #f #f)
-  (qt-syntax-highlighter-add-rule! h "'[^']*'"
-    st-r st-g st-b #f #f)
-  ;; Variables
-  (qt-syntax-highlighter-add-rule! h "\\$\\{?\\w+"
-    bi-r bi-g bi-b #f #f)
-  ;; Numbers
-  (qt-syntax-highlighter-add-rule! h "\\b[0-9]+\\b"
-    nm-r nm-g nm-b #f #f))
+(def (setup-lua-styles! ed)
+  (for-each (lambda (s)
+              (sci-send ed SCI_STYLESETFORE s (rgb->sci cm-r cm-g cm-b))
+              (sci-send ed SCI_STYLESETITALIC s 1))
+            '(1 2 3))
+  (sci-send ed SCI_STYLESETFORE 4 (rgb->sci nm-r nm-g nm-b))
+  (sci-send ed SCI_STYLESETFORE 5 (rgb->sci kw-r kw-g kw-b))
+  (sci-send ed SCI_STYLESETBOLD 5 1)
+  (sci-send ed SCI_STYLESETFORE 6 (rgb->sci st-r st-g st-b))
+  (sci-send ed SCI_STYLESETFORE 7 (rgb->sci st-r st-g st-b))
+  (sci-send ed SCI_STYLESETFORE 10 (rgb->sci op-r op-g op-b))
+  (sci-send/string ed SCI_SETKEYWORDS *lua-keywords* 0))
 
-;;; --- Rust ---
+;;; --- SQL lexer ("sql") ---
+;;; Style IDs: 1=comment, 2=commentline, 4=number, 5=keyword,
+;;; 6=string(dq), 7=string(sq), 10=operator, 11=identifier
 
-(def (setup-rust-rules! h)
-  ;; Keywords
-  (qt-syntax-highlighter-add-keywords! h
-    (string-join
-      '("fn" "let" "mut" "const" "static" "if" "else" "match"
-        "for" "while" "loop" "break" "continue" "return"
-        "struct" "enum" "impl" "trait" "type" "where"
-        "pub" "mod" "use" "crate" "self" "super"
-        "as" "in" "ref" "move" "unsafe" "async" "await"
-        "true" "false" "Some" "None" "Ok" "Err")
-      " ")
-    kw-r kw-g kw-b #t #f)
-  ;; Types
-  (qt-syntax-highlighter-add-keywords! h
-    (string-join
-      '("i8" "i16" "i32" "i64" "i128" "isize"
-        "u8" "u16" "u32" "u64" "u128" "usize"
-        "f32" "f64" "bool" "char" "str"
-        "String" "Vec" "Box" "Rc" "Arc" "Option" "Result"
-        "HashMap" "HashSet" "BTreeMap" "BTreeSet")
-      " ")
-    ty-r ty-g ty-b #f #f)
-  ;; Line comments
-  (qt-syntax-highlighter-add-rule! h "//.*$"
-    cm-r cm-g cm-b #f #t)
-  ;; Strings
-  (qt-syntax-highlighter-add-rule! h "\"[^\"\\\\]*(\\\\.[^\"\\\\]*)*\""
-    st-r st-g st-b #f #f)
-  ;; Numbers
-  (qt-syntax-highlighter-add-rule! h "\\b[0-9]+(\\.[0-9]+)?([eE][+-]?[0-9]+)?\\b"
-    nm-r nm-g nm-b #f #f)
-  ;; Macros (name!)
-  (qt-syntax-highlighter-add-rule! h "\\b\\w+!"
-    pp-r pp-g pp-b #f #f)
-  ;; Attributes
-  (qt-syntax-highlighter-add-rule! h "#\\[.*?\\]"
-    pp-r pp-g pp-b #f #f)
-  ;; Block comments
-  (qt-syntax-highlighter-add-multiline-rule! h "/\\*" "\\*/"
-    cm-r cm-g cm-b #f #t))
+(def (setup-sql-styles! ed)
+  (sci-send ed SCI_STYLESETFORE 1 (rgb->sci cm-r cm-g cm-b))
+  (sci-send ed SCI_STYLESETITALIC 1 1)
+  (sci-send ed SCI_STYLESETFORE 2 (rgb->sci cm-r cm-g cm-b))
+  (sci-send ed SCI_STYLESETITALIC 2 1)
+  (sci-send ed SCI_STYLESETFORE 4 (rgb->sci nm-r nm-g nm-b))
+  (sci-send ed SCI_STYLESETFORE 5 (rgb->sci kw-r kw-g kw-b))
+  (sci-send ed SCI_STYLESETBOLD 5 1)
+  (sci-send ed SCI_STYLESETFORE 6 (rgb->sci st-r st-g st-b))
+  (sci-send ed SCI_STYLESETFORE 7 (rgb->sci st-r st-g st-b))
+  (sci-send ed SCI_STYLESETFORE 10 (rgb->sci op-r op-g op-b))
+  (sci-send/string ed SCI_SETKEYWORDS *sql-keywords* 0))
 
-;;; --- Go ---
+;;; --- Perl lexer ("perl") ---
+;;; Style IDs: 1=error, 2=comment, 3=POD, 4=number, 5=keyword,
+;;; 6=string(dq), 7=string(sq), 10=operator, 11=identifier
 
-(def (setup-go-rules! h)
-  ;; Keywords
-  (qt-syntax-highlighter-add-keywords! h
-    (string-join
-      '("break" "case" "chan" "const" "continue" "default" "defer"
-        "else" "fallthrough" "for" "func" "go" "goto" "if"
-        "import" "interface" "map" "package" "range" "return"
-        "select" "struct" "switch" "type" "var"
-        "true" "false" "nil" "iota")
-      " ")
-    kw-r kw-g kw-b #t #f)
-  ;; Types
-  (qt-syntax-highlighter-add-keywords! h
-    (string-join
-      '("int" "int8" "int16" "int32" "int64"
-        "uint" "uint8" "uint16" "uint32" "uint64" "uintptr"
-        "float32" "float64" "complex64" "complex128"
-        "bool" "byte" "rune" "string" "error"
-        "any" "comparable")
-      " ")
-    ty-r ty-g ty-b #f #f)
-  ;; Line comments
-  (qt-syntax-highlighter-add-rule! h "//.*$"
-    cm-r cm-g cm-b #f #t)
-  ;; Strings
-  (qt-syntax-highlighter-add-rule! h "\"[^\"\\\\]*(\\\\.[^\"\\\\]*)*\""
-    st-r st-g st-b #f #f)
-  ;; Raw strings
-  (qt-syntax-highlighter-add-rule! h "`[^`]*`"
-    st-r st-g st-b #f #f)
-  ;; Numbers
-  (qt-syntax-highlighter-add-rule! h "\\b[0-9]+(\\.[0-9]+)?([eE][+-]?[0-9]+)?\\b"
-    nm-r nm-g nm-b #f #f)
-  ;; Block comments
-  (qt-syntax-highlighter-add-multiline-rule! h "/\\*" "\\*/"
-    cm-r cm-g cm-b #f #t))
-
-;;; --- Java ---
-
-(def (setup-java-rules! h)
-  ;; Keywords
-  (qt-syntax-highlighter-add-keywords! h
-    (string-join
-      '("abstract" "assert" "break" "case" "catch" "class" "const"
-        "continue" "default" "do" "else" "enum" "extends" "final"
-        "finally" "for" "goto" "if" "implements" "import"
-        "instanceof" "interface" "native" "new" "package" "private"
-        "protected" "public" "return" "static" "strictfp" "super"
-        "switch" "synchronized" "this" "throw" "throws" "transient"
-        "try" "void" "volatile" "while"
-        "true" "false" "null")
-      " ")
-    kw-r kw-g kw-b #t #f)
-  ;; Types
-  (qt-syntax-highlighter-add-keywords! h
-    (string-join
-      '("boolean" "byte" "char" "double" "float" "int" "long" "short"
-        "String" "Object" "Integer" "Double" "Float" "Long"
-        "List" "Map" "Set" "ArrayList" "HashMap" "HashSet")
-      " ")
-    ty-r ty-g ty-b #f #f)
-  ;; Line comments
-  (qt-syntax-highlighter-add-rule! h "//.*$"
-    cm-r cm-g cm-b #f #t)
-  ;; Strings
-  (qt-syntax-highlighter-add-rule! h "\"[^\"\\\\]*(\\\\.[^\"\\\\]*)*\""
-    st-r st-g st-b #f #f)
-  ;; Numbers
-  (qt-syntax-highlighter-add-rule! h "\\b[0-9]+(\\.[0-9]+)?([eE][+-]?[0-9]+)?[fFdDlL]?\\b"
-    nm-r nm-g nm-b #f #f)
-  ;; Annotations
-  (qt-syntax-highlighter-add-rule! h "@\\w+"
-    pp-r pp-g pp-b #f #f)
-  ;; Block comments
-  (qt-syntax-highlighter-add-multiline-rule! h "/\\*" "\\*/"
-    cm-r cm-g cm-b #f #t))
-
-;;; --- Ruby ---
-
-(def (setup-ruby-rules! h)
-  (qt-syntax-highlighter-add-keywords! h
-    (string-join
-      '("def" "class" "module" "end" "if" "elsif" "else" "unless"
-        "while" "until" "for" "do" "begin" "rescue" "ensure" "raise"
-        "return" "yield" "break" "next" "redo" "retry"
-        "and" "or" "not" "in" "then" "when" "case"
-        "self" "super" "nil" "true" "false"
-        "require" "require_relative" "include" "extend"
-        "attr_reader" "attr_writer" "attr_accessor"
-        "puts" "print" "p" "lambda" "proc" "block_given?")
-      " ")
-    kw-r kw-g kw-b #t #f)
-  (qt-syntax-highlighter-add-rule! h "#.*$"
-    cm-r cm-g cm-b #f #t)
-  (qt-syntax-highlighter-add-rule! h "\"[^\"\\\\]*(\\\\.[^\"\\\\]*)*\""
-    st-r st-g st-b #f #f)
-  (qt-syntax-highlighter-add-rule! h "'[^'\\\\]*(\\\\.[^'\\\\]*)*'"
-    st-r st-g st-b #f #f)
-  (qt-syntax-highlighter-add-rule! h ":[a-zA-Z_]\\w*"
-    bi-r bi-g bi-b #f #f)
-  (qt-syntax-highlighter-add-rule! h "@\\w+"
-    bi-r bi-g bi-b #f #f)
-  (qt-syntax-highlighter-add-rule! h "\\b[0-9]+(\\.[0-9]+)?\\b"
-    nm-r nm-g nm-b #f #f))
-
-;;; --- JSON ---
-
-(def (setup-json-rules! h)
-  ;; Keys
-  (qt-syntax-highlighter-add-rule! h "\"[^\"]*\"\\s*:"
-    bi-r bi-g bi-b #f #f)
-  ;; Strings
-  (qt-syntax-highlighter-add-rule! h "\"[^\"\\\\]*(\\\\.[^\"\\\\]*)*\""
-    st-r st-g st-b #f #f)
-  ;; Numbers
-  (qt-syntax-highlighter-add-rule! h "\\b-?[0-9]+(\\.[0-9]+)?([eE][+-]?[0-9]+)?\\b"
-    nm-r nm-g nm-b #f #f)
-  ;; Booleans and null
-  (qt-syntax-highlighter-add-keywords! h "true false null"
-    kw-r kw-g kw-b #t #f))
-
-;;; --- YAML ---
-
-(def (setup-yaml-rules! h)
-  ;; Keys
-  (qt-syntax-highlighter-add-rule! h "^\\s*[\\w.-]+:"
-    bi-r bi-g bi-b #f #f)
-  ;; Comments
-  (qt-syntax-highlighter-add-rule! h "#.*$"
-    cm-r cm-g cm-b #f #t)
-  ;; Strings
-  (qt-syntax-highlighter-add-rule! h "\"[^\"\\\\]*(\\\\.[^\"\\\\]*)*\""
-    st-r st-g st-b #f #f)
-  (qt-syntax-highlighter-add-rule! h "'[^']*'"
-    st-r st-g st-b #f #f)
-  ;; Numbers
-  (qt-syntax-highlighter-add-rule! h "\\b[0-9]+(\\.[0-9]+)?\\b"
-    nm-r nm-g nm-b #f #f)
-  ;; Booleans
-  (qt-syntax-highlighter-add-keywords! h "true false yes no on off null"
-    kw-r kw-g kw-b #t #f)
-  ;; Anchors and aliases
-  (qt-syntax-highlighter-add-rule! h "[&*]\\w+"
-    pp-r pp-g pp-b #f #f))
-
-;;; --- TOML ---
-
-(def (setup-toml-rules! h)
-  ;; Section headers
-  (qt-syntax-highlighter-add-rule! h "^\\[.*\\]"
-    hd-r hd-g hd-b #t #f)
-  ;; Keys
-  (qt-syntax-highlighter-add-rule! h "^\\s*[\\w.-]+\\s*="
-    bi-r bi-g bi-b #f #f)
-  ;; Comments
-  (qt-syntax-highlighter-add-rule! h "#.*$"
-    cm-r cm-g cm-b #f #t)
-  ;; Strings
-  (qt-syntax-highlighter-add-rule! h "\"[^\"\\\\]*(\\\\.[^\"\\\\]*)*\""
-    st-r st-g st-b #f #f)
-  ;; Numbers
-  (qt-syntax-highlighter-add-rule! h "\\b[0-9]+(\\.[0-9]+)?\\b"
-    nm-r nm-g nm-b #f #f)
-  ;; Booleans
-  (qt-syntax-highlighter-add-keywords! h "true false"
-    kw-r kw-g kw-b #t #f))
-
-;;; --- XML / HTML ---
-
-(def (setup-xml-rules! h)
-  ;; Tags
-  (qt-syntax-highlighter-add-rule! h "</?\\w[^>]*>"
-    bi-r bi-g bi-b #f #f)
-  ;; Tag names
-  (qt-syntax-highlighter-add-rule! h "</?\\w+"
-    kw-r kw-g kw-b #t #f)
-  ;; Attributes
-  (qt-syntax-highlighter-add-rule! h "\\b\\w+="
-    bi-r bi-g bi-b #f #f)
-  ;; Strings in attributes
-  (qt-syntax-highlighter-add-rule! h "\"[^\"]*\""
-    st-r st-g st-b #f #f)
-  ;; Comments
-  (qt-syntax-highlighter-add-multiline-rule! h "<!--" "-->"
-    cm-r cm-g cm-b #f #t))
-
-;;; --- CSS ---
-
-(def (setup-css-rules! h)
-  ;; Selectors (simplified)
-  (qt-syntax-highlighter-add-rule! h "[.#]?\\w[\\w-]*\\s*\\{"
-    kw-r kw-g kw-b #t #f)
-  ;; Properties
-  (qt-syntax-highlighter-add-rule! h "\\b[a-z-]+:"
-    bi-r bi-g bi-b #f #f)
-  ;; Strings
-  (qt-syntax-highlighter-add-rule! h "\"[^\"]*\""
-    st-r st-g st-b #f #f)
-  (qt-syntax-highlighter-add-rule! h "'[^']*'"
-    st-r st-g st-b #f #f)
-  ;; Numbers and units
-  (qt-syntax-highlighter-add-rule! h "\\b[0-9]+(\\.[0-9]+)?(px|em|rem|%|vh|vw|pt|cm|mm)?\\b"
-    nm-r nm-g nm-b #f #f)
-  ;; Colors
-  (qt-syntax-highlighter-add-rule! h "#[0-9a-fA-F]{3,8}\\b"
-    nm-r nm-g nm-b #f #f)
-  ;; Comments
-  (qt-syntax-highlighter-add-multiline-rule! h "/\\*" "\\*/"
-    cm-r cm-g cm-b #f #t))
-
-;;; --- SQL ---
-
-(def (setup-sql-rules! h)
-  (qt-syntax-highlighter-add-keywords! h
-    (string-join
-      '("SELECT" "FROM" "WHERE" "INSERT" "INTO" "VALUES" "UPDATE" "SET"
-        "DELETE" "CREATE" "DROP" "ALTER" "TABLE" "INDEX" "VIEW"
-        "JOIN" "INNER" "LEFT" "RIGHT" "OUTER" "ON" "AS"
-        "AND" "OR" "NOT" "IN" "IS" "NULL" "LIKE" "BETWEEN"
-        "ORDER" "BY" "GROUP" "HAVING" "LIMIT" "OFFSET"
-        "UNION" "ALL" "DISTINCT" "EXISTS" "CASE" "WHEN" "THEN" "ELSE" "END"
-        "BEGIN" "COMMIT" "ROLLBACK" "TRANSACTION"
-        "PRIMARY" "KEY" "FOREIGN" "REFERENCES" "UNIQUE" "CHECK" "DEFAULT"
-        "INTEGER" "TEXT" "REAL" "BLOB" "VARCHAR" "CHAR" "BOOLEAN" "DATE"
-        "COUNT" "SUM" "AVG" "MIN" "MAX"
-        ;; lowercase too
-        "select" "from" "where" "insert" "into" "values" "update" "set"
-        "delete" "create" "drop" "alter" "table" "index" "view"
-        "join" "inner" "left" "right" "outer" "on" "as"
-        "and" "or" "not" "in" "is" "null" "like" "between"
-        "order" "by" "group" "having" "limit" "offset")
-      " ")
-    kw-r kw-g kw-b #t #f)
-  ;; Line comments
-  (qt-syntax-highlighter-add-rule! h "--.*$"
-    cm-r cm-g cm-b #f #t)
-  ;; Strings
-  (qt-syntax-highlighter-add-rule! h "'[^']*'"
-    st-r st-g st-b #f #f)
-  ;; Numbers
-  (qt-syntax-highlighter-add-rule! h "\\b[0-9]+(\\.[0-9]+)?\\b"
-    nm-r nm-g nm-b #f #f)
-  ;; Block comments
-  (qt-syntax-highlighter-add-multiline-rule! h "/\\*" "\\*/"
-    cm-r cm-g cm-b #f #t))
-
-;;; --- Lua ---
-
-(def (setup-lua-rules! h)
-  (qt-syntax-highlighter-add-keywords! h
-    (string-join
-      '("and" "break" "do" "else" "elseif" "end" "false" "for"
-        "function" "goto" "if" "in" "local" "nil" "not" "or"
-        "repeat" "return" "then" "true" "until" "while")
-      " ")
-    kw-r kw-g kw-b #t #f)
-  (qt-syntax-highlighter-add-rule! h "--.*$"
-    cm-r cm-g cm-b #f #t)
-  (qt-syntax-highlighter-add-rule! h "\"[^\"\\\\]*(\\\\.[^\"\\\\]*)*\""
-    st-r st-g st-b #f #f)
-  (qt-syntax-highlighter-add-rule! h "'[^'\\\\]*(\\\\.[^'\\\\]*)*'"
-    st-r st-g st-b #f #f)
-  (qt-syntax-highlighter-add-rule! h "\\b[0-9]+(\\.[0-9]+)?\\b"
-    nm-r nm-g nm-b #f #f)
-  (qt-syntax-highlighter-add-multiline-rule! h "--\\[\\[" "\\]\\]"
-    cm-r cm-g cm-b #f #t))
-
-;;; --- Zig ---
-
-(def (setup-zig-rules! h)
-  (qt-syntax-highlighter-add-keywords! h
-    (string-join
-      '("fn" "pub" "const" "var" "if" "else" "while" "for"
-        "break" "continue" "return" "switch" "unreachable"
-        "struct" "enum" "union" "error" "try" "catch"
-        "defer" "errdefer" "comptime" "inline" "export"
-        "test" "undefined" "null" "true" "false"
-        "and" "or" "orelse" "async" "await" "suspend" "resume")
-      " ")
-    kw-r kw-g kw-b #t #f)
-  (qt-syntax-highlighter-add-rule! h "//.*$"
-    cm-r cm-g cm-b #f #t)
-  (qt-syntax-highlighter-add-rule! h "\"[^\"\\\\]*(\\\\.[^\"\\\\]*)*\""
-    st-r st-g st-b #f #f)
-  (qt-syntax-highlighter-add-rule! h "\\b[0-9]+(\\.[0-9]+)?\\b"
-    nm-r nm-g nm-b #f #f)
-  (qt-syntax-highlighter-add-rule! h "@\\w+"
-    pp-r pp-g pp-b #f #f))
-
-;;; --- Nix ---
-
-(def (setup-nix-rules! h)
-  (qt-syntax-highlighter-add-keywords! h
-    (string-join
-      '("let" "in" "with" "rec" "if" "then" "else" "assert"
-        "inherit" "import" "true" "false" "null"
-        "or" "and" "builtins")
-      " ")
-    kw-r kw-g kw-b #t #f)
-  (qt-syntax-highlighter-add-rule! h "#.*$"
-    cm-r cm-g cm-b #f #t)
-  (qt-syntax-highlighter-add-rule! h "\"[^\"\\\\]*(\\\\.[^\"\\\\]*)*\""
-    st-r st-g st-b #f #f)
-  (qt-syntax-highlighter-add-rule! h "''.+?''"
-    st-r st-g st-b #f #f)
-  (qt-syntax-highlighter-add-rule! h "\\b[0-9]+\\b"
-    nm-r nm-g nm-b #f #f)
-  (qt-syntax-highlighter-add-multiline-rule! h "/\\*" "\\*/"
-    cm-r cm-g cm-b #f #t))
-
-;;; --- Makefile ---
-
-(def (setup-makefile-rules! h)
-  ;; Targets
-  (qt-syntax-highlighter-add-rule! h "^[\\w.-]+:"
-    hd-r hd-g hd-b #t #f)
-  ;; Variables
-  (qt-syntax-highlighter-add-rule! h "\\$[({]\\w+[)}]"
-    bi-r bi-g bi-b #f #f)
-  (qt-syntax-highlighter-add-rule! h "\\$\\w"
-    bi-r bi-g bi-b #f #f)
-  ;; Variable assignments
-  (qt-syntax-highlighter-add-rule! h "^\\w+\\s*[:+?]?="
-    kw-r kw-g kw-b #t #f)
-  ;; Comments
-  (qt-syntax-highlighter-add-rule! h "#.*$"
-    cm-r cm-g cm-b #f #t)
-  ;; Strings
-  (qt-syntax-highlighter-add-rule! h "\"[^\"]*\""
-    st-r st-g st-b #f #f)
-  (qt-syntax-highlighter-add-rule! h "'[^']*'"
-    st-r st-g st-b #f #f))
+(def (setup-perl-styles! ed)
+  (sci-send ed SCI_STYLESETFORE 2 (rgb->sci cm-r cm-g cm-b))
+  (sci-send ed SCI_STYLESETITALIC 2 1)
+  (sci-send ed SCI_STYLESETFORE 3 (rgb->sci cm-r cm-g cm-b))
+  (sci-send ed SCI_STYLESETITALIC 3 1)
+  (sci-send ed SCI_STYLESETFORE 4 (rgb->sci nm-r nm-g nm-b))
+  (sci-send ed SCI_STYLESETFORE 5 (rgb->sci kw-r kw-g kw-b))
+  (sci-send ed SCI_STYLESETBOLD 5 1)
+  (sci-send ed SCI_STYLESETFORE 6 (rgb->sci st-r st-g st-b))
+  (sci-send ed SCI_STYLESETFORE 7 (rgb->sci st-r st-g st-b))
+  (sci-send ed SCI_STYLESETFORE 10 (rgb->sci op-r op-g op-b))
+  (sci-send/string ed SCI_SETKEYWORDS *perl-keywords* 0))
 
 ;;;============================================================================
 ;;; Main setup and teardown
 ;;;============================================================================
 
-(def (detect-language-from-shebang-qt text)
-  "Detect language from shebang line for Qt backend."
-  (and text
-       (> (string-length text) 2)
-       (char=? (string-ref text 0) #\#)
-       (char=? (string-ref text 1) #\!)
-       (let* ((nl (string-index text #\newline))
-              (line (if nl (substring text 0 nl) text)))
-         (cond
-           ((or (string-contains line "/bash")
-                (string-contains line "/sh")
-                (string-contains line "/zsh"))
-            'shell)
-           ((string-contains line "python") 'python)
-           ((string-contains line "ruby") 'ruby)
-           ((string-contains line "node") 'javascript)
-           ((string-contains line "lua") 'lua)
-           (else 'shell)))))
-
 (def (qt-setup-highlighting! app buf)
   (let* ((lang (or (detect-language (buffer-file-path buf))
-                   ;; Try shebang detection from first line
                    (let ((path (buffer-file-path buf)))
                      (and path (file-exists? path)
                           (with-catch (lambda (e) #f)
@@ -837,60 +465,79 @@
                                      (detect-language-from-shebang-qt
                                        (string-append line "\n"))))))))
                    (let ((l (buffer-lexer-lang buf)))
-                     ;; Don't highlight special buffers
                      (and (not (memq l '(dired repl eshell shell))) l))))
-         (doc (buffer-doc-pointer buf)))
-    (when (and lang doc)
-      ;; Remove old highlighter if any
-      (qt-remove-highlighting! buf)
-      ;; Create new highlighter on the document
-      (let ((h (qt-syntax-highlighter-create doc)))
-        ;; Apply language rules
-        (case lang
-          ((scheme)     (setup-scheme-rules! h))
-          ((lisp)       (setup-scheme-rules! h))
-          ((c)          (setup-c-rules! h))
-          ((python)     (setup-python-rules! h))
-          ((javascript) (setup-javascript-rules! h))
-          ((org)        (setup-org-rules! h))
-          ((markdown)   (setup-markdown-rules! h))
-          ((shell)      (setup-shell-rules! h))
-          ((rust)       (setup-rust-rules! h))
-          ((go)         (setup-go-rules! h))
-          ((java haskell swift elixir perl) (setup-java-rules! h))
-          ((ruby)       (setup-ruby-rules! h))
-          ((diff)       (setup-shell-rules! h))
-          ((json)       (setup-json-rules! h))
-          ((yaml)       (setup-yaml-rules! h))
-          ((toml)       (setup-toml-rules! h))
-          ((xml)        (setup-xml-rules! h))
-          ((css)        (setup-css-rules! h))
-          ((sql)        (setup-sql-rules! h))
-          ((lua)        (setup-lua-rules! h))
-          ((zig)        (setup-zig-rules! h))
-          ((nix)        (setup-nix-rules! h))
-          ((makefile)   (setup-makefile-rules! h))
-          (else (void)))
-        (hash-put! *qt-highlighters* buf h)))))
+         (doc (buffer-doc-pointer buf))
+         (ed (and doc (hash-get *doc-editor-map* doc)))
+         (lexer-name (and lang (language->lexer-name lang))))
+    (when (and ed lexer-name)
+      ;; Store language in buffer
+      (set! (buffer-lexer-lang buf) lang)
+      ;; Reset to dark theme base
+      (apply-base-dark-theme! ed)
+      ;; Set lexer language
+      (qt-scintilla-set-lexer-language! ed lexer-name)
+      ;; Apply lexer-specific styles and keywords
+      (case lang
+        ((scheme lisp)
+         (setup-lisp-styles! ed))
+        ((c)
+         (setup-cpp-styles! ed *c-keywords* *c-types*))
+        ((javascript)
+         (setup-cpp-styles! ed *js-keywords* *js-builtins*))
+        ((go)
+         (setup-cpp-styles! ed *go-keywords* *go-types*))
+        ((rust)
+         (setup-cpp-styles! ed *rust-keywords* *rust-types*))
+        ((java haskell swift elixir)
+         (setup-cpp-styles! ed *java-keywords* *java-types*))
+        ((zig nix)
+         (setup-cpp-styles! ed *c-keywords* *c-types*))
+        ((python)
+         (setup-python-styles! ed))
+        ((shell)
+         (setup-bash-styles! ed))
+        ((ruby)
+         (setup-ruby-styles! ed))
+        ((lua)
+         (setup-lua-styles! ed))
+        ((sql)
+         (setup-sql-styles! ed))
+        ((perl)
+         (setup-perl-styles! ed))
+        ;; For json, yaml, xml, css, markdown, makefile, diff, toml:
+        ;; The lexer handles tokenization; we just set basic comment/string colors
+        ((json yaml xml css markdown makefile diff toml)
+         ;; Comments: styles 1-3 for most lexers
+         (for-each (lambda (s)
+                     (sci-send ed SCI_STYLESETFORE s (rgb->sci cm-r cm-g cm-b))
+                     (sci-send ed SCI_STYLESETITALIC s 1))
+                   '(1 2 3))
+         ;; Keywords: style 5
+         (sci-send ed SCI_STYLESETFORE 5 (rgb->sci kw-r kw-g kw-b))
+         (sci-send ed SCI_STYLESETBOLD 5 1)
+         ;; Strings: styles 6-7
+         (sci-send ed SCI_STYLESETFORE 6 (rgb->sci st-r st-g st-b))
+         (sci-send ed SCI_STYLESETFORE 7 (rgb->sci st-r st-g st-b))
+         ;; Numbers: style 4
+         (sci-send ed SCI_STYLESETFORE 4 (rgb->sci nm-r nm-g nm-b)))
+        (else (void))))))
 
 (def (qt-remove-highlighting! buf)
-  (let ((h (hash-get *qt-highlighters* buf)))
-    (when h
-      (qt-syntax-highlighter-destroy! h)
-      (hash-remove! *qt-highlighters* buf))))
+  (let* ((doc (buffer-doc-pointer buf))
+         (ed (and doc (hash-get *doc-editor-map* doc))))
+    (when ed
+      (sci-send ed SCI_SETLEXER 0)  ;; SCLEX_NULL
+      (apply-base-dark-theme! ed))))
 
 ;;;============================================================================
 ;;; Visual decorations (current line + brace matching)
 ;;;============================================================================
 
-;; Current line highlight color (dark gray)
 (def cline-bg-r #x22) (def cline-bg-g #x22) (def cline-bg-b #x28)
 
-;; Brace match colors
 (def brace-fg-r #xff) (def brace-fg-g #xff) (def brace-fg-b #x00)
 (def brace-bg-r #x40) (def brace-bg-g #x40) (def brace-bg-b #x60)
 
-;; Brace mismatch colors
 (def brace-err-fg-r #xff) (def brace-err-fg-g #x40) (def brace-err-fg-b #x40)
 (def brace-err-bg-r #x60) (def brace-err-bg-g #x20) (def brace-err-bg-b #x20)
 
@@ -912,7 +559,6 @@
       (let ((ch (string-ref text pos)))
         (cond
           ((brace-open? ch)
-           ;; Scan forward
            (let loop ((i (+ pos 1)) (depth 1))
              (cond
                ((>= i len) (values #f #f))
@@ -924,7 +570,6 @@
                   (loop (+ i 1) (- depth 1))))
                (else (loop (+ i 1) depth)))))
           ((brace-close? ch)
-           ;; Scan backward
            (let loop ((i (- pos 1)) (depth 1))
              (cond
                ((< i 0) (values #f #f))
@@ -947,13 +592,12 @@
     (qt-extra-selections-clear! ed)
     ;; 2. Current line highlight
     (qt-extra-selection-add-line! ed line cline-bg-r cline-bg-g cline-bg-b)
-    ;; 3. Brace matching — check char at cursor and char before cursor
+    ;; 3. Brace matching
     (let check ((check-pos pos))
       (let-values (((match-pos matched?) (find-matching-brace text check-pos)))
         (cond
           (match-pos
            (if matched?
-             ;; Good match — highlight both braces
              (begin
                (qt-extra-selection-add-range! ed check-pos 1
                  brace-fg-r brace-fg-g brace-fg-b
@@ -961,7 +605,6 @@
                (qt-extra-selection-add-range! ed match-pos 1
                  brace-fg-r brace-fg-g brace-fg-b
                  brace-bg-r brace-bg-g brace-bg-b bold: #t))
-             ;; Mismatch — highlight in error color
              (begin
                (qt-extra-selection-add-range! ed check-pos 1
                  brace-err-fg-r brace-err-fg-g brace-err-fg-b
@@ -969,7 +612,6 @@
                (qt-extra-selection-add-range! ed match-pos 1
                  brace-err-fg-r brace-err-fg-g brace-err-fg-b
                  brace-err-bg-r brace-err-bg-g brace-err-bg-b bold: #t))))
-          ;; If not found at cursor, try one position back
           ((and (> check-pos 0) (= check-pos pos))
            (check (- pos 1)))
           (else (void)))))
@@ -980,10 +622,8 @@
 ;;; Search result highlighting
 ;;;============================================================================
 
-;; Track whether search highlights are currently active
 (def *search-highlight-active* #f)
 
-;; Search match colors (orange background)
 (def search-fg-r #x00) (def search-fg-g #x00) (def search-fg-b #x00)
 (def search-bg-r #xff) (def search-bg-g #xcc) (def search-bg-b #x00)
 
@@ -993,7 +633,6 @@
     (let* ((text (qt-plain-text-edit-text ed))
            (len (string-length text))
            (pat-len (string-length pattern)))
-      ;; Find all occurrences
       (let loop ((i 0))
         (when (< (+ i pat-len) len)
           (let ((found (string-contains text pattern i)))

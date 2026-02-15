@@ -4,7 +4,7 @@
 (export qt-setup-menubar!)
 
 (import :std/sugar
-        :gerbil-qt/qt
+        :gerbil-emacs/qt/sci-shim
         :gerbil-emacs/core)
 
 ;;;============================================================================
