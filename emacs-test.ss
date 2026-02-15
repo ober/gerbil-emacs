@@ -114,7 +114,11 @@
                  *global-helpful* *global-elisp-demos*
                  *global-suggest* *global-buttercup*
                  *global-ert-runner* *global-undercover*
-                 *global-benchmark-init*)
+                 *global-benchmark-init*
+                 *global-clojure-mode* *global-cider*
+                 *global-haskell-mode* *global-lua-mode*
+                 *global-ruby-mode* *global-php-mode*
+                 *global-swift-mode*)
         (only-in :gerbil-emacs/editor-extra-tools2
                  *highlight-changes-mode* *saved-window-layouts*
                  *known-modes* *password-chars*
@@ -2765,6 +2769,25 @@
       (check (procedure? (find-command 'toggle-global-js2-mode)) => #t)
       (check (procedure? (find-command 'toggle-global-typescript-mode)) => #t)
       (check (procedure? (find-command 'toggle-global-web-mode)) => #t))
+
+    (test-case "batch 68: mode toggles"
+      (check *global-clojure-mode* => #f)
+      (check *global-cider* => #f)
+      (check *global-haskell-mode* => #f)
+      (check *global-lua-mode* => #f)
+      (check *global-ruby-mode* => #f)
+      (check *global-php-mode* => #f)
+      (check *global-swift-mode* => #f))
+
+    (test-case "command registration: batch 68 features"
+      (register-all-commands!)
+      (check (procedure? (find-command 'toggle-global-clojure-mode)) => #t)
+      (check (procedure? (find-command 'toggle-global-cider)) => #t)
+      (check (procedure? (find-command 'toggle-global-haskell-mode)) => #t)
+      (check (procedure? (find-command 'toggle-global-lua-mode)) => #t)
+      (check (procedure? (find-command 'toggle-global-ruby-mode)) => #t)
+      (check (procedure? (find-command 'toggle-global-php-mode)) => #t)
+      (check (procedure? (find-command 'toggle-global-swift-mode)) => #t))
 
     ;;=========================================================================
     ;; Headless Scintilla editor tests

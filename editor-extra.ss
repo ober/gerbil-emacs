@@ -1227,4 +1227,12 @@
   (register-command! 'toggle-global-js2-mode cmd-toggle-global-js2-mode)
   (register-command! 'toggle-global-typescript-mode cmd-toggle-global-typescript-mode)
   (register-command! 'toggle-global-web-mode cmd-toggle-global-web-mode)
+  ;; batch 68
+  (register-command! 'toggle-global-clojure-mode cmd-toggle-global-clojure-mode)
+  (register-command! 'toggle-global-cider cmd-toggle-global-cider)
+  (register-command! 'toggle-global-haskell-mode cmd-toggle-global-haskell-mode)
+  (register-command! 'toggle-global-lua-mode cmd-toggle-global-lua-mode)
+  (register-command! 'toggle-global-ruby-mode cmd-toggle-global-ruby-mode)
+  (register-command! 'toggle-global-php-mode cmd-toggle-global-php-mode)
+  (register-command! 'toggle-global-swift-mode cmd-toggle-global-swift-mode)
 )

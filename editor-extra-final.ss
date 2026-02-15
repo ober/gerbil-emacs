@@ -1782,3 +1782,62 @@
     (set! *global-benchmark-init* (not *global-benchmark-init*))
     (echo-message! echo (if *global-benchmark-init*
                           "Benchmark init ON" "Benchmark init OFF"))))
+
+;;; ---- batch 68: additional programming language toggles ----
+
+(def *global-clojure-mode* #f)
+(def *global-cider* #f)
+(def *global-haskell-mode* #f)
+(def *global-lua-mode* #f)
+(def *global-ruby-mode* #f)
+(def *global-php-mode* #f)
+(def *global-swift-mode* #f)
+
+(def (cmd-toggle-global-clojure-mode app)
+  "Toggle global clojure-mode (Clojure development)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-clojure-mode* (not *global-clojure-mode*))
+    (echo-message! echo (if *global-clojure-mode*
+                          "Clojure mode ON" "Clojure mode OFF"))))
+
+(def (cmd-toggle-global-cider app)
+  "Toggle global CIDER-mode (Clojure interactive development)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-cider* (not *global-cider*))
+    (echo-message! echo (if *global-cider*
+                          "CIDER ON" "CIDER OFF"))))
+
+(def (cmd-toggle-global-haskell-mode app)
+  "Toggle global haskell-mode (Haskell development)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-haskell-mode* (not *global-haskell-mode*))
+    (echo-message! echo (if *global-haskell-mode*
+                          "Haskell mode ON" "Haskell mode OFF"))))
+
+(def (cmd-toggle-global-lua-mode app)
+  "Toggle global lua-mode (Lua development)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-lua-mode* (not *global-lua-mode*))
+    (echo-message! echo (if *global-lua-mode*
+                          "Lua mode ON" "Lua mode OFF"))))
+
+(def (cmd-toggle-global-ruby-mode app)
+  "Toggle global ruby-mode (Ruby development)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-ruby-mode* (not *global-ruby-mode*))
+    (echo-message! echo (if *global-ruby-mode*
+                          "Ruby mode ON" "Ruby mode OFF"))))
+
+(def (cmd-toggle-global-php-mode app)
+  "Toggle global php-mode (PHP development)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-php-mode* (not *global-php-mode*))
+    (echo-message! echo (if *global-php-mode*
+                          "PHP mode ON" "PHP mode OFF"))))
+
+(def (cmd-toggle-global-swift-mode app)
+  "Toggle global swift-mode (Swift development)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-swift-mode* (not *global-swift-mode*))
+    (echo-message! echo (if *global-swift-mode*
+                          "Swift mode ON" "Swift mode OFF"))))
