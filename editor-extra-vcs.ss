@@ -1385,4 +1385,176 @@
          (editor-goto-pos ed (+ pos 1))
          (echo-message! echo "Inserted space"))))))
 
+;;;============================================================================
+;;; Batch 32: delete-selection, word count, column ruler, shell-here, etc.
+;;;============================================================================
+
+;;; --- Toggle delete-selection mode (typing replaces selection) ---
+
+(def *delete-selection-mode* #t)
+
+(def (cmd-toggle-delete-selection app)
+  "Toggle delete-selection mode (typing replaces active selection)."
+  (let ((echo (app-state-echo app)))
+    (set! *delete-selection-mode* (not *delete-selection-mode*))
+    (echo-message! echo
+      (if *delete-selection-mode*
+        "Delete-selection mode on"
+        "Delete-selection mode off"))))
+
+;;; --- Toggle live word count in modeline ---
+
+(def *word-count-mode* #f)
+
+(def (cmd-toggle-word-count app)
+  "Toggle live word count display in modeline."
+  (let ((echo (app-state-echo app)))
+    (set! *word-count-mode* (not *word-count-mode*))
+    (echo-message! echo
+      (if *word-count-mode*
+        "Word count display on"
+        "Word count display off"))))
+
+;;; --- Toggle column ruler ---
+
+(def *column-ruler-mode* #f)
+(def *column-ruler-column* 80)
+
+(def (cmd-toggle-column-ruler app)
+  "Toggle display of a vertical column ruler at column 80."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app)))
+    (set! *column-ruler-mode* (not *column-ruler-mode*))
+    (if *column-ruler-mode*
+      (send-message ed 2361 *column-ruler-column* 0)  ; SCI_SETEDGECOLUMN
+      (send-message ed 2361 0 0))
+    (send-message ed 2363  ; SCI_SETEDGEMODE
+      (if *column-ruler-mode* 1 0) 0)  ; EDGE_LINE=1, EDGE_NONE=0
+    (echo-message! echo
+      (if *column-ruler-mode*
+        (string-append "Column ruler at " (number->string *column-ruler-column*))
+        "Column ruler off"))))
+
+;;; --- Open shell in current file's directory ---
+
+(def (cmd-shell-here app)
+  "Open a shell command in the current file's directory."
+  (let* ((echo (app-state-echo app))
+         (buf (current-buffer-from-app app))
+         (filepath (buffer-file-path buf))
+         (dir (if filepath
+                (let* ((parts (string-split filepath #\/)))
+                  (if (<= (length parts) 1) "."
+                    (string-join
+                      (let loop ((ls parts) (acc []))
+                        (if (null? (cdr ls)) (reverse acc)
+                          (loop (cdr ls) (cons (car ls) acc))))
+                      "/")))
+                ".")))
+    (with-catch
+      (lambda (e) (echo-message! echo "Cannot open terminal"))
+      (lambda ()
+        (let ((term (cond
+                      ((file-exists? "/usr/bin/x-terminal-emulator") "x-terminal-emulator")
+                      ((file-exists? "/usr/bin/xterm") "xterm")
+                      ((file-exists? "/usr/bin/gnome-terminal") "gnome-terminal")
+                      (else #f))))
+          (if term
+            (begin
+              (open-process (list path: term
+                                  arguments: (list "--working-directory" dir)
+                                  stdin-redirection: #f
+                                  stdout-redirection: #f))
+              (echo-message! echo (string-append "Shell in: " dir)))
+            (echo-message! echo "No terminal emulator found")))))))
+
+;;; --- Toggle soft wrap ---
+
+(def *soft-wrap-mode* #f)
+
+(def (cmd-toggle-soft-wrap app)
+  "Toggle soft word wrap (no actual newlines inserted)."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app)))
+    (set! *soft-wrap-mode* (not *soft-wrap-mode*))
+    (editor-set-wrap-mode ed (if *soft-wrap-mode* 1 0))
+    (echo-message! echo
+      (if *soft-wrap-mode*
+        "Soft wrap on"
+        "Soft wrap off"))))
+
+;;; --- Toggle whitespace cleanup on save ---
+
+(def *whitespace-cleanup-on-save* #f)
+
+(def (cmd-toggle-whitespace-cleanup-on-save app)
+  "Toggle automatic whitespace cleanup when saving."
+  (let ((echo (app-state-echo app)))
+    (set! *whitespace-cleanup-on-save* (not *whitespace-cleanup-on-save*))
+    (echo-message! echo
+      (if *whitespace-cleanup-on-save*
+        "Whitespace cleanup on save enabled"
+        "Whitespace cleanup on save disabled"))))
+
+;;; --- Insert random inspirational line ---
+
+(def *random-lines*
+  '("The best code is no code at all."
+    "Keep it simple, keep it working."
+    "Premature optimization is the root of all evil."
+    "Make it work, make it right, make it fast."
+    "Programs must be written for people to read."
+    "Debugging is twice as hard as writing the code."
+    "Any fool can write code that a computer can understand."
+    "Code is read much more often than it is written."
+    "Simplicity is the ultimate sophistication."
+    "First, solve the problem. Then, write the code."))
+
+(def (cmd-insert-random-line app)
+  "Insert a random programming quote at point."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app))
+         (idx (random-integer (length *random-lines*)))
+         (line (list-ref *random-lines* idx)))
+    (editor-insert-text ed (editor-get-current-pos ed) line)
+    (echo-message! echo "Quote inserted")))
+
+;;; --- Smart backspace (delete indentation level) ---
+
+(def (cmd-smart-backspace app)
+  "Delete backward by indentation level (spaces) or single char."
+  (let* ((ed (current-editor app))
+         (pos (editor-get-current-pos ed))
+         (echo (app-state-echo app)))
+    (if (<= pos 0)
+      (echo-message! echo "Beginning of buffer")
+      (let* ((text (editor-get-text ed))
+             (tab-w 4)
+             ;; Check how many spaces precede cursor
+             (spaces-back
+               (let loop ((i (- pos 1)) (n 0))
+                 (if (or (< i 0) (not (char=? (string-ref text i) #\space))
+                         (>= n tab-w))
+                   n
+                   (loop (- i 1) (+ n 1))))))
+        (if (and (> spaces-back 0) (= (modulo spaces-back tab-w) 0)
+                 (>= spaces-back tab-w))
+          ;; Delete one tab-width of spaces
+          (editor-delete-range ed (- pos tab-w) tab-w)
+          ;; Regular backspace
+          (editor-delete-range ed (- pos 1) 1))))))
+
+;;; --- Toggle line move mode (move lines with M-up/down) ---
+
+(def *line-move-visual* #t)
+
+(def (cmd-toggle-line-move-visual app)
+  "Toggle between visual and logical line movement."
+  (let ((echo (app-state-echo app)))
+    (set! *line-move-visual* (not *line-move-visual*))
+    (echo-message! echo
+      (if *line-move-visual*
+        "Visual line movement"
+        "Logical line movement"))))
+
 

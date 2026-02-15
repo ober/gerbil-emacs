@@ -66,7 +66,11 @@
                  *ws-butler-mode* *file-runners*
                  file-extension)
         (only-in :gerbil-emacs/editor-extra-vcs
-                 *comment-style* *flymake-mode*)
+                 *comment-style* *flymake-mode*
+                 *delete-selection-mode* *word-count-mode*
+                 *column-ruler-mode* *soft-wrap-mode*
+                 *whitespace-cleanup-on-save* *line-move-visual*
+                 *random-lines*)
         (only-in :gerbil-emacs/highlight
                  detect-file-language gerbil-file-extension?
                  setup-highlighting-for-file!)
@@ -1741,6 +1745,36 @@
       (check (procedure? (find-command 'sort-paragraphs)) => #t)
       (check (procedure? (find-command 'insert-mode-line)) => #t)
       (check (procedure? (find-command 'push-mark-command)) => #t))
+
+    ;; -- Batch 32 tests --
+    (test-case "batch 32: mode toggles"
+      (set! *delete-selection-mode* #t)
+      (check *delete-selection-mode* => #t)
+      (set! *word-count-mode* #f)
+      (check *word-count-mode* => #f)
+      (set! *column-ruler-mode* #f)
+      (check *column-ruler-mode* => #f)
+      (set! *soft-wrap-mode* #f)
+      (check *soft-wrap-mode* => #f)
+      (set! *whitespace-cleanup-on-save* #f)
+      (check *whitespace-cleanup-on-save* => #f)
+      (set! *line-move-visual* #t)
+      (check *line-move-visual* => #t)
+      (check (list? *random-lines*) => #t)
+      (check (> (length *random-lines*) 0) => #t))
+
+    ;; -- Command registration batch 32 --
+    (test-case "command registration: batch 32 features"
+      (register-all-commands!)
+      (check (procedure? (find-command 'toggle-delete-selection)) => #t)
+      (check (procedure? (find-command 'toggle-word-count)) => #t)
+      (check (procedure? (find-command 'toggle-column-ruler)) => #t)
+      (check (procedure? (find-command 'shell-here)) => #t)
+      (check (procedure? (find-command 'toggle-soft-wrap)) => #t)
+      (check (procedure? (find-command 'toggle-whitespace-cleanup-on-save)) => #t)
+      (check (procedure? (find-command 'insert-random-line)) => #t)
+      (check (procedure? (find-command 'smart-backspace)) => #t)
+      (check (procedure? (find-command 'toggle-line-move-visual)) => #t))
 
     ;;=========================================================================
     ;; Headless Scintilla editor tests
