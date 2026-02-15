@@ -55,7 +55,13 @@
                  *subword-mode* *auto-composition-mode*
                  *bidi-display-reordering* *fill-column-indicator*
                  *pixel-scroll-mode* *auto-highlight-symbol-mode*
-                 *lorem-ipsum-text* insert-char-by-code-string)
+                 *lorem-ipsum-text* insert-char-by-code-string
+                 *read-only-directories* *auto-revert-verbose*
+                 *uniquify-buffer-names* *global-so-long-mode*
+                 *minibuffer-depth-indicate* *context-menu-mode*
+                 *tooltip-mode* *file-name-shadow-mode*
+                 *minibuffer-electric-default*
+                 *history-delete-duplicates*)
         (only-in :gerbil-emacs/editor-extra-tools2
                  *highlight-changes-mode* *saved-window-layouts*
                  *known-modes* *password-chars*
@@ -1991,6 +1997,37 @@
       (check (procedure? (find-command 'toggle-make-backup-files)) => #t)
       (check (procedure? (find-command 'toggle-lock-file-create)) => #t)
       (check (procedure? (find-command 'toggle-auto-encryption)) => #t))
+
+    ;; -- Batch 39 tests --
+    (test-case "batch 39: mode toggles"
+      (set! *read-only-directories* #f)
+      (check *read-only-directories* => #f)
+      (check *auto-revert-verbose* => #t)
+      (check *uniquify-buffer-names* => #t)
+      (check *global-so-long-mode* => #t)
+      (set! *minibuffer-depth-indicate* #f)
+      (check *minibuffer-depth-indicate* => #f)
+      (set! *context-menu-mode* #f)
+      (check *context-menu-mode* => #f)
+      (check *tooltip-mode* => #t)
+      (check *file-name-shadow-mode* => #t)
+      (check *minibuffer-electric-default* => #t)
+      (set! *history-delete-duplicates* #f)
+      (check *history-delete-duplicates* => #f))
+
+    ;; -- Command registration batch 39 --
+    (test-case "command registration: batch 39 features"
+      (register-all-commands!)
+      (check (procedure? (find-command 'toggle-read-only-directories)) => #t)
+      (check (procedure? (find-command 'toggle-auto-revert-verbose)) => #t)
+      (check (procedure? (find-command 'toggle-uniquify-buffer-names)) => #t)
+      (check (procedure? (find-command 'toggle-global-so-long)) => #t)
+      (check (procedure? (find-command 'toggle-minibuffer-depth-indicate)) => #t)
+      (check (procedure? (find-command 'toggle-context-menu-mode)) => #t)
+      (check (procedure? (find-command 'toggle-tooltip-mode)) => #t)
+      (check (procedure? (find-command 'toggle-file-name-shadow)) => #t)
+      (check (procedure? (find-command 'toggle-minibuffer-electric-default)) => #t)
+      (check (procedure? (find-command 'toggle-history-delete-duplicates)) => #t))
 
     ;;=========================================================================
     ;; Headless Scintilla editor tests

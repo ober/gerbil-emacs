@@ -1497,3 +1497,97 @@
                                     (number->string (string-length content))
                                     " bytes from " path)))))))))
 
+;;; =========================================================================
+;;; Batch 39: read-only dirs, uniquify, so-long, tooltips, etc.
+;;; =========================================================================
+
+(def *read-only-directories* #f)
+(def *auto-revert-verbose* #t)
+(def *uniquify-buffer-names* #t)
+(def *global-so-long-mode* #t)
+(def *minibuffer-depth-indicate* #f)
+(def *context-menu-mode* #f)
+(def *tooltip-mode* #t)
+(def *file-name-shadow-mode* #t)
+(def *minibuffer-electric-default* #t)
+(def *history-delete-duplicates* #f)
+
+(def (cmd-toggle-read-only-directories app)
+  "Toggle making directory buffers read-only."
+  (let ((echo (app-state-echo app)))
+    (set! *read-only-directories* (not *read-only-directories*))
+    (echo-message! echo (if *read-only-directories*
+                          "Read-only directories ON"
+                          "Read-only directories OFF"))))
+
+(def (cmd-toggle-auto-revert-verbose app)
+  "Toggle verbose messages for auto-revert."
+  (let ((echo (app-state-echo app)))
+    (set! *auto-revert-verbose* (not *auto-revert-verbose*))
+    (echo-message! echo (if *auto-revert-verbose*
+                          "Auto-revert verbose ON"
+                          "Auto-revert verbose OFF"))))
+
+(def (cmd-toggle-uniquify-buffer-names app)
+  "Toggle uniquification of buffer names with directory info."
+  (let ((echo (app-state-echo app)))
+    (set! *uniquify-buffer-names* (not *uniquify-buffer-names*))
+    (echo-message! echo (if *uniquify-buffer-names*
+                          "Uniquify buffer names ON"
+                          "Uniquify buffer names OFF"))))
+
+(def (cmd-toggle-global-so-long app)
+  "Toggle global so-long-mode (mitigate long line performance)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-so-long-mode* (not *global-so-long-mode*))
+    (echo-message! echo (if *global-so-long-mode*
+                          "Global so-long mode ON"
+                          "Global so-long mode OFF"))))
+
+(def (cmd-toggle-minibuffer-depth-indicate app)
+  "Toggle showing recursive minibuffer depth."
+  (let ((echo (app-state-echo app)))
+    (set! *minibuffer-depth-indicate* (not *minibuffer-depth-indicate*))
+    (echo-message! echo (if *minibuffer-depth-indicate*
+                          "Minibuffer depth indicate ON"
+                          "Minibuffer depth indicate OFF"))))
+
+(def (cmd-toggle-context-menu-mode app)
+  "Toggle right-click context menu support."
+  (let ((echo (app-state-echo app)))
+    (set! *context-menu-mode* (not *context-menu-mode*))
+    (echo-message! echo (if *context-menu-mode*
+                          "Context menu mode ON"
+                          "Context menu mode OFF"))))
+
+(def (cmd-toggle-tooltip-mode app)
+  "Toggle tooltip display for UI elements."
+  (let ((echo (app-state-echo app)))
+    (set! *tooltip-mode* (not *tooltip-mode*))
+    (echo-message! echo (if *tooltip-mode*
+                          "Tooltips ON"
+                          "Tooltips OFF"))))
+
+(def (cmd-toggle-file-name-shadow app)
+  "Toggle shadowing of file name when default is present."
+  (let ((echo (app-state-echo app)))
+    (set! *file-name-shadow-mode* (not *file-name-shadow-mode*))
+    (echo-message! echo (if *file-name-shadow-mode*
+                          "File name shadow ON"
+                          "File name shadow OFF"))))
+
+(def (cmd-toggle-minibuffer-electric-default app)
+  "Toggle erasing default value on minibuffer input."
+  (let ((echo (app-state-echo app)))
+    (set! *minibuffer-electric-default* (not *minibuffer-electric-default*))
+    (echo-message! echo (if *minibuffer-electric-default*
+                          "Minibuffer electric default ON"
+                          "Minibuffer electric default OFF"))))
+
+(def (cmd-toggle-history-delete-duplicates app)
+  "Toggle removal of duplicates from command history."
+  (let ((echo (app-state-echo app)))
+    (set! *history-delete-duplicates* (not *history-delete-duplicates*))
+    (echo-message! echo (if *history-delete-duplicates*
+                          "History delete duplicates ON"
+                          "History delete duplicates OFF"))))
