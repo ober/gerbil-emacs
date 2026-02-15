@@ -635,3 +635,141 @@
   "Toggle overwrite mode (stub — use M-x toggle-overwrite-mode)."
   (echo-message! (app-state-echo app) "Use M-x toggle-overwrite-mode"))
 
+;;;============================================================================
+;;; Real multi-selection commands (using Scintilla multi-selection API)
+;;;============================================================================
+
+(def (cmd-mc-real-add-next app)
+  "Add a real cursor at the next occurrence of the current selection."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app)))
+    (if (editor-selection-empty? ed)
+      (echo-error! echo "Select text first, then mark next")
+      (begin
+        (send-message ed SCI_MULTIPLESELECTADDNEXT 0 0)
+        (let ((n (send-message ed SCI_GETSELECTIONS 0 0)))
+          (echo-message! echo
+            (string-append (number->string n) " cursors")))))))
+
+(def (cmd-mc-real-add-all app)
+  "Add real cursors at all occurrences of the current selection."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app)))
+    (if (editor-selection-empty? ed)
+      (echo-error! echo "Select text first, then mark all")
+      (begin
+        (send-message ed SCI_MULTIPLESELECTADDEACH 0 0)
+        (let ((n (send-message ed SCI_GETSELECTIONS 0 0)))
+          (echo-message! echo
+            (string-append (number->string n) " cursors")))))))
+
+(def (cmd-mc-skip-and-add-next app)
+  "Skip the current selection and add next occurrence."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app)))
+    (if (editor-selection-empty? ed)
+      (echo-error! echo "Select text first")
+      (let ((n (send-message ed SCI_GETSELECTIONS 0 0)))
+        (when (> n 1)
+          ;; Drop the main selection
+          (let ((main (send-message ed SCI_GETMAINSELECTION 0 0)))
+            (send-message ed SCI_DROPSELECTIONN main 0)))
+        ;; Add next
+        (send-message ed SCI_MULTIPLESELECTADDNEXT 0 0)
+        (let ((n2 (send-message ed SCI_GETSELECTIONS 0 0)))
+          (echo-message! echo
+            (string-append (number->string n2) " cursors")))))))
+
+(def (cmd-mc-cursors-on-lines app)
+  "Add a cursor at the end of each line in the current selection."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app))
+         (sel-start (editor-get-selection-start ed))
+         (sel-end (editor-get-selection-end ed)))
+    (if (= sel-start sel-end)
+      (echo-error! echo "Select a region first")
+      (let* ((start-line (editor-line-from-position ed sel-start))
+             (end-line (editor-line-from-position ed sel-end))
+             (num-lines (+ 1 (- end-line start-line))))
+        (when (> num-lines 1)
+          ;; Set first selection at end of first line
+          (let ((eol0 (editor-get-line-end-position ed start-line)))
+            (send-message ed SCI_SETSELECTION eol0 eol0)
+            ;; Add selections at end of subsequent lines
+            (let loop ((line (+ start-line 1)))
+              (when (<= line end-line)
+                (let ((eol (editor-get-line-end-position ed line)))
+                  (send-message ed SCI_ADDSELECTION eol eol)
+                  (loop (+ line 1)))))))
+        (echo-message! echo
+          (string-append (number->string num-lines)
+                         " cursors on " (number->string num-lines) " lines"))))))
+
+(def (cmd-mc-unmark-last app)
+  "Remove the most recently added selection."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app))
+         (n (send-message ed SCI_GETSELECTIONS 0 0)))
+    (if (<= n 1)
+      (echo-message! echo "Only one cursor")
+      (begin
+        (send-message ed SCI_DROPSELECTIONN (- n 1) 0)
+        (echo-message! echo
+          (string-append (number->string (- n 1)) " cursors"))))))
+
+(def (cmd-mc-rotate app)
+  "Cycle to the next selection as the main cursor."
+  (let ((ed (current-editor app)))
+    (send-message ed SCI_ROTATESELECTION 0 0)))
+
+;;;============================================================================
+;;; Occur goto-occurrence (TUI)
+;;;============================================================================
+
+(def (occur-parse-source-name text)
+  "Parse source buffer name from *Occur* header: 'N matches for \"pat\" in NAME:'"
+  (let ((in-pos (string-contains text " in ")))
+    (and in-pos
+         (let* ((after-in (+ in-pos 4))
+                (colon-pos (string-index text #\: after-in)))
+           (and colon-pos
+                (substring text after-in colon-pos))))))
+
+(def (cmd-occur-goto app)
+  "Jump from *Occur* buffer to the source line under cursor."
+  (let* ((buf (current-buffer-from-app app))
+         (echo (app-state-echo app)))
+    (if (not (string=? (buffer-name buf) "*Occur*"))
+      (echo-error! echo "Not in *Occur* buffer")
+      (let* ((ed (current-editor app))
+             (full-text (editor-get-text ed))
+             (source-name (occur-parse-source-name full-text)))
+        (if (not source-name)
+          (echo-error! echo "Cannot determine source buffer")
+          (let* ((pos (editor-get-current-pos ed))
+                 (line-num (editor-line-from-position ed pos))
+                 (line-text (editor-get-line ed line-num)))
+            ;; Parse "NNN:text" format
+            (let ((colon-pos (string-index line-text #\:)))
+              (if (not colon-pos)
+                (echo-error! echo "Not on an occur match line")
+                (let ((target-line (string->number
+                                     (substring line-text 0 colon-pos))))
+                  (if (not target-line)
+                    (echo-error! echo "Not on an occur match line")
+                    ;; Switch to source buffer and jump
+                    (let ((source (buffer-by-name source-name)))
+                      (if (not source)
+                        (echo-error! echo
+                          (string-append "Source buffer '"
+                                         source-name "' not found"))
+                        (let ((fr (app-state-frame app)))
+                          (buffer-attach! ed source)
+                          (set! (edit-window-buffer (current-window fr)) source)
+                          (editor-goto-line ed (- target-line 1))
+                          (editor-scroll-caret ed)
+                          (echo-message! echo
+                            (string-append "Line "
+                                           (number->string
+                                             target-line))))))))))))))))
+

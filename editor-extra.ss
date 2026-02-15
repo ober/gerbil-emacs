@@ -684,4 +684,13 @@
   ;; Regex search
   (register-command! 'isearch-forward-regexp cmd-search-forward-regexp)
   (register-command! 'query-replace-regexp-interactive cmd-query-replace-regexp-interactive)
+  ;; Real multi-cursor (Scintilla multi-selection)
+  (register-command! 'mc-add-next cmd-mc-real-add-next)
+  (register-command! 'mc-add-all cmd-mc-real-add-all)
+  (register-command! 'mc-skip-and-add-next cmd-mc-skip-and-add-next)
+  (register-command! 'mc-cursors-on-lines cmd-mc-cursors-on-lines)
+  (register-command! 'mc-unmark-last cmd-mc-unmark-last)
+  (register-command! 'mc-rotate cmd-mc-rotate)
+  ;; Occur goto
+  (register-command! 'occur-goto cmd-occur-goto)
 )

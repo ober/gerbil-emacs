@@ -29,6 +29,7 @@
                  cmd-org-template-expand
                  org-heading-level org-find-subtree-end org-on-checkbox-line?)
         (only-in :gerbil-emacs/editor register-all-commands!)
+        (only-in :gerbil-emacs/editor-extra-editing occur-parse-source-name)
         (only-in :gerbil-emacs/highlight
                  detect-file-language gerbil-file-extension?
                  setup-highlighting-for-file!)
@@ -902,6 +903,21 @@
       (check (procedure? (find-command 'complete-at-point)) => #t)
       (check (procedure? (find-command 'transpose-windows)) => #t)
       (check (procedure? (find-command 'git-log-file)) => #t))
+
+    (test-case "command registration: multi-cursor and occur-goto"
+      (register-all-commands!)
+      (check (procedure? (find-command 'mc-add-next)) => #t)
+      (check (procedure? (find-command 'mc-add-all)) => #t)
+      (check (procedure? (find-command 'mc-skip-and-add-next)) => #t)
+      (check (procedure? (find-command 'mc-cursors-on-lines)) => #t)
+      (check (procedure? (find-command 'mc-unmark-last)) => #t)
+      (check (procedure? (find-command 'mc-rotate)) => #t)
+      (check (procedure? (find-command 'occur-goto)) => #t))
+
+    (test-case "occur-parse-source-name: parses header"
+      (check (occur-parse-source-name
+               "5 matches for \"foo\" in main.ss:\n\n1:foo") => "main.ss")
+      (check (occur-parse-source-name "no header here") => #f))
 
     (test-case "key lossage recording"
       (let ((app (new-app-state #f)))
