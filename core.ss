@@ -75,6 +75,11 @@
   *repl-state*
   eval-expression-string
 
+  ;; Fuzzy matching
+  fuzzy-match?
+  fuzzy-score
+  fuzzy-filter-sort
+
   ;; Key translation map
   *key-translation-map*
   key-translate!
@@ -1170,6 +1175,55 @@
              (result (eval expr))
              (output (with-output-to-string (lambda () (write result)))))
         (values output #f)))))
+
+;;;============================================================================
+;;; Fuzzy matching
+;;;============================================================================
+
+(def (fuzzy-match? query target)
+  "Check if query fuzzy-matches target. Characters must appear in order."
+  (let ((qlen (string-length query))
+        (tlen (string-length target)))
+    (let loop ((qi 0) (ti 0))
+      (cond
+        ((>= qi qlen) #t)
+        ((>= ti tlen) #f)
+        ((char=? (char-downcase (string-ref query qi))
+                 (char-downcase (string-ref target ti)))
+         (loop (+ qi 1) (+ ti 1)))
+        (else
+         (loop qi (+ ti 1)))))))
+
+(def (fuzzy-score query target)
+  "Score a fuzzy match. Higher is better."
+  (let ((qlen (string-length query))
+        (tlen (string-length target)))
+    (let loop ((qi 0) (ti 0) (score 0) (consecutive 0))
+      (cond
+        ((>= qi qlen) score)
+        ((>= ti tlen) -1)
+        ((char=? (char-downcase (string-ref query qi))
+                 (char-downcase (string-ref target ti)))
+         (let ((bonus (+ 1
+                        (if (= ti 0) 3 0)
+                        (* consecutive 2)
+                        (if (and (> ti 0)
+                                 (memv (string-ref target (- ti 1))
+                                       '(#\- #\_ #\/ #\space)))
+                          2 0))))
+           (loop (+ qi 1) (+ ti 1) (+ score bonus) (+ consecutive 1))))
+        (else
+         (loop qi (+ ti 1) score 0))))))
+
+(def (fuzzy-filter-sort query candidates)
+  "Filter candidates by fuzzy match and sort by score (best first)."
+  (let* ((scored (filter-map
+                   (lambda (c)
+                     (let ((s (fuzzy-score query c)))
+                       (and (>= s 0) (cons s c))))
+                   candidates))
+         (sorted (sort scored (lambda (a b) (> (car a) (car b))))))
+    (map cdr sorted)))
 
 ;;;============================================================================
 ;;; Key translation map

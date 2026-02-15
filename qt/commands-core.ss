@@ -948,6 +948,29 @@ Returns (path . line) or #f. Handles file:line format."
       (mx-history-add! input)
       (execute-command! app (string->symbol input)))))
 
+(def (cmd-helm-buffers-list app)
+  "Fuzzy buffer switcher — like helm-buffers-list."
+  (let* ((names (buffer-names-mru))
+         (name (qt-echo-read-string-with-completion app "Buffer: " names)))
+    (when (and name (> (string-length name) 0))
+      (let ((buf (buffer-by-name name)))
+        (if buf
+          (let* ((fr (app-state-frame app))
+                 (ed (current-qt-editor app)))
+            (buffer-touch! buf)
+            (qt-buffer-attach! ed buf)
+            (set! (qt-edit-window-buffer (qt-current-window fr)) buf)
+            (qt-modeline-update! app))
+          ;; Create new buffer if not found
+          (let* ((fr (app-state-frame app))
+                 (ed (current-qt-editor app))
+                 (new-buf (qt-buffer-create! name ed #f)))
+            (buffer-touch! new-buf)
+            (qt-buffer-attach! ed new-buf)
+            (set! (qt-edit-window-buffer (qt-current-window fr)) new-buf)
+            (echo-message! (app-state-echo app)
+              (string-append "New buffer: " name))))))))
+
 ;;;============================================================================
 ;;; Help commands
 ;;;============================================================================

@@ -595,6 +595,7 @@
   (register-command! 'revert-buffer cmd-revert-buffer)
   ;; Buffer
   (register-command! 'switch-buffer cmd-switch-buffer)
+  (register-command! 'helm-buffers-list cmd-helm-buffers-list)
   (register-command! 'kill-buffer-cmd cmd-kill-buffer-cmd)
   (register-command! 'list-buffers cmd-list-buffers)
   ;; Window

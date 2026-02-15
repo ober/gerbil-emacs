@@ -886,40 +886,7 @@
 ;;; Fuzzy command matching for M-x
 ;;;============================================================================
 
-(def (fuzzy-match? query target)
-  "Check if query fuzzy-matches target. Characters must appear in order."
-  (let ((qlen (string-length query))
-        (tlen (string-length target)))
-    (let loop ((qi 0) (ti 0))
-      (cond
-        ((>= qi qlen) #t) ;; All query chars matched
-        ((>= ti tlen) #f) ;; Target exhausted
-        ((char=? (char-downcase (string-ref query qi))
-                 (char-downcase (string-ref target ti)))
-         (loop (+ qi 1) (+ ti 1)))
-        (else
-         (loop qi (+ ti 1)))))))
-
-(def (fuzzy-score query target)
-  "Score a fuzzy match. Higher is better. Rewards consecutive matches and prefix matches."
-  (let ((qlen (string-length query))
-        (tlen (string-length target)))
-    (let loop ((qi 0) (ti 0) (score 0) (consecutive 0))
-      (cond
-        ((>= qi qlen) score)
-        ((>= ti tlen) -1) ;; No match
-        ((char=? (char-downcase (string-ref query qi))
-                 (char-downcase (string-ref target ti)))
-         (let ((bonus (+ 1
-                        (if (= ti 0) 3 0) ;; prefix bonus
-                        (* consecutive 2) ;; consecutive bonus
-                        (if (and (> ti 0)
-                                 (memv (string-ref target (- ti 1))
-                                       '(#\- #\_ #\/ #\space)))
-                          2 0)))) ;; word boundary bonus
-           (loop (+ qi 1) (+ ti 1) (+ score bonus) (+ consecutive 1))))
-        (else
-         (loop qi (+ ti 1) score 0))))))
+;; fuzzy-match? and fuzzy-score are now in core.ss
 
 (def (cmd-execute-extended-command-fuzzy app)
   "Execute command by name with fuzzy matching (M-x alternative)."
