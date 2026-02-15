@@ -7,6 +7,7 @@
 (import :std/sugar
         :std/sort
         :std/srfi/13
+        :std/misc/string
         :gerbil-scintilla/constants
         :gerbil-scintilla/scintilla
         :gerbil-scintilla/tui
@@ -1116,4 +1117,437 @@
                             (string-append "Line "
                                            (number->string
                                              target-line))))))))))))))))
+
+;;;============================================================================
+;;; Markdown mode commands
+;;;============================================================================
+
+(def (markdown-wrap-selection ed prefix suffix)
+  "Wrap current selection with prefix/suffix or insert them at point."
+  (if (editor-selection-empty? ed)
+    ;; No selection: insert prefix+suffix and place cursor between
+    (let ((pos (editor-get-current-pos ed)))
+      (editor-insert-text ed pos (string-append prefix suffix))
+      (editor-goto-pos ed (+ pos (string-length prefix))))
+    ;; Wrap selection
+    (let* ((start (editor-get-selection-start ed))
+           (end (editor-get-selection-end ed))
+           (text (editor-get-text ed))
+           (sel (substring text start end)))
+      (send-message ed SCI_SETTARGETSTART start 0)
+      (send-message ed SCI_SETTARGETEND end 0)
+      (send-message/string ed SCI_REPLACETARGET
+        (string-append prefix sel suffix)))))
+
+(def (cmd-markdown-bold app)
+  "Insert or wrap selection with bold markers **text**."
+  (let ((ed (current-editor app)))
+    (markdown-wrap-selection ed "**" "**")))
+
+(def (cmd-markdown-italic app)
+  "Insert or wrap selection with italic markers *text*."
+  (let ((ed (current-editor app)))
+    (markdown-wrap-selection ed "*" "*")))
+
+(def (cmd-markdown-code app)
+  "Insert or wrap selection with inline code backticks `text`."
+  (let ((ed (current-editor app)))
+    (markdown-wrap-selection ed "`" "`")))
+
+(def (cmd-markdown-code-block app)
+  "Insert a fenced code block."
+  (let* ((ed (current-editor app))
+         (pos (editor-get-current-pos ed))
+         (lang (app-read-string app "Language: ")))
+    (editor-insert-text ed pos
+      (string-append "```" (or lang "") "\n\n```\n"))
+    (editor-goto-pos ed (+ pos 4 (string-length (or lang ""))))))
+
+(def (cmd-markdown-heading app)
+  "Insert or cycle heading level (# through ######)."
+  (let* ((ed (current-editor app))
+         (text (editor-get-text ed))
+         (line (send-message ed SCI_LINEFROMPOSITION
+                 (editor-get-current-pos ed) 0))
+         (line-start (send-message ed SCI_POSITIONFROMLINE line 0))
+         (line-end (send-message ed SCI_GETLINEENDPOSITION line 0))
+         (line-text (if (< line-start line-end)
+                      (substring text line-start line-end) "")))
+    ;; Count existing # prefix
+    (let ((hashes (let loop ((i 0))
+                    (if (and (< i (string-length line-text))
+                             (char=? (string-ref line-text i) #\#))
+                      (loop (+ i 1)) i))))
+      (send-message ed SCI_SETTARGETSTART line-start 0)
+      (send-message ed SCI_SETTARGETEND line-end 0)
+      (cond
+        ((= hashes 0)
+         ;; No heading: add #
+         (send-message/string ed SCI_REPLACETARGET
+           (string-append "# " line-text)))
+        ((>= hashes 6)
+         ;; Max level: remove all hashes
+         (let ((stripped (string-trim line-text)))
+           (send-message/string ed SCI_REPLACETARGET
+             (let loop ((s stripped))
+               (if (and (> (string-length s) 0)
+                        (char=? (string-ref s 0) #\#))
+                 (loop (substring s 1 (string-length s)))
+                 (string-trim s))))))
+        (else
+         ;; Increase level
+         (send-message/string ed SCI_REPLACETARGET
+           (string-append "#" line-text)))))))
+
+(def (cmd-markdown-link app)
+  "Insert a markdown link [text](url)."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app))
+         (sel-text (if (editor-selection-empty? ed) ""
+                     (let* ((s (editor-get-selection-start ed))
+                            (e (editor-get-selection-end ed))
+                            (text (editor-get-text ed)))
+                       (substring text s e))))
+         (url (app-read-string app "URL: ")))
+    (when (and url (not (string-empty? url)))
+      (let* ((text (if (string-empty? sel-text) url sel-text))
+             (link (string-append "[" text "](" url ")")))
+        (if (editor-selection-empty? ed)
+          (editor-insert-text ed (editor-get-current-pos ed) link)
+          (let ((start (editor-get-selection-start ed))
+                (end (editor-get-selection-end ed)))
+            (send-message ed SCI_SETTARGETSTART start 0)
+            (send-message ed SCI_SETTARGETEND end 0)
+            (send-message/string ed SCI_REPLACETARGET link)))))))
+
+(def (cmd-markdown-image app)
+  "Insert a markdown image ![alt](url)."
+  (let* ((ed (current-editor app))
+         (alt (or (app-read-string app "Alt text: ") ""))
+         (url (app-read-string app "Image URL: ")))
+    (when (and url (not (string-empty? url)))
+      (editor-insert-text ed (editor-get-current-pos ed)
+        (string-append "![" alt "](" url ")")))))
+
+(def (cmd-markdown-hr app)
+  "Insert a horizontal rule."
+  (let* ((ed (current-editor app))
+         (pos (editor-get-current-pos ed)))
+    (editor-insert-text ed pos "\n---\n")))
+
+(def (cmd-markdown-list-item app)
+  "Insert a list item. If current line starts with - or *, continue the list."
+  (let* ((ed (current-editor app))
+         (text (editor-get-text ed))
+         (line (send-message ed SCI_LINEFROMPOSITION
+                 (editor-get-current-pos ed) 0))
+         (line-start (send-message ed SCI_POSITIONFROMLINE line 0))
+         (line-end (send-message ed SCI_GETLINEENDPOSITION line 0))
+         (line-text (if (< line-start line-end)
+                      (substring text line-start line-end) "")))
+    ;; Detect list marker
+    (let ((marker (cond
+                    ((string-prefix? "- " line-text) "- ")
+                    ((string-prefix? "* " line-text) "* ")
+                    ((string-prefix? "  - " line-text) "  - ")
+                    ((string-prefix? "  * " line-text) "  * ")
+                    (else "- "))))
+      (editor-goto-pos ed line-end)
+      (editor-insert-text ed line-end (string-append "\n" marker)))))
+
+(def (cmd-markdown-checkbox app)
+  "Insert a markdown checkbox - [ ] item."
+  (let* ((ed (current-editor app))
+         (pos (editor-get-current-pos ed)))
+    (editor-insert-text ed pos "- [ ] ")))
+
+(def (cmd-markdown-toggle-checkbox app)
+  "Toggle a markdown checkbox between [ ] and [x]."
+  (let* ((ed (current-editor app))
+         (text (editor-get-text ed))
+         (line (send-message ed SCI_LINEFROMPOSITION
+                 (editor-get-current-pos ed) 0))
+         (line-start (send-message ed SCI_POSITIONFROMLINE line 0))
+         (line-end (send-message ed SCI_GETLINEENDPOSITION line 0))
+         (line-text (if (< line-start line-end)
+                      (substring text line-start line-end) "")))
+    (send-message ed SCI_SETTARGETSTART line-start 0)
+    (send-message ed SCI_SETTARGETEND line-end 0)
+    (cond
+      ((string-contains line-text "[ ]")
+       (send-message/string ed SCI_REPLACETARGET
+         (string-subst line-text "[ ]" "[x]")))
+      ((string-contains line-text "[x]")
+       (send-message/string ed SCI_REPLACETARGET
+         (string-subst line-text "[x]" "[ ]")))
+      (else
+       (echo-message! (app-state-echo app) "No checkbox on this line")))))
+
+(def (cmd-markdown-table app)
+  "Insert a markdown table template."
+  (let* ((ed (current-editor app))
+         (cols-str (or (app-read-string app "Columns (default 3): ") "3"))
+         (cols (or (string->number cols-str) 3))
+         (pos (editor-get-current-pos ed)))
+    (let* ((header (string-join (make-list cols " Header ") "|"))
+           (sep (string-join (make-list cols "--------") "|"))
+           (row (string-join (make-list cols "        ") "|"))
+           (table (string-append "| " header " |\n| " sep " |\n| " row " |\n")))
+      (editor-insert-text ed pos table))))
+
+(def (cmd-markdown-preview-outline app)
+  "Show an outline of markdown headings in the current buffer."
+  (let* ((ed (current-editor app))
+         (text (editor-get-text ed))
+         (lines (string-split text #\newline))
+         (headings
+           (let loop ((ls lines) (n 0) (acc []))
+             (if (null? ls)
+               (reverse acc)
+               (let ((l (car ls)))
+                 (if (and (> (string-length l) 0) (char=? (string-ref l 0) #\#))
+                   (loop (cdr ls) (+ n 1) (cons (cons n l) acc))
+                   (loop (cdr ls) (+ n 1) acc)))))))
+    (if (null? headings)
+      (echo-message! (app-state-echo app) "No headings found")
+      (let ((buf-text (string-join
+                        (map (lambda (h)
+                               (string-append (number->string (+ (car h) 1))
+                                              ": " (cdr h)))
+                             headings)
+                        "\n")))
+        (open-output-buffer app "*Markdown Outline*"
+          (string-append "Headings\n\n" buf-text "\n"))))))
+
+;;;============================================================================
+;;; Dired improvements — mark and operate on files
+;;;============================================================================
+
+(def *dired-marks* (make-hash-table)) ;; filename -> #t for marked files
+
+(def (cmd-dired-mark app)
+  "Mark the file on the current line in dired."
+  (let* ((ed (current-editor app))
+         (text (editor-get-text ed))
+         (line (send-message ed SCI_LINEFROMPOSITION
+                 (editor-get-current-pos ed) 0))
+         (line-start (send-message ed SCI_POSITIONFROMLINE line 0))
+         (line-end (send-message ed SCI_GETLINEENDPOSITION line 0))
+         (line-text (if (< line-start line-end)
+                      (substring text line-start line-end) "")))
+    ;; Mark the file and add a visual indicator
+    (let ((trimmed (string-trim line-text)))
+      (when (> (string-length trimmed) 0)
+        (hash-put! *dired-marks* trimmed #t)
+        ;; Replace the line with marked indicator
+        (send-message ed SCI_SETTARGETSTART line-start 0)
+        (send-message ed SCI_SETTARGETEND line-end 0)
+        (if (string-prefix? "* " line-text)
+          #f ;; Already marked
+          (send-message/string ed SCI_REPLACETARGET
+            (string-append "* " line-text)))
+        ;; Move to next line
+        (send-message ed 2300 0 0)
+        (echo-message! (app-state-echo app)
+          (string-append "Marked: " trimmed))))))
+
+(def (cmd-dired-unmark app)
+  "Unmark the file on the current line in dired."
+  (let* ((ed (current-editor app))
+         (text (editor-get-text ed))
+         (line (send-message ed SCI_LINEFROMPOSITION
+                 (editor-get-current-pos ed) 0))
+         (line-start (send-message ed SCI_POSITIONFROMLINE line 0))
+         (line-end (send-message ed SCI_GETLINEENDPOSITION line 0))
+         (line-text (if (< line-start line-end)
+                      (substring text line-start line-end) "")))
+    (when (string-prefix? "* " line-text)
+      (let ((fname (substring line-text 2 (string-length line-text))))
+        (hash-remove! *dired-marks* (string-trim fname))
+        (send-message ed SCI_SETTARGETSTART line-start 0)
+        (send-message ed SCI_SETTARGETEND line-end 0)
+        (send-message/string ed SCI_REPLACETARGET
+          (substring line-text 2 (string-length line-text)))))
+    (send-message ed 2300 0 0)))
+
+(def (cmd-dired-unmark-all app)
+  "Unmark all marked files in dired."
+  (set! *dired-marks* (make-hash-table))
+  (let* ((ed (current-editor app))
+         (text (editor-get-text ed))
+         ;; Remove all "* " prefixes
+         (new-text (string-subst text "\n* " "\n")))
+    (let ((new-text2 (if (string-prefix? "* " new-text)
+                       (substring new-text 2 (string-length new-text))
+                       new-text)))
+      (editor-set-text ed new-text2)))
+  (echo-message! (app-state-echo app) "All marks cleared"))
+
+(def (cmd-dired-delete-marked app)
+  "Delete all marked files in dired."
+  (let* ((marked (hash-keys *dired-marks*))
+         (count (length marked))
+         (echo (app-state-echo app)))
+    (if (= count 0)
+      (echo-error! echo "No marked files")
+      (let ((confirm (app-read-string app
+                       (string-append "Delete " (number->string count)
+                                      " file(s)? (yes/no): "))))
+        (when (and confirm (string=? confirm "yes"))
+          (let ((deleted 0))
+            (for-each
+              (lambda (f)
+                (with-catch
+                  (lambda (e) #f)
+                  (lambda ()
+                    (when (file-exists? f)
+                      (delete-file f)
+                      (set! deleted (+ deleted 1))))))
+              marked)
+            (set! *dired-marks* (make-hash-table))
+            ;; Refresh dired buffer
+            (let ((buf (current-buffer-from-app app)))
+              (when (and buf (buffer-file-path buf))
+                (cmd-dired-refresh app)))
+            (echo-message! echo
+              (string-append "Deleted " (number->string deleted) " file(s)"))))))))
+
+(def (cmd-dired-refresh app)
+  "Refresh the current dired buffer."
+  (let* ((ed (current-editor app))
+         (buf (current-buffer-from-app app))
+         (dir (and buf (buffer-file-path buf))))
+    (when dir
+      (with-catch
+        (lambda (e) (echo-error! (app-state-echo app) "Cannot read directory"))
+        (lambda ()
+          (let* ((entries (directory-files dir))
+                 (sorted (sort entries string<?))
+                 (lines (map (lambda (f)
+                               (let* ((full (path-expand f dir))
+                                      (is-dir (with-catch (lambda (e) #f)
+                                                (lambda () (eq? (file-info-type (file-info full)) 'directory))))
+                                      (size (with-catch
+                                              (lambda (e) 0)
+                                              (lambda ()
+                                                (if is-dir 0
+                                                  (file-info-size (file-info full))))))
+                                      (suffix (if is-dir "/" "")))
+                                 (string-append
+                                   (if is-dir "d " "  ")
+                                   (let ((s (number->string size)))
+                                     (string-append
+                                       (make-string (max 0 (- 10 (string-length s))) #\space)
+                                       s))
+                                   "  " f suffix)))
+                             sorted))
+                 (text (string-append
+                         "  Directory: " dir "\n\n"
+                         (string-join lines "\n") "\n")))
+            (editor-set-text ed text)
+            (editor-goto-pos ed 0)))))))
+
+
+;;;============================================================================
+;;; Diff commands
+;;;============================================================================
+
+(def (cmd-diff-two-files app)
+  "Diff two files and show the result in a buffer."
+  (let* ((echo (app-state-echo app))
+         (file1 (app-read-string app "File A: "))
+         (file2 (when file1 (app-read-string app "File B: "))))
+    (when (and file1 file2
+               (not (string-empty? file1)) (not (string-empty? file2)))
+      (let ((result (with-catch
+                      (lambda (e) (string-append "Error: "
+                                    (with-output-to-string
+                                      (lambda () (display-exception e)))))
+                      (lambda ()
+                        (let ((p (open-process
+                                   (list path: "diff"
+                                         arguments: (list "-u" file1 file2)
+                                         stdout-redirection: #t
+                                         stderr-redirection: #t))))
+                          (let ((out (read-line p #f)))
+                            (process-status p)
+                            (or out "Files are identical")))))))
+        (open-output-buffer app "*Diff*" result)))))
+
+;;;============================================================================
+;;; Buffer encoding commands
+;;;============================================================================
+
+(def (cmd-set-buffer-encoding app)
+  "Set the buffer encoding (display only - all buffers use UTF-8)."
+  (let* ((echo (app-state-echo app))
+         (enc (app-read-string app "Encoding (utf-8/latin-1/ascii): ")))
+    (when enc
+      (echo-message! echo (string-append "Encoding set to: " enc
+                                          " (note: internally UTF-8)")))))
+
+(def (cmd-convert-line-endings app)
+  "Convert line endings in current buffer (unix/dos/mac)."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app))
+         (choice (app-read-string app "Convert to (unix/dos/mac): ")))
+    (when choice
+      (let ((text (editor-get-text ed)))
+        (cond
+          ((string=? choice "unix")
+           (let ((new-text (string-subst (string-subst text "\r\n" "\n") "\r" "\n")))
+             (editor-set-text ed new-text)
+             (echo-message! echo "Converted to Unix line endings (LF)")))
+          ((string=? choice "dos")
+           (let* ((clean (string-subst (string-subst text "\r\n" "\n") "\r" "\n"))
+                  (new-text (string-subst clean "\n" "\r\n")))
+             (editor-set-text ed new-text)
+             (echo-message! echo "Converted to DOS line endings (CRLF)")))
+          ((string=? choice "mac")
+           (let ((new-text (string-subst (string-subst text "\r\n" "\r") "\n" "\r")))
+             (editor-set-text ed new-text)
+             (echo-message! echo "Converted to Mac line endings (CR)")))
+          (else
+           (echo-error! echo "Unknown format. Use unix, dos, or mac.")))))))
+
+;;;============================================================================
+;;; Word count / statistics
+;;;============================================================================
+
+(def (cmd-buffer-statistics app)
+  "Show detailed buffer statistics: lines, words, chars, paragraphs."
+  (let* ((ed (current-editor app))
+         (text (editor-get-text ed))
+         (len (string-length text))
+         (lines (+ 1 (let loop ((i 0) (count 0))
+                       (if (>= i len) count
+                         (if (char=? (string-ref text i) #\newline)
+                           (loop (+ i 1) (+ count 1))
+                           (loop (+ i 1) count))))))
+         (words (let loop ((i 0) (count 0) (in-word #f))
+                  (if (>= i len) (if in-word (+ count 1) count)
+                    (let ((c (string-ref text i)))
+                      (if (or (char=? c #\space) (char=? c #\newline)
+                              (char=? c #\tab) (char=? c #\return))
+                        (loop (+ i 1) (if in-word (+ count 1) count) #f)
+                        (loop (+ i 1) count #t))))))
+         (paragraphs (let loop ((i 0) (count 0) (prev-newline #f))
+                       (if (>= i len) (+ count 1)
+                         (let ((c (string-ref text i)))
+                           (if (char=? c #\newline)
+                             (loop (+ i 1) (if prev-newline (+ count 1) count) #t)
+                             (loop (+ i 1) count #f))))))
+         (non-blank (let loop ((i 0) (count 0))
+                      (if (>= i len) count
+                        (if (or (char=? (string-ref text i) #\space)
+                                (char=? (string-ref text i) #\newline)
+                                (char=? (string-ref text i) #\tab))
+                          (loop (+ i 1) count)
+                          (loop (+ i 1) (+ count 1)))))))
+    (echo-message! (app-state-echo app)
+      (string-append "Lines: " (number->string lines)
+                     "  Words: " (number->string words)
+                     "  Chars: " (number->string len)
+                     "  Non-blank: " (number->string non-blank)
+                     "  Paragraphs: " (number->string paragraphs)))))
 

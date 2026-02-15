@@ -704,4 +704,31 @@
   (register-command! 'next-error cmd-next-error)
   ;; Occur goto
   (register-command! 'occur-goto cmd-occur-goto)
+  ;; Markdown mode
+  (register-command! 'markdown-bold cmd-markdown-bold)
+  (register-command! 'markdown-italic cmd-markdown-italic)
+  (register-command! 'markdown-code cmd-markdown-code)
+  (register-command! 'markdown-code-block cmd-markdown-code-block)
+  (register-command! 'markdown-heading cmd-markdown-heading)
+  (register-command! 'markdown-link cmd-markdown-link)
+  (register-command! 'markdown-image cmd-markdown-image)
+  (register-command! 'markdown-hr cmd-markdown-hr)
+  (register-command! 'markdown-list-item cmd-markdown-list-item)
+  (register-command! 'markdown-checkbox cmd-markdown-checkbox)
+  (register-command! 'markdown-toggle-checkbox cmd-markdown-toggle-checkbox)
+  (register-command! 'markdown-table cmd-markdown-table)
+  (register-command! 'markdown-preview-outline cmd-markdown-preview-outline)
+  ;; Dired operations
+  (register-command! 'dired-mark cmd-dired-mark)
+  (register-command! 'dired-unmark cmd-dired-unmark)
+  (register-command! 'dired-unmark-all cmd-dired-unmark-all)
+  (register-command! 'dired-delete-marked cmd-dired-delete-marked)
+  (register-command! 'dired-refresh cmd-dired-refresh)
+  ;; Diff two files
+  (register-command! 'diff-two-files cmd-diff-two-files)
+  ;; Encoding / line endings
+  (register-command! 'set-buffer-encoding cmd-set-buffer-encoding)
+  (register-command! 'convert-line-endings cmd-convert-line-endings)
+  ;; Statistics
+  (register-command! 'buffer-statistics cmd-buffer-statistics)
 )

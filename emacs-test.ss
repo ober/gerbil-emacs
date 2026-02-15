@@ -32,7 +32,8 @@
         (only-in :gerbil-emacs/editor-extra-editing
                  occur-parse-source-name
                  text-find-matching-close text-sexp-end
-                 parse-grep-line-text find-number-at-pos)
+                 parse-grep-line-text find-number-at-pos
+                 *dired-marks*)
         (only-in :gerbil-emacs/highlight
                  detect-file-language gerbil-file-extension?
                  setup-highlighting-for-file!)
@@ -1255,6 +1256,52 @@
       (register-all-commands!)
       ;; Should have many commands registered
       (check (> (hash-length *all-commands*) 100) => #t))
+
+    ;; -- Markdown mode commands --
+    (test-case "command registration: markdown mode"
+      (register-all-commands!)
+      (check (procedure? (find-command 'markdown-bold)) => #t)
+      (check (procedure? (find-command 'markdown-italic)) => #t)
+      (check (procedure? (find-command 'markdown-code)) => #t)
+      (check (procedure? (find-command 'markdown-code-block)) => #t)
+      (check (procedure? (find-command 'markdown-heading)) => #t)
+      (check (procedure? (find-command 'markdown-link)) => #t)
+      (check (procedure? (find-command 'markdown-image)) => #t)
+      (check (procedure? (find-command 'markdown-hr)) => #t)
+      (check (procedure? (find-command 'markdown-list-item)) => #t)
+      (check (procedure? (find-command 'markdown-checkbox)) => #t)
+      (check (procedure? (find-command 'markdown-toggle-checkbox)) => #t)
+      (check (procedure? (find-command 'markdown-table)) => #t)
+      (check (procedure? (find-command 'markdown-preview-outline)) => #t))
+
+    ;; -- Dired operations --
+    (test-case "command registration: dired operations"
+      (register-all-commands!)
+      (check (procedure? (find-command 'dired-mark)) => #t)
+      (check (procedure? (find-command 'dired-unmark)) => #t)
+      (check (procedure? (find-command 'dired-unmark-all)) => #t)
+      (check (procedure? (find-command 'dired-delete-marked)) => #t)
+      (check (procedure? (find-command 'dired-refresh)) => #t))
+
+    ;; -- Utility commands --
+    (test-case "command registration: diff, encoding, statistics"
+      (register-all-commands!)
+      (check (procedure? (find-command 'diff-two-files)) => #t)
+      (check (procedure? (find-command 'set-buffer-encoding)) => #t)
+      (check (procedure? (find-command 'convert-line-endings)) => #t)
+      (check (procedure? (find-command 'buffer-statistics)) => #t))
+
+    ;; -- Dired marks state --
+    (test-case "dired marks: hash table operations"
+      ;; Clean slate
+      (set! *dired-marks* (make-hash-table))
+      (hash-put! *dired-marks* "file1.txt" #t)
+      (hash-put! *dired-marks* "file2.txt" #t)
+      (check (length (hash-keys *dired-marks*)) => 2)
+      (hash-remove! *dired-marks* "file1.txt")
+      (check (length (hash-keys *dired-marks*)) => 1)
+      (set! *dired-marks* (make-hash-table))
+      (check (length (hash-keys *dired-marks*)) => 0))
 
     ;;=========================================================================
     ;; Headless Scintilla editor tests
