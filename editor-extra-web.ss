@@ -1777,3 +1777,62 @@
     (set! *global-childframe* (not *global-childframe*))
     (echo-message! echo (if *global-childframe*
                           "Global childframe ON" "Global childframe OFF"))))
+
+;;; ---- batch 67: programming language mode toggles ----
+
+(def *global-rustic* #f)
+(def *global-go-mode* #f)
+(def *global-python-black* #f)
+(def *global-elpy* #f)
+(def *global-js2-mode* #f)
+(def *global-typescript-mode* #f)
+(def *global-web-mode* #f)
+
+(def (cmd-toggle-global-rustic app)
+  "Toggle global rustic-mode (Rust development environment)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-rustic* (not *global-rustic*))
+    (echo-message! echo (if *global-rustic*
+                          "Rustic ON" "Rustic OFF"))))
+
+(def (cmd-toggle-global-go-mode app)
+  "Toggle global go-mode (Go development environment)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-go-mode* (not *global-go-mode*))
+    (echo-message! echo (if *global-go-mode*
+                          "Go mode ON" "Go mode OFF"))))
+
+(def (cmd-toggle-global-python-black app)
+  "Toggle global python-black-mode (auto-format Python)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-python-black* (not *global-python-black*))
+    (echo-message! echo (if *global-python-black*
+                          "Python black ON" "Python black OFF"))))
+
+(def (cmd-toggle-global-elpy app)
+  "Toggle global elpy-mode (Python IDE features)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-elpy* (not *global-elpy*))
+    (echo-message! echo (if *global-elpy*
+                          "Elpy ON" "Elpy OFF"))))
+
+(def (cmd-toggle-global-js2-mode app)
+  "Toggle global js2-mode (enhanced JavaScript editing)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-js2-mode* (not *global-js2-mode*))
+    (echo-message! echo (if *global-js2-mode*
+                          "JS2 mode ON" "JS2 mode OFF"))))
+
+(def (cmd-toggle-global-typescript-mode app)
+  "Toggle global typescript-mode (TypeScript support)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-typescript-mode* (not *global-typescript-mode*))
+    (echo-message! echo (if *global-typescript-mode*
+                          "TypeScript mode ON" "TypeScript mode OFF"))))
+
+(def (cmd-toggle-global-web-mode app)
+  "Toggle global web-mode (mixed-content web editing)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-web-mode* (not *global-web-mode*))
+    (echo-message! echo (if *global-web-mode*
+                          "Web mode ON" "Web mode OFF"))))

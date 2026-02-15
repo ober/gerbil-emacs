@@ -183,7 +183,11 @@
                  *xterm-mouse-mode*
                  *global-golden-ratio* *global-zoom-window*
                  *global-shackle* *global-popwin* *global-popper*
-                 *global-posframe* *global-childframe*)
+                 *global-posframe* *global-childframe*
+                 *global-rustic* *global-go-mode*
+                 *global-python-black* *global-elpy*
+                 *global-js2-mode* *global-typescript-mode*
+                 *global-web-mode*)
         (only-in :gerbil-emacs/editor-extra-modes
                  *global-envrc* *global-direnv* *global-editorconfig*
                  *global-dtrt-indent* *global-ws-trim*
@@ -2742,6 +2746,25 @@
       (check (procedure? (find-command 'toggle-global-vagrant)) => #t)
       (check (procedure? (find-command 'toggle-global-restclient)) => #t)
       (check (procedure? (find-command 'toggle-global-ob-http)) => #t))
+
+    (test-case "batch 67: mode toggles"
+      (check *global-rustic* => #f)
+      (check *global-go-mode* => #f)
+      (check *global-python-black* => #f)
+      (check *global-elpy* => #f)
+      (check *global-js2-mode* => #f)
+      (check *global-typescript-mode* => #f)
+      (check *global-web-mode* => #f))
+
+    (test-case "command registration: batch 67 features"
+      (register-all-commands!)
+      (check (procedure? (find-command 'toggle-global-rustic)) => #t)
+      (check (procedure? (find-command 'toggle-global-go-mode)) => #t)
+      (check (procedure? (find-command 'toggle-global-python-black)) => #t)
+      (check (procedure? (find-command 'toggle-global-elpy)) => #t)
+      (check (procedure? (find-command 'toggle-global-js2-mode)) => #t)
+      (check (procedure? (find-command 'toggle-global-typescript-mode)) => #t)
+      (check (procedure? (find-command 'toggle-global-web-mode)) => #t))
 
     ;;=========================================================================
     ;; Headless Scintilla editor tests

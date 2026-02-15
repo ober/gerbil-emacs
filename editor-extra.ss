@@ -1219,4 +1219,12 @@
   (register-command! 'toggle-global-vagrant cmd-toggle-global-vagrant)
   (register-command! 'toggle-global-restclient cmd-toggle-global-restclient)
   (register-command! 'toggle-global-ob-http cmd-toggle-global-ob-http)
+  ;; batch 67
+  (register-command! 'toggle-global-rustic cmd-toggle-global-rustic)
+  (register-command! 'toggle-global-go-mode cmd-toggle-global-go-mode)
+  (register-command! 'toggle-global-python-black cmd-toggle-global-python-black)
+  (register-command! 'toggle-global-elpy cmd-toggle-global-elpy)
+  (register-command! 'toggle-global-js2-mode cmd-toggle-global-js2-mode)
+  (register-command! 'toggle-global-typescript-mode cmd-toggle-global-typescript-mode)
+  (register-command! 'toggle-global-web-mode cmd-toggle-global-web-mode)
 )
