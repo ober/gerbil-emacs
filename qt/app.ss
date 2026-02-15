@@ -10,6 +10,7 @@
         :gerbil-emacs/repl
         :gerbil-emacs/eshell
         :gerbil-emacs/shell
+        :gerbil-emacs/terminal
         :gerbil-emacs/qt/keymap
         :gerbil-emacs/qt/buffer
         :gerbil-emacs/qt/window
@@ -30,26 +31,98 @@
          (name (path-strip-directory path)))
     (path-expand (string-append "#" name "#") dir)))
 
+;; Which-key state — show available bindings after prefix key delay
+(def *which-key-timer* #f)
+(def *which-key-pending-keymap* #f)
+(def *which-key-pending-prefix* #f)
+
+(def (which-key-format-bindings km prefix-str)
+  "Format keymap bindings for which-key display."
+  (let* ((entries (keymap-entries km))
+         (strs (let loop ((es entries) (acc []))
+                 (if (null? es) (reverse acc)
+                   (let* ((e (car es))
+                          (key (car e))
+                          (val (cdr e)))
+                     (loop (cdr es)
+                           (cons (string-append key ":"
+                                   (cond
+                                     ((symbol? val) (symbol->string val))
+                                     ((hash-table? val) "+prefix")
+                                     (else "?")))
+                                 acc)))))))
+    (string-append prefix-str "- " (string-join strs "  "))))
+
+;; Tab bar state — populated during qt-main, used by qt-tabbar-update!
+(def *tab-bar-layout* #f)
+(def *tab-bar-buttons* '())  ;; list of (buffer . button) pairs
+(def *tab-bar-last-state* #f)  ;; cache: (current-buf . buffer-count) to skip redundant updates
+(def *tab-bar-widget* #f)     ;; the tab bar widget itself (for show/hide)
+
+(def (qt-tabbar-update! app)
+  "Rebuild the tab bar to reflect current buffer list."
+  ;; Show/hide the tab bar widget
+  (when *tab-bar-widget*
+    (if *tab-bar-visible*
+      (qt-widget-show! *tab-bar-widget*)
+      (qt-widget-hide! *tab-bar-widget*)))
+  (when (and *tab-bar-layout* *tab-bar-visible*)
+    (let* ((fr (app-state-frame app))
+           (current-buf (qt-edit-window-buffer (qt-current-window fr)))
+           (bufs (buffer-list))
+           (new-state (cons current-buf (length bufs))))
+      ;; Skip update if nothing changed
+      (unless (and *tab-bar-last-state*
+                   (eq? (car new-state) (car *tab-bar-last-state*))
+                   (= (cdr new-state) (cdr *tab-bar-last-state*)))
+        (set! *tab-bar-last-state* new-state)
+        ;; Destroy old buttons
+        (for-each (lambda (pair) (qt-widget-destroy! (cdr pair))) *tab-bar-buttons*)
+        (set! *tab-bar-buttons* '())
+        ;; Create new buttons for each buffer
+        (for-each
+          (lambda (buf)
+            (let* ((name (buffer-name buf))
+                   (mod? (and (buffer-doc-pointer buf)
+                              (qt-text-document-modified? (buffer-doc-pointer buf))))
+                   (label (if mod? (string-append name " *") name))
+                   (btn (qt-push-button-create label)))
+              ;; Style: current buffer gets highlighted
+              (if (eq? buf current-buf)
+                (qt-widget-set-style-sheet! btn
+                  "QPushButton { color: #ffffff; background: #404060; border: 1px solid #606080; border-radius: 3px; padding: 2px 8px; font-family: monospace; font-size: 9pt; }")
+                (qt-widget-set-style-sheet! btn
+                  "QPushButton { color: #a0a0a0; background: #252525; border: 1px solid #383838; border-radius: 3px; padding: 2px 8px; font-family: monospace; font-size: 9pt; }
+                   QPushButton:hover { color: #d8d8d8; background: #353535; }"))
+              ;; Click handler: switch to this buffer
+              (qt-on-clicked! btn
+                (lambda ()
+                  (let* ((ed (qt-current-editor fr)))
+                    (qt-buffer-attach! ed buf)
+                    (set! (qt-edit-window-buffer (qt-current-window fr)) buf)
+                    (qt-update-visual-decorations! ed)
+                    (qt-modeline-update! app)
+                    (set! *tab-bar-last-state* #f)  ;; force refresh
+                    (qt-tabbar-update! app))))
+              ;; Add to layout
+              (qt-layout-add-widget! *tab-bar-layout* btn)
+              (set! *tab-bar-buttons* (cons (cons buf btn) *tab-bar-buttons*))))
+          bufs)
+        ;; Add stretch at the end to push tabs left
+        (qt-layout-add-stretch! *tab-bar-layout*)))))
+
 (def (qt-main . args)
   (with-qt-app qt-app
-    ;; Dark theme via stylesheet
-    (qt-app-set-style-sheet! qt-app "
-      QPlainTextEdit { background-color: #181818; color: #d8d8d8;
-                       font-family: monospace; font-size: 10pt;
-                       selection-background-color: #404060; }
-      QLabel { color: #d8d8d8; background: #181818; font-family: monospace;
-               font-size: 10pt; }
-      QMainWindow { background: #181818; }
-      QStatusBar { color: #d8d8d8; background: #282828; font-family: monospace;
-                   font-size: 10pt; }
-      QLineEdit { background: #181818; color: #d8d8d8; border: none;
-                  font-family: monospace; font-size: 10pt; }
-      QSplitter::handle { background: #383838; }")
+    ;; Apply theme stylesheet (uses *current-theme* from commands.ss)
+    (qt-app-set-style-sheet! qt-app (theme-stylesheet))
 
     (let* ((win (qt-main-window-create))
            ;; Central widget with vertical layout
            (central (qt-widget-create parent: win))
            (layout (qt-vbox-layout-create central))
+           ;; Tab bar for buffer switching
+           (tab-bar (qt-widget-create parent: central))
+           (tab-layout (qt-hbox-layout-create tab-bar))
            ;; Main content area: splitter for editors
            (splitter (qt-splitter-create QT_VERTICAL parent: central))
            ;; Echo label at bottom
@@ -59,33 +132,60 @@
            ;; Create app state
            (app (new-app-state fr)))
 
+      ;; Tab bar styling
+      (qt-widget-set-minimum-height! tab-bar 26)
+      (qt-widget-set-style-sheet! tab-bar
+        "background: #1e1e1e; border-bottom: 1px solid #383838;")
+      (qt-layout-set-margins! tab-layout 2 2 2 2)
+      (qt-layout-set-spacing! tab-layout 2)
+      ;; Store tab bar references for dynamic updates
+      (set! *tab-bar-layout* tab-layout)
+      (set! *tab-bar-widget* tab-bar)
+
       ;; Echo label: ensure visible with minimum height and distinct style
-      (qt-widget-set-minimum-height! echo-label 20)
+      (qt-widget-set-minimum-height! echo-label 24)
       (qt-widget-set-style-sheet! echo-label
         "color: #d8d8d8; background: #282828; font-family: monospace; font-size: 10pt; padding: 2px 4px;")
 
-      ;; Layout: splitter takes remaining space, echo-label fixed at bottom
+      ;; Layout: tab-bar at top, splitter takes remaining space, echo-label at bottom
+      (qt-layout-add-widget! layout tab-bar)
       (qt-layout-add-widget! layout splitter)
       (qt-layout-add-widget! layout echo-label)
+      (qt-layout-set-stretch-factor! layout tab-bar 0)
       (qt-layout-set-stretch-factor! layout splitter 1)
       (qt-layout-set-stretch-factor! layout echo-label 0)
+      (qt-widget-set-size-policy! tab-bar QT_SIZE_PREFERRED QT_SIZE_FIXED)
       (qt-widget-set-size-policy! echo-label QT_SIZE_PREFERRED QT_SIZE_FIXED)
       (qt-layout-set-margins! layout 0 0 0 0)
       (qt-layout-set-spacing! layout 0)
+
+      ;; Store Qt app pointer for clipboard access from commands
+      (set! *qt-app-ptr* qt-app)
 
       ;; Set up keybindings and commands
       (setup-default-bindings!)
       (qt-register-all-commands!)
 
+      ;; Load recent files, bookmarks, keys, abbrevs, history from disk
+      (recent-files-load!)
+      (bookmarks-load! app)
+      (custom-keys-load!)
+      (abbrevs-load!)
+      (savehist-load!)
+      (load-init-file!)
+
       ;; Menu bar and toolbar
       (qt-setup-menubar! app win)
 
-      ;; Initial text in scratch buffer
-      (let ((ed (qt-current-editor fr)))
-        (qt-plain-text-edit-set-text! ed ";; *scratch*\n")
+      ;; Initial text in scratch buffer — restore from disk if available
+      (let* ((ed (qt-current-editor fr))
+             (saved (scratch-restore!))
+             (text (or saved ";; *scratch*\n")))
+        (qt-plain-text-edit-set-text! ed text)
         (qt-text-document-set-modified! (buffer-doc-pointer
                                           (qt-current-buffer fr)) #f)
-        (qt-plain-text-edit-set-cursor-position! ed 0))
+        (qt-plain-text-edit-set-cursor-position! ed 0)
+        (scratch-update-text! text))
 
       ;; Key handler — define once, install on each editor
       ;; Uses consuming variant so QPlainTextEdit doesn't process keys itself.
@@ -94,25 +194,66 @@
                (let ((code (qt-last-key-code))
                      (mods (qt-last-key-modifiers))
                      (text (qt-last-key-text)))
+                ;; Modal mode intercepts: isearch and query-replace
+                (cond
+                 (*isearch-active*
+                  (let ((handled (isearch-handle-key! app code mods text)))
+                    ;; Update visual decorations and modeline
+                    (qt-update-visual-decorations!
+                      (qt-current-editor (app-state-frame app)))
+                    (qt-modeline-update! app)
+                    (qt-echo-draw! (app-state-echo app) echo-label)
+                    ;; If not handled, fall through to normal processing
+                    (when (not handled)
+                      (let-values (((action data new-state)
+                                    (qt-key-state-feed! (app-state-key-state app)
+                                                        code mods text)))
+                        (set! (app-state-key-state app) new-state)
+                        (when (eq? action 'command)
+                          (execute-command! app data))))))
+                 (*qreplace-active*
+                  (qreplace-handle-key! app code mods text)
+                  (qt-modeline-update! app)
+                  (qt-echo-draw! (app-state-echo app) echo-label))
+                 (else
+                ;; Normal key processing
                  (let-values (((action data new-state)
                                (qt-key-state-feed! (app-state-key-state app)
                                                    code mods text)))
                    (set! (app-state-key-state app) new-state)
+                   ;; Cancel which-key timer on any non-prefix action
+                   (when (and *which-key-timer* (not (eq? action 'prefix)))
+                     (qt-timer-stop! *which-key-timer*)
+                     (set! *which-key-pending-keymap* #f))
                    (case action
                      ((command)
+                      ;; Record for keyboard macro
+                      (when (and (app-state-macro-recording app)
+                                 (not (memq data '(start-kbd-macro end-kbd-macro
+                                                   call-last-kbd-macro))))
+                        (set! (app-state-macro-recording app)
+                          (cons (cons 'command data)
+                                (app-state-macro-recording app))))
                       ;; Clear echo on command
                       (when (and (echo-state-message (app-state-echo app))
                                  (null? (key-state-prefix-keys new-state)))
                         (echo-clear! (app-state-echo app)))
                       (execute-command! app data))
                      ((self-insert)
+                      ;; Check mode keymap first — special modes override self-insert
+                      (let* ((buf (qt-current-buffer (app-state-frame app)))
+                             (mode-cmd (mode-keymap-lookup buf data)))
+                        (if mode-cmd
+                          ;; Mode keymap has a binding for this key — execute as command
+                          (execute-command! app mode-cmd)
+                          ;; No mode binding — normal self-insert
+                          (begin
                       (when (app-state-macro-recording app)
                         (set! (app-state-macro-recording app)
                           (cons (cons 'self-insert data)
                                 (app-state-macro-recording app))))
                       ;; Handle self-insert directly here for Qt
-                      (let* ((buf (qt-current-buffer (app-state-frame app)))
-                             (ed (qt-current-editor (app-state-frame app)))
+                      (let* ((ed (qt-current-editor (app-state-frame app)))
                              (ch (string-ref data 0))
                              (close-ch (and *auto-pair-mode*
                                             (let ((cc (auto-pair-char (char->integer ch))))
@@ -136,6 +277,11 @@
                              (when (< i n)
                                (qt-plain-text-edit-insert-text! ed (string ch))
                                (loop (+ i 1)))))
+                          ;; Terminal: send character directly to PTY
+                          ((terminal-buffer? buf)
+                           (let ((ts (hash-get *terminal-state* buf)))
+                             (when ts
+                               (terminal-send-raw! ts (string ch)))))
                           ;; Shell: only after prompt-pos
                           ((shell-buffer? buf)
                            (let* ((pos (qt-plain-text-edit-cursor-position ed))
@@ -154,8 +300,10 @@
                              ;; Insert character n times
                              (let ((str (make-string n ch)))
                                (qt-plain-text-edit-insert-text! ed str))))))
+                      ;; Auto-fill: break line if past fill-column
+                      (auto-fill-check! (qt-current-editor (app-state-frame app)))
                       (set! (app-state-prefix-arg app) #f)
-                       (set! (app-state-prefix-digit-mode? app) #f)) ; Reset prefix arg
+                       (set! (app-state-prefix-digit-mode? app) #f))))) ; Reset prefix arg + close begin + close if
                      ((prefix)
                       (let ((prefix-str
                              (let loop ((keys (key-state-prefix-keys new-state))
@@ -166,7 +314,12 @@
                                          (car keys)
                                          (string-append acc " " (car keys))))))))
                         (echo-message! (app-state-echo app)
-                                       (string-append prefix-str "-"))))
+                                       (string-append prefix-str "-"))
+                        ;; Start which-key timer to show available bindings
+                        (set! *which-key-pending-keymap*
+                              (key-state-keymap new-state))
+                        (set! *which-key-pending-prefix* prefix-str)
+                        (qt-timer-start! *which-key-timer* 500)))
                      ((undefined)
                       (echo-error! (app-state-echo app)
                                    (string-append data " is undefined")))
@@ -174,9 +327,10 @@
                    ;; Update visual decorations (current-line + brace match)
                    (qt-update-visual-decorations!
                      (qt-current-editor (app-state-frame app)))
-                   ;; Update modeline and echo after each key
+                   ;; Update modeline, tab bar, and echo after each key
                    (qt-modeline-update! app)
-                   (qt-echo-draw! (app-state-echo app) echo-label))))))
+                   (qt-tabbar-update! app)
+                   (qt-echo-draw! (app-state-echo app) echo-label))))))))
 
         ;; Install on the initial editor (consuming — editor doesn't see keys)
         (qt-on-key-press-consuming! (qt-current-editor fr) key-handler)
@@ -232,6 +386,32 @@
                                   (qt-plain-text-edit-move-cursor! ed QT_CURSOR_END)
                                   (qt-plain-text-edit-ensure-cursor-visible! ed))
                                 (loop (cdr wins)))))))))))
+              (buffer-list))
+            ;; Also poll terminal buffers
+            (for-each
+              (lambda (buf)
+                (when (terminal-buffer? buf)
+                  (let ((ts (hash-get *terminal-state* buf)))
+                    (when ts
+                      (let ((segs (terminal-read-available ts)))
+                        (when segs
+                          ;; Extract plain text from segments (strip ANSI colors)
+                          (let ((plain (let ((out (open-output-string)))
+                                         (for-each
+                                           (lambda (seg) (display (text-segment-text seg) out))
+                                           segs)
+                                         (get-output-string out))))
+                            (when (> (string-length plain) 0)
+                              (let loop ((wins (qt-frame-windows fr)))
+                                (when (pair? wins)
+                                  (if (eq? (qt-edit-window-buffer (car wins)) buf)
+                                    (let ((ed (qt-edit-window-editor (car wins))))
+                                      (qt-plain-text-edit-append! ed plain)
+                                      (set! (terminal-state-prompt-pos ts)
+                                        (string-length (qt-plain-text-edit-text ed)))
+                                      (qt-plain-text-edit-move-cursor! ed QT_CURSOR_END)
+                                      (qt-plain-text-edit-ensure-cursor-visible! ed))
+                                    (loop (cdr wins)))))))))))))
               (buffer-list))))
         (qt-timer-start! repl-timer 50))
 
@@ -259,8 +439,115 @@
                                 (call-with-output-file auto-path
                                   (lambda (port) (display text port))))))
                           (loop (cdr wins))))))))
-              (buffer-list))))
+              (buffer-list))
+            ;; Cache scratch buffer text for persistence
+            (let ((scratch (buffer-by-name "*scratch*")))
+              (when scratch
+                (let loop ((wins (qt-frame-windows fr)))
+                  (when (pair? wins)
+                    (if (eq? (qt-edit-window-buffer (car wins)) scratch)
+                      (scratch-update-text!
+                        (qt-plain-text-edit-text
+                          (qt-edit-window-editor (car wins))))
+                      (loop (cdr wins)))))))
+            ;; Record undo history snapshots for modified buffers
+            (for-each
+              (lambda (win)
+                (let* ((buf (qt-edit-window-buffer win))
+                       (doc (buffer-doc-pointer buf)))
+                  (when (and doc (qt-text-document-modified? doc))
+                    (let ((text (qt-plain-text-edit-text (qt-edit-window-editor win))))
+                      (undo-history-record! (buffer-name buf) text)))))
+              (qt-frame-windows fr))))
         (qt-timer-start! auto-save-timer 30000))
+
+      ;; File modification watcher timer (every 5 seconds)
+      (let ((file-watch-timer (qt-timer-create)))
+        (qt-on-timeout! file-watch-timer
+          (lambda ()
+            (when *auto-revert-mode*
+              (for-each
+                (lambda (buf)
+                  (let ((path (buffer-file-path buf))
+                        (tail? (hash-get *auto-revert-tail-buffers* (buffer-name buf))))
+                    (when (and path (file-mtime-changed? path))
+                      ;; File changed externally
+                      (let ((doc (buffer-doc-pointer buf)))
+                        (if (and (not tail?)
+                                 doc (qt-text-document-modified? doc))
+                          ;; Buffer has unsaved changes — warn but don't revert
+                          (echo-message! (app-state-echo app)
+                            (string-append (buffer-name buf)
+                              " changed on disk (buffer modified, not reverting)"))
+                          ;; Auto-revert (always for tail-mode, otherwise only unmodified)
+                          (let loop ((wins (qt-frame-windows fr)))
+                            (when (pair? wins)
+                              (if (eq? (qt-edit-window-buffer (car wins)) buf)
+                                (let* ((ed (qt-edit-window-editor (car wins)))
+                                       (pos (qt-plain-text-edit-cursor-position ed))
+                                       (text (read-file-as-string path)))
+                                  (when text
+                                    (qt-plain-text-edit-set-text! ed text)
+                                    (qt-text-document-set-modified! doc #f)
+                                    (if tail?
+                                      ;; Tail mode: scroll to end
+                                      (begin
+                                        (qt-plain-text-edit-move-cursor! ed QT_CURSOR_END)
+                                        (qt-plain-text-edit-ensure-cursor-visible! ed))
+                                      ;; Normal: preserve cursor position
+                                      (begin
+                                        (qt-plain-text-edit-set-cursor-position! ed
+                                          (min pos (string-length text)))
+                                        (qt-plain-text-edit-ensure-cursor-visible! ed)))
+                                    (file-mtime-record! path)))
+                                (loop (cdr wins))))))))))
+                (buffer-list)))))
+        (qt-timer-start! file-watch-timer 5000))
+
+      ;; Eldoc timer — show function signatures on cursor idle
+      (let ((eldoc-timer (qt-timer-create)))
+        (qt-on-timeout! eldoc-timer
+          (lambda ()
+            (eldoc-display! app)))
+        (qt-timer-start! eldoc-timer 300))
+
+      ;; Which-key timer (one-shot, shows available prefix bindings)
+      (set! *which-key-timer* (qt-timer-create))
+      (qt-timer-set-single-shot! *which-key-timer* #t)
+      (qt-on-timeout! *which-key-timer*
+        (lambda ()
+          (when (and *which-key-pending-keymap*
+                     (not (null? (key-state-prefix-keys
+                                   (app-state-key-state app)))))
+            (echo-message! (app-state-echo app)
+              (which-key-format-bindings
+                *which-key-pending-keymap*
+                *which-key-pending-prefix*)))))
+
+      ;; Restore session if no files given on command line
+      (when (null? args)
+        (let-values (((current-file entries) (session-restore-files)))
+          (for-each
+            (lambda (entry)
+              (let ((path (car entry))
+                    (pos (cdr entry)))
+                (when (file-exists? path)
+                  (qt-open-file! app path)
+                  ;; Restore cursor position
+                  (let ((ed (qt-current-editor fr)))
+                    (qt-plain-text-edit-set-cursor-position! ed
+                      (min pos (string-length (qt-plain-text-edit-text ed))))
+                    (qt-plain-text-edit-ensure-cursor-visible! ed)))))
+            entries)
+          ;; Switch to the buffer that was current when session was saved
+          (when current-file
+            (let loop ((bufs (buffer-list)))
+              (when (pair? bufs)
+                (if (equal? (buffer-file-path (car bufs)) current-file)
+                  (let ((ed (qt-current-editor fr)))
+                    (qt-buffer-attach! ed (car bufs))
+                    (set! (qt-edit-window-buffer (qt-current-window fr)) (car bufs)))
+                  (loop (cdr bufs))))))))
 
       ;; Open files from command line
       (for-each (lambda (file) (qt-open-file! app file)) args)
@@ -271,8 +558,9 @@
       (qt-widget-resize! win 800 600)
       (qt-widget-show! win)
 
-      ;; Initial modeline update (before any key press)
+      ;; Initial modeline and tab bar update (before any key press)
       (qt-modeline-update! app)
+      (qt-tabbar-update! app)
 
       ;; Enter Qt event loop
       (qt-app-exec! qt-app))))
@@ -283,6 +571,8 @@
 
 (def (qt-open-file! app filename)
   "Open a file or directory in a new buffer, or view an image."
+  ;; Track in recent files
+  (recent-files-add! filename)
   (cond
     ;; Directory -> dired
     ((and (file-exists? filename)
@@ -298,6 +588,7 @@
             (fr (app-state-frame app))
             (ed (qt-current-editor fr))
             (buf (qt-buffer-create! name ed filename)))
+       (buffer-touch! buf)
        (qt-buffer-attach! ed buf)
        (set! (qt-edit-window-buffer (qt-current-window fr)) buf)
        (when (file-exists? filename)
@@ -305,5 +596,6 @@
            (when text
              (qt-plain-text-edit-set-text! ed text)
              (qt-text-document-set-modified! (buffer-doc-pointer buf) #f)
-             (qt-plain-text-edit-set-cursor-position! ed 0))))
+             (qt-plain-text-edit-set-cursor-position! ed 0)))
+         (file-mtime-record! filename))
        (qt-setup-highlighting! app buf)))))

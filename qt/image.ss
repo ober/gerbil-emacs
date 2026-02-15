@@ -63,6 +63,7 @@
             (when (and (> new-w 0) (> new-h 0))
               (let ((scaled (qt-pixmap-scaled pixmap new-w new-h)))
                 (qt-label-set-pixmap! img-label scaled)
+                (qt-widget-set-minimum-size! img-label new-w new-h)
                 (qt-label-set-text! zoom-label
                   (string-append (number->string (inexact->exact (round (* zoom 100)))) "%"))))))
         
@@ -71,8 +72,9 @@
         (qt-scroll-area-set-widget-resizable! scroll-area #f)
         (qt-widget-set-style-sheet! img-label "background: #202020;")
         
-        ;; Set initial image
+        ;; Set initial image and size label to match
         (qt-label-set-pixmap! img-label pixmap)
+        (qt-widget-set-minimum-size! img-label orig-w orig-h)
         
         ;; Configure dialog
         (qt-dialog-set-title! dialog (string-append "Image: " (path-strip-directory filename)))

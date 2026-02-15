@@ -673,48 +673,62 @@
 ;;; Search
 ;;;============================================================================
 
-(def (cmd-search-forward app)
+(def (search-forward-impl! app query)
+  "Execute a forward search for query. Used by cmd-search-forward."
   (let* ((echo (app-state-echo app))
-         (fr (app-state-frame app))
-         (row (- (frame-height fr) 1))
-         (width (frame-width fr))
-         (default (or (app-state-last-search app) ""))
-         (prompt (if (string=? default "")
-                   "Search: "
-                   (string-append "Search [" default "]: ")))
-         (input (echo-read-string echo prompt row width)))
-    (when input
-      (let* ((query (if (string=? input "") default input))
-             (ed (current-editor app)))
-        (when (> (string-length query) 0)
-          (set! (app-state-last-search app) query)
-          ;; Highlight all matches
-          (highlight-all-matches! ed query)
-          (let ((pos (editor-get-current-pos ed))
-                (len (editor-get-text-length ed)))
-            ;; Search forward from current position
-            (send-message ed SCI_SETTARGETSTART pos)
+         (ed (current-editor app)))
+    (set! (app-state-last-search app) query)
+    ;; Highlight all matches
+    (highlight-all-matches! ed query)
+    (let ((pos (editor-get-current-pos ed))
+          (len (editor-get-text-length ed)))
+      ;; Search forward from current position
+      (send-message ed SCI_SETTARGETSTART pos)
+      (send-message ed SCI_SETTARGETEND len)
+      (send-message ed SCI_SETSEARCHFLAGS 0)
+      (let ((found (send-message/string ed SCI_SEARCHINTARGET query)))
+        (if (>= found 0)
+          (begin
+            (editor-goto-pos ed found)
+            (editor-set-selection ed found
+                                  (+ found (string-length query))))
+          ;; Wrap around from beginning
+          (begin
+            (send-message ed SCI_SETTARGETSTART 0)
             (send-message ed SCI_SETTARGETEND len)
-            (send-message ed SCI_SETSEARCHFLAGS 0)
-            (let ((found (send-message/string ed SCI_SEARCHINTARGET query)))
-              (if (>= found 0)
+            (let ((found2 (send-message/string ed SCI_SEARCHINTARGET query)))
+              (if (>= found2 0)
                 (begin
-                  (editor-goto-pos ed found)
-                  (editor-set-selection ed found
-                                        (+ found (string-length query))))
-                ;; Wrap around from beginning
-                (begin
-                  (send-message ed SCI_SETTARGETSTART 0)
-                  (send-message ed SCI_SETTARGETEND len)
-                  (let ((found2 (send-message/string ed SCI_SEARCHINTARGET query)))
-                    (if (>= found2 0)
-                      (begin
-                        (editor-goto-pos ed found2)
-                        (editor-set-selection ed found2
-                                              (+ found2 (string-length query)))
-                        (echo-message! echo "Wrapped"))
-                      (echo-error! echo
-                                   (string-append "Not found: " query)))))))))))))
+                  (editor-goto-pos ed found2)
+                  (editor-set-selection ed found2
+                                        (+ found2 (string-length query)))
+                  (echo-message! echo "Wrapped"))
+                (echo-error! echo
+                             (string-append "Not found: " query))))))))))
+
+(def (cmd-search-forward app)
+  ;; If repeating C-s with an existing search query, skip the prompt
+  (let ((default (or (app-state-last-search app) "")))
+    (if (and (eq? (app-state-last-command app) 'search-forward)
+             (> (string-length default) 0))
+      ;; Repeat: move past current match, then search again
+      (let* ((ed (current-editor app))
+             (pos (editor-get-current-pos ed)))
+        (editor-goto-pos ed (+ pos 1))
+        (search-forward-impl! app default))
+      ;; First C-s: prompt for query
+      (let* ((echo (app-state-echo app))
+             (fr (app-state-frame app))
+             (row (- (frame-height fr) 1))
+             (width (frame-width fr))
+             (prompt (if (string=? default "")
+                       "Search: "
+                       (string-append "Search [" default "]: ")))
+             (input (echo-read-string echo prompt row width)))
+        (when input
+          (let ((query (if (string=? input "") default input)))
+            (when (> (string-length query) 0)
+              (search-forward-impl! app query))))))))
 
 (def (cmd-search-backward app)
   (let* ((echo (app-state-echo app))

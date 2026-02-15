@@ -341,6 +341,10 @@
   ;; Dynamic abbreviation
   (keymap-bind! *global-keymap* "M-/" 'dabbrev-expand)
 
+  ;; Xref (go to definition / back)
+  (keymap-bind! *global-keymap* "M-." 'goto-definition)
+  (keymap-bind! *global-keymap* "M-," 'xref-back)
+
   ;; What cursor position
   (keymap-bind! *ctrl-x-map* "=" 'what-cursor-position)
 
@@ -357,6 +361,7 @@
   (keymap-bind! *ctrl-x-r-map* "i" 'insert-register)
   (keymap-bind! *ctrl-x-r-map* "SPC" 'point-to-register)
   (keymap-bind! *ctrl-x-r-map* "j" 'jump-to-register)
+  (keymap-bind! *ctrl-x-r-map* "w" 'window-configuration-to-register)
 
   ;; Backward kill word
   (keymap-bind! *global-keymap* "M-DEL" 'backward-kill-word)
