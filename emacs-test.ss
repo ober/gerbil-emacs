@@ -75,7 +75,11 @@
                  *minibuffer-depth-indicate* *context-menu-mode*
                  *tooltip-mode* *file-name-shadow-mode*
                  *minibuffer-electric-default*
-                 *history-delete-duplicates*)
+                 *history-delete-duplicates*
+                 *modus-themes* *ef-themes* *nano-theme*
+                 *ligature-mode* *pixel-scroll-precision*
+                 *repeat-mode* *tab-line-mode*
+                 *scroll-bar-mode* *tool-bar-mode*)
         (only-in :gerbil-emacs/editor-extra-tools2
                  *highlight-changes-mode* *saved-window-layouts*
                  *known-modes* *password-chars*
@@ -2192,6 +2196,31 @@
       (check (procedure? (find-command 'toggle-nerd-icons-mode)) => #t)
       (check (procedure? (find-command 'toggle-all-the-icons)) => #t)
       (check (procedure? (find-command 'toggle-doom-themes)) => #t))
+
+    ;; -- Batch 45 tests --
+    (test-case "batch 45: mode toggles"
+      (check *modus-themes* => #f)
+      (check *ef-themes* => #f)
+      (check *nano-theme* => #f)
+      (check *ligature-mode* => #f)
+      (check *pixel-scroll-precision* => #f)
+      (check *repeat-mode* => #f)
+      (check *tab-line-mode* => #f)
+      (check *scroll-bar-mode* => #t)
+      (check *tool-bar-mode* => #f))
+
+    ;; -- Command registration batch 45 --
+    (test-case "command registration: batch 45 features"
+      (register-all-commands!)
+      (check (procedure? (find-command 'toggle-modus-themes)) => #t)
+      (check (procedure? (find-command 'toggle-ef-themes)) => #t)
+      (check (procedure? (find-command 'toggle-nano-theme)) => #t)
+      (check (procedure? (find-command 'toggle-ligature-mode)) => #t)
+      (check (procedure? (find-command 'toggle-pixel-scroll-precision)) => #t)
+      (check (procedure? (find-command 'toggle-repeat-mode)) => #t)
+      (check (procedure? (find-command 'toggle-tab-line-mode)) => #t)
+      (check (procedure? (find-command 'toggle-scroll-bar-mode)) => #t)
+      (check (procedure? (find-command 'toggle-tool-bar-mode)) => #t))
 
     ;;=========================================================================
     ;; Headless Scintilla editor tests

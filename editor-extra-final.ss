@@ -1591,3 +1591,77 @@
     (echo-message! echo (if *history-delete-duplicates*
                           "History delete duplicates ON"
                           "History delete duplicates OFF"))))
+
+;; ── batch 45: themes and UI chrome toggles ──────────────────────────
+(def *modus-themes* #f)
+(def *ef-themes* #f)
+(def *nano-theme* #f)
+(def *ligature-mode* #f)
+(def *pixel-scroll-precision* #f)
+(def *repeat-mode* #f)
+(def *tab-line-mode* #f)
+(def *scroll-bar-mode* #t)
+(def *tool-bar-mode* #f)
+
+(def (cmd-toggle-modus-themes app)
+  "Toggle modus-themes (accessible high-contrast themes)."
+  (let ((echo (app-state-echo app)))
+    (set! *modus-themes* (not *modus-themes*))
+    (echo-message! echo (if *modus-themes*
+                          "Modus themes ON" "Modus themes OFF"))))
+
+(def (cmd-toggle-ef-themes app)
+  "Toggle ef-themes (elegant font themes)."
+  (let ((echo (app-state-echo app)))
+    (set! *ef-themes* (not *ef-themes*))
+    (echo-message! echo (if *ef-themes*
+                          "Ef themes ON" "Ef themes OFF"))))
+
+(def (cmd-toggle-nano-theme app)
+  "Toggle nano-theme (minimalist appearance)."
+  (let ((echo (app-state-echo app)))
+    (set! *nano-theme* (not *nano-theme*))
+    (echo-message! echo (if *nano-theme*
+                          "Nano theme ON" "Nano theme OFF"))))
+
+(def (cmd-toggle-ligature-mode app)
+  "Toggle ligature-mode (font ligature display)."
+  (let ((echo (app-state-echo app)))
+    (set! *ligature-mode* (not *ligature-mode*))
+    (echo-message! echo (if *ligature-mode*
+                          "Ligature mode ON" "Ligature mode OFF"))))
+
+(def (cmd-toggle-pixel-scroll-precision app)
+  "Toggle pixel-scroll-precision-mode (smooth scrolling)."
+  (let ((echo (app-state-echo app)))
+    (set! *pixel-scroll-precision* (not *pixel-scroll-precision*))
+    (echo-message! echo (if *pixel-scroll-precision*
+                          "Pixel scroll precision ON" "Pixel scroll precision OFF"))))
+
+(def (cmd-toggle-repeat-mode app)
+  "Toggle repeat-mode (repeat last command with single key)."
+  (let ((echo (app-state-echo app)))
+    (set! *repeat-mode* (not *repeat-mode*))
+    (echo-message! echo (if *repeat-mode*
+                          "Repeat mode ON" "Repeat mode OFF"))))
+
+(def (cmd-toggle-tab-line-mode app)
+  "Toggle tab-line-mode (per-window tab display)."
+  (let ((echo (app-state-echo app)))
+    (set! *tab-line-mode* (not *tab-line-mode*))
+    (echo-message! echo (if *tab-line-mode*
+                          "Tab-line mode ON" "Tab-line mode OFF"))))
+
+(def (cmd-toggle-scroll-bar-mode app)
+  "Toggle scroll-bar-mode."
+  (let ((echo (app-state-echo app)))
+    (set! *scroll-bar-mode* (not *scroll-bar-mode*))
+    (echo-message! echo (if *scroll-bar-mode*
+                          "Scroll bar mode ON" "Scroll bar mode OFF"))))
+
+(def (cmd-toggle-tool-bar-mode app)
+  "Toggle tool-bar-mode."
+  (let ((echo (app-state-echo app)))
+    (set! *tool-bar-mode* (not *tool-bar-mode*))
+    (echo-message! echo (if *tool-bar-mode*
+                          "Tool bar mode ON" "Tool bar mode OFF"))))
