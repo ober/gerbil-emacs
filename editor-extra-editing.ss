@@ -1551,3 +1551,82 @@
                      "  Non-blank: " (number->string non-blank)
                      "  Paragraphs: " (number->string paragraphs)))))
 
+;; ── batch 42: editing preferences and modes ─────────────────────────
+(def *auto-fill-comments* #f)
+(def *electric-indent-mode* #t)
+(def *truncate-partial-width* #f)
+(def *inhibit-startup-screen* #f)
+(def *visible-cursor* #t)
+(def *transient-mark-mode* #t)
+(def *global-whitespace-mode* #f)
+(def *hide-ifdef-mode* #f)
+(def *allout-mode* #f)
+
+(def (cmd-toggle-auto-fill-comments app)
+  "Toggle auto-fill for comments only."
+  (let ((echo (app-state-echo app)))
+    (set! *auto-fill-comments* (not *auto-fill-comments*))
+    (echo-message! echo (if *auto-fill-comments*
+                          "Auto-fill comments ON" "Auto-fill comments OFF"))))
+
+(def (cmd-toggle-electric-indent-mode app)
+  "Toggle electric-indent-mode (auto indent on newline)."
+  (let ((echo (app-state-echo app)))
+    (set! *electric-indent-mode* (not *electric-indent-mode*))
+    (echo-message! echo (if *electric-indent-mode*
+                          "Electric indent mode ON" "Electric indent mode OFF"))))
+
+(def (cmd-toggle-truncate-partial-width-windows app)
+  "Toggle truncation in partial-width windows."
+  (let ((echo (app-state-echo app)))
+    (set! *truncate-partial-width* (not *truncate-partial-width*))
+    (echo-message! echo (if *truncate-partial-width*
+                          "Truncate partial-width ON" "Truncate partial-width OFF"))))
+
+(def (cmd-toggle-inhibit-startup-screen app)
+  "Toggle inhibit-startup-screen."
+  (let ((echo (app-state-echo app)))
+    (set! *inhibit-startup-screen* (not *inhibit-startup-screen*))
+    (echo-message! echo (if *inhibit-startup-screen*
+                          "Inhibit startup screen ON" "Inhibit startup screen OFF"))))
+
+(def (cmd-toggle-visible-cursor app)
+  "Toggle visible cursor in non-selected windows."
+  (let ((echo (app-state-echo app)))
+    (set! *visible-cursor* (not *visible-cursor*))
+    (echo-message! echo (if *visible-cursor*
+                          "Visible cursor ON" "Visible cursor OFF"))))
+
+(def (cmd-toggle-transient-mark-mode app)
+  "Toggle transient-mark-mode (highlight active region)."
+  (let ((echo (app-state-echo app)))
+    (set! *transient-mark-mode* (not *transient-mark-mode*))
+    (echo-message! echo (if *transient-mark-mode*
+                          "Transient mark mode ON" "Transient mark mode OFF"))))
+
+(def (cmd-insert-form-feed app)
+  "Insert a form-feed character (^L page break)."
+  (let ((ed (current-editor app)))
+    (editor-replace-selection ed (string (integer->char 12)))))
+
+(def (cmd-toggle-global-whitespace-mode app)
+  "Toggle global-whitespace-mode (show all whitespace)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-whitespace-mode* (not *global-whitespace-mode*))
+    (echo-message! echo (if *global-whitespace-mode*
+                          "Global whitespace mode ON" "Global whitespace mode OFF"))))
+
+(def (cmd-toggle-hide-ifdef-mode app)
+  "Toggle hide-ifdef-mode (hide #ifdef blocks)."
+  (let ((echo (app-state-echo app)))
+    (set! *hide-ifdef-mode* (not *hide-ifdef-mode*))
+    (echo-message! echo (if *hide-ifdef-mode*
+                          "Hide-ifdef mode ON" "Hide-ifdef mode OFF"))))
+
+(def (cmd-toggle-allout-mode app)
+  "Toggle allout-mode (outline editing)."
+  (let ((echo (app-state-echo app)))
+    (set! *allout-mode* (not *allout-mode*))
+    (echo-message! echo (if *allout-mode*
+                          "Allout mode ON" "Allout mode OFF"))))
+

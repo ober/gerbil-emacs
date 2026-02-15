@@ -41,7 +41,12 @@
                  occur-parse-source-name
                  text-find-matching-close text-sexp-end
                  parse-grep-line-text find-number-at-pos
-                 *dired-marks*)
+                 *dired-marks*
+                 *auto-fill-comments* *electric-indent-mode*
+                 *truncate-partial-width* *inhibit-startup-screen*
+                 *visible-cursor* *transient-mark-mode*
+                 *global-whitespace-mode*
+                 *hide-ifdef-mode* *allout-mode*)
         (only-in :gerbil-emacs/editor-extra-vcs
                  fuzzy-match? fuzzy-score)
         (only-in :gerbil-emacs/editor-extra-final
@@ -2096,6 +2101,34 @@
       (check (procedure? (find-command 'toggle-eglot-mode)) => #t)
       (check (procedure? (find-command 'toggle-display-time)) => #t)
       (check (procedure? (find-command 'toggle-display-battery)) => #t))
+
+    ;; -- Batch 42 tests --
+    (test-case "batch 42: mode toggles"
+      (check *auto-fill-comments* => #f)
+      (check *electric-indent-mode* => #t)
+      (set! *electric-indent-mode* #f)
+      (check *electric-indent-mode* => #f)
+      (check *truncate-partial-width* => #f)
+      (check *inhibit-startup-screen* => #f)
+      (check *visible-cursor* => #t)
+      (check *transient-mark-mode* => #t)
+      (check *global-whitespace-mode* => #f)
+      (check *hide-ifdef-mode* => #f)
+      (check *allout-mode* => #f))
+
+    ;; -- Command registration batch 42 --
+    (test-case "command registration: batch 42 features"
+      (register-all-commands!)
+      (check (procedure? (find-command 'toggle-auto-fill-comments)) => #t)
+      (check (procedure? (find-command 'toggle-electric-indent-mode)) => #t)
+      (check (procedure? (find-command 'toggle-truncate-partial-width-windows)) => #t)
+      (check (procedure? (find-command 'toggle-inhibit-startup-screen)) => #t)
+      (check (procedure? (find-command 'toggle-visible-cursor)) => #t)
+      (check (procedure? (find-command 'toggle-transient-mark-mode)) => #t)
+      (check (procedure? (find-command 'insert-form-feed)) => #t)
+      (check (procedure? (find-command 'toggle-global-whitespace-mode)) => #t)
+      (check (procedure? (find-command 'toggle-hide-ifdef-mode)) => #t)
+      (check (procedure? (find-command 'toggle-allout-mode)) => #t))
 
     ;;=========================================================================
     ;; Headless Scintilla editor tests
