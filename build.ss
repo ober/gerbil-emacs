@@ -40,11 +40,40 @@
         "/usr/lib/x86_64-linux-gnu/pkgconfig"
         (string-append existing ":/usr/lib/x86_64-linux-gnu/pkgconfig")))))
 
+;; Detect QScintilla availability (same logic as gerbil-qt/build.ss)
+(def have-qscintilla?
+  (or (with-catch (lambda (_) #f)
+        (lambda ()
+          (run-process ["pkg-config" "--exists" "QScintilla"] coprocess: void)
+          #t))
+      (let ((arch (with-catch (lambda (_) "x86_64-linux-gnu")
+                    (lambda () (run-process ["gcc" "-dumpmachine"] coprocess: read-line)))))
+        (or (file-exists? (string-append "/usr/include/" arch "/qt6/Qsci/qsciscintilla.h"))
+            (file-exists? "/usr/include/qt6/Qsci/qsciscintilla.h")
+            (file-exists? "/usr/include/Qsci/qsciscintilla.h")
+            (file-exists? (string-append "/usr/include/" arch "/Qsci/qsciscintilla.h"))))))
+
+(def qsci-cppflags
+  (if have-qscintilla?
+    (with-catch (lambda (_) "-DQT_SCINTILLA_AVAILABLE")
+      (lambda () (string-append "-DQT_SCINTILLA_AVAILABLE "
+                                (run-process ["pkg-config" "--cflags" "QScintilla"]
+                                             coprocess: read-line))))
+    ""))
+
+(def qsci-ldflags
+  (if have-qscintilla?
+    (with-catch (lambda (_) "-lqscintilla2_qt6")
+      (lambda () (run-process ["pkg-config" "--libs" "QScintilla"]
+                              coprocess: read-line)))
+    ""))
+
 ;; Qt modules also need scintilla headers (editor.ss transitively includes them)
 (def qt-cc-opts
   (string-append
    "-I" qt-vendor-dir " "
    (cppflags "Qt6Widgets" "") " "
+   qsci-cppflags " "
    cc-opts))
 
 ;; Homebrew OpenSSL path — must come before system -L/usr/lib/... from Qt pkg-config
@@ -59,6 +88,7 @@
    "-L" qt-vendor-dir " -lqt_shim "
    "-Wl,-rpath," qt-vendor-dir " "
    (ldflags "Qt6Widgets" "-lQt6Widgets") " "
+   qsci-ldflags " "
    (path-expand "bin/scintilla.a" sci-dir) " "
    (path-expand "bin/liblexilla.a" lexilla-dir) " "
    (path-expand "bin/termbox.a" termbox-dir) " "
