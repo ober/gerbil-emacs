@@ -48,7 +48,11 @@
                  *consult-mode* *orderless-mode* *embark-mode*
                  *undo-fu-session* *auto-package-mode*
                  *corfu-mode* *cape-mode* *nerd-icons-mode*
-                 *all-the-icons* *doom-themes*)
+                 *all-the-icons* *doom-themes*
+                 *global-whitespace-newline* *global-highlight-indent*
+                 *global-rainbow-mode* *global-auto-highlight*
+                 *global-symbol-overlay* *global-highlight-parentheses*
+                 *global-pulse-line*)
         (only-in :gerbil-emacs/editor-extra-editing
                  occur-parse-source-name
                  text-find-matching-close text-sexp-end
@@ -2420,6 +2424,27 @@
       (check (procedure? (find-command 'toggle-global-eldoc-box)) => #t)
       (check (procedure? (find-command 'toggle-global-flyspell-lazy)) => #t)
       (check (procedure? (find-command 'toggle-global-so-clean)) => #t))
+
+    ;; -- Batch 53 tests --
+    (test-case "batch 53: mode toggles"
+      (check *global-whitespace-newline* => #f)
+      (check *global-highlight-indent* => #f)
+      (check *global-rainbow-mode* => #f)
+      (check *global-auto-highlight* => #f)
+      (check *global-symbol-overlay* => #f)
+      (check *global-highlight-parentheses* => #f)
+      (check *global-pulse-line* => #f))
+
+    ;; -- Command registration batch 53 --
+    (test-case "command registration: batch 53 features"
+      (register-all-commands!)
+      (check (procedure? (find-command 'toggle-global-whitespace-newline)) => #t)
+      (check (procedure? (find-command 'toggle-global-highlight-indent)) => #t)
+      (check (procedure? (find-command 'toggle-global-rainbow-mode)) => #t)
+      (check (procedure? (find-command 'toggle-global-auto-highlight)) => #t)
+      (check (procedure? (find-command 'toggle-global-symbol-overlay)) => #t)
+      (check (procedure? (find-command 'toggle-global-highlight-parentheses)) => #t)
+      (check (procedure? (find-command 'toggle-global-pulse-line)) => #t))
 
     ;;=========================================================================
     ;; Headless Scintilla editor tests

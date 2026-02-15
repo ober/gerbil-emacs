@@ -1686,3 +1686,61 @@
     (echo-message! echo (if *doom-themes*
                           "Doom themes ON" "Doom themes OFF"))))
 
+;; ── batch 53: highlight and visual feedback toggles ─────────────────
+(def *global-whitespace-newline* #f)
+(def *global-highlight-indent* #f)
+(def *global-rainbow-mode* #f)
+(def *global-auto-highlight* #f)
+(def *global-symbol-overlay* #f)
+(def *global-highlight-parentheses* #f)
+(def *global-pulse-line* #f)
+
+(def (cmd-toggle-global-whitespace-newline app)
+  "Toggle display of newline characters globally."
+  (let ((echo (app-state-echo app)))
+    (set! *global-whitespace-newline* (not *global-whitespace-newline*))
+    (echo-message! echo (if *global-whitespace-newline*
+                          "Whitespace newlines ON" "Whitespace newlines OFF"))))
+
+(def (cmd-toggle-global-highlight-indent app)
+  "Toggle global highlight-indentation-mode."
+  (let ((echo (app-state-echo app)))
+    (set! *global-highlight-indent* (not *global-highlight-indent*))
+    (echo-message! echo (if *global-highlight-indent*
+                          "Highlight indent ON" "Highlight indent OFF"))))
+
+(def (cmd-toggle-global-rainbow-mode app)
+  "Toggle global rainbow-mode (colorize color strings)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-rainbow-mode* (not *global-rainbow-mode*))
+    (echo-message! echo (if *global-rainbow-mode*
+                          "Rainbow mode ON" "Rainbow mode OFF"))))
+
+(def (cmd-toggle-global-auto-highlight app)
+  "Toggle global auto-highlight-symbol-mode."
+  (let ((echo (app-state-echo app)))
+    (set! *global-auto-highlight* (not *global-auto-highlight*))
+    (echo-message! echo (if *global-auto-highlight*
+                          "Auto-highlight ON" "Auto-highlight OFF"))))
+
+(def (cmd-toggle-global-symbol-overlay app)
+  "Toggle global symbol-overlay-mode."
+  (let ((echo (app-state-echo app)))
+    (set! *global-symbol-overlay* (not *global-symbol-overlay*))
+    (echo-message! echo (if *global-symbol-overlay*
+                          "Symbol overlay ON" "Symbol overlay OFF"))))
+
+(def (cmd-toggle-global-highlight-parentheses app)
+  "Toggle global highlight-parentheses-mode."
+  (let ((echo (app-state-echo app)))
+    (set! *global-highlight-parentheses* (not *global-highlight-parentheses*))
+    (echo-message! echo (if *global-highlight-parentheses*
+                          "Highlight parens ON" "Highlight parens OFF"))))
+
+(def (cmd-toggle-global-pulse-line app)
+  "Toggle global pulse-line-mode (flash current line)."
+  (let ((echo (app-state-echo app)))
+    (set! *global-pulse-line* (not *global-pulse-line*))
+    (echo-message! echo (if *global-pulse-line*
+                          "Pulse line ON" "Pulse line OFF"))))
+

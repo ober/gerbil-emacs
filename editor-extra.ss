@@ -1107,4 +1107,12 @@
   (register-command! 'toggle-global-eldoc-box cmd-toggle-global-eldoc-box)
   (register-command! 'toggle-global-flyspell-lazy cmd-toggle-global-flyspell-lazy)
   (register-command! 'toggle-global-so-clean cmd-toggle-global-so-clean)
+  ;; batch 53
+  (register-command! 'toggle-global-whitespace-newline cmd-toggle-global-whitespace-newline)
+  (register-command! 'toggle-global-highlight-indent cmd-toggle-global-highlight-indent)
+  (register-command! 'toggle-global-rainbow-mode cmd-toggle-global-rainbow-mode)
+  (register-command! 'toggle-global-auto-highlight cmd-toggle-global-auto-highlight)
+  (register-command! 'toggle-global-symbol-overlay cmd-toggle-global-symbol-overlay)
+  (register-command! 'toggle-global-highlight-parentheses cmd-toggle-global-highlight-parentheses)
+  (register-command! 'toggle-global-pulse-line cmd-toggle-global-pulse-line)
 )
