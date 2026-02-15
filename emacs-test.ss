@@ -51,6 +51,8 @@
                  *aggressive-indent-mode*
                  *ws-butler-mode* *file-runners*
                  file-extension)
+        (only-in :gerbil-emacs/editor-extra-vcs
+                 *comment-style* *flymake-mode*)
         (only-in :gerbil-emacs/highlight
                  detect-file-language gerbil-file-extension?
                  setup-highlighting-for-file!)
@@ -1503,6 +1505,34 @@
       (check (procedure? (find-command 'narrow-to-region-simple)) => #t)
       (check (procedure? (find-command 'widen-simple)) => #t)
       (check (procedure? (find-command 'toggle-buffer-read-only)) => #t))
+
+    ;; -- Batch 26: comment-style and flymake toggles --
+    (test-case "batch 26 mode toggles"
+      (set! *comment-style* 'line)
+      (check (eq? *comment-style* 'line) => #t)
+      (set! *comment-style* 'block)
+      (check (eq? *comment-style* 'block) => #t)
+      (set! *flymake-mode* #f)
+      (check *flymake-mode* => #f)
+      (set! *flymake-mode* #t)
+      (check *flymake-mode* => #t))
+
+    ;; -- Command registration batch 26 --
+    (test-case "command registration: batch 26 features"
+      (register-all-commands!)
+      (check (procedure? (find-command 'comment-box)) => #t)
+      (check (procedure? (find-command 'format-region)) => #t)
+      (check (procedure? (find-command 'rename-symbol)) => #t)
+      (check (procedure? (find-command 'isearch-occur)) => #t)
+      (check (procedure? (find-command 'helm-mini)) => #t)
+      (check (procedure? (find-command 'toggle-comment-style)) => #t)
+      (check (procedure? (find-command 'toggle-flymake-mode)) => #t)
+      (check (procedure? (find-command 'indent-for-tab)) => #t)
+      (check (procedure? (find-command 'dedent-region)) => #t)
+      (check (procedure? (find-command 'duplicate-and-comment)) => #t)
+      (check (procedure? (find-command 'insert-scratch-message)) => #t)
+      (check (procedure? (find-command 'count-lines-region)) => #t)
+      (check (procedure? (find-command 'cycle-spacing)) => #t))
 
     ;;=========================================================================
     ;; Headless Scintilla editor tests

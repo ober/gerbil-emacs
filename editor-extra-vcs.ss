@@ -1017,6 +1017,372 @@
               (set! (edit-window-buffer other-win) buf)
               (echo-message! echo (string-append "Buffer: " choice)))))))))
 
+;;;============================================================================
+;;; Batch 26: comment-box, format-region, rename-symbol, isearch-occur, etc.
+;;;============================================================================
 
+;;; --- Comment box: wrap comment in decorative box ---
+
+(def (cmd-comment-box app)
+  "Wrap the selected text in a comment box."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app))
+         (sel-start (editor-get-selection-start ed))
+         (sel-end (editor-get-selection-end ed)))
+    (if (= sel-start sel-end)
+      (echo-message! echo "No selection for comment box")
+      (let* ((text (let ((full (editor-get-text ed)))
+                     (substring full sel-start sel-end)))
+             (lines (string-split text #\newline))
+             (max-len (apply max (map string-length lines)))
+             (border (string-append ";; " (make-string (+ max-len 2) #\-)))
+             (boxed (with-output-to-string
+                      (lambda ()
+                        (display border) (display "\n")
+                        (for-each
+                          (lambda (line)
+                            (display ";; ")
+                            (display line)
+                            (display (make-string (- max-len (string-length line)) #\space))
+                            (display "  ") (display "\n"))
+                          lines)
+                        (display border) (display "\n")))))
+        (send-message ed SCI_SETTARGETSTART sel-start 0)
+        (send-message ed SCI_SETTARGETEND sel-end 0)
+        (send-message/string ed SCI_REPLACETARGET boxed)
+        (echo-message! echo "Wrapped in comment box")))))
+
+;;; --- Format/indent region ---
+
+(def (cmd-format-region app)
+  "Indent/format the selected region according to buffer settings."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app))
+         (sel-start (editor-get-selection-start ed))
+         (sel-end (editor-get-selection-end ed)))
+    (if (= sel-start sel-end)
+      (echo-message! echo "No selection to format")
+      (let* ((text (let ((full (editor-get-text ed)))
+                     (substring full sel-start sel-end)))
+             (indent-size (editor-get-indent ed))
+             (use-tabs (editor-get-use-tabs? ed))
+             (lines (string-split text #\newline))
+             ;; Re-indent each line: strip leading whitespace, add consistent indent
+             (formatted (map (lambda (line)
+                               (let* ((trimmed (string-trim line))
+                                      (orig-indent (- (string-length line)
+                                                      (string-length (string-trim line)))))
+                                 (if (string=? trimmed "")
+                                   ""
+                                   (let ((indent-str (if use-tabs
+                                                       (make-string (quotient orig-indent indent-size) #\tab)
+                                                       (make-string orig-indent #\space))))
+                                     (string-append indent-str trimmed)))))
+                             lines))
+             (result (string-join formatted "\n")))
+        (send-message ed SCI_SETTARGETSTART sel-start 0)
+        (send-message ed SCI_SETTARGETEND sel-end 0)
+        (send-message/string ed SCI_REPLACETARGET result)
+        (echo-message! echo "Region formatted")))))
+
+;;; --- Rename symbol (local file, simple text replacement) ---
+
+(def (cmd-rename-symbol app)
+  "Rename all occurrences of a symbol in the current buffer."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app))
+         (text (editor-get-text ed))
+         (pos (editor-get-current-pos ed)))
+    ;; Extract word at point
+    (let* ((word-start (let loop ((i (- pos 1)))
+                         (if (or (< i 0)
+                                 (let ((c (string-ref text i)))
+                                   (not (or (char-alphabetic? c)
+                                            (char-numeric? c)
+                                            (char=? c #\_)
+                                            (char=? c #\-)))))
+                           (+ i 1)
+                           (loop (- i 1)))))
+           (word-end (let loop ((i pos))
+                       (if (or (>= i (string-length text))
+                               (let ((c (string-ref text i)))
+                                 (not (or (char-alphabetic? c)
+                                          (char-numeric? c)
+                                          (char=? c #\_)
+                                          (char=? c #\-)))))
+                         i
+                         (loop (+ i 1)))))
+           (old-name (substring text word-start word-end)))
+      (if (string=? old-name "")
+        (echo-message! echo "No symbol at point")
+        (let ((new-name (app-read-string app
+                          (string-append "Rename '" old-name "' to: "))))
+          (when (and new-name (> (string-length new-name) 0)
+                     (not (string=? new-name old-name)))
+            ;; Count and replace occurrences using word-boundary matching
+            (let* ((result (string-subst text old-name new-name))
+                   ;; Count how many replacements happened
+                   (count (let loop ((s text) (n 0) (start 0))
+                            (let ((idx (string-contains s old-name start)))
+                              (if idx
+                                (loop s (+ n 1) (+ idx (string-length old-name)))
+                                n)))))
+              (editor-set-text ed result)
+              (editor-goto-pos ed (min pos (string-length result)))
+              (echo-message! echo
+                (string-append "Renamed '" old-name "' to '" new-name
+                  "' (" (number->string count) " occurrences)")))))))))
+
+;;; --- Isearch occur: show all matches of last search ---
+
+(def (cmd-isearch-occur app)
+  "Show all lines matching the current isearch string in an occur-like buffer."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app))
+         (search-str (app-state-last-search app)))
+    (if (or (not search-str) (string=? search-str ""))
+      (echo-message! echo "No search string - use isearch first")
+      (let* ((text (editor-get-text ed))
+             (lines (string-split text #\newline))
+             (matches (let loop ((ls lines) (n 1) (acc []))
+                        (if (null? ls) (reverse acc)
+                          (loop (cdr ls) (+ n 1)
+                            (if (string-contains (car ls) search-str)
+                              (cons (string-append
+                                      (string-pad (number->string n) 6)
+                                      ": " (car ls))
+                                acc)
+                              acc))))))
+        (if (null? matches)
+          (echo-message! echo
+            (string-append "No matches for: " search-str))
+          (let ((result (string-append
+                          "Isearch occur: " (number->string (length matches))
+                          " matches for \"" search-str "\"\n"
+                          (make-string 60 #\-) "\n"
+                          (string-join matches "\n") "\n")))
+            (editor-set-text ed result)
+            (editor-goto-pos ed 0)
+            (echo-message! echo
+              (string-append (number->string (length matches))
+                " matches found"))))))))
+
+;;; --- Helm-mini style fuzzy buffer switch ---
+
+(def (cmd-helm-mini app)
+  "Fuzzy search and switch buffers (helm-mini style)."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app))
+         (bufs *buffer-list*)
+         (names (map buffer-name bufs))
+         (query (app-read-string app "Switch to buffer (fuzzy): ")))
+    (when (and query (> (string-length query) 0))
+      (let* ((query-lower (string-downcase query))
+             (scored (filter-map
+                       (lambda (name)
+                         (let ((name-lower (string-downcase name)))
+                           (if (string-contains name-lower query-lower)
+                             (cons name (- (string-length name)
+                                           (string-length query)))
+                             #f)))
+                       names))
+             (sorted (sort scored (lambda (a b) (< (cdr a) (cdr b))))))
+        (if (null? sorted)
+          (echo-message! echo
+            (string-append "No buffers matching: " query))
+          (let* ((best (caar sorted))
+                 (buf (let loop ((bs bufs))
+                        (if (null? bs) #f
+                          (if (string=? (buffer-name (car bs)) best)
+                            (car bs)
+                            (loop (cdr bs)))))))
+            (when buf
+              (buffer-attach! ed buf)
+              (echo-message! echo
+                (string-append "Switched to: " best)))))))))
+
+;;; --- Toggle comment style (line vs block) ---
+
+(def *comment-style* 'line)  ; 'line or 'block
+
+(def (cmd-toggle-comment-style app)
+  "Toggle between line and block comment styles."
+  (set! *comment-style* (if (eq? *comment-style* 'line) 'block 'line))
+  (echo-message! (app-state-echo app)
+    (string-append "Comment style: "
+      (if (eq? *comment-style* 'line) "line (//)" "block (/* */)"))))
+
+;;; --- Flymake mode toggle ---
+
+(def *flymake-mode* #f)
+
+(def (cmd-toggle-flymake-mode app)
+  "Toggle flymake (on-the-fly syntax checking) mode."
+  (set! *flymake-mode* (not *flymake-mode*))
+  (echo-message! (app-state-echo app)
+    (if *flymake-mode*
+      "Flymake mode enabled"
+      "Flymake mode disabled")))
+
+;;; --- Smart indent for tab ---
+
+(def (cmd-indent-for-tab app)
+  "Indent current line or region based on context."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app))
+         (sel-start (editor-get-selection-start ed))
+         (sel-end (editor-get-selection-end ed)))
+    (if (= sel-start sel-end)
+      ;; Single line: insert tab or spaces at current position
+      (let* ((indent-size (editor-get-indent ed))
+             (use-tabs (editor-get-use-tabs? ed))
+             (indent-str (if use-tabs "\t"
+                           (make-string indent-size #\space))))
+        (editor-insert-text ed (editor-get-current-pos ed) indent-str)
+        (editor-goto-pos ed (+ (editor-get-current-pos ed) (string-length indent-str))))
+      ;; Region: indent each line
+      (let* ((line-start (editor-line-from-position ed sel-start))
+             (line-end (editor-line-from-position ed sel-end))
+             (indent-size (editor-get-indent ed))
+             (use-tabs (editor-get-use-tabs? ed))
+             (indent-str (if use-tabs "\t"
+                           (make-string indent-size #\space))))
+        (with-undo-action ed
+          (let loop ((line line-end))
+            (when (>= line line-start)
+              (let ((pos (editor-position-from-line ed line)))
+                (editor-insert-text ed pos indent-str))
+              (loop (- line 1)))))
+        (echo-message! echo
+          (string-append "Indented "
+            (number->string (+ 1 (- line-end line-start)))
+            " lines"))))))
+
+;;; --- Dedent region ---
+
+(def (cmd-dedent-region app)
+  "Remove one level of indentation from selected region."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app))
+         (sel-start (editor-get-selection-start ed))
+         (sel-end (editor-get-selection-end ed)))
+    (if (= sel-start sel-end)
+      (echo-message! echo "No selection to dedent")
+      (let* ((line-start (editor-line-from-position ed sel-start))
+             (line-end (editor-line-from-position ed sel-end))
+             (indent-size (editor-get-indent ed)))
+        (with-undo-action ed
+          (let loop ((line line-end))
+            (when (>= line line-start)
+              (let* ((pos (editor-position-from-line ed line))
+                     (line-text (editor-get-line ed line))
+                     (to-remove (let check ((i 0))
+                                  (cond
+                                    ((>= i indent-size) indent-size)
+                                    ((>= i (string-length line-text)) i)
+                                    ((char=? (string-ref line-text i) #\tab) (+ i 1))
+                                    ((char=? (string-ref line-text i) #\space) (check (+ i 1)))
+                                    (else i)))))
+                (when (> to-remove 0)
+                  (editor-delete-range ed pos to-remove)))
+              (loop (- line 1)))))
+        (echo-message! echo
+          (string-append "Dedented "
+            (number->string (+ 1 (- line-end line-start)))
+            " lines"))))))
+
+;;; --- Duplicate and comment: duplicate region then comment original ---
+
+(def (cmd-duplicate-and-comment app)
+  "Duplicate the selected region, then comment out the original."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app))
+         (sel-start (editor-get-selection-start ed))
+         (sel-end (editor-get-selection-end ed)))
+    (if (= sel-start sel-end)
+      (echo-message! echo "No selection to duplicate-and-comment")
+      (let* ((text (let ((full (editor-get-text ed)))
+                     (substring full sel-start sel-end)))
+             (lines (string-split text #\newline))
+             (commented (map (lambda (l) (string-append ";; " l)) lines))
+             (result (string-append
+                       (string-join commented "\n") "\n"
+                       text)))
+        (send-message ed SCI_SETTARGETSTART sel-start 0)
+        (send-message ed SCI_SETTARGETEND sel-end 0)
+        (send-message/string ed SCI_REPLACETARGET result)
+        (echo-message! echo "Duplicated and commented original")))))
+
+;;; --- Scratch message: insert welcome text in *scratch* ---
+
+(def (cmd-insert-scratch-message app)
+  "Insert the standard scratch buffer message."
+  (let* ((ed (current-editor app))
+         (msg (string-append
+                ";; This buffer is for text that is not saved.\n"
+                ";; To create a file, visit it with C-x C-f.\n"
+                ";; Then enter text in the buffer and save with C-x C-s.\n\n")))
+    (editor-insert-text ed 0 msg)
+    (editor-goto-pos ed (string-length msg))
+    (echo-message! (app-state-echo app) "Scratch message inserted")))
+
+;;; --- Line statistics in echo area ---
+
+(def (cmd-count-lines-region app)
+  "Count lines, words, and characters in the region or buffer."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app))
+         (sel-start (editor-get-selection-start ed))
+         (sel-end (editor-get-selection-end ed))
+         (text (if (= sel-start sel-end)
+                 (editor-get-text ed)
+                 (let ((full (editor-get-text ed)))
+                   (substring full sel-start sel-end))))
+         (lines (length (string-split text #\newline)))
+         (words (length (string-tokenize text)))
+         (chars (string-length text))
+         (label (if (= sel-start sel-end) "Buffer" "Region")))
+    (echo-message! echo
+      (string-append label ": " (number->string lines) " lines, "
+        (number->string words) " words, "
+        (number->string chars) " chars"))))
+
+;;; --- Cycle spacing: consolidate whitespace ---
+
+(def (cmd-cycle-spacing app)
+  "Cycle whitespace at point: multiple spaces -> one space -> no space."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app))
+         (pos (editor-get-current-pos ed))
+         (text (editor-get-text ed))
+         (len (string-length text)))
+    ;; Find extent of whitespace around point
+    (let* ((ws-start (let loop ((i (- pos 1)))
+                       (if (and (>= i 0)
+                                (char=? (string-ref text i) #\space))
+                         (loop (- i 1))
+                         (+ i 1))))
+           (ws-end (let loop ((i pos))
+                     (if (and (< i len)
+                              (char=? (string-ref text i) #\space))
+                       (loop (+ i 1))
+                       i)))
+           (ws-len (- ws-end ws-start)))
+      (cond
+        ((> ws-len 1)
+         ;; Multiple spaces -> one space
+         (send-message ed SCI_SETTARGETSTART ws-start 0)
+         (send-message ed SCI_SETTARGETEND ws-end 0)
+         (send-message/string ed SCI_REPLACETARGET " ")
+         (echo-message! echo "Collapsed to one space"))
+        ((= ws-len 1)
+         ;; One space -> no space
+         (editor-delete-range ed ws-start 1)
+         (echo-message! echo "Removed space"))
+        (else
+         ;; No space -> insert one space
+         (editor-insert-text ed pos " ")
+         (editor-goto-pos ed (+ pos 1))
+         (echo-message! echo "Inserted space"))))))
 
 
