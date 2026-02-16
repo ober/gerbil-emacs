@@ -75,7 +75,8 @@
   (eq? (buffer-lexer-lang buf) 'terminal))
 
 ;; Maps terminal buffers to their terminal-state structs
-(def *terminal-state* (make-hash-table))
+;; Use eq? table: buffer structs are mutable (transparent: #t)
+(def *terminal-state* (make-hash-table-eq))
 
 (defstruct terminal-state
   (process      ; Gambit process port (bidirectional, PTY-backed)

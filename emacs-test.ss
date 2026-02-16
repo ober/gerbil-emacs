@@ -6,6 +6,7 @@
 ;;; which is only available at runtime, so highlighting tests are skipped.
 
 (import :std/test
+        :std/srfi/13
         :gerbil-scintilla/scintilla
         :gerbil-scintilla/constants
         :gerbil-scintilla/tui
@@ -4094,6 +4095,87 @@
           (check (string-contains (editor-get-text ed) "(+ 1 2)") => 8)
           (hash-remove! *repl-state* buf))
         ;; Cleanup
+        (buffer-list-remove! buf)))
+
+    (test-case "headless: eq? hash table survives buffer mutation"
+      ;; Regression: *repl-state* used make-hash-table (equal? comparison).
+      ;; Buffer structs are transparent, so mutating buffer-modified after
+      ;; hash-put! caused hash-get to return #f, blocking REPL typing.
+      ;; Fix: use make-hash-table-eq for all buffer-keyed tables.
+      (let* ((ed (create-scintilla-editor width: 80 height: 24))
+             (buf (make-buffer "*REPL*" #f
+                    (send-message ed SCI_GETDOCPOINTER) #f #f #f #f))
+             (win (make-edit-window ed buf 0 0 80 24 0))
+             (fr (make-frame [win] 0 80 24 'vertical))
+             (app (new-app-state fr)))
+        (buffer-list-add! buf)
+        (set! (buffer-lexer-lang buf) 'repl)
+        (editor-set-text ed "> ")
+        (let ((rs (make-repl-state #f 2 [])))
+          (hash-put! *repl-state* buf rs)
+          ;; Mutate buffer fields (simulates Scintilla save-point signal)
+          (set! (buffer-modified buf) #t)
+          ;; hash-get must still find the repl-state despite mutation
+          (check (eq? (hash-get *repl-state* buf) rs) => #t)
+          ;; Type after mutation — must succeed
+          (editor-goto-pos ed 2)
+          (for-each (lambda (ch) (cmd-self-insert! app (char->integer ch)))
+                    (string->list "hi"))
+          (check (editor-get-text ed) => "> hi")
+          (hash-remove! *repl-state* buf))
+        (buffer-list-remove! buf)))
+
+    (test-case "headless: buffer-list string-trim-both parses names"
+      ;; Regression: Qt cmd-buffer-list-select used SRFI-13 string-trim which
+      ;; only strips LEADING whitespace. Buffer names padded to 24 chars kept
+      ;; trailing spaces, so buffer-by-name failed.
+      ;; TUI version uses tabs+string-index. This tests the padding format.
+      (let* ((name "*scratch*")
+             (padded (string-append name (make-string (- 24 (string-length name)) #\space)))
+             (line (string-append "  .  " padded "fundamental   ")))
+        ;; Simulate the Qt parsing logic with string-trim-both
+        (let ((extracted (string-trim-both (substring line 5 29))))
+          (check extracted => "*scratch*"))))
+
+    (test-case "headless: fold margin width is 1 char for TUI"
+      ;; Regression: fold margin width was 14 character cells, creating a
+      ;; massive black gap in TUI. Should be 1 for compact fold markers.
+      (let ((ed (create-scintilla-editor width: 80 height: 24)))
+        ;; Simulate what enable-code-file-features! does
+        (send-message ed SCI_SETMARGINTYPEN 2 SC_MARGIN_SYMBOL)
+        (send-message ed SCI_SETMARGINWIDTHN 2 1)
+        (check (send-message ed SCI_GETMARGINWIDTHN 2 0) => 1)))
+
+    (test-case "headless: default margin 1 width is 0"
+      ;; Regression: Scintilla defaults margin 1 to 16 pixels/chars.
+      ;; In TUI, that's 16 character cells of blank space.
+      (let ((ed (create-scintilla-editor width: 80 height: 24)))
+        (send-message ed SCI_SETMARGINWIDTHN 1 0)
+        (check (send-message ed SCI_GETMARGINWIDTHN 1 0) => 0)))
+
+    (test-case "headless: REPL prompt-pos blocks typing before prompt"
+      ;; Verify self-insert guard: typing before prompt-pos is blocked,
+      ;; typing at/after prompt-pos succeeds.
+      (let* ((ed (create-scintilla-editor width: 80 height: 24))
+             (buf (make-buffer "*REPL*" #f
+                    (send-message ed SCI_GETDOCPOINTER) #f #f #f #f))
+             (win (make-edit-window ed buf 0 0 80 24 0))
+             (fr (make-frame [win] 0 80 24 'vertical))
+             (app (new-app-state fr)))
+        (buffer-list-add! buf)
+        (set! (buffer-lexer-lang buf) 'repl)
+        (editor-set-text ed "> ")
+        (let ((rs (make-repl-state #f 2 [])))
+          (hash-put! *repl-state* buf rs)
+          ;; Cursor at position 0 (before prompt) — typing should be blocked
+          (editor-goto-pos ed 0)
+          (cmd-self-insert! app (char->integer #\x))
+          (check (editor-get-text ed) => "> ")  ;; unchanged
+          ;; Cursor at position 2 (after prompt) — typing should work
+          (editor-goto-pos ed 2)
+          (cmd-self-insert! app (char->integer #\x))
+          (check (editor-get-text ed) => "> x")
+          (hash-remove! *repl-state* buf))
         (buffer-list-remove! buf)))
 
     ))

@@ -1162,7 +1162,9 @@
   (eq? (buffer-lexer-lang buf) 'repl))
 
 ;; Maps REPL buffers to their repl-state structs
-(def *repl-state* (make-hash-table))
+;; Use eq? table: buffer structs are mutable (transparent: #t), so equal?-based
+;; tables break when fields like buffer-modified change after hash-put!.
+(def *repl-state* (make-hash-table-eq))
 
 (def (eval-expression-string str)
   "In-process eval: read+eval an expression string, capture output.

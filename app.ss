@@ -74,6 +74,8 @@
                   ;; Enable line numbers in margin 0
                   (send-message ed SCI_SETMARGINTYPEN 0 SC_MARGIN_NUMBER)
                   (send-message ed SCI_SETMARGINWIDTHN 0 5)
+                  ;; Clear default margin 1 (Scintilla defaults to 16 pixels/chars)
+                  (send-message ed SCI_SETMARGINWIDTHN 1 0)
                   ;; Style line number margin: dark gray on very dark background
                   (editor-style-set-foreground ed STYLE_LINENUMBER #x808080)
                   (editor-style-set-background ed STYLE_LINENUMBER #x181818)

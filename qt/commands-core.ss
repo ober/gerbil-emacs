@@ -547,7 +547,7 @@ Returns #t if changed, #f if not or if no record exists."
     ;; Line format: "  CM NNNNNNNNNNNNNNNNNNNNNNNNMMMMMMMMMMMMMPATH"
     ;; Name field is 24 chars starting at column 5
     (let* ((name (if (>= (string-length line-text) 29)
-                   (string-trim (substring line-text 5 29))
+                   (string-trim-both (substring line-text 5 29))
                    "")))
       (if (and (> (string-length name) 0)
                (not (string=? name "Buffer"))

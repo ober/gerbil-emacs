@@ -1034,7 +1034,7 @@
   (editor-set-property ed "fold.comment" "1")
   ;; Set up fold margin (margin 2, symbol type)
   (send-message ed SCI_SETMARGINTYPEN 2 SC_MARGIN_SYMBOL)
-  (send-message ed SCI_SETMARGINWIDTHN 2 14)
+  (send-message ed SCI_SETMARGINWIDTHN 2 1)
   (send-message ed SCI_SETMARGINMASKN 2 SC_MASK_FOLDERS)
   (send-message ed SCI_SETMARGINSENSITIVEN 2 1)
   ;; Fold markers: box tree style

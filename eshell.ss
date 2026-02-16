@@ -29,7 +29,8 @@
   (eq? (buffer-lexer-lang buf) 'eshell))
 
 ;; Maps eshell buffers to their state (current directory, history, etc.)
-(def *eshell-state* (make-hash-table))
+;; Use eq? table: buffer structs are mutable (transparent: #t)
+(def *eshell-state* (make-hash-table-eq))
 
 (def eshell-prompt "eshell> ")
 

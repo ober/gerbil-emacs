@@ -26,7 +26,8 @@
   (eq? (buffer-lexer-lang buf) 'shell))
 
 ;; Maps shell buffers to their shell-state structs
-(def *shell-state* (make-hash-table))
+;; Use eq? table: buffer structs are mutable (transparent: #t)
+(def *shell-state* (make-hash-table-eq))
 
 (defstruct shell-state
   (process      ; Gambit process port (bidirectional)
