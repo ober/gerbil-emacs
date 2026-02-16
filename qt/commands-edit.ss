@@ -756,10 +756,29 @@
                   (cond
                     ((eq? 'directory (file-info-type info))
                      (dired-open-directory! app full-path))
-                    ;; Image file -> open in image viewer dialog
+                    ;; Image file -> open inline in editor area
                     ((image-file? full-path)
-                     (let ((main-win (qt-frame-main-win (app-state-frame app))))
-                       (qt-view-image! app main-win full-path)))
+                     (let* ((pixmap (qt-pixmap-load full-path)))
+                       (if (qt-pixmap-null? pixmap)
+                         (begin
+                           (qt-pixmap-destroy! pixmap)
+                           (echo-error! (app-state-echo app)
+                             (string-append "Failed to load image: " full-path)))
+                         (let* ((fname (path-strip-directory full-path))
+                                (fr (app-state-frame app))
+                                (new-buf (qt-buffer-create! fname ed full-path))
+                                (orig-w (qt-pixmap-width pixmap))
+                                (orig-h (qt-pixmap-height pixmap)))
+                           (set! (buffer-lexer-lang new-buf) 'image)
+                           (hash-put! *image-buffer-state* new-buf
+                             (list pixmap (box 1.0) orig-w orig-h))
+                           (qt-buffer-attach! ed new-buf)
+                           (set! (qt-edit-window-buffer (qt-current-window fr))
+                                 new-buf)
+                           (echo-message! (app-state-echo app)
+                             (string-append fname " "
+                               (number->string orig-w) "x"
+                               (number->string orig-h)))))))
                     ;; Regular text file
                     (else
                      (let* ((fname (path-strip-directory full-path))

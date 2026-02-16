@@ -2,6 +2,8 @@
 ;;; Qt frame/window management for gerbil-emacs
 ;;;
 ;;; Uses QSplitter to hold multiple QPlainTextEdit panes.
+;;; Each editor slot is wrapped in a QStackedWidget so image buffers
+;;; can be displayed inline (index 0 = editor, index 1 = image widget).
 
 (export (struct-out qt-edit-window)
         (struct-out qt-frame)
@@ -25,9 +27,12 @@
 ;;;============================================================================
 
 (defstruct qt-edit-window
-  (editor           ; QPlainTextEdit pointer
+  (editor           ; QScintilla editor pointer
+   container        ; QStackedWidget wrapping editor + image widget
    buffer           ; buffer struct
-   line-number-area) ; line-number-area pointer or #f
+   line-number-area ; line-number-area pointer or #f
+   image-scroll     ; QScrollArea for image display, or #f (lazy)
+   image-label)     ; QLabel inside scroll area, or #f (lazy)
   transparent: #t)
 
 (defstruct qt-frame
@@ -91,15 +96,18 @@
 ;;;============================================================================
 
 (def (qt-frame-init! main-win splitter)
-  "Create frame with one QScintilla editor in a QSplitter.
+  "Create frame with one QScintilla editor in a QStackedWidget in a QSplitter.
    Returns the frame struct."
-  (let* ((editor (qt-plain-text-edit-create parent: splitter))
+  (let* ((container (qt-stacked-widget-create parent: splitter))
+         (editor (qt-plain-text-edit-create parent: container))
          (buf (qt-buffer-create! buffer-scratch-name editor))
          (lna (qt-line-number-area-create editor))
-         (win (make-qt-edit-window editor buf lna)))
+         (win (make-qt-edit-window editor container buf lna #f #f)))
     (qt-scintilla-setup-editor! editor)
     (qt-buffer-attach! editor buf)
-    (qt-splitter-add-widget! splitter editor)
+    (qt-stacked-widget-add-widget! container editor)
+    (qt-splitter-add-widget! splitter container)
+    (hash-put! *editor-window-map* editor win)
     (make-qt-frame splitter (list win) 0 main-win)))
 
 ;;;============================================================================
@@ -111,12 +119,15 @@
   (qt-splitter-set-orientation! (qt-frame-splitter fr) QT_VERTICAL)
   (let* ((cur (qt-current-window fr))
          (buf (qt-edit-window-buffer cur))
-         (new-ed (qt-plain-text-edit-create parent: (qt-frame-splitter fr)))
+         (container (qt-stacked-widget-create parent: (qt-frame-splitter fr)))
+         (new-ed (qt-plain-text-edit-create parent: container))
          (lna (qt-line-number-area-create new-ed))
-         (new-win (make-qt-edit-window new-ed buf lna)))
+         (new-win (make-qt-edit-window new-ed container buf lna #f #f)))
     (qt-scintilla-setup-editor! new-ed)
     (qt-buffer-attach! new-ed buf)
-    (qt-splitter-add-widget! (qt-frame-splitter fr) new-ed)
+    (qt-stacked-widget-add-widget! container new-ed)
+    (qt-splitter-add-widget! (qt-frame-splitter fr) container)
+    (hash-put! *editor-window-map* new-ed new-win)
     (set! (qt-frame-windows fr)
           (append (qt-frame-windows fr) (list new-win)))
     new-ed))
@@ -126,12 +137,15 @@
   (qt-splitter-set-orientation! (qt-frame-splitter fr) QT_HORIZONTAL)
   (let* ((cur (qt-current-window fr))
          (buf (qt-edit-window-buffer cur))
-         (new-ed (qt-plain-text-edit-create parent: (qt-frame-splitter fr)))
+         (container (qt-stacked-widget-create parent: (qt-frame-splitter fr)))
+         (new-ed (qt-plain-text-edit-create parent: container))
          (lna (qt-line-number-area-create new-ed))
-         (new-win (make-qt-edit-window new-ed buf lna)))
+         (new-win (make-qt-edit-window new-ed container buf lna #f #f)))
     (qt-scintilla-setup-editor! new-ed)
     (qt-buffer-attach! new-ed buf)
-    (qt-splitter-add-widget! (qt-frame-splitter fr) new-ed)
+    (qt-stacked-widget-add-widget! container new-ed)
+    (qt-splitter-add-widget! (qt-frame-splitter fr) container)
+    (hash-put! *editor-window-map* new-ed new-win)
     (set! (qt-frame-windows fr)
           (append (qt-frame-windows fr) (list new-win)))
     new-ed))
@@ -141,9 +155,11 @@
   (when (> (length (qt-frame-windows fr)) 1)
     (let* ((idx (qt-frame-current-idx fr))
            (win (list-ref (qt-frame-windows fr) idx))
-           (ed (qt-edit-window-editor win)))
-      ;; Hide and destroy the widget
-      (qt-widget-hide! ed)
+           (ed (qt-edit-window-editor win))
+           (container (qt-edit-window-container win)))
+      ;; Hide the container (which hides editor + image widget)
+      (qt-widget-hide! container)
+      (hash-remove! *editor-window-map* ed)
       (set! (qt-frame-windows fr) (list-remove-idx (qt-frame-windows fr) idx))
       (when (>= (qt-frame-current-idx fr) (length (qt-frame-windows fr)))
         (set! (qt-frame-current-idx fr) (- (length (qt-frame-windows fr)) 1))))))
@@ -153,7 +169,8 @@
   (let ((cur (qt-current-window fr)))
     (for-each (lambda (win)
                 (unless (eq? win cur)
-                  (qt-widget-hide! (qt-edit-window-editor win))))
+                  (qt-widget-hide! (qt-edit-window-container win))
+                  (hash-remove! *editor-window-map* (qt-edit-window-editor win))))
               (qt-frame-windows fr))
     (set! (qt-frame-windows fr) (list cur))
     (set! (qt-frame-current-idx fr) 0)))

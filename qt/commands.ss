@@ -87,6 +87,7 @@
         :gerbil-emacs/qt/echo
         :gerbil-emacs/qt/highlight
         :gerbil-emacs/qt/modeline
+        :gerbil-emacs/qt/image
         ;; Sub-modules (chain)
         :gerbil-emacs/qt/commands-core
         :gerbil-emacs/qt/commands-edit
@@ -1579,7 +1580,12 @@
   ;; Multi-terminal commands
   (register-command! 'multi-vterm cmd-multi-vterm)
   (register-command! 'vterm-copy-mode cmd-vterm-copy-mode)
-  (register-command! 'vterm-copy-done cmd-vterm-copy-done))
+  (register-command! 'vterm-copy-done cmd-vterm-copy-done)
+  ;; Image mode commands
+  (register-command! 'image-zoom-in cmd-image-zoom-in)
+  (register-command! 'image-zoom-out cmd-image-zoom-out)
+  (register-command! 'image-zoom-fit cmd-image-zoom-fit)
+  (register-command! 'image-zoom-reset cmd-image-zoom-reset))
 
 ;;;============================================================================
 ;;; Key-chord commands
@@ -1660,3 +1666,39 @@
                  (string-append "Key Translations:\n"
                                 (string-join lines "\n")))))
     (echo-message! (app-state-echo app) text)))
+
+;;;============================================================================
+;;; Image mode commands
+;;;============================================================================
+
+(def (cmd-image-zoom-in app)
+  "Zoom in on the current image buffer."
+  (let* ((fr (app-state-frame app))
+         (buf (qt-current-buffer fr))
+         (ed (qt-current-editor fr)))
+    (when (image-buffer? buf)
+      (qt-image-zoom! app ed buf 1.25))))
+
+(def (cmd-image-zoom-out app)
+  "Zoom out on the current image buffer."
+  (let* ((fr (app-state-frame app))
+         (buf (qt-current-buffer fr))
+         (ed (qt-current-editor fr)))
+    (when (image-buffer? buf)
+      (qt-image-zoom! app ed buf 0.8))))
+
+(def (cmd-image-zoom-fit app)
+  "Fit image to window."
+  (let* ((fr (app-state-frame app))
+         (buf (qt-current-buffer fr))
+         (ed (qt-current-editor fr)))
+    (when (image-buffer? buf)
+      (qt-image-zoom! app ed buf 'fit))))
+
+(def (cmd-image-zoom-reset app)
+  "Reset image to 100% zoom."
+  (let* ((fr (app-state-frame app))
+         (buf (qt-current-buffer fr))
+         (ed (qt-current-editor fr)))
+    (when (image-buffer? buf)
+      (qt-image-zoom! app ed buf 'reset))))

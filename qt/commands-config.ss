@@ -568,7 +568,17 @@
     (keymap-bind! magit-km "n" 'next-line)
     (keymap-bind! magit-km "p" 'previous-line)
     (keymap-bind! magit-km "q" 'kill-buffer-cmd)
-    (hash-put! *mode-keymaps* 'magit magit-km)))
+    (hash-put! *mode-keymaps* 'magit magit-km))
+
+  ;; Image mode: zoom controls
+  (let ((img-km (make-keymap)))
+    (keymap-bind! img-km "+" 'image-zoom-in)
+    (keymap-bind! img-km "=" 'image-zoom-in)
+    (keymap-bind! img-km "-" 'image-zoom-out)
+    (keymap-bind! img-km "0" 'image-zoom-fit)
+    (keymap-bind! img-km "1" 'image-zoom-reset)
+    (keymap-bind! img-km "q" 'kill-buffer-cmd)
+    (hash-put! *mode-keymaps* 'image img-km)))
 
 ;;;============================================================================
 ;;; Ediff-files: compare two files from disk

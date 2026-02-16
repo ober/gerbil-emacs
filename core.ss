@@ -92,7 +92,12 @@
   *chord-mode*
   key-chord-define-global
   chord-lookup
-  chord-start-char?)
+  chord-start-char?
+
+  ;; Image buffer support
+  *editor-window-map*
+  *image-buffer-state*
+  image-buffer?)
 
 (import :std/sugar
         :std/sort
@@ -1274,3 +1279,17 @@
   "Can this character start a chord? Only when chord-mode is on."
   (and *chord-mode*
        (hash-get *chord-first-chars* (char-upcase ch))))
+
+;;;============================================================================
+;;; Image buffer support
+;;;============================================================================
+
+;; Maps editor FFI pointer → qt-edit-window struct (for reverse lookup)
+(def *editor-window-map* (make-hash-table))
+
+;; Maps image buffer → (list pixmap zoom-ref orig-w orig-h)
+(def *image-buffer-state* (make-hash-table-eq))
+
+(def (image-buffer? buf)
+  "Check if this buffer is an image buffer."
+  (eq? (buffer-lexer-lang buf) 'image))

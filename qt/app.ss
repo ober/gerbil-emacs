@@ -199,6 +199,13 @@
       (setup-default-bindings!)
       (qt-register-all-commands!)
 
+      ;; Set up post-buffer-attach hook for image/text display toggling
+      (set! *post-buffer-attach-hook*
+        (lambda (editor buf)
+          (if (image-buffer? buf)
+            (qt-show-image-buffer! editor buf)
+            (qt-hide-image-buffer! editor))))
+
       ;; Load recent files, bookmarks, keys, abbrevs, history from disk
       (recent-files-load!)
       (bookmarks-load! app)
@@ -317,8 +324,9 @@
                                                   (and cc (integer->char cc)))))
                                  (n (get-prefix-arg app))) ; Get prefix arg
                             (cond
-                              ;; Suppress in dired buffers
+                              ;; Suppress in dired and image buffers
                               ((dired-buffer? buf) (void))
+                              ((image-buffer? buf) (void))
                               ;; In REPL buffers, only allow after the prompt
                               ((repl-buffer? buf)
                                (let* ((pos (qt-plain-text-edit-cursor-position ed))
@@ -724,10 +732,26 @@
     ((and (file-exists? filename)
           (eq? 'directory (file-info-type (file-info filename))))
      (dired-open-directory! app filename))
-    ;; Image file -> image viewer dialog
+    ;; Image file -> inline image buffer
     ((image-file? filename)
-     (let ((main-win (qt-frame-main-win (app-state-frame app))))
-       (qt-view-image! app main-win filename)))
+     (let* ((pixmap (qt-pixmap-load filename)))
+       (if (qt-pixmap-null? pixmap)
+         (begin
+           (qt-pixmap-destroy! pixmap)
+           (echo-error! (app-state-echo app)
+             (string-append "Failed to load image: " filename)))
+         (let* ((name (path-strip-directory filename))
+                (fr (app-state-frame app))
+                (ed (qt-current-editor fr))
+                (buf (qt-buffer-create! name ed filename))
+                (orig-w (qt-pixmap-width pixmap))
+                (orig-h (qt-pixmap-height pixmap)))
+           (set! (buffer-lexer-lang buf) 'image)
+           (hash-put! *image-buffer-state* buf
+             (list pixmap (box 1.0) orig-w orig-h))
+           (buffer-touch! buf)
+           (qt-buffer-attach! ed buf)
+           (set! (qt-edit-window-buffer (qt-current-window fr)) buf)))))
     ;; Regular file -> text buffer
     (else
      (let* ((name (path-strip-directory filename))
