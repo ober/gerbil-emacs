@@ -704,6 +704,80 @@ Returns (file line col message) or #f."
             (echo-message! echo (string-append "=> " result)))))
       (echo-error! echo "No mark set"))))
 
+(def (cmd-eval-last-sexp app)
+  "Evaluate the sexp ending before point and display result."
+  (let* ((echo (app-state-echo app))
+         (ed (current-qt-editor app))
+         (pos (qt-plain-text-edit-cursor-position ed))
+         (match (sci-send ed SCI_BRACEMATCH (- pos 1) 0)))
+    (if (>= match 0)
+      (let* ((start (min match (- pos 1)))
+             (end (+ (max match (- pos 1)) 1))
+             (text (qt-plain-text-edit-text ed))
+             (expr (substring text start end)))
+        (let-values (((result error?) (eval-expression-string expr)))
+          (if error?
+            (echo-error! echo result)
+            (echo-message! echo (string-append "=> " result)))))
+      ;; No brace match — try to read a simple atom before point
+      (let* ((text (qt-plain-text-edit-text ed))
+             (end pos)
+             ;; Scan backward to find start of atom (word, number, string, symbol)
+             (start (let loop ((i (- end 1)))
+                      (cond
+                        ((< i 0) 0)
+                        ((let ((c (string-ref text i)))
+                           (or (char=? c #\space) (char=? c #\newline)
+                               (char=? c #\tab) (char=? c #\()
+                               (char=? c #\[)))
+                         (+ i 1))
+                        (else (loop (- i 1)))))))
+        (if (< start end)
+          (let ((expr (substring text start end)))
+            (let-values (((result error?) (eval-expression-string expr)))
+              (if error?
+                (echo-error! echo result)
+                (echo-message! echo (string-append "=> " result)))))
+          (echo-message! echo "No sexp before point"))))))
+
+(def (cmd-eval-defun app)
+  "Evaluate the top-level form at point."
+  (let* ((echo (app-state-echo app))
+         (ed (current-qt-editor app))
+         (text (qt-plain-text-edit-text ed))
+         (pos (qt-plain-text-edit-cursor-position ed))
+         ;; Find beginning of top-level form — scan back for ( at column 0
+         (start (let loop ((i pos))
+                  (cond ((< i 0) 0)
+                        ((and (char=? (string-ref text i) #\()
+                              (or (= i 0)
+                                  (char=? (string-ref text (- i 1)) #\newline)))
+                         i)
+                        (else (loop (- i 1))))))
+         (match-pos (sci-send ed SCI_BRACEMATCH start 0)))
+    (if (>= match-pos 0)
+      (let ((form-text (substring text start (+ match-pos 1))))
+        (let-values (((result error?) (eval-expression-string form-text)))
+          (if error?
+            (echo-error! echo result)
+            (echo-message! echo (string-append "=> " result)))))
+      (echo-message! echo "No top-level form found"))))
+
+(def (cmd-eval-print-last-sexp app)
+  "Evaluate sexp before point and insert result into buffer."
+  (let* ((echo (app-state-echo app))
+         (ed (current-qt-editor app))
+         (pos (qt-plain-text-edit-cursor-position ed))
+         (match (sci-send ed SCI_BRACEMATCH (- pos 1) 0)))
+    (if (>= match 0)
+      (let* ((start (min match (- pos 1)))
+             (end (+ (max match (- pos 1)) 1))
+             (text (qt-plain-text-edit-text ed))
+             (expr (substring text start end)))
+        (let-values (((result error?) (eval-expression-string expr)))
+          (qt-plain-text-edit-insert-text! ed (string-append "\n" result))))
+      (echo-message! echo "No sexp before point"))))
+
 ;;;============================================================================
 ;;; Clone buffer / scratch buffer
 ;;;============================================================================

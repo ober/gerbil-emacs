@@ -527,9 +527,22 @@
   (keymap-bind! *ctrl-c-map* "D" 'insert-date)
   (keymap-bind! *ctrl-c-map* "8" 'insert-char)
 
-  ;; Eval buffer/region
+  ;; Eval buffer/region/sexp
   (keymap-bind! *ctrl-c-map* "E" 'eval-buffer)
   (keymap-bind! *ctrl-c-map* "v" 'eval-region)
+  (keymap-bind! *ctrl-x-map* "C-e" 'eval-last-sexp)
+  (keymap-bind! *ctrl-c-map* "C-e" 'eval-last-sexp)
+  (keymap-bind! *ctrl-c-map* "C-d" 'eval-defun)
+
+  ;; Org-mode (C-c prefix, standard Emacs bindings)
+  (keymap-bind! *ctrl-c-map* "C-n" 'org-next-heading)
+  (keymap-bind! *ctrl-c-map* "C-p" 'org-prev-heading)
+  (keymap-bind! *ctrl-c-map* "C-t" 'org-todo)
+  (keymap-bind! *ctrl-c-map* "C-l" 'org-link)
+  (keymap-bind! *ctrl-c-map* "C-o" 'org-open-at-point)
+  (keymap-bind! *ctrl-c-map* "C-s" 'org-schedule)
+  (keymap-bind! *ctrl-c-map* "C-q" 'org-set-tags)
+  (keymap-bind! *ctrl-c-map* ","   'org-priority)
 
   ;; Clone buffer, scratch
   (keymap-bind! *ctrl-c-map* "b" 'clone-buffer)

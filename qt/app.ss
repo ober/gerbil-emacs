@@ -48,6 +48,21 @@
                   " - gerbil-emacs")))
     (qt-main-window-set-title! win title)))
 
+(def (qt-update-mark-selection! app)
+  "Update visual selection to reflect active mark region.
+   When buffer-mark is set, highlights the region between mark and cursor.
+   When mark is cleared, ensures no stale selection remains."
+  (let* ((fr (app-state-frame app))
+         (ed (qt-current-editor fr))
+         (buf (qt-current-buffer fr))
+         (mark (buffer-mark buf)))
+    (if mark
+      (let ((pos (qt-plain-text-edit-cursor-position ed)))
+        (qt-plain-text-edit-set-selection! ed (min mark pos) (max mark pos)))
+      ;; No mark — deselect if anything is selected
+      (let ((pos (qt-plain-text-edit-cursor-position ed)))
+        (qt-plain-text-edit-set-selection! ed pos pos)))))
+
 ;; Which-key state — show available bindings after prefix key delay
 (def *which-key-timer* #f)
 (def *which-key-pending-keymap* #f)
@@ -389,6 +404,8 @@
                        ;; Update visual decorations (current-line + brace match)
                        (qt-update-visual-decorations!
                          (qt-current-editor (app-state-frame app)))
+                       ;; Update mark/region visual selection
+                       (qt-update-mark-selection! app)
                        ;; Update modeline, tab bar, title, and echo after each key
                        (qt-modeline-update! app)
                        (qt-tabbar-update! app)
@@ -417,6 +434,7 @@
                            (execute-command! app chord-cmd)
                            (qt-update-visual-decorations!
                              (qt-current-editor (app-state-frame app)))
+                           (qt-update-mark-selection! app)
                            (qt-modeline-update! app)
                            (qt-tabbar-update! app)
                            (qt-update-frame-title! app)

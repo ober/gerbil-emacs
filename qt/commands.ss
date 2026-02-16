@@ -247,9 +247,7 @@
 
 (def (cmd-find-file app)
   (let* ((echo (app-state-echo app))
-         (cwd (current-directory))
-         (files (qt-list-directory-files cwd))
-         (filename (qt-echo-read-string-with-completion app "Find file: " files)))
+         (filename (qt-echo-read-file-with-completion app "Find file: ")))
     (when filename
       (when (> (string-length filename) 0)
         (let ((filename (expand-filename filename)))
@@ -535,8 +533,36 @@
       (let ((path (buffer-file-path buf)))
         (and path (string-suffix? ".org" path)))))
 
+;; Track org-cycle state per heading line: 'folded, 'children, 'subtree
+(def *org-cycle-state* (make-hash-table))
+
+(def (org-line-heading-level line)
+  "Return the heading level of a line (number of leading *s), or 0 if not a heading."
+  (if (and (> (string-length line) 0)
+           (char=? (string-ref line 0) #\*))
+    (let loop ((i 0))
+      (if (and (< i (string-length line))
+               (char=? (string-ref line i) #\*))
+        (loop (+ i 1)) i))
+    0))
+
+(def (org-find-subtree-end-line lines cur-line level)
+  "Find the line number where the subtree under cur-line ends.
+   Subtree ends at next heading with level <= this one, or EOF."
+  (let loop ((i (+ cur-line 1)))
+    (cond
+      ((>= i (length lines)) i)
+      ((<= 0 (let ((l (org-line-heading-level (list-ref lines i))))
+               (if (and (> l 0) (<= l level)) l -1)))
+       i)
+      (else (loop (+ i 1))))))
+
 (def (qt-org-cycle app)
-  "Cycle visibility of org heading children (fold/unfold) in Qt editor.
+  "Cycle visibility of org heading children in Qt editor.
+   3-state cycle like Emacs: FOLDED → CHILDREN → SUBTREE.
+   FOLDED: all children hidden.
+   CHILDREN: show direct child headings, hide their content.
+   SUBTREE: show everything.
    Returns #t if on a heading and toggled, #f otherwise."
   (let* ((ed (current-qt-editor app))
          (pos (qt-plain-text-edit-cursor-position ed))
@@ -546,47 +572,46 @@
          (echo (app-state-echo app)))
     (if (>= cur-line (length lines))
       #f
-      (let ((line (list-ref lines cur-line)))
-        (if (not (and (> (string-length line) 0)
-                      (char=? (string-ref line 0) #\*)))
-          #f  ;; Not on a heading — let TAB do normal behavior
-          ;; Toggle fold level for children of this heading
-          (let* ((level (let loop ((i 0))
-                          (if (and (< i (string-length line))
-                                   (char=? (string-ref line i) #\*))
-                            (loop (+ i 1)) i)))
-                 ;; Find range of children
-                 (end-line (let loop ((i (+ cur-line 1)))
-                             (cond
-                               ((>= i (length lines)) i)
-                               ((let ((l (list-ref lines i)))
-                                  (and (> (string-length l) 0)
-                                       (char=? (string-ref l 0) #\*)
-                                       (<= (let loop2 ((j 0))
-                                             (if (and (< j (string-length l))
-                                                      (char=? (string-ref l j) #\*))
-                                               (loop2 (+ j 1)) j))
-                                           level)))
-                                i)
-                               (else (loop (+ i 1)))))))
+      (let* ((line (list-ref lines cur-line))
+             (level (org-line-heading-level line)))
+        (if (= level 0)
+          #f  ;; Not on a heading
+          (let ((end-line (org-find-subtree-end-line lines cur-line level)))
             (if (= end-line (+ cur-line 1))
-              (begin
-                (echo-message! echo "No children to fold")
-                #t)  ;; Still on heading, handled
-              (let ((currently-visible
-                      (sci-send ed SCI_GETLINEVISIBLE (+ cur-line 1))))
-                ;; SCI_GETLINEVISIBLE returns 0/1 integer;
-                ;; 0 is truthy in Scheme, so compare with = 1
-                (if (= currently-visible 1)
-                  ;; Currently visible -> hide
-                  (let loop ((i (+ cur-line 1)))
-                    (when (< i end-line)
-                      (sci-send ed SCI_HIDELINES i i)
-                      (loop (+ i 1))))
-                  ;; Currently hidden -> show
-                  (sci-send ed SCI_SHOWLINES (+ cur-line 1) (- end-line 1)))
-                (echo-message! echo
-                  (if (= currently-visible 1) "Folded" "Unfolded"))
+              (begin (echo-message! echo "No children to fold") #t)
+              ;; Determine current state and cycle
+              (let* ((state (or (hash-get *org-cycle-state* cur-line) 'subtree))
+                     (next-state (case state
+                                   ((subtree) 'folded)
+                                   ((folded)  'children)
+                                   ((children) 'subtree)
+                                   (else 'folded))))
+                (case next-state
+                  ((folded)
+                   ;; Hide all children
+                   (let loop ((i (+ cur-line 1)))
+                     (when (< i end-line)
+                       (sci-send ed SCI_HIDELINES i i)
+                       (loop (+ i 1))))
+                   (echo-message! echo "Folded"))
+                  ((children)
+                   ;; Show direct child headings, hide their content
+                   (let loop ((i (+ cur-line 1)))
+                     (when (< i end-line)
+                       (let* ((l (list-ref lines i))
+                              (hl (org-line-heading-level l)))
+                         (if (= hl (+ level 1))
+                           ;; Direct child heading — show it
+                           (sci-send ed SCI_SHOWLINES i i)
+                           ;; Non-heading or deeper heading — hide
+                           (sci-send ed SCI_HIDELINES i i)))
+                       (loop (+ i 1))))
+                   (echo-message! echo "Children"))
+                  ((subtree)
+                   ;; Show everything
+                   (sci-send ed SCI_SHOWLINES (+ cur-line 1) (- end-line 1))
+                   (echo-message! echo "Subtree")))
+                (hash-put! *org-cycle-state* cur-line next-state)
                 #t))))))))  ;; Handled
 
 (def (cmd-indent-or-complete app)
@@ -915,9 +940,12 @@
   (register-command! 'find-file-other-window cmd-find-file-other-window)
   ;; Insert date
   (register-command! 'insert-date cmd-insert-date)
-  ;; Eval buffer/region
+  ;; Eval
   (register-command! 'eval-buffer cmd-eval-buffer)
   (register-command! 'eval-region cmd-eval-region)
+  (register-command! 'eval-last-sexp cmd-eval-last-sexp)
+  (register-command! 'eval-defun cmd-eval-defun)
+  (register-command! 'eval-print-last-sexp cmd-eval-print-last-sexp)
   ;; Clone buffer / scratch
   (register-command! 'clone-buffer cmd-clone-buffer)
   (register-command! 'scratch-buffer cmd-scratch-buffer)
