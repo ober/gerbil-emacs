@@ -172,6 +172,8 @@
       (editor-set-save-point ed)
       (editor-goto-pos ed 0)
       (editor-set-read-only ed #t)
+      ;; Brighter caret line for buffer-list row selection
+      (editor-set-caret-line-background ed #x2a2a4a)
       (echo-message! (app-state-echo app) "*Buffer List*"))))
 
 ;;;============================================================================

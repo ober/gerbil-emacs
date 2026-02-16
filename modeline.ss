@@ -40,7 +40,7 @@
                                                 directory: dir
                                                 stdin-redirection: #f
                                                 stdout-redirection: #t
-                                                stderr-redirection: #f)))
+                                                stderr-redirection: #t)))
                                    (result (read-line proc)))
                               (process-status proc)
                               (close-port proc)

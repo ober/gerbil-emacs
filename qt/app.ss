@@ -189,6 +189,9 @@
       (qt-layout-set-margins! layout 0 0 0 0)
       (qt-layout-set-spacing! layout 0)
 
+      ;; Initialize inline minibuffer (hidden until needed)
+      (qt-minibuffer-init! echo-label qt-app layout)
+
       ;; Store Qt app pointer for clipboard access from commands
       (set! *qt-app-ptr* qt-app)
 
@@ -336,15 +339,12 @@
                                (let ((ts (hash-get *terminal-state* buf)))
                                  (when ts
                                    (terminal-send-raw! ts (string ch)))))
-                              ;; Shell: only after prompt-pos
+                              ;; Shell: insert char locally (sent as complete line on Enter)
                               ((shell-buffer? buf)
-                               (let* ((pos (qt-plain-text-edit-cursor-position ed))
-                                      (ss (hash-get *shell-state* buf)))
-                                 (when (and ss (>= pos (shell-state-prompt-pos ss)))
-                                   (let loop ((i 0))
-                                     (when (< i n)
-                                       (qt-plain-text-edit-insert-text! ed (string ch))
-                                       (loop (+ i 1)))))))
+                               (let loop ((i 0))
+                                 (when (< i n)
+                                   (qt-plain-text-edit-insert-text! ed (string ch))
+                                   (loop (+ i 1)))))
                               (else
                                (if (and close-ch (= n 1)) ; Only auto-pair if n=1
                                  ;; Auto-pair: insert both chars and place cursor between
@@ -479,18 +479,22 @@
                 (when (shell-buffer? buf)
                   (let ((ss (hash-get *shell-state* buf)))
                     (when ss
-                      (let ((output (shell-read-available ss)))
-                        (when output
-                          (let loop ((wins (qt-frame-windows fr)))
-                            (when (pair? wins)
-                              (if (eq? (qt-edit-window-buffer (car wins)) buf)
-                                (let ((ed (qt-edit-window-editor (car wins))))
-                                  (qt-plain-text-edit-append! ed output)
-                                  (set! (shell-state-prompt-pos ss)
-                                    (string-length (qt-plain-text-edit-text ed)))
-                                  (qt-plain-text-edit-move-cursor! ed QT_CURSOR_END)
-                                  (qt-plain-text-edit-ensure-cursor-visible! ed))
-                                (loop (cdr wins)))))))))))
+                      (let ((raw-output (shell-read-available ss)))
+                        (when raw-output
+                          (let ((output (shell-filter-echo raw-output
+                                          (shell-state-last-sent ss))))
+                            (set! (shell-state-last-sent ss) #f)
+                            (when (and output (> (string-length output) 0))
+                              (let loop ((wins (qt-frame-windows fr)))
+                                (when (pair? wins)
+                                  (if (eq? (qt-edit-window-buffer (car wins)) buf)
+                                    (let ((ed (qt-edit-window-editor (car wins))))
+                                      (qt-plain-text-edit-append! ed output)
+                                      (set! (shell-state-prompt-pos ss)
+                                        (string-length (qt-plain-text-edit-text ed)))
+                                      (qt-plain-text-edit-move-cursor! ed QT_CURSOR_END)
+                                      (qt-plain-text-edit-ensure-cursor-visible! ed))
+                                    (loop (cdr wins)))))))))))))
               (buffer-list))
             ;; Also poll terminal buffers
             (for-each

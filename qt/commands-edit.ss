@@ -20,6 +20,7 @@
         :gerbil-emacs/qt/echo
         :gerbil-emacs/qt/highlight
         :gerbil-emacs/qt/modeline
+        :gerbil-emacs/qt/image
         :gerbil-emacs/qt/commands-core)
 
 ;;;============================================================================
@@ -681,21 +682,28 @@
         (echo-message! (app-state-echo app) "Shell started")))))
 
 (def (cmd-shell-send app)
-  "Send the current input line to the shell subprocess."
+  "Extract typed text since prompt and send as a complete line to the shell."
   (let* ((buf (current-qt-buffer app))
          (ss (hash-get *shell-state* buf)))
     (when ss
       (let* ((ed (current-qt-editor app))
-             (prompt-pos (shell-state-prompt-pos ss))
              (all-text (qt-plain-text-edit-text ed))
+             (prompt-pos (shell-state-prompt-pos ss))
              (end-pos (string-length all-text))
              (input (if (> end-pos prompt-pos)
                       (substring all-text prompt-pos end-pos)
                       "")))
+        ;; Append newline to buffer
         (qt-plain-text-edit-append! ed "")
+        ;; Send complete line to shell
         (shell-send! ss input)
+        ;; Record sent command for echo filtering
+        (set! (shell-state-last-sent ss) input)
+        ;; Update prompt-pos
         (set! (shell-state-prompt-pos ss)
-          (string-length (qt-plain-text-edit-text ed)))))))
+          (string-length (qt-plain-text-edit-text ed)))
+        (qt-plain-text-edit-move-cursor! ed QT_CURSOR_END)
+        (qt-plain-text-edit-ensure-cursor-visible! ed)))))
 ;;;============================================================================
 ;;; Dired (directory listing) support
 ;;;============================================================================
@@ -745,25 +753,31 @@
                                  (lambda () (display-exception e))))))
               (lambda ()
                 (let ((info (file-info full-path)))
-                  (if (eq? 'directory (file-info-type info))
-                    (dired-open-directory! app full-path)
-                    ;; Open as regular file
-                    (let* ((fname (path-strip-directory full-path))
-                           (fr (app-state-frame app))
-                           (new-buf (qt-buffer-create! fname ed full-path)))
-                      (qt-buffer-attach! ed new-buf)
-                      (set! (qt-edit-window-buffer (qt-current-window fr))
-                            new-buf)
-                      (let ((text (read-file-as-string full-path)))
-                        (when text
-                          (qt-plain-text-edit-set-text! ed text)
-                          (qt-text-document-set-modified!
-                            (buffer-doc-pointer new-buf) #f)
-                          (qt-plain-text-edit-set-cursor-position! ed 0)))
-                      (qt-setup-highlighting! app new-buf)
-                      (echo-message! (app-state-echo app)
-                                     (string-append "Opened: "
-                                                    full-path)))))))))))))
+                  (cond
+                    ((eq? 'directory (file-info-type info))
+                     (dired-open-directory! app full-path))
+                    ;; Image file -> open in image viewer dialog
+                    ((image-file? full-path)
+                     (let ((main-win (qt-frame-main-win (app-state-frame app))))
+                       (qt-view-image! app main-win full-path)))
+                    ;; Regular text file
+                    (else
+                     (let* ((fname (path-strip-directory full-path))
+                            (fr (app-state-frame app))
+                            (new-buf (qt-buffer-create! fname ed full-path)))
+                       (qt-buffer-attach! ed new-buf)
+                       (set! (qt-edit-window-buffer (qt-current-window fr))
+                             new-buf)
+                       (let ((text (read-file-as-string full-path)))
+                         (when text
+                           (qt-plain-text-edit-set-text! ed text)
+                           (qt-text-document-set-modified!
+                             (buffer-doc-pointer new-buf) #f)
+                           (qt-plain-text-edit-set-cursor-position! ed 0)))
+                       (qt-setup-highlighting! app new-buf)
+                       (echo-message! (app-state-echo app)
+                                      (string-append "Opened: "
+                                                     full-path))))))))))))))
 
 ;;;============================================================================
 ;;; REPL commands

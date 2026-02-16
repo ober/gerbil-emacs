@@ -9,7 +9,9 @@
         (struct-out shell-state)
         shell-start!
         shell-send!
+        shell-send-char!
         shell-read-available
+        shell-filter-echo
         shell-stop!
         shell-prompt
         strip-ansi-codes)
@@ -31,7 +33,8 @@
 
 (defstruct shell-state
   (process      ; Gambit process port (bidirectional)
-   prompt-pos)  ; integer: byte position where current input starts
+   prompt-pos   ; integer: byte position where current input starts
+   last-sent)   ; string or #f: last command sent, for echo filtering
   transparent: #t)
 
 (def shell-prompt "")  ; Shell provides its own prompt via output
@@ -83,16 +86,26 @@
 ;;;============================================================================
 
 (def (shell-start!)
-  "Spawn $SHELL and return a shell-state."
+  "Spawn $SHELL with a PTY for proper echo and prompt handling.
+   Falls back to pipe mode if PTY is unavailable (e.g. in tests)."
   (let* ((shell-path (getenv "SHELL" "/bin/bash"))
-         (proc (open-process
-                 (list path: shell-path
-                       arguments: '()
-                       stdin-redirection: #t
-                       stdout-redirection: #t
-                       stderr-redirection: #t
-                       pseudo-terminal: #f))))
-    (make-shell-state proc 0)))
+         (proc (try
+                 (open-process
+                   (list path: shell-path
+                         arguments: '()
+                         stdin-redirection: #t
+                         stdout-redirection: #t
+                         pseudo-terminal: #t))
+                 (catch (e)
+                   ;; PTY not available — fall back to pipe mode
+                   (open-process
+                     (list path: shell-path
+                           arguments: '()
+                           stdin-redirection: #t
+                           stdout-redirection: #t
+                           stderr-redirection: #t
+                           pseudo-terminal: #f))))))
+    (make-shell-state proc 0 #f)))
 
 (def (shell-send! ss input)
   "Send a line of input to the shell."
@@ -100,6 +113,13 @@
     (display input proc)
     (newline proc)
     (force-output proc)))
+
+(def (shell-send-char! ss ch)
+  "Send a single character to the shell PTY (no buffer insert — PTY echoes)."
+  (let ((proc (shell-state-process ss)))
+    (when proc
+      (write-char ch proc)
+      (force-output proc))))
 
 (def (shell-read-available ss)
   "Read all available output from the shell (non-blocking).
@@ -117,6 +137,20 @@
                (cleaned (strip-ansi-codes raw)))
           (if (string=? cleaned "") #f cleaned)))
       #f)))
+
+(def (shell-filter-echo output last-sent)
+  "Remove echoed command from shell output if present.
+   PTY echo produces the typed command followed by a newline before the actual output."
+  (if (and last-sent (string? output) (> (string-length last-sent) 0))
+    (let ((echo-prefix (string-append last-sent "\n")))
+      (if (and (>= (string-length output) (string-length echo-prefix))
+               (string=? (substring output 0 (string-length echo-prefix))
+                         echo-prefix))
+        (let ((rest (substring output (string-length echo-prefix)
+                               (string-length output))))
+          (if (string=? rest "") #f rest))
+        output))
+    output))
 
 (def (shell-stop! ss)
   "Shut down the shell subprocess."

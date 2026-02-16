@@ -496,6 +496,15 @@ Returns #t if changed, #f if not or if no record exists."
            (qt-plain-text-edit-move-cursor! ed QT_CURSOR_PREVIOUS_CHAR
                                             mode: QT_KEEP_ANCHOR)
            (qt-plain-text-edit-remove-selected-text! ed))))
+      ;; Shell: don't delete past the prompt
+      ((shell-buffer? buf)
+       (let* ((ed (current-qt-editor app))
+              (pos (qt-plain-text-edit-cursor-position ed))
+              (ss (hash-get *shell-state* buf)))
+         (when (and ss (> pos (shell-state-prompt-pos ss)))
+           (qt-plain-text-edit-move-cursor! ed QT_CURSOR_PREVIOUS_CHAR
+                                            mode: QT_KEEP_ANCHOR)
+           (qt-plain-text-edit-remove-selected-text! ed))))
       (else
        (let ((ed (current-qt-editor app)))
          (qt-plain-text-edit-move-cursor! ed QT_CURSOR_PREVIOUS_CHAR
@@ -560,6 +569,8 @@ Returns #t if changed, #f if not or if no record exists."
               (qt-plain-text-edit-set-read-only! ed #f)
               (qt-buffer-attach! ed buf)
               (set! (qt-edit-window-buffer (qt-current-window fr)) buf)
+              ;; Restore default caret line background
+              (sci-send ed SCI_SETCARETLINEBACK (rgb->sci #x22 #x22 #x28))
               (echo-message! (app-state-echo app) (buffer-name buf)))
             (echo-error! (app-state-echo app) (string-append "No buffer: " name))))
         (echo-message! (app-state-echo app) "No buffer on this line")))))
@@ -1063,6 +1074,8 @@ Returns (path . line) or #f. Handles file:line format."
       (qt-text-document-set-modified! (buffer-doc-pointer buf) #f)
       (qt-plain-text-edit-set-cursor-position! ed 0)
       (qt-plain-text-edit-set-read-only! ed #t)
+      ;; Brighter caret line for buffer-list row selection
+      (sci-send ed SCI_SETCARETLINEBACK (rgb->sci #x2a #x2a #x4a))
       (echo-message! (app-state-echo app) "*Buffer List*"))))
 
 ;;;============================================================================

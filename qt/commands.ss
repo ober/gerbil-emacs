@@ -237,9 +237,17 @@
           (apply-dir-locals! app filename)
           (echo-message! echo (string-append "Opened: " filename))))))))
 
+(def (qt-list-directory-files dir)
+  "List files in a directory for completion. Returns sorted list of basenames."
+  (with-catch (lambda (e) [])
+    (lambda ()
+      (sort (directory-files dir) string<?))))
+
 (def (cmd-find-file app)
   (let* ((echo (app-state-echo app))
-         (filename (qt-echo-read-string app "Find file: ")))
+         (cwd (current-directory))
+         (files (qt-list-directory-files cwd))
+         (filename (qt-echo-read-string-with-completion app "Find file: " files)))
     (when filename
       (when (> (string-length filename) 0)
         (let ((filename (expand-filename filename)))

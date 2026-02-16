@@ -304,15 +304,13 @@
               (str (string (integer->char ch))))
          (editor-insert-text ed pos str)
          (editor-goto-pos ed (+ pos 1))))
-      ;; Shell: allow typing after the prompt position
+      ;; Shell: insert char locally (sent as complete line on Enter)
       ((shell-buffer? buf)
        (let* ((ed (current-editor app))
               (pos (editor-get-current-pos ed))
-              (ss (hash-get *shell-state* buf)))
-         (when (and ss (>= pos (shell-state-prompt-pos ss)))
-           (let ((str (string (integer->char ch))))
-             (editor-insert-text ed pos str)
-             (editor-goto-pos ed (+ pos 1))))))
+              (str (string (integer->char ch))))
+         (editor-insert-text ed pos str)
+         (editor-goto-pos ed (+ pos 1))))
       ;; Terminal: forward character directly to PTY
       ((terminal-buffer? buf)
        (let ((ts (hash-get *terminal-state* buf)))
@@ -441,6 +439,13 @@
               (rs (hash-get *repl-state* buf)))
          (when (and rs (> pos (repl-state-prompt-pos rs)))
            (editor-send-key ed SCK_BACK))))
+      ;; Shell: don't delete past the prompt
+      ((shell-buffer? buf)
+       (let* ((ed (current-editor app))
+              (pos (editor-get-current-pos ed))
+              (ss (hash-get *shell-state* buf)))
+         (when (and ss (> pos (shell-state-prompt-pos ss)))
+           (editor-send-key ed SCK_BACK))))
       ;; Terminal: send backspace to PTY
       ((terminal-buffer? buf)
        (let ((ts (hash-get *terminal-state* buf)))
@@ -503,7 +508,9 @@
         (if buf
           (let ((fr (app-state-frame app)))
             (buffer-attach! ed buf)
-            (set! (edit-window-buffer (current-window fr)) buf))
+            (set! (edit-window-buffer (current-window fr)) buf)
+            ;; Restore default caret line background
+            (editor-set-caret-line-background ed #x333333))
           (echo-error! (app-state-echo app) (string-append "No buffer: " name))))
       (echo-message! (app-state-echo app) "No buffer on this line"))))
 
@@ -1272,23 +1279,27 @@
         (echo-message! (app-state-echo app) "Shell started")))))
 
 (def (cmd-shell-send app)
-  "Send the current input line to the shell subprocess."
+  "Extract typed text since prompt and send as a complete line to the shell."
   (let* ((buf (current-buffer-from-app app))
          (ss (hash-get *shell-state* buf)))
     (when ss
       (let* ((ed (current-editor app))
-             (prompt-pos (shell-state-prompt-pos ss))
              (all-text (editor-get-text ed))
+             (prompt-pos (shell-state-prompt-pos ss))
              (end-pos (string-length all-text))
              (input (if (> end-pos prompt-pos)
                       (substring all-text prompt-pos end-pos)
                       "")))
         ;; Append newline to buffer
         (editor-append-text ed "\n")
-        ;; Send to shell
+        ;; Send complete line to shell
         (shell-send! ss input)
+        ;; Record sent command for echo filtering
+        (set! (shell-state-last-sent ss) input)
         ;; Update prompt-pos to after the newline
-        (set! (shell-state-prompt-pos ss) (editor-get-text-length ed))))))
+        (set! (shell-state-prompt-pos ss) (editor-get-text-length ed))
+        (editor-goto-pos ed (editor-get-text-length ed))
+        (editor-scroll-caret ed)))))
 
 ;;;============================================================================
 ;;; Terminal commands (PTY-backed vterm-like terminal)
@@ -1405,26 +1416,36 @@
                                  (lambda () (display-exception e))))))
               (lambda ()
                 (let ((info (file-info full-path)))
-                  (if (eq? 'directory (file-info-type info))
-                    (dired-open-directory! app full-path)
-                    ;; Open as regular file
-                    (let* ((fname (path-strip-directory full-path))
-                           (fr (app-state-frame app))
-                           (new-buf (buffer-create! fname ed full-path)))
-                      (buffer-attach! ed new-buf)
-                      (set! (edit-window-buffer (current-window fr)) new-buf)
-                      (let ((text (read-file-as-string full-path)))
-                        (when text
-                          (editor-set-text ed text)
-                          (editor-set-save-point ed)
-                          (editor-goto-pos ed 0)))
-                      ;; Apply syntax highlighting for Gerbil files
-                      (when (gerbil-file-extension? full-path)
-                        (setup-gerbil-highlighting! ed)
-                        (send-message ed SCI_SETMARGINTYPEN 0 SC_MARGIN_NUMBER)
-                        (send-message ed SCI_SETMARGINWIDTHN 0 4))
-                      (echo-message! (app-state-echo app)
-                                     (string-append "Opened: " full-path)))))))))))))
+                  (cond
+                    ((eq? 'directory (file-info-type info))
+                     (dired-open-directory! app full-path))
+                    ;; Binary files (images etc.) — TUI can't display them
+                    ((let ((ext (string-downcase (path-extension full-path))))
+                       (member ext '(".png" ".jpg" ".jpeg" ".gif" ".bmp"
+                                     ".webp" ".svg" ".ico" ".tiff" ".tif"
+                                     ".pdf" ".zip" ".gz" ".tar" ".exe"
+                                     ".so" ".o" ".a" ".class" ".pyc")))
+                     (echo-message! (app-state-echo app)
+                       (string-append "Binary file: " full-path)))
+                    ;; Regular text file
+                    (else
+                     (let* ((fname (path-strip-directory full-path))
+                            (fr (app-state-frame app))
+                            (new-buf (buffer-create! fname ed full-path)))
+                       (buffer-attach! ed new-buf)
+                       (set! (edit-window-buffer (current-window fr)) new-buf)
+                       (let ((text (read-file-as-string full-path)))
+                         (when text
+                           (editor-set-text ed text)
+                           (editor-set-save-point ed)
+                           (editor-goto-pos ed 0)))
+                       ;; Apply syntax highlighting for Gerbil files
+                       (when (gerbil-file-extension? full-path)
+                         (setup-gerbil-highlighting! ed)
+                         (send-message ed SCI_SETMARGINTYPEN 0 SC_MARGIN_NUMBER)
+                         (send-message ed SCI_SETMARGINWIDTHN 0 4))
+                       (echo-message! (app-state-echo app)
+                                      (string-append "Opened: " full-path))))))))))))))
 
 ;;;============================================================================
 ;;; REPL commands (needed by cmd-newline)

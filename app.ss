@@ -202,19 +202,23 @@
       (when (shell-buffer? buf)
         (let ((ss (hash-get *shell-state* buf)))
           (when ss
-            (let ((output (shell-read-available ss)))
-              (when output
-                (let ((win (find-window-for-buffer (app-state-frame app) buf)))
-                  (when win
-                    (let ((ed (edit-window-editor win)))
-                      ;; Insert output at end
-                      (editor-append-text ed output)
-                      ;; Update prompt-pos to after output
-                      (set! (shell-state-prompt-pos ss)
-                        (editor-get-text-length ed))
-                      ;; Move cursor to end and scroll
-                      (editor-goto-pos ed (editor-get-text-length ed))
-                      (editor-scroll-caret ed))))))))))
+            (let ((raw-output (shell-read-available ss)))
+              (when raw-output
+                (let ((output (shell-filter-echo raw-output
+                                (shell-state-last-sent ss))))
+                  (set! (shell-state-last-sent ss) #f)
+                  (when (and output (> (string-length output) 0))
+                    (let ((win (find-window-for-buffer (app-state-frame app) buf)))
+                      (when win
+                        (let ((ed (edit-window-editor win)))
+                          ;; Insert output at end
+                          (editor-append-text ed output)
+                          ;; Update prompt-pos to after output
+                          (set! (shell-state-prompt-pos ss)
+                            (editor-get-text-length ed))
+                          ;; Move cursor to end and scroll
+                          (editor-goto-pos ed (editor-get-text-length ed))
+                          (editor-scroll-caret ed))))))))))))
     (buffer-list)))
 
 ;;;============================================================================
