@@ -1056,6 +1056,9 @@ Returns (path . line) or #f. Handles file:line format."
       (set! (buffer-lexer-lang buf) 'buffer-list)
       (qt-buffer-attach! ed buf)
       (set! (qt-edit-window-buffer (qt-current-window fr)) buf)
+      ;; Clear read-only before setting text — Scintilla's SCI_SETTEXT
+      ;; silently fails on read-only documents (from previous invocation)
+      (qt-plain-text-edit-set-read-only! ed #f)
       (qt-plain-text-edit-set-text! ed text)
       (qt-text-document-set-modified! (buffer-doc-pointer buf) #f)
       (qt-plain-text-edit-set-cursor-position! ed 0)

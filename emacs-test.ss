@@ -3206,6 +3206,36 @@
         (hash-remove! *repl-state* buf)
         (buffer-list-remove! buf)))
 
+    (test-case "headless: shell self-insert uses editor-insert-text"
+      ;; Regression: shell buffers must insert typed chars via editor-insert-text.
+      (let* ((ed (create-scintilla-editor width: 80 height: 24))
+             (buf (make-buffer "*shell*" #f
+                    (send-message ed SCI_GETDOCPOINTER) #f #f #f #f))
+             (win (make-edit-window ed buf 0 0 80 24 0))
+             (fr (make-frame [win] 0 80 24 'vertical))
+             (app (new-app-state fr)))
+        (buffer-list-add! buf)
+        ;; Mark as shell buffer
+        (set! (buffer-lexer-lang buf) 'shell)
+        ;; Simulate shell prompt output
+        (editor-set-text ed "$ ")
+        ;; Create a fake shell-state with prompt-pos at 2
+        (let ((ss (make-shell-state #f 2)))
+          (hash-put! *shell-state* buf ss)
+          ;; Position cursor after prompt
+          (editor-goto-pos ed 2)
+          ;; Type "ls -la" via cmd-self-insert!
+          (for-each (lambda (ch) (cmd-self-insert! app (char->integer ch)))
+                    (string->list "ls -la"))
+          ;; Verify the text was inserted after the prompt
+          (let ((text (editor-get-text ed)))
+            (check (string-contains text "ls -la") => 2))
+          ;; Verify cursor advanced
+          (check (editor-get-current-pos ed) => 8))
+        ;; Cleanup
+        (hash-remove! *shell-state* buf)
+        (buffer-list-remove! buf)))
+
     (test-case "headless: org-todo cycling"
       (let* ((ed (create-scintilla-editor width: 80 height: 24))
              (buf (make-buffer "test.org" #f

@@ -3,6 +3,7 @@
 export GERBIL_LOADPATH := $(HOME)/.gerbil/lib
 
 OPENSSL_RPATH = /home/linuxbrew/.linuxbrew/opt/openssl@3/lib
+SCI_RPATH = $(HOME)/.gerbil/lib/gerbil-scintilla
 QT_SHIM_RPATH = $(HOME)/.gerbil/lib/gerbil-qt
 
 all: build
@@ -10,8 +11,8 @@ all: build
 build:
 	chmod +x build.ss
 	LD_LIBRARY_PATH=$(OPENSSL_RPATH) gerbil build
-	patchelf --set-rpath $(OPENSSL_RPATH) .gerbil/bin/gerbil-emacs
-	-patchelf --set-rpath $(OPENSSL_RPATH):$(QT_SHIM_RPATH) .gerbil/bin/gerbil-emacs-qt
+	patchelf --set-rpath $(OPENSSL_RPATH):$(SCI_RPATH) .gerbil/bin/gerbil-emacs
+	-patchelf --set-rpath $(OPENSSL_RPATH):$(SCI_RPATH):$(QT_SHIM_RPATH) .gerbil/bin/gerbil-emacs-qt
 
 clean:
 	gerbil clean
