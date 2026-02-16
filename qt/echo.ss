@@ -138,7 +138,7 @@
                       (string-append (getenv "HOME" "/")
                                      (substring current 1 (string-length current))))
                      (else current)))
-         ;; Split into directory part and file part
+         ;; Split EXPANDED path for directory listing
          (last-slash (let loop ((i (- (string-length expanded) 1)))
                        (cond ((< i 0) #f)
                              ((char=? (string-ref expanded i) #\/) i)
@@ -149,6 +149,14 @@
          (partial (if last-slash
                     (substring expanded (+ last-slash 1) (string-length expanded))
                     expanded))
+         ;; Split ORIGINAL input for display prefix (avoids substring crash with ~)
+         (orig-last-slash (let loop ((i (- (string-length current) 1)))
+                            (cond ((< i 0) #f)
+                                  ((char=? (string-ref current i) #\/) i)
+                                  (else (loop (- i 1))))))
+         (display-prefix (if orig-last-slash
+                           (substring current 0 (+ orig-last-slash 1))
+                           ""))
          ;; List files in the directory
          (files (list-directory-safe dir))
          ;; Filter with fuzzy matching
@@ -160,16 +168,16 @@
         ;; Same input — cycle through matches
         (let* ((idx (modulo *mb-tab-idx* (length matches)))
                (match (list-ref matches idx))
-               (full-path (if last-slash
-                            (string-append (substring current 0 (+ last-slash 1)) match)
+               (full-path (if orig-last-slash
+                            (string-append display-prefix match)
                             match)))
           (qt-line-edit-set-text! input full-path)
           (set! *mb-tab-idx* (+ *mb-tab-idx* 1))
           (set! *mb-last-tab-input* full-path))
         ;; New input — complete common prefix
         (let* ((prefix (common-prefix matches))
-               (full-prefix (if last-slash
-                              (string-append (substring current 0 (+ last-slash 1)) prefix)
+               (full-prefix (if orig-last-slash
+                              (string-append display-prefix prefix)
                               prefix)))
           (when (> (string-length full-prefix) (string-length current))
             (qt-line-edit-set-text! input full-prefix))

@@ -578,14 +578,16 @@ Returns #t if changed, #f if not or if no record exists."
 (def (current-line-indent ed)
   "Get leading whitespace of the current line."
   (let* ((text (qt-plain-text-edit-text ed))
-         (pos (qt-plain-text-edit-cursor-position ed))
+         (text-len (string-length text))
+         (pos (min (qt-plain-text-edit-cursor-position ed) text-len))
          ;; Find start of current line
          (line-start (let loop ((i (- pos 1)))
-                       (if (or (< i 0) (char=? (string-ref text i) #\newline))
+                       (if (or (< i 0) (and (< i text-len)
+                                             (char=? (string-ref text i) #\newline)))
                          (+ i 1) (loop (- i 1))))))
     ;; Extract leading whitespace
     (let loop ((i line-start) (acc []))
-      (if (and (< i (string-length text))
+      (if (and (< i text-len)
                (let ((ch (string-ref text i)))
                  (or (char=? ch #\space) (char=? ch #\tab))))
         (loop (+ i 1) (cons (string-ref text i) acc))

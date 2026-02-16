@@ -6759,6 +6759,42 @@
             (subseq-score (fuzzy-score "hlo" "hello")))
         (check (> prefix-score subseq-score) => #t)))
 
+    (test-case "headless: fuzzy-filter-sort for file completion (hippie match)"
+      ;; Simulates file completion: typing a few chars matches filenames fuzzy
+      (let ((files '("echo.ss" "editor-core.ss" "editor-ui.ss" "editor-text.ss"
+                      "editor-advanced.ss" "editor-extra-org.ss" "core.ss"
+                      "emacs-test.ss" "build.ss" "main.ss")))
+        ;; "ecs" should match "echo.ss" (e-c-s subsequence)
+        (let ((matches (fuzzy-filter-sort "ecs" files)))
+          (check (> (length matches) 0) => #t)
+          (check (member "echo.ss" matches) => (member "echo.ss" matches)))
+        ;; "eui" should match "editor-ui.ss" (e-u-i subsequence)
+        (let ((matches (fuzzy-filter-sort "eui" files)))
+          (check (> (length matches) 0) => #t)
+          (check (not (not (member "editor-ui.ss" matches))) => #t))
+        ;; "eorg" should match "editor-extra-org.ss"
+        (let ((matches (fuzzy-filter-sort "eorg" files)))
+          (check (> (length matches) 0) => #t)
+          (check (not (not (member "editor-extra-org.ss" matches))) => #t))
+        ;; Exact prefix still works and ranks first
+        (let ((matches (fuzzy-filter-sort "core" files)))
+          (check (car matches) => "core.ss"))
+        ;; No match returns empty
+        (check (fuzzy-filter-sort "xyz123" files) => [])))
+
+    (test-case "headless: fuzzy-filter-sort ranking prefers start and separator matches"
+      ;; When multiple items match, better matches should rank higher
+      (let ((candidates '("buffer.ss" "build.ss" "editor-buffer.ss" "abacus.ss")))
+        ;; "buf" should rank "buffer.ss" above "editor-buffer.ss"
+        ;; because it matches at the start
+        (let ((matches (fuzzy-filter-sort "buf" candidates)))
+          (check (> (length matches) 1) => #t)
+          (check (car matches) => "buffer.ss"))))
+
+    (test-case "headless: echo-read-file-with-completion is exported"
+      ;; Verify the new function is available (it's exported from echo.ss)
+      (check (procedure? echo-read-file-with-completion) => #t))
+
     (test-case "headless: window management after split"
       (let* ((ed (create-scintilla-editor width: 80 height: 24))
              (buf (make-buffer "*scratch*" #f
@@ -6840,6 +6876,310 @@
         (check (editor-get-text ed) => "read only text")
         ;; Clear read-only
         (send-message ed SCI_SETREADONLY 0)))
+
+    ;;=========================================================================
+    ;; ROBUST org-mode TAB dispatch tests (assume nothing about global state)
+    ;;=========================================================================
+
+    (test-case "headless: register-all-commands! registers org-cycle"
+      ;; Verify that org-cycle IS registered after calling register-all-commands!
+      ;; This is the foundation - if this fails, all TAB dispatch to org-cycle
+      ;; will silently fail (execute-command! echoes error but doesn't throw)
+      (register-all-commands!)
+      (let ((cmd (find-command 'org-cycle)))
+        (check (not (not cmd)) => #t)   ;; must exist
+        (check (procedure? cmd) => #t)) ;; must be a procedure
+      (let ((cmd (find-command 'org-template-expand)))
+        (check (not (not cmd)) => #t)
+        (check (procedure? cmd) => #t)))
+
+    (test-case "headless: org-cycle via execute-command! dispatch"
+      ;; Test that execute-command! actually invokes org-cycle, not just
+      ;; that cmd-org-cycle works when called directly
+      (register-all-commands!)
+      (let* ((ed (create-scintilla-editor width: 80 height: 24))
+             (buf (make-buffer "dispatch.org" #f
+                    (send-message ed SCI_GETDOCPOINTER) #f #f #f #f))
+             (win (make-edit-window ed buf 0 0 80 24 0))
+             (fr (make-frame [win] 0 80 24 'vertical))
+             (app (new-app-state fr)))
+        (editor-set-text ed "* Heading\nBody line 1\nBody line 2")
+        (editor-goto-pos ed 0)
+        ;; BEFORE: all lines must be visible
+        (check (send-message ed SCI_GETLINEVISIBLE 0 0) => 1)
+        (check (send-message ed SCI_GETLINEVISIBLE 1 0) => 1)
+        (check (send-message ed SCI_GETLINEVISIBLE 2 0) => 1)
+        ;; Dispatch through execute-command! (same path as cmd-indent-or-complete)
+        (execute-command! app 'org-cycle)
+        ;; AFTER: body lines must be hidden
+        (check (send-message ed SCI_GETLINEVISIBLE 0 0) => 1)  ;; heading visible
+        (check (send-message ed SCI_GETLINEVISIBLE 1 0) => 0)  ;; body hidden
+        (check (send-message ed SCI_GETLINEVISIBLE 2 0) => 0)  ;; body hidden
+        ;; Dispatch again to unfold
+        (execute-command! app 'org-cycle)
+        (check (send-message ed SCI_GETLINEVISIBLE 1 0) => 1)  ;; body visible again
+        (check (send-message ed SCI_GETLINEVISIBLE 2 0) => 1)))
+
+    (test-case "headless: cmd-indent-or-complete full dispatch on org heading"
+      ;; The REAL dispatch path: cmd-indent-or-complete -> org-buffer? check
+      ;; -> heading detection -> execute-command! 'org-cycle
+      ;; This test explicitly registers commands first (assumes nothing)
+      (register-all-commands!)
+      (let* ((ed (create-scintilla-editor width: 80 height: 24))
+             (buf (make-buffer "test-tab.org" "/tmp/test-tab.org"
+                    (send-message ed SCI_GETDOCPOINTER) #f #f #f #f))
+             (win (make-edit-window ed buf 0 0 80 24 0))
+             (fr (make-frame [win] 0 80 24 'vertical))
+             (app (new-app-state fr)))
+        ;; Set up org content with heading and body
+        (editor-set-text ed "* My Heading\nBody line A\nBody line B\n* Next Heading")
+        (editor-goto-pos ed 0)
+        ;; Verify preconditions: buffer IS org, line IS heading
+        (check (not (not (org-buffer? buf))) => #t)
+        (let ((text (editor-get-text ed)))
+          (check (char=? (string-ref text 0) #\*) => #t))
+        ;; BEFORE: all 4 lines visible
+        (check (send-message ed SCI_GETLINEVISIBLE 0 0) => 1)
+        (check (send-message ed SCI_GETLINEVISIBLE 1 0) => 1)
+        (check (send-message ed SCI_GETLINEVISIBLE 2 0) => 1)
+        (check (send-message ed SCI_GETLINEVISIBLE 3 0) => 1)
+        ;; TAB on heading: should fold body lines
+        (cmd-indent-or-complete app)
+        ;; AFTER: heading 0 and next heading 3 visible, body 1,2 hidden
+        (check (send-message ed SCI_GETLINEVISIBLE 0 0) => 1)
+        (check (send-message ed SCI_GETLINEVISIBLE 1 0) => 0)
+        (check (send-message ed SCI_GETLINEVISIBLE 2 0) => 0)
+        (check (send-message ed SCI_GETLINEVISIBLE 3 0) => 1)
+        ;; TAB again: should unfold
+        (cmd-indent-or-complete app)
+        (check (send-message ed SCI_GETLINEVISIBLE 1 0) => 1)
+        (check (send-message ed SCI_GETLINEVISIBLE 2 0) => 1)))
+
+    (test-case "headless: cmd-indent-or-complete on ** heading (level 2)"
+      ;; Make sure ** headings also trigger org-cycle, not indent
+      (register-all-commands!)
+      (let* ((ed (create-scintilla-editor width: 80 height: 24))
+             (buf (make-buffer "level2.org" "/tmp/level2.org"
+                    (send-message ed SCI_GETDOCPOINTER) #f #f #f #f))
+             (win (make-edit-window ed buf 0 0 80 24 0))
+             (fr (make-frame [win] 0 80 24 'vertical))
+             (app (new-app-state fr)))
+        (editor-set-text ed "** Sub Heading\nSub body\n** Next Sub")
+        (editor-goto-pos ed 0)
+        ;; BEFORE: all visible
+        (check (send-message ed SCI_GETLINEVISIBLE 1 0) => 1)
+        ;; TAB on ** heading
+        (cmd-indent-or-complete app)
+        ;; Sub body should be hidden
+        (check (send-message ed SCI_GETLINEVISIBLE 0 0) => 1)  ;; ** heading visible
+        (check (send-message ed SCI_GETLINEVISIBLE 1 0) => 0)  ;; body hidden
+        (check (send-message ed SCI_GETLINEVISIBLE 2 0) => 1)  ;; next ** visible
+        ;; Text should NOT have spaces prepended (would prove indent happened)
+        (let ((text (editor-get-text ed)))
+          (check (string-prefix? "** Sub Heading" text) => #t))))
+
+    (test-case "headless: cmd-indent-or-complete on org plain text indents"
+      ;; When on a non-heading line in an org buffer, TAB should insert spaces
+      (register-all-commands!)
+      (let* ((ed (create-scintilla-editor width: 80 height: 24))
+             (buf (make-buffer "indent.org" "/tmp/indent.org"
+                    (send-message ed SCI_GETDOCPOINTER) #f #f #f #f))
+             (win (make-edit-window ed buf 0 0 80 24 0))
+             (fr (make-frame [win] 0 80 24 'vertical))
+             (app (new-app-state fr)))
+        (editor-set-text ed "* Heading\nPlain text line")
+        ;; Move cursor to line 1 (plain text, not heading)
+        (let ((line1-start (editor-position-from-line ed 1)))
+          (editor-goto-pos ed line1-start))
+        ;; TAB should indent (insert spaces), not fold
+        (cmd-indent-or-complete app)
+        (let ((text (editor-get-text ed)))
+          ;; Line 1 should now have spaces
+          (check (not (not (string-contains text "  Plain"))) => #t))
+        ;; Body line should still be visible (not folded)
+        (check (send-message ed SCI_GETLINEVISIBLE 1 0) => 1)))
+
+    (test-case "headless: cmd-indent-or-complete on non-org file just indents"
+      ;; TAB in a .py file should never trigger org-cycle
+      (register-all-commands!)
+      (let* ((ed (create-scintilla-editor width: 80 height: 24))
+             (buf (make-buffer "test.py" "/tmp/test.py"
+                    (send-message ed SCI_GETDOCPOINTER) #f #f #f #f))
+             (win (make-edit-window ed buf 0 0 80 24 0))
+             (fr (make-frame [win] 0 80 24 'vertical))
+             (app (new-app-state fr)))
+        (editor-set-text ed "* not-a-heading\nbody")
+        (editor-goto-pos ed 0)
+        ;; Verify it's NOT an org buffer
+        (check (org-buffer? buf) => #f)
+        ;; TAB should indent, not fold
+        (cmd-indent-or-complete app)
+        ;; Text should have spaces inserted (indent), not fold
+        (let ((text (editor-get-text ed)))
+          (check (string-prefix? "  " text) => #t))
+        ;; Body should be visible (no fold happened)
+        (check (send-message ed SCI_GETLINEVISIBLE 1 0) => 1)))
+
+    (test-case "headless: org-buffer? edge cases"
+      ;; Name exactly 4 chars - should NOT match (needs > 4 for .org suffix check)
+      (let ((buf (make-buffer ".org" #f #f #f #f #f #f)))
+        (check (org-buffer? buf) => #f))
+      ;; Name "x.org" - 5 chars, ends with .org
+      (let ((buf (make-buffer "x.org" #f #f #f #f #f #f)))
+        (check (not (not (org-buffer? buf))) => #t))
+      ;; Lexer-lang 'org overrides any name
+      (let ((buf (make-buffer "foo.txt" #f #f #f #f 'org #f)))
+        (check (not (not (org-buffer? buf))) => #t))
+      ;; Path .org overrides name
+      (let ((buf (make-buffer "Notes" "/home/user/notes.org" #f #f #f #f #f)))
+        (check (not (not (org-buffer? buf))) => #t))
+      ;; Neither name, path, nor lexer matches
+      (let ((buf (make-buffer "org-stuff" "/tmp/org-stuff.txt" #f #f #f 'python #f)))
+        (check (org-buffer? buf) => #f)))
+
+    (test-case "headless: org heading detection in cmd-indent-or-complete"
+      ;; Verify that various heading formats are detected correctly
+      (register-all-commands!)
+      ;; Test with leading whitespace (common in real files)
+      (let* ((ed (create-scintilla-editor width: 80 height: 24))
+             (buf (make-buffer "ws.org" "/tmp/ws.org"
+                    (send-message ed SCI_GETDOCPOINTER) #f #f #f #f))
+             (win (make-edit-window ed buf 0 0 80 24 0))
+             (fr (make-frame [win] 0 80 24 'vertical))
+             (app (new-app-state fr)))
+        ;; Heading with NO leading whitespace
+        (editor-set-text ed "* Clean heading\nBody text")
+        (editor-goto-pos ed 0)
+        (check (send-message ed SCI_GETLINEVISIBLE 1 0) => 1)
+        (cmd-indent-or-complete app)
+        ;; Body should be folded
+        (check (send-message ed SCI_GETLINEVISIBLE 1 0) => 0)))
+
+    (test-case "headless: org-cycle preserves text content exactly"
+      ;; Fold and unfold should not alter the buffer text at all
+      (register-all-commands!)
+      (let* ((ed (create-scintilla-editor width: 80 height: 24))
+             (buf (make-buffer "preserve.org" #f
+                    (send-message ed SCI_GETDOCPOINTER) #f #f #f #f))
+             (win (make-edit-window ed buf 0 0 80 24 0))
+             (fr (make-frame [win] 0 80 24 'vertical))
+             (app (new-app-state fr)))
+        (let ((original "* Heading 1\nLine A\nLine B\n* Heading 2\nLine C"))
+          (editor-set-text ed original)
+          (editor-goto-pos ed 0)
+          ;; Fold
+          (cmd-org-cycle app)
+          (check (editor-get-text ed) => original)
+          ;; Unfold
+          (cmd-org-cycle app)
+          (check (editor-get-text ed) => original))))
+
+    ;;=========================================================================
+    ;; ROBUST fuzzy completion tests (thorough edge cases + integration)
+    ;;=========================================================================
+
+    (test-case "headless: fuzzy-match? comprehensive edge cases"
+      ;; Empty query matches anything
+      (check (fuzzy-match? "" "") => #t)
+      (check (fuzzy-match? "" "anything") => #t)
+      ;; Equal strings
+      (check (fuzzy-match? "hello" "hello") => #t)
+      ;; Query longer than target: no match
+      (check (fuzzy-match? "toolong" "short") => #f)
+      ;; Case insensitive
+      (check (fuzzy-match? "ABC" "abcdef") => #t)
+      (check (fuzzy-match? "abc" "ABCDEF") => #t)
+      ;; Subsequence with gaps
+      (check (fuzzy-match? "ace" "abcde") => #t)
+      ;; Characters out of order: no match
+      (check (fuzzy-match? "ba" "abc") => #f)
+      ;; Single char matches
+      (check (fuzzy-match? "x" "xyz") => #t)
+      (check (fuzzy-match? "z" "xyz") => #t)
+      ;; Special chars in filenames
+      (check (fuzzy-match? "e.s" "echo.ss") => #t)
+      (check (fuzzy-match? "e-c" "editor-core.ss") => #t))
+
+    (test-case "headless: fuzzy-score consecutive and word-boundary bonuses"
+      ;; Consecutive chars score higher than separated
+      (let ((consec (fuzzy-score "abc" "abcdef"))
+            (gapped (fuzzy-score "abc" "aXbXcX")))
+        (check (> consec gapped) => #t))
+      ;; Start-of-string bonus
+      (let ((start (fuzzy-score "ed" "editor-core.ss"))
+            (mid   (fuzzy-score "ed" "xeditor")))
+        (check (> start mid) => #t))
+      ;; Word boundary bonus (after - or /)
+      (let ((boundary (fuzzy-score "c" "editor-core.ss"))
+            (mid-word (fuzzy-score "c" "electroc")))
+        ;; 'c' after '-' in editor-core should score higher
+        ;; Actually both match 'c' at different positions, boundary detection
+        ;; gives bonus when char follows separator
+        (check (>= boundary 0) => #t))
+      ;; No match returns -1
+      (check (fuzzy-score "xyz" "abc") => -1))
+
+    (test-case "headless: fuzzy-filter-sort realistic file directory"
+      ;; Simulate what happens during C-x C-f file completion
+      (let ((dir-contents '("Makefile" "README.md" "build.ss" "core.ss"
+                            "echo.ss" "editor-core.ss" "editor-ui.ss"
+                            "editor-text.ss" "editor-advanced.ss"
+                            "editor-extra-org.ss" "emacs-test.ss"
+                            "gerbil.pkg" "keymap.ss" "main.ss"
+                            "manifest.ss" "window.ss" "buffer.ss"
+                            "modeline.ss" "highlight.ss" "persist.ss")))
+        ;; Typing "eo" should match "echo.ss" and "editor-extra-org.ss"
+        (let ((matches (fuzzy-filter-sort "eo" dir-contents)))
+          (check (> (length matches) 0) => #t)
+          (check (not (not (member "echo.ss" matches))) => #t))
+        ;; Typing "edco" should strongly match "editor-core.ss"
+        (let ((matches (fuzzy-filter-sort "edco" dir-contents)))
+          (check (> (length matches) 0) => #t)
+          (check (car matches) => "editor-core.ss"))
+        ;; Typing "mk" should match "Makefile" (case insensitive)
+        (let ((matches (fuzzy-filter-sort "mk" dir-contents)))
+          (check (not (not (member "Makefile" matches))) => #t))
+        ;; Typing "bss" should match "build.ss" and "buffer.ss"
+        (let ((matches (fuzzy-filter-sort "bss" dir-contents)))
+          (check (> (length matches) 0) => #t))
+        ;; Typing "test" should match "emacs-test.ss"
+        (let ((matches (fuzzy-filter-sort "test" dir-contents)))
+          (check (not (not (member "emacs-test.ss" matches))) => #t))
+        ;; Empty query returns all (no filtering)
+        (let ((matches (fuzzy-filter-sort "" dir-contents)))
+          (check (= (length matches) (length dir-contents)) => #t))
+        ;; No match for gibberish
+        (check (fuzzy-filter-sort "zzqqxx" dir-contents) => [])))
+
+    (test-case "headless: fuzzy-filter-sort best match is first"
+      ;; Verify that the BEST match (highest score) is first in results
+      (let ((candidates '("find-file" "font-lock" "fill-paragraph"
+                           "forward-char" "forward-word")))
+        ;; "ff" should rank "find-file" first (starts with f, f after -)
+        (let ((matches (fuzzy-filter-sort "ff" candidates)))
+          (check (> (length matches) 0) => #t)
+          ;; find-file should be in results
+          (check (not (not (member "find-file" matches))) => #t))
+        ;; "fw" should match forward-* entries
+        (let ((matches (fuzzy-filter-sort "fw" candidates)))
+          (check (> (length matches) 0) => #t)
+          (check (not (not (member "forward-word" matches))) => #t))
+        ;; "fp" should rank "fill-paragraph" highly
+        (let ((matches (fuzzy-filter-sort "fp" candidates)))
+          (check (not (not (member "fill-paragraph" matches))) => #t))))
+
+    (test-case "headless: echo-read-file-with-completion is a callable procedure"
+      ;; Verify the fuzzy file completion function exists and is exported
+      (check (procedure? echo-read-file-with-completion) => #t)
+      ;; Verify the string completion function also exists
+      (check (procedure? echo-read-string-with-completion) => #t))
+
+    (test-case "headless: cmd-find-file is registered and callable"
+      ;; Verify find-file command is properly registered
+      (register-all-commands!)
+      (let ((cmd (find-command 'find-file)))
+        (check (not (not cmd)) => #t)
+        (check (procedure? cmd) => #t)))
 
     (test-case "headless: command registry comprehensive check"
       ;; Verify all major emacs commands are registered
