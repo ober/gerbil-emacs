@@ -69,6 +69,7 @@
 (import :std/sugar
         :std/sort
         :std/srfi/13
+        :std/misc/string
         :std/text/base64
         :gerbil-emacs/qt/sci-shim
         :gerbil-emacs/core
@@ -462,6 +463,132 @@
   "Open a file without any processing (same as find-file)."
   (cmd-find-file app))
 
+;;;============================================================================
+;;; Org structure templates (<s TAB, <e TAB, etc.)
+;;;============================================================================
+
+(def *qt-org-structure-templates*
+  '(("s" "SRC"      #t)    ;; <s -> #+BEGIN_SRC ... #+END_SRC
+    ("e" "EXAMPLE"  #f)    ;; <e -> #+BEGIN_EXAMPLE ... #+END_EXAMPLE
+    ("q" "QUOTE"    #f)    ;; <q -> #+BEGIN_QUOTE ... #+END_QUOTE
+    ("v" "VERSE"    #f)    ;; <v -> #+BEGIN_VERSE ... #+END_VERSE
+    ("c" "CENTER"   #f)    ;; <c -> #+BEGIN_CENTER ... #+END_CENTER
+    ("C" "COMMENT"  #f)    ;; <C -> #+BEGIN_COMMENT ... #+END_COMMENT
+    ("l" "EXPORT latex" #f) ;; <l -> #+BEGIN_EXPORT latex ... #+END_EXPORT
+    ("h" "EXPORT html" #f)  ;; <h -> #+BEGIN_EXPORT html ... #+END_EXPORT
+    ("a" "EXPORT ascii" #f))) ;; <a -> #+BEGIN_EXPORT ascii ... #+END_EXPORT
+
+(def (qt-org-template-lookup key)
+  "Look up org template by shortcut key. Returns (block-type has-lang?) or #f."
+  (let loop ((ts *qt-org-structure-templates*))
+    (if (null? ts) #f
+      (let ((t (car ts)))
+        (if (string=? (car t) key)
+          (cdr t)
+          (loop (cdr ts)))))))
+
+(def (qt-try-org-template-expand app)
+  "Try to expand an org structure template at point. Returns #t if expanded."
+  (let* ((ed (current-qt-editor app))
+         (pos (qt-plain-text-edit-cursor-position ed))
+         (line-num (sci-send ed SCI_LINEFROMPOSITION pos))
+         (line-start (sci-send ed SCI_POSITIONFROMLINE line-num))
+         (line-end (qt-plain-text-edit-line-end-position ed line-num))
+         (text (qt-plain-text-edit-text ed))
+         (line (substring text line-start (min line-end (string-length text))))
+         (trimmed (string-trim line)))
+    (if (and (>= (string-length trimmed) 2)
+             (char=? (string-ref trimmed 0) #\<))
+      (let* ((key (substring trimmed 1 (string-length trimmed)))
+             (tmpl (qt-org-template-lookup key)))
+        (if (not tmpl) #f
+          (let* ((block-type (car tmpl))
+                 ;; Preserve leading whitespace
+                 (indent (let loop ((i 0))
+                           (if (and (< i (string-length line))
+                                    (char=? (string-ref line i) #\space))
+                             (loop (+ i 1))
+                             (substring line 0 i))))
+                 ;; For EXPORT blocks, end tag is just EXPORT
+                 (end-type (let ((sp (string-contains block-type " ")))
+                             (if sp (substring block-type 0 sp) block-type)))
+                 (begin-line (string-append indent "#+BEGIN_" block-type))
+                 (end-line (string-append indent "#+END_" end-type))
+                 (expansion (string-append begin-line "\n"
+                                           indent "\n"
+                                           end-line)))
+            ;; Select the <X line and replace with the expansion
+            (qt-plain-text-edit-set-selection! ed line-start line-end)
+            (qt-plain-text-edit-insert-text! ed expansion)
+            ;; Place cursor on the blank line inside the block
+            (qt-plain-text-edit-set-cursor-position! ed
+              (+ line-start (string-length begin-line) 1
+                 (string-length indent)))
+            (echo-message! (app-state-echo app)
+              (string-append "Expanded <" key " to #+BEGIN_" block-type))
+            #t)))
+      #f)))
+
+(def (qt-org-buffer? buf)
+  "Check if a buffer is an org-mode file."
+  (or (eq? (buffer-lexer-lang buf) 'org)
+      (let ((path (buffer-file-path buf)))
+        (and path (string-suffix? ".org" path)))))
+
+(def (qt-org-cycle app)
+  "Cycle visibility of org heading children (fold/unfold) in Qt editor.
+   Returns #t if on a heading and toggled, #f otherwise."
+  (let* ((ed (current-qt-editor app))
+         (pos (qt-plain-text-edit-cursor-position ed))
+         (cur-line (sci-send ed SCI_LINEFROMPOSITION pos))
+         (text (qt-plain-text-edit-text ed))
+         (lines (string-split text #\newline))
+         (echo (app-state-echo app)))
+    (if (>= cur-line (length lines))
+      #f
+      (let ((line (list-ref lines cur-line)))
+        (if (not (and (> (string-length line) 0)
+                      (char=? (string-ref line 0) #\*)))
+          #f  ;; Not on a heading — let TAB do normal behavior
+          ;; Toggle fold level for children of this heading
+          (let* ((level (let loop ((i 0))
+                          (if (and (< i (string-length line))
+                                   (char=? (string-ref line i) #\*))
+                            (loop (+ i 1)) i)))
+                 ;; Find range of children
+                 (end-line (let loop ((i (+ cur-line 1)))
+                             (cond
+                               ((>= i (length lines)) i)
+                               ((let ((l (list-ref lines i)))
+                                  (and (> (string-length l) 0)
+                                       (char=? (string-ref l 0) #\*)
+                                       (<= (let loop2 ((j 0))
+                                             (if (and (< j (string-length l))
+                                                      (char=? (string-ref l j) #\*))
+                                               (loop2 (+ j 1)) j))
+                                           level)))
+                                i)
+                               (else (loop (+ i 1)))))))
+            (if (= end-line (+ cur-line 1))
+              (begin
+                (echo-message! echo "No children to fold")
+                #t)  ;; Still on heading, handled
+              (let ((currently-visible
+                      (sci-send ed SCI_GETLINEVISIBLE (+ cur-line 1))))
+                ;; SCI_GETLINEVISIBLE returns 0/1 integer;
+                ;; 0 is truthy in Scheme, so compare with = 1
+                (if (= currently-visible 1)
+                  ;; Currently visible -> hide
+                  (let loop ((i (+ cur-line 1)))
+                    (when (< i end-line)
+                      (sci-send ed SCI_HIDELINES i i)
+                      (loop (+ i 1))))
+                  ;; Currently hidden -> show
+                  (sci-send ed SCI_SHOWLINES (+ cur-line 1) (- end-line 1)))
+                (echo-message! echo
+                  (if (= currently-visible 1) "Folded" "Unfolded"))
+                #t))))))))  ;; Handled
+
 (def (cmd-indent-or-complete app)
   (let ((buf (current-qt-buffer app)))
     (cond
@@ -477,32 +604,37 @@
        ;; If snippet is active, jump to next field
        (if *snippet-active*
          (cmd-snippet-next-field app)
-         ;; Try snippet expansion first, then completion
-         (if (cmd-snippet-expand app)
-           (void)  ;; Snippet expanded
-           (let* ((ed (current-qt-editor app))
-                  (prefix (get-word-prefix ed)))
-             (if (string=? prefix "")
-               ;; No word prefix — just indent
-               (qt-plain-text-edit-insert-text! ed "  ")
-               ;; Have a prefix — show completions
-               (let* ((text (qt-plain-text-edit-text ed))
-                      (words (collect-buffer-words text))
-                      ;; Filter to matching words
-                      (matches (filter (lambda (w)
-                                         (and (> (string-length w) (string-length prefix))
-                                              (string-prefix? prefix w)))
-                                       words))
-                      (sorted (sort matches string<?)))
-                 (if (null? sorted)
-                   (qt-plain-text-edit-insert-text! ed "  ")
-                   (let ((c (get-or-create-completer! ed app)))
-                     (qt-completer-set-model-strings! c sorted)
-                     (qt-completer-set-completion-prefix! c prefix)
-                     ;; Show popup at cursor position
-                     (let* ((pos (qt-plain-text-edit-cursor-position ed))
-                            (line (qt-plain-text-edit-cursor-line ed)))
-                       (qt-completer-complete-rect! c 0 0 200 20)))))))))))))
+         ;; For org-mode buffers: try template expansion, then heading fold/unfold
+         (if (and (qt-org-buffer? buf)
+                  (or (qt-try-org-template-expand app)
+                      (qt-org-cycle app)))
+           (void)  ;; Org template expanded or heading toggled
+           ;; Try snippet expansion, then completion
+           (if (cmd-snippet-expand app)
+             (void)  ;; Snippet expanded
+             (let* ((ed (current-qt-editor app))
+                    (prefix (get-word-prefix ed)))
+               (if (string=? prefix "")
+                 ;; No word prefix — just indent
+                 (qt-plain-text-edit-insert-text! ed "  ")
+                 ;; Have a prefix — show completions
+                 (let* ((text (qt-plain-text-edit-text ed))
+                        (words (collect-buffer-words text))
+                        ;; Filter to matching words
+                        (matches (filter (lambda (w)
+                                           (and (> (string-length w) (string-length prefix))
+                                                (string-prefix? prefix w)))
+                                         words))
+                        (sorted (sort matches string<?)))
+                   (if (null? sorted)
+                     (qt-plain-text-edit-insert-text! ed "  ")
+                     (let ((c (get-or-create-completer! ed app)))
+                       (qt-completer-set-model-strings! c sorted)
+                       (qt-completer-set-completion-prefix! c prefix)
+                       ;; Show popup at cursor position
+                       (let* ((pos (qt-plain-text-edit-cursor-position ed))
+                              (line (qt-plain-text-edit-cursor-line ed)))
+                         (qt-completer-complete-rect! c 0 0 200 20))))))))))))))
 
 (def (cmd-quit app)
   ;; Check for unsaved buffers
@@ -1426,6 +1558,8 @@
   (register-command! 'org-move-subtree-down cmd-org-move-subtree-down)
   (register-command! 'org-outline cmd-org-outline)
   (register-command! 'org-table-delete-column cmd-org-table-delete-column)
+  (register-command! 'org-template-expand
+    (lambda (app) (qt-try-org-template-expand app)))
   ;; Markdown
   (register-command! 'markdown-promote cmd-markdown-promote)
   (register-command! 'markdown-demote cmd-markdown-demote)

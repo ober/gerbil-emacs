@@ -44,6 +44,8 @@
 (def *mb-qt-app* #f)      ; Reference to the Qt application for process-events
 (def *mb-editor* #f)      ; Reference to the editor widget (to restore focus)
 (def *mb-result* #f)      ; Box: #f = still running, (list text) = accepted, (list) = cancelled
+(def *mb-completions* []) ; Stored completions for Tab cycling
+(def *mb-tab-idx* 0)      ; Current Tab cycle index
 
 (def *mb-style*
   "QWidget { background: #1e1e1e; border-top: 1px solid #484848; }
@@ -80,12 +82,27 @@
     (qt-on-return-pressed! input
       (lambda ()
         (set! *mb-result* (list (qt-line-edit-text input)))))
-    ;; Connect key handler for Escape
+    ;; Connect key handler for Escape and Tab
     (qt-on-key-press! input
       (lambda ()
         (let ((key (qt-last-key-code)))
-          (when (= key QT_KEY_ESCAPE)
-            (set! *mb-result* (list))))))
+          (cond
+            ((= key QT_KEY_ESCAPE)
+             (set! *mb-result* (list)))
+            ((= key QT_KEY_TAB)
+             ;; Tab completion: cycle through matching completions
+             (when (pair? *mb-completions*)
+               (let* ((current (qt-line-edit-text input))
+                      (current-lower (string-downcase current))
+                      (matches (filter
+                                 (lambda (c)
+                                   (string-contains (string-downcase c) current-lower))
+                                 *mb-completions*)))
+                 (when (pair? matches)
+                   (let ((idx (modulo *mb-tab-idx* (length matches))))
+                     (qt-line-edit-set-text! input (list-ref matches idx))
+                     (set! *mb-tab-idx* (+ *mb-tab-idx* 1)))))))
+            (else (void))))))
     ;; Store references
     (set! *mb-container* container)
     (set! *mb-prompt* prompt)
@@ -139,9 +156,15 @@
     ;; Set up the minibuffer
     (qt-label-set-text! *mb-prompt* prompt)
     (qt-line-edit-set-text! *mb-input* "")
+    ;; Store completions for Tab cycling
+    (set! *mb-completions* completions)
+    (set! *mb-tab-idx* 0)
     ;; Attach completer
     (let ((completer (qt-completer-create completions)))
-      (qt-completer-set-case-sensitivity! completer QT_CASE_INSENSITIVE)
+      ;; Note: QT_CASE_INSENSITIVE is 0, which is truthy in Gerbil.
+      ;; qt-completer-set-case-sensitivity! takes a boolean (sensitive?),
+      ;; so we must pass #f for case-insensitive matching.
+      (qt-completer-set-case-sensitivity! completer #f)
       (qt-completer-set-filter-mode! completer QT_MATCH_CONTAINS)
       (qt-completer-set-max-visible-items! completer 15)
       (qt-completer-set-widget! completer *mb-input*)
@@ -162,7 +185,9 @@
                           (let ((t (car *mb-result*)))
                             (if (string=? t "") #f t)))
                         #f)))
-            ;; Clean up completer
+            ;; Clean up completer and tab state
+            (set! *mb-completions* [])
+            (set! *mb-tab-idx* 0)
             (qt-line-edit-set-completer! *mb-input* #f)
             (qt-completer-destroy! completer)
             ;; Restore: hide minibuffer, show echo label, refocus editor

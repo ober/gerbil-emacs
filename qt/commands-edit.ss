@@ -189,6 +189,11 @@
 (def (isearch-handle-key! app code mods text)
   "Handle a key event during isearch mode. Returns #t if handled."
   (cond
+    ;; Bare modifier keys (Shift, Ctrl, Alt, Meta, etc.) — ignore
+    ;; Qt key codes 0x01000020-0x01000026 are modifier-only events.
+    ;; Without this, pressing Ctrl (before S) would exit isearch.
+    ((and (>= code #x01000020) (<= code #x01000026))
+     #t)
     ;; C-s: search forward / next match
     ((and (= code QT_KEY_S) (= (bitwise-and mods QT_MOD_CTRL) QT_MOD_CTRL))
      (if (= (string-length *isearch-query*) 0)
