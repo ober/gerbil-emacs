@@ -9,6 +9,7 @@
         :gerbil-scintilla/scintilla
         :gerbil-scintilla/constants
         :gerbil-scintilla/tui
+        :gerbil-scintilla/lexer
         :gerbil-emacs/core
         :gerbil-emacs/repl
         :gerbil-emacs/eshell
@@ -3984,6 +3985,116 @@
              (buf (buffer-create! "*scratch*" ed #f)))
         (update-buffer-mod-time! buf)
         (check (hash-get *buffer-mod-times* buf) => #f)))
+
+    ;;=========================================================================
+    ;; Regression tests: Python syntax highlighting
+    ;;=========================================================================
+
+    (test-case "headless: Python lexer activates and applies styles"
+      ;; Regression: SCI_SETILEXER_MSG was 4030 (wrong) instead of 4033.
+      ;; This caused zero syntax highlighting for ALL languages in TUI.
+      (let ((ed (create-scintilla-editor width: 80 height: 24)))
+        ;; Set up Python highlighting using the same path as the real code
+        (setup-highlighting-for-file! ed "test.py")
+        ;; Set Python source code
+        (editor-set-text ed "def hello():\n    pass\n")
+        (editor-colourise ed 0 -1)
+        ;; Lexer should be active (SCLEX_PYTHON = 2)
+        (check (editor-get-lexer ed) => 2)
+        ;; 'def' at position 0 should be keyword style (SCE_P_WORD = 5)
+        (check (send-message ed SCI_GETSTYLEAT 0 0) => 5)
+        ;; 'pass' at position 17 should also be keyword style
+        (check (send-message ed SCI_GETSTYLEAT 17 0) => 5)
+        ;; 'hello' at position 4 should be defname style (SCE_P_DEFNAME = 9)
+        (check (send-message ed SCI_GETSTYLEAT 4 0) => 9)))
+
+    (test-case "headless: Gerbil/Scheme lexer activates"
+      (let ((ed (create-scintilla-editor width: 80 height: 24)))
+        (setup-highlighting-for-file! ed "test.ss")
+        (editor-set-text ed "(define (hello x)\n  (+ x 1))\n")
+        (editor-colourise ed 0 -1)
+        ;; SCLEX_LISP = 21
+        (check (editor-get-lexer ed) => 21)))
+
+    (test-case "headless: detect-file-language maps extensions correctly"
+      (check (detect-file-language "foo.py") => 'python)
+      (check (detect-file-language "foo.ss") => 'scheme)
+      (check (detect-file-language "foo.js") => 'javascript)
+      (check (detect-file-language "Makefile") => 'makefile)
+      (check (detect-file-language "foo.rs") => 'rust)
+      (check (detect-file-language "foo.txt") => #f))
+
+    ;;=========================================================================
+    ;; Regression tests: read-only per-document, not per-widget
+    ;;=========================================================================
+
+    (test-case "headless: read-only is per-document not per-editor"
+      ;; Regression: QScintilla's setReadOnly() is widget-level, persisting
+      ;; across buffer switches. After viewing a read-only buffer (like
+      ;; *Buffer List*), all subsequent buffers become uneditable.
+      ;; Fix: use SCI_SETREADONLY (per-document) instead.
+      (let* ((ed (create-scintilla-editor width: 80 height: 24))
+             (doc1 (send-message ed SCI_CREATEDOCUMENT 0 0))
+             (doc2 (send-message ed SCI_CREATEDOCUMENT 0 0)))
+        ;; Attach doc1, set read-only, verify
+        (send-message ed SCI_SETDOCPOINTER 0 doc1)
+        (send-message ed SCI_SETREADONLY 1 0)
+        (check (send-message ed SCI_GETREADONLY 0 0) => 1)
+        ;; Switch to doc2 — should NOT be read-only
+        (send-message ed SCI_SETDOCPOINTER 0 doc2)
+        (check (send-message ed SCI_GETREADONLY 0 0) => 0)
+        ;; Switch back to doc1 — should still be read-only
+        (send-message ed SCI_SETDOCPOINTER 0 doc1)
+        (check (send-message ed SCI_GETREADONLY 0 0) => 1)
+        ;; Cleanup
+        (send-message ed SCI_RELEASEDOCUMENT 0 doc1)
+        (send-message ed SCI_RELEASEDOCUMENT 0 doc2)))
+
+    (test-case "headless: read-only toggle allows typing"
+      ;; Simulates: set read-only (like buffer-list), clear it, verify typing.
+      (let ((ed (create-scintilla-editor width: 80 height: 24)))
+        (editor-set-text ed "buffer list content")
+        ;; Set read-only
+        (editor-set-read-only ed #t)
+        (check (editor-get-read-only? ed) => #t)
+        ;; Clear read-only (like switching to writable buffer)
+        (editor-set-read-only ed #f)
+        (check (editor-get-read-only? ed) => #f)
+        ;; Typing should work
+        (editor-set-text ed "")
+        (editor-goto-pos ed 0)
+        (editor-insert-text ed 0 "hello")
+        (check (editor-get-text ed) => "hello")))
+
+    (test-case "headless: REPL typing works after read-only cleared"
+      ;; Regression: After viewing *Buffer List* (read-only), switching to
+      ;; *REPL* made it uneditable because widget-level read-only persisted.
+      ;; Test: set read-only, clear it, then type in REPL mode.
+      (let* ((ed (create-scintilla-editor width: 80 height: 24))
+             (buf (make-buffer "*REPL*" #f
+                    (send-message ed SCI_GETDOCPOINTER) #f #f #f #f))
+             (win (make-edit-window ed buf 0 0 80 24 0))
+             (fr (make-frame [win] 0 80 24 'vertical))
+             (app (new-app-state fr)))
+        (buffer-list-add! buf)
+        (set! (buffer-lexer-lang buf) 'repl)
+        ;; Simulate having viewed a read-only buffer
+        (editor-set-read-only ed #t)
+        (check (editor-get-read-only? ed) => #t)
+        ;; Clear read-only (as buffer-attach! does for non-readonly buffers)
+        (editor-set-read-only ed #f)
+        ;; Set up REPL content
+        (editor-set-text ed "gerbil> ")
+        ;; Type in REPL via cmd-self-insert!
+        (let ((rs (make-repl-state #f 8 [])))
+          (hash-put! *repl-state* buf rs)
+          (editor-goto-pos ed 8)
+          (for-each (lambda (ch) (cmd-self-insert! app (char->integer ch)))
+                    (string->list "(+ 1 2)"))
+          (check (string-contains (editor-get-text ed) "(+ 1 2)") => 8)
+          (hash-remove! *repl-state* buf))
+        ;; Cleanup
+        (buffer-list-remove! buf)))
 
     ))
 

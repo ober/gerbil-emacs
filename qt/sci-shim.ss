@@ -350,10 +350,13 @@
 ;;;============================================================================
 
 (def (qt-plain-text-edit-set-read-only! sci ro?)
-  (qt-scintilla-set-read-only! sci ro?))
+  "Set read-only on the DOCUMENT (SCI_SETREADONLY), not the widget.
+   Widget-level setReadOnly() persists across buffer switches, breaking
+   typing in buffers viewed after a read-only buffer."
+  (sci-send sci SCI_SETREADONLY (if ro? 1 0)))
 
 (def (qt-plain-text-edit-read-only? sci)
-  (qt-scintilla-read-only? sci))
+  (not (zero? (sci-send sci SCI_GETREADONLY))))
 
 (def (qt-plain-text-edit-set-line-wrap! sci wrap?)
   (sci-send sci SCI_SETWRAPMODE
