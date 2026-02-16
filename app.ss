@@ -111,7 +111,11 @@
     app))
 
 (def (open-file-in-app! app filename)
-  "Open a file in a new buffer."
+  "Open a file or directory in a new buffer."
+  ;; Directory -> dired
+  (if (and (file-exists? filename)
+           (eq? 'directory (file-info-type (file-info filename))))
+    (dired-open-directory! app filename)
   (let* ((name (uniquify-buffer-name filename))
          (ed (current-editor app))
          (buf (buffer-create! name ed filename))
@@ -150,7 +154,7 @@
       (when mode
         (buffer-local-set! buf 'major-mode mode)
         (let ((mode-cmd (find-command mode)))
-          (when mode-cmd (mode-cmd app)))))))
+          (when mode-cmd (mode-cmd app))))))))
 
 ;;;============================================================================
 ;;; REPL output polling

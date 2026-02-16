@@ -162,6 +162,9 @@
     (gxc: "qt/commands"        "-cc-options" ,qt-cc-opts "-ld-options" ,qt-ld-opts)
     (gxc: "qt/menubar"  "-cc-options" ,qt-cc-opts "-ld-options" ,qt-ld-opts)
     (gxc: "qt/app"      "-cc-options" ,qt-cc-opts "-ld-options" ,qt-ld-opts)
+    (exe: "qt-highlight-test" bin: "qt-highlight-test"
+          "-cc-options" ,qt-cc-opts
+          "-ld-options" ,qt-ld-opts)
     (exe: "qt/main" bin: "gerbil-emacs-qt"
           "-cc-options" ,qt-cc-opts
           "-ld-options" ,qt-ld-opts)))

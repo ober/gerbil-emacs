@@ -215,9 +215,9 @@
 ;;; Cursor movement
 ;;;============================================================================
 
-(def (qt-plain-text-edit-move-cursor! sci op . args)
-  "Move cursor using QT_CURSOR_* constants. Optional second arg: QT_KEEP_ANCHOR."
-  (let* ((keep-anchor? (and (pair? args) (= (car args) QT_KEEP_ANCHOR)))
+(def (qt-plain-text-edit-move-cursor! sci op mode: (mode #f))
+  "Move cursor using QT_CURSOR_* constants. Optional mode: QT_KEEP_ANCHOR."
+  (let* ((keep-anchor? (and mode (= mode QT_KEEP_ANCHOR)))
          (cur-pos (sci-send sci SCI_GETCURRENTPOS))
          (new-pos
           (cond

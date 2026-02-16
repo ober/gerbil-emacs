@@ -474,8 +474,15 @@
       (set! (buffer-lexer-lang buf) lang)
       ;; Reset to dark theme base
       (apply-base-dark-theme! ed)
-      ;; Set lexer language
-      (qt-scintilla-set-lexer-language! ed lexer-name)
+      ;; Set lexer language — QScintilla has wrapper classes for common languages,
+      ;; but not for lisp, rust, diff, perl, haskell, props.
+      ;; For those, use SCI_SETLEXERLANGUAGE to invoke Lexilla directly.
+      (if (member lexer-name '("lisp" "rust" "diff" "perl" "haskell" "props"))
+        (begin
+          ;; No QsciLexer wrapper — use raw Scintilla message and force colorize
+          (sci-send/string ed SCI_SETLEXERLANGUAGE lexer-name)
+          (sci-send ed SCI_COLOURISE 0 -1))
+        (qt-scintilla-set-lexer-language! ed lexer-name))
       ;; Apply lexer-specific styles and keywords
       (case lang
         ((scheme lisp)
