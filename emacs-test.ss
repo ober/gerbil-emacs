@@ -5856,6 +5856,103 @@
           ;; Should have inserted spaces instead
           (check (not (not (string-contains text "  "))) => #t))))
 
+    (test-case "headless: TAB <s expands in large org file with preceding content"
+      ;; Regression: cursor position could exceed string-length when file
+      ;; has multi-byte chars or many lines, causing template expand to silently fail.
+      (let* ((ed (create-scintilla-editor width: 80 height: 24))
+             (buf (make-buffer "big.org" "/tmp/big.org"
+                    (send-message ed SCI_GETDOCPOINTER) #f #f #f #f))
+             (win (make-edit-window ed buf 0 0 80 24 0))
+             (fr (make-frame [win] 0 80 24 'vertical))
+             (app (new-app-state fr))
+             ;; Build a large org file: many heading/body lines, then <s at end
+             (body (let loop ((i 0) (acc "#+title: Test\n\n"))
+                     (if (>= i 50)
+                       (string-append acc "<s")
+                       (loop (+ i 1)
+                             (string-append acc "** Heading " (number->string i) "\n"
+                                            "Body line with some text here.\n"))))))
+        (editor-set-text ed body)
+        ;; Place cursor at end (after "<s")
+        (editor-goto-pos ed (string-length body))
+        (cmd-indent-or-complete app)
+        (let ((text (editor-get-text ed)))
+          (check (not (not (string-contains text "#+BEGIN_SRC"))) => #t)
+          (check (not (not (string-contains text "#+END_SRC"))) => #t))))
+
+    (test-case "headless: TAB <s expands when <s is in the middle of an org file"
+      (let* ((ed (create-scintilla-editor width: 80 height: 24))
+             (buf (make-buffer "mid.org" "/tmp/mid.org"
+                    (send-message ed SCI_GETDOCPOINTER) #f #f #f #f))
+             (win (make-edit-window ed buf 0 0 80 24 0))
+             (fr (make-frame [win] 0 80 24 'vertical))
+             (app (new-app-state fr)))
+        ;; <s is on line 3 (0-indexed), not at start or end
+        (editor-set-text ed "#+title: Test\n\n** Section\n<s\nMore text here\n")
+        ;; Place cursor after "<s" (position = 28: "#+title: Test\n\n** Section\n<s" = 28 chars)
+        (let ((target-pos (string-contains "#+title: Test\n\n** Section\n<s\nMore text here\n" "<s")))
+          (editor-goto-pos ed (+ target-pos 2)))
+        (cmd-indent-or-complete app)
+        (let ((text (editor-get-text ed)))
+          (check (not (not (string-contains text "#+BEGIN_SRC"))) => #t)
+          (check (not (not (string-contains text "#+END_SRC"))) => #t)
+          ;; The rest of the file should still be there
+          (check (not (not (string-contains text "More text here"))) => #t))))
+
+    (test-case "headless: TAB expands all org template types"
+      ;; Test <v, <c, <C, <l, <h, <a (not just s/e/q)
+      (for-each
+        (lambda (pair)
+          (let* ((trigger (car pair))
+                 (block-type (cdr pair))
+                 (ed (create-scintilla-editor width: 80 height: 24))
+                 (buf (make-buffer "tmpl.org" "/tmp/tmpl.org"
+                        (send-message ed SCI_GETDOCPOINTER) #f #f #f #f))
+                 (win (make-edit-window ed buf 0 0 80 24 0))
+                 (fr (make-frame [win] 0 80 24 'vertical))
+                 (app (new-app-state fr)))
+            (editor-set-text ed (string-append "<" trigger))
+            (editor-goto-pos ed (+ 1 (string-length trigger)))
+            (cmd-indent-or-complete app)
+            (let ((text (editor-get-text ed)))
+              (check (not (not (string-contains text
+                (string-append "#+BEGIN_" block-type)))) => #t))))
+        '(("v" . "VERSE") ("c" . "CENTER") ("C" . "COMMENT")
+          ("l" . "EXPORT") ("h" . "EXPORT") ("a" . "EXPORT"))))
+
+    (test-case "headless: TAB does not expand unknown org template trigger"
+      (let* ((ed (create-scintilla-editor width: 80 height: 24))
+             (buf (make-buffer "test.org" "/tmp/test.org"
+                    (send-message ed SCI_GETDOCPOINTER) #f #f #f #f))
+             (win (make-edit-window ed buf 0 0 80 24 0))
+             (fr (make-frame [win] 0 80 24 'vertical))
+             (app (new-app-state fr)))
+        ;; <z is not a valid template trigger
+        (editor-set-text ed "<z")
+        (editor-goto-pos ed 2)
+        (cmd-indent-or-complete app)
+        (let ((text (editor-get-text ed)))
+          ;; Should NOT have expanded
+          (check (not (string-contains text "#+BEGIN")) => #t)
+          ;; Should have indented instead
+          (check (not (not (string-contains text "  "))) => #t))))
+
+    (test-case "headless: TAB <s with leading whitespace preserves indent"
+      (let* ((ed (create-scintilla-editor width: 80 height: 24))
+             (buf (make-buffer "indent.org" "/tmp/indent.org"
+                    (send-message ed SCI_GETDOCPOINTER) #f #f #f #f))
+             (win (make-edit-window ed buf 0 0 80 24 0))
+             (fr (make-frame [win] 0 80 24 'vertical))
+             (app (new-app-state fr)))
+        ;; <s with 4 spaces of leading whitespace
+        (editor-set-text ed "    <s")
+        (editor-goto-pos ed 6)
+        (cmd-indent-or-complete app)
+        (let ((text (editor-get-text ed)))
+          (check (not (not (string-contains text "#+BEGIN_SRC"))) => #t)
+          ;; The BEGIN line should preserve the 4-space indent
+          (check (not (not (string-contains text "    #+BEGIN_SRC"))) => #t))))
+
     ;;=========================================================================
     ;; Hippie-expand / Dabbrev completion tests
     ;;=========================================================================

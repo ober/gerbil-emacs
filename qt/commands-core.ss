@@ -1185,7 +1185,9 @@ Returns (path . line) or #f. Handles file:line format."
 (def (get-word-prefix ed)
   "Get the word prefix before the cursor."
   (let* ((pos (qt-plain-text-edit-cursor-position ed))
-         (text (qt-plain-text-edit-text ed)))
+         (text (qt-plain-text-edit-text ed))
+         (len (string-length text))
+         (pos (min pos len)))
     (let loop ((i (- pos 1)))
       (if (or (< i 0) (not (word-char-for-complete? (string-ref text i))))
         (if (< (+ i 1) pos)

@@ -134,12 +134,16 @@
     "editor-cmds-b"
     "editor-cmds-c"
     "editor"
+    ;; IPC server for emacsclient-like remote file opening
+    "ipc"
     "app"
     "emacs-test"
     "persist-test"
     (exe: "main" bin: "gerbil-emacs"
           "-cc-options" ,cc-opts
           "-ld-options" ,ld-opts)
+    ;; emacsclient-like client binary
+    (exe: "emacsclient" bin: "gemacs-client")
     ;; Qt backend
     (gxc: "qt/keymap"   "-cc-options" ,qt-cc-opts "-ld-options" ,qt-ld-opts)
     (gxc: "qt/sci-shim" "-cc-options" ,qt-cc-opts "-ld-options" ,qt-ld-opts)

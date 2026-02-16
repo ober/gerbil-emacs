@@ -20,7 +20,8 @@
         :gerbil-emacs/qt/highlight
         :gerbil-emacs/qt/image
         :gerbil-emacs/qt/commands
-        :gerbil-emacs/qt/menubar)
+        :gerbil-emacs/qt/menubar
+        :gerbil-emacs/ipc)
 
 ;;;============================================================================
 ;;; Qt Application
@@ -734,8 +735,20 @@
       (qt-tabbar-update! app)
       (qt-update-frame-title! app)
 
-      ;; Enter Qt event loop
-      (qt-app-exec! qt-app))))
+      ;; Start IPC server for gemacs-client
+      (start-ipc-server!)
+      (let ((ipc-timer (qt-timer-create)))
+        (qt-on-timeout! ipc-timer
+          (lambda ()
+            (for-each (lambda (f) (qt-open-file! app f))
+                      (ipc-poll-files!))))
+        (qt-timer-start! ipc-timer 200))
+
+      ;; Enter Qt event loop (blocks until quit)
+      (qt-app-exec! qt-app)
+
+      ;; Cleanup IPC server on exit
+      (stop-ipc-server!))))
 
 ;;;============================================================================
 ;;; File opening helper

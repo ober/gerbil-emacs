@@ -5,7 +5,8 @@
 (import :gerbil-emacs/editor
         :gerbil-emacs/window
         :gerbil-scintilla/tui
-        (only-in :gerbil-emacs/app app-init! app-run!))
+        (only-in :gerbil-emacs/app app-init! app-run!)
+        (only-in :gerbil-emacs/ipc stop-ipc-server!))
 
 (include "manifest.ss")
 
@@ -27,5 +28,6 @@
        (try
          (app-run! app)
          (finally
+           (stop-ipc-server!)
            (frame-shutdown! (app-state-frame app))
            (tui-shutdown!)))))))

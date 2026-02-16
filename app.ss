@@ -20,7 +20,8 @@
         :gerbil-emacs/editor
         :gerbil-emacs/editor-core
         :gerbil-emacs/highlight
-        :gerbil-emacs/persist)
+        :gerbil-emacs/persist
+        :gerbil-emacs/ipc)
 
 ;;;============================================================================
 ;;; Application initialization
@@ -108,6 +109,9 @@
     (for-each (lambda (file) (open-file-in-app! app file))
               files)
 
+    ;; Start IPC server for gemacs-client
+    (start-ipc-server!)
+
     app))
 
 (def (open-file-in-app! app filename)
@@ -155,6 +159,15 @@
         (buffer-local-set! buf 'major-mode mode)
         (let ((mode-cmd (find-command mode)))
           (when mode-cmd (mode-cmd app))))))))
+
+;;;============================================================================
+;;; IPC polling (files opened via gemacs-client)
+;;;============================================================================
+
+(def (poll-ipc-files! app)
+  "Open any files received via the IPC server."
+  (for-each (lambda (f) (open-file-in-app! app f))
+            (ipc-poll-files!)))
 
 ;;;============================================================================
 ;;; REPL output polling
@@ -273,6 +286,9 @@
 
       ;; Poll terminal PTY output
       (poll-terminal-output! app)
+
+      ;; Poll IPC queue for files opened via gemacs-client
+      (poll-ipc-files! app)
 
       ;; Tick pulse highlight countdown
       (pulse-tick!)
@@ -535,5 +551,6 @@
               (let ((win (find-window-for-buffer fr scratch-buf)))
                 (when win
                   (scratch-save! (editor-get-text (edit-window-editor win)))))))
+          (stop-ipc-server!)
           (frame-shutdown! (app-state-frame app))
           (tui-shutdown!))))))

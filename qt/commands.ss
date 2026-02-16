@@ -488,17 +488,19 @@
 (def (qt-try-org-template-expand app)
   "Try to expand an org structure template at point. Returns #t if expanded."
   (let* ((ed (current-qt-editor app))
-         (pos (qt-plain-text-edit-cursor-position ed))
-         (line-num (sci-send ed SCI_LINEFROMPOSITION pos))
-         (raw-start (sci-send ed SCI_POSITIONFROMLINE line-num))
-         (raw-end (qt-plain-text-edit-line-end-position ed line-num))
          (text (qt-plain-text-edit-text ed))
          (text-len (string-length text))
-         (line-start (min raw-start text-len))
-         (line-end (min raw-end text-len))
-         (line (if (<= line-start line-end)
-                 (substring text line-start line-end)
-                 ""))
+         (pos (min (qt-plain-text-edit-cursor-position ed) text-len))
+         ;; Find line boundaries from text (avoids byte/char position mismatch)
+         (line-start (let loop ((i (- pos 1)))
+                       (cond ((< i 0) 0)
+                             ((char=? (string-ref text i) #\newline) (+ i 1))
+                             (else (loop (- i 1))))))
+         (line-end (let loop ((i pos))
+                     (cond ((>= i text-len) text-len)
+                           ((char=? (string-ref text i) #\newline) i)
+                           (else (loop (+ i 1))))))
+         (line (substring text line-start line-end))
          (trimmed (string-trim line)))
     (if (and (>= (string-length trimmed) 2)
              (char=? (string-ref trimmed 0) #\<))
@@ -520,13 +522,17 @@
                  (expansion (string-append begin-line "\n"
                                            indent "\n"
                                            end-line)))
-            ;; Select the <X line and replace with the expansion
-            (qt-plain-text-edit-set-selection! ed line-start line-end)
-            (qt-plain-text-edit-insert-text! ed expansion)
-            ;; Place cursor on the blank line inside the block
-            (qt-plain-text-edit-set-cursor-position! ed
-              (+ line-start (string-length begin-line) 1
-                 (string-length indent)))
+            ;; Replace the <X line with the expansion via full text rebuild
+            ;; (avoids byte/char position mismatch with Qt selection APIs)
+            (let ((new-text (string-append
+                              (substring text 0 line-start)
+                              expansion
+                              (substring text line-end text-len))))
+              (qt-plain-text-edit-set-text! ed new-text)
+              ;; Place cursor on the blank line inside the block
+              (qt-plain-text-edit-set-cursor-position! ed
+                (+ line-start (string-length begin-line) 1
+                   (string-length indent))))
             (echo-message! (app-state-echo app)
               (string-append "Expanded <" key " to #+BEGIN_" block-type))
             #t)))
@@ -572,9 +578,14 @@
    SUBTREE: show everything.
    Returns #t if on a heading and toggled, #f otherwise."
   (let* ((ed (current-qt-editor app))
-         (pos (qt-plain-text-edit-cursor-position ed))
-         (cur-line (sci-send ed SCI_LINEFROMPOSITION pos))
          (text (qt-plain-text-edit-text ed))
+         (text-len (string-length text))
+         (pos (min (qt-plain-text-edit-cursor-position ed) text-len))
+         ;; Compute line number from text to avoid byte/char mismatch
+         (cur-line (let loop ((i 0) (ln 0))
+                     (cond ((>= i pos) ln)
+                           ((char=? (string-ref text i) #\newline) (loop (+ i 1) (+ ln 1)))
+                           (else (loop (+ i 1) ln)))))
          (lines (string-split text #\newline))
          (echo (app-state-echo app)))
     (if (>= cur-line (length lines))
