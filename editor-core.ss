@@ -680,11 +680,9 @@
          (fr (app-state-frame app))
          (row (- (frame-height fr) 1))
          (width (frame-width fr))
-         ;; Get files in current directory for completion
-         (cwd (current-directory))
-         (files (list-directory-files cwd))
-         (filename (echo-read-string-with-completion echo "Find file: "
-                      files row width)))
+         ;; Directory-aware fuzzy completion with ~ expansion
+         (filename (echo-read-file-with-completion echo "Find file: "
+                      row width)))
     (when filename
       (when (> (string-length filename) 0)
         (let ((filename (expand-filename filename)))
