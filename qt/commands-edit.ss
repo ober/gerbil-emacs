@@ -793,11 +793,13 @@
         ;; Spawn gxi subprocess
         (let ((rs (repl-start!)))
           (hash-put! *repl-state* buf rs)
-          ;; Don't insert initial prompt — let the timer handle it when
-          ;; gxi's startup banner arrives. Set prompt-pos high to prevent
-          ;; typing until gxi is ready.
-          (qt-plain-text-edit-set-text! ed "")
-          (set! (repl-state-prompt-pos rs) 999999999))
+          ;; Show prompt immediately — gxi in non-interactive mode (pseudo-terminal: #f)
+          ;; does NOT send a startup banner, so the timer would never fire and
+          ;; prompt-pos would stay at 999999999, blocking all typing.
+          (qt-plain-text-edit-set-text! ed repl-prompt)
+          (qt-plain-text-edit-move-cursor! ed QT_CURSOR_END)
+          (set! (repl-state-prompt-pos rs)
+            (string-length repl-prompt)))
         (echo-message! (app-state-echo app) "REPL started")))))
 
 (def (cmd-repl-send app)
@@ -813,14 +815,14 @@
              (input (if (and (<= prompt-pos text-len) (> text-len prompt-pos))
                       (substring all-text prompt-pos text-len)
                       "")))
-        (when (> (string-length input) 0)
-          ;; Append newline to the buffer
-          (qt-plain-text-edit-append! ed "")
-          ;; Send to gxi
-          (repl-send! rs input)
-          ;; Prevent typing until gxi responds (timer will reset prompt-pos)
-          (qt-plain-text-edit-move-cursor! ed QT_CURSOR_END)
-          (set! (repl-state-prompt-pos rs) 999999999))))))
+        ;; Append newline to the buffer
+        (qt-plain-text-edit-append! ed "")
+        ;; Send to gxi (even empty input — gxi ignores it and sends new prompt)
+        (repl-send! rs input)
+        ;; Update prompt-pos to after the newline (output will appear here)
+        (qt-plain-text-edit-move-cursor! ed QT_CURSOR_END)
+        (set! (repl-state-prompt-pos rs)
+          (string-length (qt-plain-text-edit-text ed)))))))
 
 (def (cmd-eval-expression app)
   "Prompt for an expression, eval it in-process."

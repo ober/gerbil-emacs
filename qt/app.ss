@@ -4,6 +4,7 @@
 (export qt-main qt-open-file!)
 
 (import :std/sugar
+        :std/misc/string
         :gerbil-emacs/qt/sci-shim
         :gerbil-emacs/core
         :gerbil-emacs/editor
@@ -457,9 +458,11 @@
                           (let loop ((wins (qt-frame-windows fr)))
                             (when (pair? wins)
                               (if (eq? (qt-edit-window-buffer (car wins)) buf)
-                                (let ((ed (qt-edit-window-editor (car wins))))
+                                (let* ((ed (qt-edit-window-editor (car wins)))
+                                       ;; Strip trailing newline — append! adds its own
+                                       (trimmed (string-trim-eol output)))
                                   ;; Insert output + new prompt
-                                  (qt-plain-text-edit-append! ed output)
+                                  (qt-plain-text-edit-append! ed trimmed)
                                   (qt-plain-text-edit-append! ed repl-prompt)
                                   ;; Set prompt-pos from text length (same units
                                   ;; as substring extraction in cmd-repl-send)
