@@ -860,12 +860,19 @@
   (let* ((fr (app-state-frame app))
          (win (current-window fr))
          (ed (edit-window-editor win))
-         (pos (editor-get-current-pos ed))
-         (line-num (editor-line-from-position ed pos))
-         (line-start (editor-position-from-line ed line-num))
-         (line-end (send-message ed SCI_GETLINEENDPOSITION line-num 0))
          (text (editor-get-text ed))
-         (line (substring text line-start (min line-end (string-length text))))
+         (text-len (string-length text))
+         (pos (min (editor-get-current-pos ed) text-len))
+         ;; Find line boundaries from text (avoids byte/char position mismatch)
+         (line-start (let loop ((i (- pos 1)))
+                       (cond ((< i 0) 0)
+                             ((char=? (string-ref text i) #\newline) (+ i 1))
+                             (else (loop (- i 1))))))
+         (line-end (let loop ((i pos))
+                     (cond ((>= i text-len) text-len)
+                           ((char=? (string-ref text i) #\newline) i)
+                           (else (loop (+ i 1))))))
+         (line (substring text line-start line-end))
          (trimmed (string-trim line))
          (echo (app-state-echo app)))
     ;; Check if the trimmed line matches "<X" pattern
@@ -891,13 +898,16 @@
                  (expansion (string-append begin-line "\n"
                                            indent "\n"
                                            end-line)))
-            ;; Replace the <X line with the expansion
-            (send-message ed SCI_SETTARGETSTART line-start 0)
-            (send-message ed SCI_SETTARGETEND line-end 0)
-            (send-message/string ed SCI_REPLACETARGET expansion)
-            ;; Place cursor on the blank line inside the block
-            (editor-goto-pos ed (+ line-start (string-length begin-line) 1
-                                   (string-length indent)))
+            ;; Replace the <X line with the expansion via full text rebuild
+            ;; (avoids byte/char position mismatch with Scintilla target APIs)
+            (let ((new-text (string-append
+                              (substring text 0 line-start)
+                              expansion
+                              (substring text line-end text-len))))
+              (editor-set-text ed new-text)
+              ;; Place cursor on the blank line inside the block
+              (editor-goto-pos ed (+ line-start (string-length begin-line) 1
+                                     (string-length indent))))
             (echo-message! echo
               (string-append "Expanded <" key " to #+BEGIN_" block-type)))))
       ;; Not a template pattern
