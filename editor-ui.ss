@@ -287,8 +287,19 @@
 ;;; Tab / indent
 ;;;============================================================================
 
+(def (org-buffer? buf)
+  "Check if buffer is an org-mode file."
+  (or (eq? (buffer-lexer-lang buf) 'org)
+      (let ((path (buffer-file-path buf)))
+        (and (string? path) (string-suffix? ".org" path)))
+      (let ((name (buffer-name buf)))
+        (and (string? name)
+             (> (string-length name) 4)
+             (string-suffix? ".org" name)))))
+
 (def (cmd-indent-or-complete app)
-  "Insert appropriate indentation."
+  "Insert appropriate indentation. In org buffers, dispatch to org-cycle
+   or org-template-expand as appropriate."
   (let* ((ed (current-editor app))
          (buf (current-buffer-from-app app)))
     (cond
@@ -299,6 +310,29 @@
              (rs (hash-get *repl-state* buf)))
          (when (and rs (>= pos (repl-state-prompt-pos rs)))
            (editor-insert-text ed pos "  "))))
+      ((org-buffer? buf)
+       ;; In org-mode: check for template pattern first, then cycle headings
+       (let* ((pos (editor-get-current-pos ed))
+              (line-num (editor-line-from-position ed pos))
+              (line-start (editor-position-from-line ed line-num))
+              (line-end (send-message ed SCI_GETLINEENDPOSITION line-num 0))
+              (text (editor-get-text ed))
+              (line (substring text line-start (min line-end (string-length text))))
+              (trimmed (string-trim line)))
+         (cond
+           ;; <s TAB, <e TAB, etc. - template expansion
+           ((and (>= (string-length trimmed) 2)
+                 (char=? (string-ref trimmed 0) #\<)
+                 (let ((key (string-ref trimmed 1)))
+                   (memv key '(#\s #\e #\q #\v #\c #\C #\l #\h #\a))))
+            (execute-command! app 'org-template-expand))
+           ;; On a heading line - org-cycle fold/unfold
+           ((and (> (string-length trimmed) 0)
+                 (char=? (string-ref trimmed 0) #\*))
+            (execute-command! app 'org-cycle))
+           ;; Otherwise - regular indent
+           (else
+            (editor-insert-text ed pos "  ")))))
       (else
        ;; Insert 2-space indent (Scheme convention)
        (let ((pos (editor-get-current-pos ed)))

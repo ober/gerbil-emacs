@@ -531,7 +531,9 @@
   "Check if a buffer is an org-mode file."
   (or (eq? (buffer-lexer-lang buf) 'org)
       (let ((path (buffer-file-path buf)))
-        (and path (string-suffix? ".org" path)))))
+        (and path (string-suffix? ".org" path)))
+      (let ((name (buffer-name buf)))
+        (and name (string-suffix? ".org" name)))))
 
 ;; Track org-cycle state per heading line: 'folded, 'children, 'subtree
 (def *org-cycle-state* (make-hash-table))

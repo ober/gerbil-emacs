@@ -23,7 +23,7 @@
         (only-in :gerbil-emacs/editor-ui
                  cmd-transpose-chars cmd-upcase-word cmd-downcase-word
                  cmd-capitalize-word cmd-kill-word cmd-toggle-comment
-                 cmd-list-buffers)
+                 cmd-list-buffers cmd-indent-or-complete org-buffer?)
         (only-in :gerbil-emacs/editor-text
                  cmd-transpose-words cmd-transpose-lines
                  cmd-upcase-region cmd-downcase-region
@@ -5743,6 +5743,118 @@
       (check (keymap-lookup *global-keymap* "C-g") => 'keyboard-quit)
       ;; C-x is a prefix key (returns a keymap, not a symbol)
       (check (hash-table? (keymap-lookup *global-keymap* "C-x")) => #t))
+
+    ;;=========================================================================
+    ;; TAB dispatch integration tests (org-mode via cmd-indent-or-complete)
+    ;;=========================================================================
+
+    (test-case "headless: org-buffer? detects .org files"
+      ;; By buffer name
+      (let ((buf (make-buffer "notes.org" #f #f #f #f #f #f)))
+        (check (not (not (org-buffer? buf))) => #t))
+      ;; By file path
+      (let ((buf (make-buffer "notes" "/tmp/notes.org" #f #f #f #f #f)))
+        (check (not (not (org-buffer? buf))) => #t))
+      ;; By lexer-lang
+      (let ((buf (make-buffer "notes" #f #f #f #f 'org #f)))
+        (check (not (not (org-buffer? buf))) => #t))
+      ;; Non-org buffer
+      (let ((buf (make-buffer "test.py" "/tmp/test.py" #f #f #f #f #f)))
+        (check (org-buffer? buf) => #f))
+      ;; Scratch buffer
+      (let ((buf (make-buffer "*scratch*" #f #f #f #f #f #f)))
+        (check (org-buffer? buf) => #f)))
+
+    (test-case "headless: TAB in org buffer on <s expands template"
+      (let* ((ed (create-scintilla-editor width: 80 height: 24))
+             (buf (make-buffer "test.org" "/tmp/test.org"
+                    (send-message ed SCI_GETDOCPOINTER) #f #f #f #f))
+             (win (make-edit-window ed buf 0 0 80 24 0))
+             (fr (make-frame [win] 0 80 24 'vertical))
+             (app (new-app-state fr)))
+        ;; User types "<s" then hits TAB
+        (editor-set-text ed "<s")
+        (editor-goto-pos ed 2)
+        ;; TAB dispatches through cmd-indent-or-complete
+        (cmd-indent-or-complete app)
+        (let ((text (editor-get-text ed)))
+          (check (not (not (string-contains text "#+BEGIN_SRC"))) => #t)
+          (check (not (not (string-contains text "#+END_SRC"))) => #t))))
+
+    (test-case "headless: TAB in org buffer on <e expands example block"
+      (let* ((ed (create-scintilla-editor width: 80 height: 24))
+             (buf (make-buffer "test.org" "/tmp/test.org"
+                    (send-message ed SCI_GETDOCPOINTER) #f #f #f #f))
+             (win (make-edit-window ed buf 0 0 80 24 0))
+             (fr (make-frame [win] 0 80 24 'vertical))
+             (app (new-app-state fr)))
+        (editor-set-text ed "<e")
+        (editor-goto-pos ed 2)
+        (cmd-indent-or-complete app)
+        (let ((text (editor-get-text ed)))
+          (check (not (not (string-contains text "#+BEGIN_EXAMPLE"))) => #t)
+          (check (not (not (string-contains text "#+END_EXAMPLE"))) => #t))))
+
+    (test-case "headless: TAB in org buffer on <q expands quote block"
+      (let* ((ed (create-scintilla-editor width: 80 height: 24))
+             (buf (make-buffer "test.org" "/tmp/test.org"
+                    (send-message ed SCI_GETDOCPOINTER) #f #f #f #f))
+             (win (make-edit-window ed buf 0 0 80 24 0))
+             (fr (make-frame [win] 0 80 24 'vertical))
+             (app (new-app-state fr)))
+        (editor-set-text ed "<q")
+        (editor-goto-pos ed 2)
+        (cmd-indent-or-complete app)
+        (let ((text (editor-get-text ed)))
+          (check (not (not (string-contains text "#+BEGIN_QUOTE"))) => #t)
+          (check (not (not (string-contains text "#+END_QUOTE"))) => #t))))
+
+    (test-case "headless: TAB on org heading folds children"
+      (let* ((ed (create-scintilla-editor width: 80 height: 24))
+             (buf (make-buffer "test.org" "/tmp/test.org"
+                    (send-message ed SCI_GETDOCPOINTER) #f #f #f #f))
+             (win (make-edit-window ed buf 0 0 80 24 0))
+             (fr (make-frame [win] 0 80 24 'vertical))
+             (app (new-app-state fr)))
+        (editor-set-text ed "* Heading\nBody line 1\nBody line 2")
+        (editor-goto-pos ed 0)
+        ;; TAB on heading should fold (hide body lines)
+        (cmd-indent-or-complete app)
+        (check (= (send-message ed SCI_GETLINEVISIBLE 1) 0) => #t)
+        (check (= (send-message ed SCI_GETLINEVISIBLE 2) 0) => #t)
+        ;; Heading itself stays visible
+        (check (= (send-message ed SCI_GETLINEVISIBLE 0) 1) => #t)))
+
+    (test-case "headless: TAB on plain text in org buffer indents"
+      (let* ((ed (create-scintilla-editor width: 80 height: 24))
+             (buf (make-buffer "test.org" "/tmp/test.org"
+                    (send-message ed SCI_GETDOCPOINTER) #f #f #f #f))
+             (win (make-edit-window ed buf 0 0 80 24 0))
+             (fr (make-frame [win] 0 80 24 'vertical))
+             (app (new-app-state fr)))
+        (editor-set-text ed "plain text")
+        (editor-goto-pos ed 0)
+        ;; TAB on plain text should just indent
+        (cmd-indent-or-complete app)
+        (let ((text (editor-get-text ed)))
+          ;; Should have 2 spaces inserted
+          (check (string-prefix? "  " text) => #t))))
+
+    (test-case "headless: TAB in non-org buffer just indents"
+      (let* ((ed (create-scintilla-editor width: 80 height: 24))
+             (buf (make-buffer "test.py" "/tmp/test.py"
+                    (send-message ed SCI_GETDOCPOINTER) #f #f #f #f))
+             (win (make-edit-window ed buf 0 0 80 24 0))
+             (fr (make-frame [win] 0 80 24 'vertical))
+             (app (new-app-state fr)))
+        (editor-set-text ed "<s")
+        (editor-goto-pos ed 2)
+        ;; TAB in non-org buffer should NOT expand template
+        (cmd-indent-or-complete app)
+        (let ((text (editor-get-text ed)))
+          (check (not (string-contains text "#+BEGIN_SRC")) => #t)
+          ;; Should have inserted spaces instead
+          (check (not (not (string-contains text "  "))) => #t))))
 
     ;;=========================================================================
     ;; Hippie-expand / Dabbrev completion tests
