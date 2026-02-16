@@ -314,10 +314,15 @@
        ;; In org-mode: check for template pattern first, then cycle headings
        (let* ((pos (editor-get-current-pos ed))
               (line-num (editor-line-from-position ed pos))
-              (line-start (editor-position-from-line ed line-num))
-              (line-end (send-message ed SCI_GETLINEENDPOSITION line-num 0))
+              (raw-start (editor-position-from-line ed line-num))
+              (raw-end (send-message ed SCI_GETLINEENDPOSITION line-num 0))
               (text (editor-get-text ed))
-              (line (substring text line-start (min line-end (string-length text))))
+              (text-len (string-length text))
+              (line-start (min raw-start text-len))
+              (line-end (min raw-end text-len))
+              (line (if (<= line-start line-end)
+                      (substring text line-start line-end)
+                      ""))
               (trimmed (string-trim line)))
          (cond
            ;; <s TAB, <e TAB, etc. - template expansion
