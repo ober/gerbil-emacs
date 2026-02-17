@@ -97,6 +97,8 @@
         :gemacs/qt/commands-sexp
         :gemacs/qt/commands-ide
         :gemacs/qt/commands-vcs
+        :gemacs/qt/lsp-client
+        :gemacs/qt/commands-lsp
         :gemacs/qt/commands-shell
         :gemacs/qt/commands-modes
         :gemacs/qt/commands-config)
@@ -355,7 +357,9 @@
           ;; Compile-on-save for Gerbil projects
           (compile-on-save-check! app path)
           ;; Flycheck: run syntax check on Gerbil files
-          (flycheck-check! app path))))
+          (flycheck-check! app path)
+          ;; LSP: notify didSave
+          (lsp-hook-did-save! app buf))))
       ;; No path: prompt for one
       (let ((filename (qt-echo-read-string app "Write file: ")))
         (when (and filename (> (string-length filename) 0))
@@ -427,6 +431,8 @@
               (set! *buffer-recent*
                 (filter (lambda (n) (not (string=? n target-name)))
                         *buffer-recent*))
+              ;; LSP: notify didClose
+              (lsp-hook-did-close! app buf)
               (qt-buffer-kill! buf)
               (echo-message! echo (string-append "Killed " target-name)))))
           (echo-error! echo (string-append "No buffer: " target-name)))))))
@@ -1765,7 +1771,40 @@
   (register-command! 'image-zoom-in cmd-image-zoom-in)
   (register-command! 'image-zoom-out cmd-image-zoom-out)
   (register-command! 'image-zoom-fit cmd-image-zoom-fit)
-  (register-command! 'image-zoom-reset cmd-image-zoom-reset))
+  (register-command! 'image-zoom-reset cmd-image-zoom-reset)
+  ;; LSP commands
+  (register-command! 'lsp-goto-definition cmd-lsp-goto-definition)
+  (register-command! 'lsp-declaration cmd-lsp-declaration)
+  (register-command! 'lsp-type-definition cmd-lsp-type-definition)
+  (register-command! 'lsp-implementation cmd-lsp-implementation)
+  (register-command! 'lsp-hover cmd-lsp-hover)
+  (register-command! 'lsp-completion cmd-lsp-completion)
+  (register-command! 'lsp-rename cmd-lsp-rename)
+  (register-command! 'lsp-code-actions cmd-lsp-code-actions)
+  (register-command! 'lsp-find-references cmd-lsp-find-references)
+  (register-command! 'lsp-document-symbols cmd-lsp-document-symbols)
+  (register-command! 'lsp-workspace-symbol cmd-lsp-workspace-symbol)
+  (register-command! 'lsp-format-buffer cmd-lsp-format-buffer)
+  (register-command! 'lsp-restart cmd-lsp-restart)
+  (register-command! 'lsp-stop cmd-lsp-stop)
+  (register-command! 'lsp-smart-goto-definition cmd-lsp-smart-goto-definition)
+  ;; LSP keybindings in C-c l prefix map
+  (keymap-bind! *ctrl-c-l-map* "d" 'lsp-goto-definition)
+  (keymap-bind! *ctrl-c-l-map* "D" 'lsp-declaration)
+  (keymap-bind! *ctrl-c-l-map* "h" 'lsp-hover)
+  (keymap-bind! *ctrl-c-l-map* "c" 'lsp-completion)
+  (keymap-bind! *ctrl-c-l-map* "r" 'lsp-rename)
+  (keymap-bind! *ctrl-c-l-map* "a" 'lsp-code-actions)
+  (keymap-bind! *ctrl-c-l-map* "R" 'lsp-find-references)
+  (keymap-bind! *ctrl-c-l-map* "s" 'lsp-document-symbols)
+  (keymap-bind! *ctrl-c-l-map* "S" 'lsp-workspace-symbol)
+  (keymap-bind! *ctrl-c-l-map* "f" 'lsp-format-buffer)
+  (keymap-bind! *ctrl-c-l-map* "t" 'lsp-type-definition)
+  (keymap-bind! *ctrl-c-l-map* "i" 'lsp-implementation)
+  (keymap-bind! *ctrl-c-l-map* "=" 'lsp-restart)
+  (keymap-bind! *ctrl-c-l-map* "q" 'lsp-stop)
+  ;; M-. smart dispatch: LSP when running, else text search
+  (keymap-bind! *global-keymap* "M-." 'lsp-smart-goto-definition))
 
 ;;;============================================================================
 ;;; Key-chord commands

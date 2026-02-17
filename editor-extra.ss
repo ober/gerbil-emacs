@@ -296,13 +296,7 @@
   (register-command! 'erc cmd-erc)
   ;; TRAMP extras
   (register-command! 'tramp-cleanup-connections cmd-tramp-cleanup-connections)
-  ;; LSP
-  (register-command! 'lsp-find-declaration cmd-lsp-find-declaration)
-  (register-command! 'lsp-find-implementation cmd-lsp-find-implementation)
-  (register-command! 'lsp-rename cmd-lsp-rename)
-  (register-command! 'lsp-format-buffer cmd-lsp-format-buffer)
-  (register-command! 'lsp-code-actions cmd-lsp-code-actions)
-  (register-command! 'lsp-describe-thing-at-point cmd-lsp-describe-thing-at-point)
+  ;; LSP: moved to qt/commands-lsp.ss, registered in qt/commands.ss
   ;; DAP (Debug Adapter Protocol)
   (register-command! 'dap-debug cmd-dap-debug)
   (register-command! 'dap-breakpoint-toggle cmd-dap-breakpoint-toggle)

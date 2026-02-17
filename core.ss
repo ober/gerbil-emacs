@@ -19,6 +19,7 @@
   *help-map*
   *ctrl-x-r-map*
   *ctrl-c-map*
+  *ctrl-c-l-map*
   *meta-s-map*
   *ctrl-x-4-map*
   *all-commands*
@@ -134,6 +135,7 @@
 (def *ctrl-x-map*   (make-keymap))
 (def *ctrl-x-r-map* (make-keymap))
 (def *ctrl-c-map*   (make-keymap))
+(def *ctrl-c-l-map* (make-keymap))
 (def *meta-g-map*   (make-keymap))
 (def *help-map*     (make-keymap))
 (def *meta-s-map*   (make-keymap))
@@ -483,7 +485,8 @@
 
   ;; Info
   (keymap-bind! *ctrl-x-map* "C-p" 'what-page)
-  (keymap-bind! *ctrl-c-map* "l" 'count-lines-region)
+  ;; C-c l → LSP prefix map (replaces count-lines-region)
+  (keymap-bind! *ctrl-c-map* "l" *ctrl-c-l-map*)
 
   ;; Copy line (C-c c)
   (keymap-bind! *ctrl-c-map* "c" 'copy-line)

@@ -170,6 +170,8 @@
     (gxc: "qt/commands-sexp"   "-cc-options" ,qt-cc-opts "-ld-options" ,qt-ld-opts)
     (gxc: "qt/commands-ide"    "-cc-options" ,qt-cc-opts "-ld-options" ,qt-ld-opts)
     (gxc: "qt/commands-vcs"    "-cc-options" ,qt-cc-opts "-ld-options" ,qt-ld-opts)
+    (gxc: "qt/lsp-client"     "-cc-options" ,qt-cc-opts "-ld-options" ,qt-ld-opts)
+    (gxc: "qt/commands-lsp"   "-cc-options" ,qt-cc-opts "-ld-options" ,qt-ld-opts)
     (gxc: "qt/commands-shell"  "-cc-options" ,qt-cc-opts "-ld-options" ,qt-ld-opts)
     (gxc: "qt/commands-modes"  "-cc-options" ,qt-cc-opts "-ld-options" ,qt-ld-opts)
     (gxc: "qt/commands-config" "-cc-options" ,qt-cc-opts "-ld-options" ,qt-ld-opts)

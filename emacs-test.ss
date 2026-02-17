@@ -972,7 +972,7 @@
       (check (keymap-lookup *ctrl-x-map* "C-x") => 'exchange-point-and-mark)
       ;; Info
       (check (keymap-lookup *ctrl-x-map* "C-p") => 'what-page)
-      (check (keymap-lookup *ctrl-c-map* "l") => 'count-lines-region)
+      (check (hash-table? (keymap-lookup *ctrl-c-map* "l")) => #t) ;; LSP prefix map
       ;; Copy line
       (check (keymap-lookup *ctrl-c-map* "c") => 'whitespace-cleanup))
 

@@ -21,6 +21,8 @@
         :gemacs/qt/highlight
         :gemacs/qt/image
         :gemacs/qt/commands
+        :gemacs/qt/lsp-client
+        :gemacs/qt/commands-lsp
         :gemacs/qt/menubar
         :gemacs/ipc)
 
@@ -643,11 +645,22 @@
         (qt-timer-start! file-watch-timer 5000))
 
       ;; Eldoc timer — show function signatures on cursor idle
+      ;; When LSP is running, also query signatureHelp
       (let ((eldoc-timer (qt-timer-create)))
         (qt-on-timeout! eldoc-timer
           (lambda ()
-            (eldoc-display! app)))
+            (if (lsp-running?)
+              (lsp-eldoc-display! app)
+              (eldoc-display! app))))
         (qt-timer-start! eldoc-timer 300))
+
+      ;; LSP UI action queue polling timer
+      (let ((lsp-timer (qt-timer-create)))
+        (qt-on-timeout! lsp-timer lsp-poll-ui-actions!)
+        (qt-timer-start! lsp-timer 50))
+
+      ;; Install LSP UI handlers
+      (lsp-install-handlers! app)
 
       ;; Which-key timer (one-shot, shows available prefix bindings)
       (set! *which-key-timer* (qt-timer-create))
@@ -749,6 +762,8 @@
       ;; Enter Qt event loop (blocks until quit)
       (qt-app-exec! qt-app)
 
+      ;; Cleanup LSP server on exit
+      (lsp-stop!)
       ;; Cleanup IPC server on exit
       (stop-ipc-server!))))
 
@@ -801,4 +816,7 @@
              (qt-text-document-set-modified! (buffer-doc-pointer buf) #f)
              (qt-plain-text-edit-set-cursor-position! ed 0)))
          (file-mtime-record! filename))
-       (qt-setup-highlighting! app buf)))))
+       (qt-setup-highlighting! app buf)
+       ;; LSP: auto-start and notify didOpen
+       (lsp-maybe-auto-start! app buf)
+       (lsp-hook-did-open! app buf)))))
