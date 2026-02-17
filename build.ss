@@ -119,6 +119,9 @@
     "org-clock"
     "org-list"
     "org-export"
+    "org-babel"
+    "org-agenda"
+    "org-capture"
     ;; editor-extra sub-modules (must compile before facade)
     "editor-extra-helpers"
     "editor-extra-org"
