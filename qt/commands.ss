@@ -75,6 +75,7 @@
         :gemacs/core
         :gemacs/editor
         (only-in :gemacs/persist
+                 buffer-local-set!
                  save-place-save! save-place-load!
                  save-place-remember! save-place-restore
                  *save-place-enabled* *require-final-newline*
@@ -552,6 +553,200 @@
       (let ((name (buffer-name buf)))
         (and name (string-suffix? ".org" name)))))
 
+(def (cmd-org-mode app)
+  "Activate org-mode for the current buffer."
+  (let* ((fr (app-state-frame app))
+         (win (qt-current-window fr))
+         (buf (qt-edit-window-buffer win)))
+    (when buf
+      (set! (buffer-lexer-lang buf) 'org)
+      (buffer-local-set! buf 'major-mode 'org-mode)
+      ;; qt-setup-highlighting! detects 'org lang and applies org styles
+      (qt-setup-highlighting! app buf))
+    (echo-message! (app-state-echo app) "Org mode")))
+
+;;;============================================================================
+;;; Qt org-table: TAB = align + next cell
+;;;============================================================================
+
+(def (qt-org-table-row? str)
+  "Check if a string is an org table row (starts with |)."
+  (let ((trimmed (string-trim str)))
+    (and (> (string-length trimmed) 0)
+         (char=? (string-ref trimmed 0) #\|))))
+
+(def (qt-org-table-separator? str)
+  "Check if string is a table separator line (|---+---|)."
+  (let ((trimmed (string-trim str)))
+    (and (qt-org-table-row? trimmed)
+         (let loop ((i 0))
+           (if (>= i (string-length trimmed))
+             #t
+             (let ((c (string-ref trimmed i)))
+               (if (memv c '(#\| #\- #\+ #\space))
+                 (loop (+ i 1))
+                 #f)))))))
+
+(def (qt-org-table-parse-row str)
+  "Split '| a | b | c |' into (\"a\" \"b\" \"c\")."
+  (let* ((trimmed (string-trim str))
+         (len (string-length trimmed)))
+    (if (or (= len 0) (not (char=? (string-ref trimmed 0) #\|)))
+      '()
+      (let* ((inner (if (and (> len 1) (char=? (string-ref trimmed (- len 1)) #\|))
+                      (substring trimmed 1 (- len 1))
+                      (substring trimmed 1 len)))
+             (parts (string-split inner #\|)))
+        (map string-trim-both parts)))))
+
+(def (qt-org-table-column-widths rows)
+  "Compute max width for each column across all data rows."
+  (let* ((data-rows (filter list? rows))
+         (ncols (if (null? data-rows) 0
+                  (apply max (map length data-rows)))))
+    (let loop ((col 0) (widths '()))
+      (if (>= col ncols)
+        (reverse widths)
+        (loop (+ col 1)
+              (cons (apply max 1
+                           (map (lambda (row)
+                                  (if (< col (length row))
+                                    (string-length (list-ref row col))
+                                    0))
+                                data-rows))
+                    widths))))))
+
+(def (qt-org-table-format-row cells widths)
+  "Format a data row with cells padded to given widths."
+  (string-append
+   "| "
+   (string-join
+    (let loop ((i 0) (result '()))
+      (if (>= i (length widths))
+        (reverse result)
+        (let* ((cell (if (< i (length cells)) (list-ref cells i) ""))
+               (w (list-ref widths i)))
+          (loop (+ i 1) (cons (string-pad-right cell w) result)))))
+    " | ")
+   " |"))
+
+(def (qt-org-table-format-separator widths)
+  "Format a separator line: |---+---+---|"
+  (string-append
+   "|"
+   (string-join (map (lambda (w) (make-string (+ w 2) #\-)) widths) "+")
+   "|"))
+
+(def (qt-org-table-next-cell app)
+  "On a table line: align table, move to next cell. Returns #t if handled, #f if not on a table."
+  (let* ((ed (current-qt-editor app))
+         (text (qt-plain-text-edit-text ed))
+         (pos (qt-plain-text-edit-cursor-position ed))
+         (cur-line (sci-send ed SCI_LINEFROMPOSITION pos))
+         (line-start (sci-send ed SCI_POSITIONFROMLINE cur-line 0))
+         (line-end (sci-send ed SCI_GETLINEENDPOSITION cur-line))
+         (line (if (<= line-end (string-length text))
+                 (substring text line-start line-end) "")))
+    (if (not (qt-org-table-row? line))
+      #f  ;; Not on a table line
+      (let* ((total-lines (sci-send ed SCI_GETLINECOUNT))
+             ;; Find table bounds (contiguous table rows)
+             (tbl-start (let loop ((i cur-line))
+                          (if (and (>= i 0)
+                                   (qt-org-table-row?
+                                     (let* ((ls (sci-send ed SCI_POSITIONFROMLINE i 0))
+                                            (le (sci-send ed SCI_GETLINEENDPOSITION i)))
+                                       (if (<= le (string-length text))
+                                         (substring text ls le) ""))))
+                            (loop (- i 1)) (+ i 1))))
+             (tbl-end (let loop ((i cur-line))
+                        (if (and (< i total-lines)
+                                 (qt-org-table-row?
+                                   (let* ((ls (sci-send ed SCI_POSITIONFROMLINE i 0))
+                                          (le (sci-send ed SCI_GETLINEENDPOSITION i)))
+                                     (if (<= le (string-length text))
+                                       (substring text ls le) ""))))
+                          (loop (+ i 1)) (- i 1))))
+             ;; Parse all rows
+             (rows (let loop ((i tbl-start) (acc '()))
+                     (if (> i tbl-end) (reverse acc)
+                       (let* ((ls (sci-send ed SCI_POSITIONFROMLINE i 0))
+                              (le (sci-send ed SCI_GETLINEENDPOSITION i))
+                              (l (if (<= le (string-length text))
+                                   (substring text ls le) "")))
+                         (loop (+ i 1)
+                               (cons (if (qt-org-table-separator? l)
+                                       'separator (qt-org-table-parse-row l))
+                                     acc))))))
+             (widths (qt-org-table-column-widths rows))
+             ;; Determine current column from cursor offset
+             (col-offset (- pos line-start))
+             (cur-col (let loop ((i 0) (pipes -1))
+                        (if (>= i (min col-offset (string-length line)))
+                          (max 0 pipes)
+                          (loop (+ i 1)
+                                (if (char=? (string-ref line i) #\|)
+                                  (+ pipes 1) pipes)))))
+             (ncols (length widths))
+             ;; Build aligned table text
+             (new-lines (map (lambda (row)
+                               (if (eq? row 'separator)
+                                 (qt-org-table-format-separator widths)
+                                 (qt-org-table-format-row row widths)))
+                             rows))
+             (new-text (string-join new-lines "\n"))
+             ;; Replace table region
+             (region-start (sci-send ed SCI_POSITIONFROMLINE tbl-start 0))
+             (region-end (if (< (+ tbl-end 1) total-lines)
+                           (sci-send ed SCI_POSITIONFROMLINE (+ tbl-end 1) 0)
+                           (sci-send ed SCI_GETTEXTLENGTH))))
+        ;; Replace old table with aligned version
+        (sci-send ed SCI_SETTARGETSTART region-start)
+        (sci-send ed SCI_SETTARGETEND region-end)
+        ;; Need trailing newline if we replaced up to next line start
+        (let ((replacement (if (< (+ tbl-end 1) total-lines)
+                             (string-append new-text "\n")
+                             new-text)))
+          (sci-send/string ed SCI_REPLACETARGET replacement))
+        ;; Move to next cell
+        (let* ((next-col (+ cur-col 1))
+               (next-line cur-line))
+          (cond
+            ;; Next column in same row
+            ((< next-col ncols)
+             (let ((target-line next-line)
+                   (offset (let loop ((c 0) (off 2))
+                             (if (>= c next-col) off
+                               (loop (+ c 1) (+ off (list-ref widths c) 3))))))
+               (sci-send ed SCI_GOTOPOS
+                 (+ (sci-send ed SCI_POSITIONFROMLINE target-line 0) offset))))
+            ;; Last column: move to first column of next data row
+            (else
+             ;; Find next non-separator row
+             (let loop ((i (+ cur-line 1)))
+               (cond
+                 ((> i tbl-end)
+                  ;; Past table end: insert new row
+                  (let* ((empty-cells (make-list ncols ""))
+                         (new-row (qt-org-table-format-row empty-cells widths))
+                         (eol (sci-send ed SCI_GETLINEENDPOSITION tbl-end)))
+                    (sci-send ed SCI_GOTOPOS eol)
+                    (qt-plain-text-edit-insert-text! ed (string-append "\n" new-row))
+                    (sci-send ed SCI_GOTOPOS
+                      (+ (sci-send ed SCI_POSITIONFROMLINE (+ tbl-end 1) 0) 2))))
+                 ;; Skip separator rows
+                 ((qt-org-table-separator?
+                    (let* ((ls (sci-send ed SCI_POSITIONFROMLINE i 0))
+                           (le (sci-send ed SCI_GETLINEENDPOSITION i))
+                           (fresh-text (qt-plain-text-edit-text ed)))
+                      (if (<= le (string-length fresh-text))
+                        (substring fresh-text ls le) "")))
+                  (loop (+ i 1)))
+                 (else
+                  (sci-send ed SCI_GOTOPOS
+                    (+ (sci-send ed SCI_POSITIONFROMLINE i 0) 2))))))))
+        #t))))
+
 ;; Track org-cycle state per heading line: 'folded, 'children, 'subtree
 (def *org-cycle-state* (make-hash-table))
 
@@ -653,11 +848,12 @@
        ;; If snippet is active, jump to next field
        (if *snippet-active*
          (cmd-snippet-next-field app)
-         ;; For org-mode buffers: try template expansion, then heading fold/unfold
+         ;; For org-mode buffers: try table, template expansion, or heading fold/unfold
          (if (and (qt-org-buffer? buf)
-                  (or (qt-try-org-template-expand app)
+                  (or (qt-org-table-next-cell app)
+                      (qt-try-org-template-expand app)
                       (qt-org-cycle app)))
-           (void)  ;; Org template expanded or heading toggled
+           (void)  ;; Org table/template/heading handled
            ;; Try snippet expansion, then completion
            (if (cmd-snippet-expand app)
              (void)  ;; Snippet expanded
@@ -1599,6 +1795,7 @@
   (register-command! 'magit-stage-all cmd-magit-stage-all)
   (register-command! 'magit-log cmd-magit-log)
   ;; Org-mode
+  (register-command! 'org-mode cmd-org-mode)
   (register-command! 'org-todo-cycle cmd-org-todo-cycle)
   (register-command! 'org-promote cmd-org-promote)
   (register-command! 'org-demote cmd-org-demote)

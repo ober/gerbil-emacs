@@ -8,7 +8,8 @@
         :gemacs/qt/sci-shim
         :gemacs/core
         :gemacs/editor
-        (only-in :gemacs/persist init-file-load!)
+        (only-in :gemacs/persist init-file-load!
+                 detect-major-mode buffer-local-set!)
         :gemacs/repl
         :gemacs/eshell
         :gemacs/shell
@@ -817,6 +818,12 @@
              (qt-plain-text-edit-set-cursor-position! ed 0)))
          (file-mtime-record! filename))
        (qt-setup-highlighting! app buf)
+       ;; Activate major mode from auto-mode-alist
+       (let ((mode (detect-major-mode filename)))
+         (when mode
+           (buffer-local-set! buf 'major-mode mode)
+           (let ((mode-cmd (find-command mode)))
+             (when mode-cmd (mode-cmd app)))))
        ;; LSP: auto-start and notify didOpen
        (lsp-maybe-auto-start! app buf)
        (lsp-hook-did-open! app buf)))))

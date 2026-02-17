@@ -66,6 +66,9 @@
                  org-table-column-widths org-table-format-row
                  org-table-format-separator org-numeric-cell?
                  org-table-align org-table-next-cell
+                 org-table-on-table-line? org-table-find-bounds
+                 org-table-current-column org-table-next-data-line
+                 org-table-get-rows org-table-goto-column
                  org-table-insert-column org-table-delete-column
                  org-table-insert-row org-table-delete-row
                  org-table-sort org-table-to-csv org-csv-to-table
@@ -102,7 +105,10 @@
                  org-refile-targets org-insert-under-heading
                  org-capture-menu-string
                  *org-capture-templates* *org-capture-active?*)
+        (only-in :gemacs/persist
+                 detect-major-mode buffer-local-get buffer-local-set!)
         (only-in :gemacs/editor-extra-org
+                 cmd-org-mode
                  cmd-org-todo cmd-org-export cmd-org-cycle cmd-org-shift-tab
                  cmd-org-store-link *org-stored-link*
                  cmd-org-promote cmd-org-demote
@@ -8074,6 +8080,190 @@
           hippie-expand dabbrev-expand
           describe-key execute-extended-command keyboard-quit
           scratch-buffer eshell shell)))
+
+    ;;=========================================================================
+    ;; Org-mode activation tests
+    ;;=========================================================================
+
+    (test-case "org-mode: detect-major-mode returns org-mode for .org files"
+      (check (detect-major-mode "notes.org") => 'org-mode)
+      (check (detect-major-mode "/home/user/todo.org") => 'org-mode)
+      (check (detect-major-mode "README.md") => 'markdown-mode)
+      (check (detect-major-mode "test.py") => 'python-mode)
+      (check (detect-major-mode "unknown.xyz") => #f))
+
+    (test-case "org-mode: cmd-org-mode sets buffer-lexer-lang to org"
+      (register-all-commands!)
+      (let* ((ed (create-scintilla-editor width: 80 height: 24))
+             (buf (make-buffer "test.txt" "/tmp/test.txt"
+                    (send-message ed SCI_GETDOCPOINTER) #f #f #f #f))
+             (win (make-edit-window ed buf 0 0 80 24 0))
+             (fr (make-frame [win] 0 80 24 'vertical))
+             (app (new-app-state fr)))
+        ;; Before: not an org buffer
+        (check (buffer-lexer-lang buf) => #f)
+        (check (org-buffer? buf) => #f)
+        ;; Activate org-mode via the command
+        (cmd-org-mode app)
+        ;; After: buffer-lexer-lang is 'org
+        (check (buffer-lexer-lang buf) => 'org)
+        ;; org-buffer? should now return true
+        (check (not (not (org-buffer? buf))) => #t)
+        ;; buffer-local major-mode is set
+        (check (buffer-local-get buf 'major-mode) => 'org-mode)))
+
+    (test-case "org-mode: M-x org-mode command is registered"
+      (register-all-commands!)
+      ;; org-mode must be a registered command
+      (check (not (not (find-command 'org-mode))) => #t)
+      ;; Execute it through the dispatch path
+      (let* ((ed (create-scintilla-editor width: 80 height: 24))
+             (buf (make-buffer "demo.txt" #f
+                    (send-message ed SCI_GETDOCPOINTER) #f #f #f #f))
+             (win (make-edit-window ed buf 0 0 80 24 0))
+             (fr (make-frame [win] 0 80 24 'vertical))
+             (app (new-app-state fr)))
+        (execute-command! app 'org-mode)
+        (check (buffer-lexer-lang buf) => 'org)))
+
+    (test-case "org-mode: auto-activation for .org file via mode detection"
+      (register-all-commands!)
+      ;; Simulate what TUI app.ss does: detect mode then call the command
+      (let* ((ed (create-scintilla-editor width: 80 height: 24))
+             (buf (make-buffer "notes.org" "/tmp/notes.org"
+                    (send-message ed SCI_GETDOCPOINTER) #f #f #f #f))
+             (win (make-edit-window ed buf 0 0 80 24 0))
+             (fr (make-frame [win] 0 80 24 'vertical))
+             (app (new-app-state fr)))
+        ;; Detect and activate mode (simulating app.ss open-file path)
+        (let ((mode (detect-major-mode "/tmp/notes.org")))
+          (check mode => 'org-mode)
+          (buffer-local-set! buf 'major-mode mode)
+          (let ((mode-cmd (find-command mode)))
+            (check (not (not mode-cmd)) => #t)
+            (mode-cmd app)))
+        ;; Verify activation happened
+        (check (buffer-lexer-lang buf) => 'org)
+        (check (buffer-local-get buf 'major-mode) => 'org-mode)
+        (check (not (not (org-buffer? buf))) => #t)))
+
+    ;;=========================================================================
+    ;; Org table TAB dispatch tests
+    ;;=========================================================================
+
+    (test-case "org-table: TAB on table line aligns columns"
+      ;; TAB on a misaligned table should produce aligned columns
+      (register-all-commands!)
+      (let* ((ed (create-scintilla-editor width: 80 height: 24))
+             (buf (make-buffer "data.org" "/tmp/data.org"
+                    (send-message ed SCI_GETDOCPOINTER) #f #f #f #f))
+             (win (make-edit-window ed buf 0 0 80 24 0))
+             (fr (make-frame [win] 0 80 24 'vertical))
+             (app (new-app-state fr)))
+        ;; Misaligned table: columns have different widths
+        (editor-set-text ed "| Name | Age |\n| Alice | 30 |\n| Bob | 7 |")
+        ;; Position cursor on first table line
+        (editor-goto-pos ed 2)
+        ;; TAB should align the table (not insert spaces)
+        (cmd-indent-or-complete app)
+        ;; After TAB, table should be aligned — all rows same width
+        (let* ((text (editor-get-text ed))
+               (lines (string-split text #\newline)))
+          ;; All lines should have same length (aligned columns)
+          (check (> (length lines) 1) => #t)
+          (let ((len0 (string-length (car lines))))
+            (for-each (lambda (l) (check (string-length l) => len0)) lines))
+          ;; Cells should be padded: "Alice" and "Bob" in same-width column
+          ;; "30" and "7" padded to same width
+          (check (string-contains (list-ref lines 0) "| Name ") => 0)
+          (check (string-contains (list-ref lines 1) "| Alice") => 0)
+          (check (string-contains (list-ref lines 2) "| Bob  ") => 0))))
+
+    (test-case "org-table: TAB moves cursor to next cell"
+      (register-all-commands!)
+      (let* ((ed (create-scintilla-editor width: 80 height: 24))
+             (buf (make-buffer "tbl.org" "/tmp/tbl.org"
+                    (send-message ed SCI_GETDOCPOINTER) #f #f #f #f))
+             (win (make-edit-window ed buf 0 0 80 24 0))
+             (fr (make-frame [win] 0 80 24 'vertical))
+             (app (new-app-state fr)))
+        ;; Pre-aligned table
+        (editor-set-text ed "| a | b |\n| c | d |")
+        ;; Position cursor on first cell (after "| ")
+        (editor-goto-pos ed 2)
+        ;; Verify we're in the first cell of an org table
+        (let ((line-num (send-message ed SCI_LINEFROMPOSITION 2 0)))
+          (check line-num => 0))
+        ;; TAB should move to next cell
+        (cmd-indent-or-complete app)
+        (let ((new-pos (editor-get-current-pos ed))
+              (text (editor-get-text ed)))
+          ;; Cursor should have moved forward (into the second cell)
+          (check (> new-pos 2) => #t)
+          ;; Cursor should be on the same line (line 0) or within the table
+          (let ((line (send-message ed SCI_LINEFROMPOSITION new-pos 0)))
+            (check (<= line 1) => #t)))))
+
+    (test-case "org-table: TAB at last cell creates new row"
+      (register-all-commands!)
+      (let* ((ed (create-scintilla-editor width: 80 height: 24))
+             (buf (make-buffer "new.org" "/tmp/new.org"
+                    (send-message ed SCI_GETDOCPOINTER) #f #f #f #f))
+             (win (make-edit-window ed buf 0 0 80 24 0))
+             (fr (make-frame [win] 0 80 24 'vertical))
+             (app (new-app-state fr)))
+        ;; Single-row table, cursor in last cell
+        (editor-set-text ed "| x | y |")
+        ;; Put cursor in the last cell (at the "y")
+        (editor-goto-pos ed 6)
+        ;; Count lines before TAB
+        (let ((lines-before (send-message ed SCI_GETLINECOUNT)))
+          ;; TAB at end of table should create a new row
+          (cmd-indent-or-complete app)
+          (let ((lines-after (send-message ed SCI_GETLINECOUNT))
+                (text (editor-get-text ed)))
+            ;; Should have one more line
+            (check (> lines-after lines-before) => #t)
+            ;; New text should contain two rows
+            (let ((rows (filter (lambda (l) (org-table-row? l))
+                                (string-split text #\newline))))
+              (check (>= (length rows) 2) => #t))))))
+
+    (test-case "org-table: TAB skips separator rows"
+      (register-all-commands!)
+      (let* ((ed (create-scintilla-editor width: 80 height: 24))
+             (buf (make-buffer "sep.org" "/tmp/sep.org"
+                    (send-message ed SCI_GETDOCPOINTER) #f #f #f #f))
+             (win (make-edit-window ed buf 0 0 80 24 0))
+             (fr (make-frame [win] 0 80 24 'vertical))
+             (app (new-app-state fr)))
+        ;; Table with separator: header, separator, data
+        (editor-set-text ed "| h1 | h2 |\n|----+----|\n| a  | b  |")
+        ;; Put cursor in last cell of header row (at "h2")
+        (editor-goto-pos ed 7)
+        ;; TAB should skip the separator and land in the data row
+        (cmd-indent-or-complete app)
+        (let* ((new-pos (editor-get-current-pos ed))
+               (new-line (send-message ed SCI_LINEFROMPOSITION new-pos 0)))
+          ;; Should be on line 2 (data row), not line 1 (separator)
+          (check new-line => 2))))
+
+    (test-case "org-table: non-table line in org buffer gets normal TAB"
+      ;; TAB on a non-table line should NOT trigger table alignment
+      (register-all-commands!)
+      (let* ((ed (create-scintilla-editor width: 80 height: 24))
+             (buf (make-buffer "mixed.org" "/tmp/mixed.org"
+                    (send-message ed SCI_GETDOCPOINTER) #f #f #f #f))
+             (win (make-edit-window ed buf 0 0 80 24 0))
+             (fr (make-frame [win] 0 80 24 'vertical))
+             (app (new-app-state fr)))
+        (editor-set-text ed "Just some text here")
+        (editor-goto-pos ed 4)
+        (let ((text-before (editor-get-text ed)))
+          (cmd-indent-or-complete app)
+          ;; Should have inserted spaces (indent), not done table alignment
+          (let ((text-after (editor-get-text ed)))
+            (check (> (string-length text-after) (string-length text-before)) => #t)))))
 
     ))
 

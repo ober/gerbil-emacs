@@ -17,6 +17,7 @@
         :gemacs/modeline
         :gemacs/echo
         :gemacs/editor-extra-helpers
+        (only-in :gemacs/persist buffer-local-set!)
         (only-in :gemacs/highlight register-custom-highlighter!)
         (only-in :gemacs/org-highlight
                  setup-org-styles! org-highlight-buffer! org-set-fold-levels!))
@@ -87,10 +88,21 @@
     (send-message/string ed SCI_REPLACETARGET new-line)))
 
 (def (cmd-org-mode app)
-  "Toggle org-mode for current buffer."
-  (let ((on (toggle-mode! 'org-mode)))
-    (echo-message! (app-state-echo app)
-      (if on "Org-mode enabled" "Org-mode disabled"))))
+  "Activate org-mode for the current buffer.
+   Sets buffer-lexer-lang to 'org and triggers org syntax highlighting."
+  (let* ((fr (app-state-frame app))
+         (win (current-window fr))
+         (ed (edit-window-editor win))
+         (buf (edit-window-buffer win)))
+    (when buf
+      (set! (buffer-lexer-lang buf) 'org)
+      (buffer-local-set! buf 'major-mode 'org-mode)
+      ;; Trigger org highlighting
+      (setup-org-styles! ed)
+      (let ((text (editor-get-text ed)))
+        (org-highlight-buffer! ed text)
+        (org-set-fold-levels! ed text)))
+    (echo-message! (app-state-echo app) "Org mode")))
 
 (def (cmd-org-todo app)
   "Cycle TODO state on current heading: none -> TODO -> DONE -> none."

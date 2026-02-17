@@ -24,7 +24,9 @@
         :gemacs/modeline
         :gemacs/echo
         :gemacs/highlight
-        :gemacs/editor-core)
+        :gemacs/editor-core
+        (only-in :gemacs/org-table
+                 org-table-on-table-line? org-table-next-cell))
 
 ;;;============================================================================
 ;;; Goto line
@@ -311,35 +313,40 @@
          (when (and rs (>= pos (repl-state-prompt-pos rs)))
            (editor-insert-text ed pos "  "))))
       ((org-buffer? buf)
-       ;; In org-mode: check for template pattern first, then cycle headings
-       (let* ((text (editor-get-text ed))
-              (text-len (string-length text))
-              (pos (min (editor-get-current-pos ed) text-len))
-              ;; Find line boundaries from text (avoids byte/char position mismatch)
-              (line-start (let loop ((i (- pos 1)))
-                            (cond ((< i 0) 0)
-                                  ((char=? (string-ref text i) #\newline) (+ i 1))
-                                  (else (loop (- i 1))))))
-              (line-end (let loop ((i pos))
-                          (cond ((>= i text-len) text-len)
-                                ((char=? (string-ref text i) #\newline) i)
-                                (else (loop (+ i 1))))))
-              (line (substring text line-start line-end))
-              (trimmed (string-trim line)))
-         (cond
-           ;; <s TAB, <e TAB, etc. - template expansion
-           ((and (>= (string-length trimmed) 2)
-                 (char=? (string-ref trimmed 0) #\<)
-                 (let ((key (string-ref trimmed 1)))
-                   (memv key '(#\s #\e #\q #\v #\c #\C #\l #\h #\a))))
-            (execute-command! app 'org-template-expand))
-           ;; On a heading line - org-cycle fold/unfold
-           ((and (> (string-length trimmed) 0)
-                 (char=? (string-ref trimmed 0) #\*))
-            (execute-command! app 'org-cycle))
-           ;; Otherwise - regular indent
-           (else
-            (editor-insert-text ed pos "  ")))))
+       ;; In org-mode: check table, template, heading, or indent
+       (cond
+         ;; On a table line: align table and move to next cell
+         ((org-table-on-table-line? ed)
+          (org-table-next-cell ed))
+         (else
+          (let* ((text (editor-get-text ed))
+                 (text-len (string-length text))
+                 (pos (min (editor-get-current-pos ed) text-len))
+                 ;; Find line boundaries from text (avoids byte/char position mismatch)
+                 (line-start (let loop ((i (- pos 1)))
+                               (cond ((< i 0) 0)
+                                     ((char=? (string-ref text i) #\newline) (+ i 1))
+                                     (else (loop (- i 1))))))
+                 (line-end (let loop ((i pos))
+                             (cond ((>= i text-len) text-len)
+                                   ((char=? (string-ref text i) #\newline) i)
+                                   (else (loop (+ i 1))))))
+                 (line (substring text line-start line-end))
+                 (trimmed (string-trim line)))
+            (cond
+              ;; <s TAB, <e TAB, etc. - template expansion
+              ((and (>= (string-length trimmed) 2)
+                    (char=? (string-ref trimmed 0) #\<)
+                    (let ((key (string-ref trimmed 1)))
+                      (memv key '(#\s #\e #\q #\v #\c #\C #\l #\h #\a))))
+               (execute-command! app 'org-template-expand))
+              ;; On a heading line - org-cycle fold/unfold
+              ((and (> (string-length trimmed) 0)
+                    (char=? (string-ref trimmed 0) #\*))
+               (execute-command! app 'org-cycle))
+              ;; Otherwise - regular indent
+              (else
+               (editor-insert-text ed pos "  ")))))))
       (else
        ;; Insert 2-space indent (Scheme convention)
        (let ((pos (editor-get-current-pos ed)))

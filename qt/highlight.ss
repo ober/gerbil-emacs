@@ -6,6 +6,7 @@
 
 (export qt-setup-highlighting!
         qt-remove-highlighting!
+        qt-setup-org-styles!
         qt-update-visual-decorations!
         qt-highlight-search-matches!
         qt-clear-search-highlights!
@@ -469,6 +470,13 @@
          (doc (buffer-doc-pointer buf))
          (ed (and doc (hash-get *doc-editor-map* doc)))
          (lexer-name (and lang (language->lexer-name lang))))
+    ;; Org mode: no QScintilla lexer — use manual styling
+    (when (and ed (eq? lang 'org))
+      (set! (buffer-lexer-lang buf) 'org)
+      (apply-base-dark-theme! ed)
+      ;; Disable any built-in lexer for manual styling (SCI_SETILEXER = 4033)
+      (sci-send ed 4033 0)
+      (qt-setup-org-styles! ed))
     (when (and ed lexer-name)
       ;; Store language in buffer
       (set! (buffer-lexer-lang buf) lang)
@@ -528,6 +536,63 @@
          ;; Numbers: style 4
          (sci-send ed SCI_STYLESETFORE 4 (rgb->sci nm-r nm-g nm-b)))
         (else (void))))))
+
+;;;============================================================================
+;;; Org-mode manual styles (no QScintilla lexer — uses SCI style messages)
+;;;============================================================================
+
+;; Org style IDs (32-58, same as TUI org-highlight.ss)
+(def (qt-setup-org-styles! ed)
+  "Configure org-mode style colors for QScintilla editor."
+  ;; Heading colors (style 33-40)
+  (let ((colors (list (rgb->sci #x50 #x78 #xDC)    ; heading 1 blue
+                      (rgb->sci #xD2 #x8C #x32)    ; heading 2 orange
+                      (rgb->sci #x3C #xA0 #x3C)    ; heading 3 green
+                      (rgb->sci #x32 #xB4 #xB4)    ; heading 4 cyan
+                      (rgb->sci #x96 #x50 #xB4)    ; heading 5 purple
+                      (rgb->sci #xB4 #xA0 #x28)    ; heading 6 yellow
+                      (rgb->sci #x78 #x78 #x78)    ; heading 7 gray
+                      (rgb->sci #x64 #x64 #x64)))) ; heading 8 dark gray
+    (let loop ((i 0) (cs colors))
+      (when (and (< i 8) (pair? cs))
+        (let ((style (+ 33 i)))
+          (sci-send ed SCI_STYLESETFORE style (car cs))
+          (sci-send ed SCI_STYLESETBOLD style 1))
+        (loop (+ i 1) (cdr cs)))))
+  ;; TODO (41) / DONE (42)
+  (sci-send ed SCI_STYLESETFORE 41 (rgb->sci #xDC #x32 #x32))
+  (sci-send ed SCI_STYLESETBOLD 41 1)
+  (sci-send ed SCI_STYLESETFORE 42 (rgb->sci #x32 #xB4 #x32))
+  (sci-send ed SCI_STYLESETBOLD 42 1)
+  ;; Tags (43)
+  (sci-send ed SCI_STYLESETFORE 43 (rgb->sci #x96 #x50 #xB4))
+  ;; Comment (44)
+  (sci-send ed SCI_STYLESETFORE 44 (rgb->sci #x82 #x82 #x82))
+  (sci-send ed SCI_STYLESETITALIC 44 1)
+  ;; Keyword #+TITLE: (45)
+  (sci-send ed SCI_STYLESETFORE 45 (rgb->sci #xD2 #x8C #x32))
+  ;; Bold (46) / Italic (47) / Underline (48)
+  (sci-send ed SCI_STYLESETBOLD 46 1)
+  (sci-send ed SCI_STYLESETITALIC 47 1)
+  (sci-send ed SCI_STYLESETUNDERLINE 48 1)
+  ;; Verbatim (49) / Code (50)
+  (sci-send ed SCI_STYLESETFORE 49 (rgb->sci #x32 #xB4 #xB4))
+  (sci-send ed SCI_STYLESETFORE 50 (rgb->sci #x3C #xA0 #x3C))
+  ;; Link (51)
+  (sci-send ed SCI_STYLESETFORE 51 (rgb->sci #x50 #x78 #xDC))
+  (sci-send ed SCI_STYLESETUNDERLINE 51 1)
+  ;; Date (52)
+  (sci-send ed SCI_STYLESETFORE 52 (rgb->sci #xB4 #x50 #xB4))
+  ;; Property (53)
+  (sci-send ed SCI_STYLESETFORE 53 (rgb->sci #x64 #x64 #x64))
+  ;; Block delimiters (54) / Block body (55)
+  (sci-send ed SCI_STYLESETFORE 54 (rgb->sci #xD2 #x8C #x32))
+  (sci-send ed SCI_STYLESETFORE 55 (rgb->sci #x64 #x64 #x64))
+  ;; Checkbox on (56) / off (57)
+  (sci-send ed SCI_STYLESETFORE 56 (rgb->sci #x32 #xB4 #x32))
+  (sci-send ed SCI_STYLESETFORE 57 (rgb->sci #xDC #x32 #x32))
+  ;; Table (58)
+  (sci-send ed SCI_STYLESETFORE 58 (rgb->sci #x32 #xB4 #xB4)))
 
 (def (qt-remove-highlighting! buf)
   (let* ((doc (buffer-doc-pointer buf))

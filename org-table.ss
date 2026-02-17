@@ -34,13 +34,13 @@
 
 (def (org-table-row? str)
   "Check if string is an org table row (starts with |)."
-  (let ((trimmed (string-trim str)))
+  (let ((trimmed (string-trim-both str)))
     (and (> (string-length trimmed) 0)
          (char=? (string-ref trimmed 0) #\|))))
 
 (def (org-table-separator? str)
   "Check if string is a table separator line (|---+---|)."
-  (let ((trimmed (string-trim str)))
+  (let ((trimmed (string-trim-both str)))
     (and (org-table-row? trimmed)
          (pregexp-match "^\\|[-+]+\\|?$" trimmed)
          #t)))
@@ -57,7 +57,7 @@
 
 (def (org-table-parse-row str)
   "Split '| a | b | c |' into (\"a\" \"b\" \"c\"). Returns list of trimmed cell strings."
-  (let* ((trimmed (string-trim str))
+  (let* ((trimmed (string-trim-both str))
          (len (string-length trimmed)))
     (if (or (= len 0) (not (char=? (string-ref trimmed 0) #\|)))
       '()
