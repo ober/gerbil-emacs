@@ -476,8 +476,64 @@
                                  (- my wy) mx))
             (loop (cdr wins) (+ i 1))))))))
 
+;;; Check if a TUI event is a plain printable character (no modifiers).
+(def (tui-event-printable-char ev)
+  "Return the character if ev is a plain printable keystroke, or #f."
+  (let ((ch (tui-event-ch ev))
+        (mod (tui-event-mod ev)))
+    (and (> ch 31)
+         (zero? (bitwise-and mod TB_MOD_ALT))
+         (integer->char ch))))
+
+(def (dispatch-key-normal! app ev)
+  "Process a key event through the keymap state machine (no chord detection)."
+  (let-values (((action data new-state)
+                (key-state-feed! (app-state-key-state app) ev)))
+    (set! (app-state-key-state app) new-state)
+    (case action
+      ((command)
+       ;; Record macro step (skip macro control commands themselves)
+       (when (and (app-state-macro-recording app)
+                  (not (memq data '(start-kbd-macro end-kbd-macro call-last-kbd-macro))))
+         (set! (app-state-macro-recording app)
+           (cons (cons 'command data)
+                 (app-state-macro-recording app))))
+       (execute-command! app data))
+      ((prefix)
+       ;; Show prefix in echo area with which-key hints
+       (let* ((prefix-str (let loop ((keys (key-state-prefix-keys new-state))
+                                     (acc ""))
+                            (if (null? keys) acc
+                              (loop (cdr keys)
+                                    (if (string=? acc "")
+                                      (car keys)
+                                      (string-append acc " " (car keys)))))))
+              (current-km (key-state-keymap new-state))
+              (hints (which-key-summary current-km 12))
+              (display-str (if (> (string-length hints) 0)
+                             (string-append prefix-str "- " hints)
+                             (string-append prefix-str "-"))))
+         (echo-message! (app-state-echo app) display-str)))
+      ((self-insert)
+       ;; Apply key translation (e.g., bracket/paren swap)
+       (let ((translated (char->integer (key-translate-char (integer->char data)))))
+         (if (handle-prefix-digit-or-sign! app translated)
+           (void)
+           (begin
+             ;; Record macro step
+             (when (app-state-macro-recording app)
+               (set! (app-state-macro-recording app)
+                 (cons (cons 'self-insert translated)
+                       (app-state-macro-recording app))))
+             (cmd-self-insert! app translated)
+             (set! (app-state-prefix-arg app) #f)
+             (set! (app-state-prefix-digit-mode? app) #f)))))
+      ((undefined)
+       (echo-error! (app-state-echo app)
+                    (string-append data " is undefined"))))))
+
 (def (dispatch-key! app ev)
-  "Process a key event through the keymap state machine."
+  "Process a key event with chord detection and key translation."
   (let ((echo (app-state-echo app)))
     ;; Record keystroke in lossage ring
     (key-lossage-record! app (key-event->string ev))
@@ -487,48 +543,37 @@
                (null? (key-state-prefix-keys (app-state-key-state app))))
       (echo-clear! echo))
 
-    (let-values (((action data new-state)
-                  (key-state-feed! (app-state-key-state app) ev)))
-      (set! (app-state-key-state app) new-state)
-      (case action
-        ((command)
-         ;; Record macro step (skip macro control commands themselves)
-         (when (and (app-state-macro-recording app)
-                    (not (memq data '(start-kbd-macro end-kbd-macro call-last-kbd-macro))))
-           (set! (app-state-macro-recording app)
-             (cons (cons 'command data)
-                   (app-state-macro-recording app))))
-         (execute-command! app data))
-        ((prefix)
-         ;; Show prefix in echo area with which-key hints
-         (let* ((prefix-str (let loop ((keys (key-state-prefix-keys new-state))
-                                       (acc ""))
-                              (if (null? keys) acc
-                                (loop (cdr keys)
-                                      (if (string=? acc "")
-                                        (car keys)
-                                        (string-append acc " " (car keys)))))))
-                (current-km (key-state-keymap new-state))
-                (hints (which-key-summary current-km 12))
-                (display-str (if (> (string-length hints) 0)
-                               (string-append prefix-str "- " hints)
-                               (string-append prefix-str "-"))))
-           (echo-message! (app-state-echo app) display-str)))
-        ((self-insert)
-         (if (handle-prefix-digit-or-sign! app data)
-           (void)
-           (begin
-             ;; Record macro step
-             (when (app-state-macro-recording app)
-               (set! (app-state-macro-recording app)
-                 (cons (cons 'self-insert data)
-                       (app-state-macro-recording app))))
-             (cmd-self-insert! app data)
-             (set! (app-state-prefix-arg app) #f)
-             (set! (app-state-prefix-digit-mode? app) #f))))
-        ((undefined)
-         (echo-error! (app-state-echo app)
-                      (string-append data " is undefined")))))))
+    ;; Chord detection: if this is a plain printable char that could start
+    ;; a chord and we're at the top-level keymap, wait briefly for a second key
+    (let ((ch (tui-event-printable-char ev)))
+      (if (and ch
+               *chord-mode*
+               (null? (key-state-prefix-keys (app-state-key-state app)))
+               (chord-start-char? ch))
+        ;; Potential chord starter — peek for second key within timeout
+        (let ((ev2 (tui-peek-event *chord-timeout*)))
+          (if ev2
+            (let ((ch2 (and (tui-event-key? ev2) (tui-event-printable-char ev2))))
+              (if ch2
+                ;; Got a second printable char — check chord
+                (let ((cmd (chord-lookup ch ch2)))
+                  (if cmd
+                    ;; Chord matched — execute command
+                    (begin
+                      (key-lossage-record! app (key-event->string ev2))
+                      (execute-command! app cmd))
+                    ;; Not a chord — process both keys normally
+                    (begin
+                      (dispatch-key-normal! app ev)
+                      (dispatch-key! app ev2))))
+                ;; Second event is not a printable char — process both
+                (begin
+                  (dispatch-key-normal! app ev)
+                  (dispatch-event! app ev2))))
+            ;; Timeout — no second key, process the first normally
+            (dispatch-key-normal! app ev)))
+        ;; Not a chord starter — normal processing
+        (dispatch-key-normal! app ev)))))
 
 ;;;============================================================================
 ;;; Main entry point

@@ -8,6 +8,7 @@
         :gemacs/qt/sci-shim
         :gemacs/core
         :gemacs/editor
+        (only-in :gemacs/persist init-file-load!)
         :gemacs/repl
         :gemacs/eshell
         :gemacs/shell
@@ -230,6 +231,7 @@
       (savehist-load!)
       (save-place-load!)
       (load-init-file!)
+      (init-file-load!)  ;; plaintext ~/.gemacs-init (chords, key-translate, settings)
 
       ;; Menu bar and toolbar
       (qt-setup-menubar! app win)

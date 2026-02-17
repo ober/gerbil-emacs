@@ -463,7 +463,9 @@
    Lines starting with ; or # are comments.
    Supported settings: scroll-margin, save-place,
    delete-trailing-whitespace-on-save, require-final-newline,
-   centered-cursor, bind KEY COMMAND."
+   centered-cursor, bind KEY COMMAND, unbind KEY,
+   chord AB COMMAND, key-translate FROM TO,
+   chord-mode true/false, chord-timeout MILLIS."
   (with-catch
     (lambda (e) #f)
     (lambda ()
@@ -511,6 +513,44 @@
                                      (when (> (string-length cmd-str) 0)
                                        (keymap-bind! *global-keymap* key-str
                                          (string->symbol cmd-str)))))))
+                              ;; Unbind: unbind KEY
+                              ;; e.g. "unbind <f12>"
+                              ((string=? key "unbind")
+                               (when (> (string-length val) 0)
+                                 (hash-remove! *global-keymap* val)))
+                              ;; Key chord: chord AB command
+                              ;; e.g. "chord EE eshell"
+                              ((string=? key "chord")
+                               (let ((sp2 (string-index val #\space)))
+                                 (when sp2
+                                   (let ((chord-str (substring val 0 sp2))
+                                         (cmd-str (string-trim-both
+                                                    (substring val (+ sp2 1) (string-length val)))))
+                                     (when (and (= (string-length chord-str) 2)
+                                                (> (string-length cmd-str) 0))
+                                       (key-chord-define-global chord-str
+                                         (string->symbol cmd-str)))))))
+                              ;; Key translation: key-translate FROM TO
+                              ;; e.g. "key-translate ( ["
+                              ((string=? key "key-translate")
+                               (let ((sp2 (string-index val #\space)))
+                                 (when sp2
+                                   (let ((from-str (substring val 0 sp2))
+                                         (to-str (string-trim-both
+                                                   (substring val (+ sp2 1) (string-length val)))))
+                                     (when (and (= (string-length from-str) 1)
+                                                (= (string-length to-str) 1))
+                                       (key-translate! (string-ref from-str 0)
+                                                       (string-ref to-str 0)))))))
+                              ;; Chord mode toggle: chord-mode true/false
+                              ((string=? key "chord-mode")
+                               (set! *chord-mode*
+                                 (or (string=? val "true") (string=? val "1"))))
+                              ;; Chord timeout: chord-timeout MILLIS
+                              ((string=? key "chord-timeout")
+                               (let ((n (string->number val)))
+                                 (when (and n (> n 0) (<= n 2000))
+                                   (set! *chord-timeout* n))))
                               ))))))
                   (loop))))))))))
 
