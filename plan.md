@@ -8,17 +8,17 @@ gerbil-emacs has a basic org-mode with ~24 commands (TODO cycling, headings, fol
 
 The current `editor-extra-org.ss` will be refactored. New modules are added to the build chain:
 
-| New File | Purpose |
-|---|---|
-| `org-parse.ss` | Core parser: timestamps, headings, properties, planning lines, blocks |
-| `org-table.ss` | Table parsing, alignment, cell navigation, formulas, CSV |
-| `org-babel.ss` | Code block execution, sessions, noweb, tangle |
-| `org-agenda.ss` | Agenda views, dispatcher, date navigation, filtering |
-| `org-export.ss` | Export backends: HTML, Markdown, LaTeX, PDF, plain text |
-| `org-clock.ss` | Clock in/out fix, elapsed calculation, clock reports |
-| `org-capture.ss` | Capture templates, refile, target selection |
-| `org-highlight.ss` | Custom container lexer for org syntax highlighting |
-| `org-list.ss` | List handling: ordered/unordered, checkboxes, statistics |
+| New File           | Purpose                                                               |
+|--------------------|-----------------------------------------------------------------------|
+| `org-parse.ss`     | Core parser: timestamps, headings, properties, planning lines, blocks |
+| `org-table.ss`     | Table parsing, alignment, cell navigation, formulas, CSV              |
+| `org-babel.ss`     | Code block execution, sessions, noweb, tangle                         |
+| `org-agenda.ss`    | Agenda views, dispatcher, date navigation, filtering                  |
+| `org-export.ss`    | Export backends: HTML, Markdown, LaTeX, PDF, plain text               |
+| `org-clock.ss`     | Clock in/out fix, elapsed calculation, clock reports                  |
+| `org-capture.ss`   | Capture templates, refile, target selection                           |
+| `org-highlight.ss` | Custom container lexer for org syntax highlighting                    |
+| `org-list.ss`      | List handling: ordered/unordered, checkboxes, statistics              |
 
 **Build order** in `build.ss` (insert after `editor-extra-helpers`, before `editor-extra-org`):
 ```
@@ -112,28 +112,28 @@ No built-in Scintilla lexer for org exists. Use the manual `SCI_STARTSTYLING`/`S
 
 ### Style IDs (32-63, avoids collision with lexer styles 0-31 and terminal 64-79)
 
-| ID | Element | Style |
-|----|---------|-------|
-| 32 | Default | plain text |
-| 33-40 | Heading 1-8 | blue/orange/green/cyan/purple/yellow bold, decreasing size |
-| 41 | TODO | red bold |
-| 42 | DONE | green bold |
-| 43 | Tags | purple |
-| 44 | Comment | gray italic |
-| 45 | Keyword (`#+TITLE:`) | orange |
-| 46 | Bold (`*text*`) | bold |
-| 47 | Italic (`/text/`) | italic |
-| 48 | Underline (`_text_`) | underline |
-| 49 | Verbatim (`=text=`) | monospace cyan |
-| 50 | Code (`~text~`) | monospace green |
-| 51 | Link (`[[url][desc]]`) | blue underline |
-| 52 | Date (`<2024-01-15>`) | magenta |
-| 53 | Property drawer | dim |
-| 54 | Block delimiter (`#+BEGIN_SRC`) | orange |
-| 55 | Block body | subtle background |
-| 56 | Checkbox checked `[X]` | green |
-| 57 | Checkbox unchecked `[ ]` | red |
-| 58 | Table (`\| cell \|`) | cyan |
+| ID    | Element                         | Style                                                      |
+|-------|---------------------------------|------------------------------------------------------------|
+| 32    | Default                         | plain text                                                 |
+| 33-40 | Heading 1-8                     | blue/orange/green/cyan/purple/yellow bold, decreasing size |
+| 41    | TODO                            | red bold                                                   |
+| 42    | DONE                            | green bold                                                 |
+| 43    | Tags                            | purple                                                     |
+| 44    | Comment                         | gray italic                                                |
+| 45    | Keyword (`#+TITLE:`)            | orange                                                     |
+| 46    | Bold (`*text*`)                 | bold                                                       |
+| 47    | Italic (`/text/`)               | italic                                                     |
+| 48    | Underline (`_text_`)            | underline                                                  |
+| 49    | Verbatim (`=text=`)             | monospace cyan                                             |
+| 50    | Code (`~text~`)                 | monospace green                                            |
+| 51    | Link (`[[url][desc]]`)          | blue underline                                             |
+| 52    | Date (`<2024-01-15>`)           | magenta                                                    |
+| 53    | Property drawer                 | dim                                                        |
+| 54    | Block delimiter (`#+BEGIN_SRC`) | orange                                                     |
+| 55    | Block body                      | subtle background                                          |
+| 56    | Checkbox checked `[X]`          | green                                                      |
+| 57    | Checkbox unchecked `[ ]`        | red                                                        |
+| 58    | Table (`\| cell \|`)            | cyan                                                       |
 
 ### Functions
 
