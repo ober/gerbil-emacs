@@ -709,6 +709,14 @@
                              new-text)))
           (sci-send/string ed SCI_REPLACETARGET replacement
                           (string-length replacement)))
+        ;; Re-apply org table styling (manual styling, no lexer for org)
+        (let loop ((i tbl-start))
+          (when (<= i tbl-end)
+            (let ((ls (sci-send ed SCI_POSITIONFROMLINE i 0))
+                  (le (sci-send ed SCI_GETLINEENDPOSITION i)))
+              (sci-send ed SCI_STARTSTYLING ls 0)
+              (sci-send ed SCI_SETSTYLING (- le ls) 58)) ; 58 = org table style
+            (loop (+ i 1))))
         ;; Move to next cell
         (let* ((next-col (+ cur-col 1))
                (next-line cur-line))

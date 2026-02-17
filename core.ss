@@ -1041,7 +1041,12 @@
     (if cmd
       (begin
         (set! (app-state-last-command app) name)
-        (cmd app)
+        (with-catch
+          (lambda (e)
+            (echo-error! (app-state-echo app)
+              (string-append (symbol->string name) ": "
+                             (with-output-to-string "" (lambda () (display-exception e))))))
+          (lambda () (cmd app)))
         ;; Reset prefix-arg unless the command was a prefix-building command
         (unless (memq name '(universal-argument digit-argument-0 digit-argument-1 digit-argument-2
                             digit-argument-3 digit-argument-4 digit-argument-5 digit-argument-6

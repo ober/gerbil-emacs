@@ -197,10 +197,14 @@ Numeric cells are right-aligned, text cells are left-aligned."
              (end-pos (if (< (+ end 1) (editor-get-line-count ed))
                         (editor-position-from-line ed (+ end 1))
                         (editor-get-text-length ed))))
-        ;; Replace old table with new
+        ;; Replace old table with new — add trailing newline when region
+        ;; extends to next line start so we don't eat the line after the table
         (send-message ed SCI_SETTARGETSTART start-pos)
         (send-message ed SCI_SETTARGETEND end-pos)
-        (editor-replace-target-text ed new-text)
+        (let ((replacement (if (< (+ end 1) (editor-get-line-count ed))
+                             (string-append new-text "\n")
+                             new-text)))
+          (editor-replace-target-text ed replacement))
         ;; Reposition cursor in the same column
         (let* ((cur-line (editor-current-line ed))
                (clamped-line (max start (min cur-line end))))
