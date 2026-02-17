@@ -933,7 +933,11 @@
               (editor-set-text ed new-text)
               ;; Place cursor on the blank line inside the block
               (editor-goto-pos ed (+ line-start (string-length begin-line) 1
-                                     (string-length indent))))
+                                     (string-length indent)))
+              ;; Re-apply org highlighting (editor-set-text clears all styles)
+              (setup-org-styles! ed)
+              (org-highlight-buffer! ed new-text)
+              (org-set-fold-levels! ed new-text))
             (echo-message! echo
               (string-append "Expanded <" key " to #+BEGIN_" block-type)))))
       ;; Not a template pattern

@@ -107,6 +107,10 @@
                  *org-capture-templates* *org-capture-active?*)
         (only-in :gemacs/persist
                  detect-major-mode buffer-local-get buffer-local-set!)
+        (only-in :gemacs/org-highlight
+                 setup-org-styles! org-highlight-buffer! org-set-fold-levels!
+                 ORG_STYLE_HEADING_1 ORG_STYLE_BLOCK_DELIM ORG_STYLE_BLOCK_BODY
+                 ORG_STYLE_DEFAULT)
         (only-in :gemacs/editor-extra-org
                  cmd-org-mode
                  cmd-org-todo cmd-org-export cmd-org-cycle cmd-org-shift-tab
@@ -4187,6 +4191,39 @@
         (editor-goto-pos ed 2)
         (cmd-org-template-expand app)
         (check (editor-get-text ed) => "<z")))
+
+    (test-case "headless: org-template-expand preserves highlighting"
+      ;; Regression: <sTAB was clearing all org-mode colors because
+      ;; editor-set-text resets Scintilla styles and highlighting was not
+      ;; re-applied after the expansion.
+      (let* ((SCI_GETSTYLEAT 2010)
+             (ed (create-scintilla-editor width: 80 height: 24))
+             (buf (make-buffer "notes.org" #f
+                    (send-message ed SCI_GETDOCPOINTER) #f #f #f #f))
+             (win (make-edit-window ed buf 0 0 80 24 0))
+             (fr (make-frame [win] 0 80 24 'vertical))
+             (app (new-app-state fr)))
+        ;; Set up an org buffer with a heading followed by a template trigger
+        (editor-set-text ed "* My Heading\n<s")
+        (editor-goto-pos ed 15) ;; cursor after <s
+        ;; Apply org highlighting so heading gets styled
+        (setup-org-styles! ed)
+        (org-highlight-buffer! ed (editor-get-text ed))
+        ;; Verify heading is styled before expansion
+        (let ((style-before (send-message ed SCI_GETSTYLEAT 0 0)))
+          (check (= style-before ORG_STYLE_HEADING_1) => #t))
+        ;; Expand the <s template
+        (cmd-org-template-expand app)
+        (let ((text (editor-get-text ed)))
+          ;; Template was expanded
+          (check (not (not (string-contains text "#+BEGIN_SRC"))) => #t)
+          ;; Heading is STILL styled after expansion (the bug: it was reset to 0)
+          (let ((style-after (send-message ed SCI_GETSTYLEAT 0 0)))
+            (check (= style-after ORG_STYLE_HEADING_1) => #t))
+          ;; Block delimiters are styled too
+          (let* ((begin-pos (string-contains text "#+BEGIN_SRC"))
+                 (style-begin (send-message ed SCI_GETSTYLEAT begin-pos 0)))
+            (check (= style-begin ORG_STYLE_BLOCK_DELIM) => #t)))))
 
     ;;=========================================================================
     ;; Org-table: pure function tests
