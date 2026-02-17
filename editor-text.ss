@@ -16,18 +16,18 @@
         (only-in :gerbil-scintilla/ffi scintilla-send-message-string)
         :gerbil-scintilla/style
         :gerbil-scintilla/tui
-        :gerbil-emacs/core
-        :gerbil-emacs/repl
-        :gerbil-emacs/eshell
-        :gerbil-emacs/shell
-        :gerbil-emacs/keymap
-        :gerbil-emacs/buffer
-        :gerbil-emacs/window
-        :gerbil-emacs/modeline
-        :gerbil-emacs/echo
-        :gerbil-emacs/highlight
-        :gerbil-emacs/editor-core
-        :gerbil-emacs/editor-ui)
+        :gemacs/core
+        :gemacs/repl
+        :gemacs/eshell
+        :gemacs/shell
+        :gemacs/keymap
+        :gemacs/buffer
+        :gemacs/window
+        :gemacs/modeline
+        :gemacs/echo
+        :gemacs/highlight
+        :gemacs/editor-core
+        :gemacs/editor-ui)
 
 ;;;============================================================================
 ;;; Sort lines (M-^)

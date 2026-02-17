@@ -1,6 +1,6 @@
 #!/usr/bin/env gxi
 ;;; -*- Gerbil -*-
-;;; Build script for gerbil-emacs
+;;; Build script for gemacs
 
 (import :std/build-script
         :std/make)
@@ -115,6 +115,7 @@
     "echo"
     ;; Org-mode modules (must compile before editor-extra-org)
     "org-parse"
+    "org-highlight"
     "org-table"
     "org-clock"
     "org-list"
@@ -148,7 +149,7 @@
     "app"
     "emacs-test"
     "persist-test"
-    (exe: "main" bin: "gerbil-emacs"
+    (exe: "main" bin: "gemacs"
           "-cc-options" ,cc-opts
           "-ld-options" ,ld-opts)
     ;; emacsclient-like client binary
@@ -178,6 +179,6 @@
     (exe: "qt-highlight-test" bin: "qt-highlight-test"
           "-cc-options" ,qt-cc-opts
           "-ld-options" ,qt-ld-opts)
-    (exe: "qt/main" bin: "gerbil-emacs-qt"
+    (exe: "qt/main" bin: "gemacs-qt"
           "-cc-options" ,qt-cc-opts
           "-ld-options" ,qt-ld-opts)))

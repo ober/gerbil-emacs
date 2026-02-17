@@ -1,5 +1,5 @@
 ;;; -*- Gerbil -*-
-;;; QScintilla compatibility shim for gerbil-emacs
+;;; QScintilla compatibility shim for gemacs
 ;;;
 ;;; Provides qt-plain-text-edit-* compatible functions backed by QScintilla.
 ;;; Modules import this INSTEAD of :gerbil-qt/qt to get both:
@@ -82,7 +82,7 @@
           qt-extra-selection-add-range!
           qt-extra-selections-apply!)
         :gerbil-scintilla/constants
-        :gerbil-emacs/core
+        :gemacs/core
         :std/sugar)
 
 ;;;============================================================================

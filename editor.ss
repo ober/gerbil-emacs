@@ -1,5 +1,5 @@
 ;;; -*- Gerbil -*-
-;;; TUI editor commands and app state for gerbil-emacs
+;;; TUI editor commands and app state for gemacs
 ;;; Facade module: imports sub-modules and registers all commands.
 
 (export
@@ -28,15 +28,15 @@
   make-auto-save-path
   file-mod-time)
 
-(import :gerbil-emacs/core
-        :gerbil-emacs/editor-extra
-        :gerbil-emacs/editor-core
-        :gerbil-emacs/editor-ui
-        :gerbil-emacs/editor-text
-        :gerbil-emacs/editor-advanced
-        :gerbil-emacs/editor-cmds-a
-        :gerbil-emacs/editor-cmds-b
-        :gerbil-emacs/editor-cmds-c)
+(import :gemacs/core
+        :gemacs/editor-extra
+        :gemacs/editor-core
+        :gemacs/editor-ui
+        :gemacs/editor-text
+        :gemacs/editor-advanced
+        :gemacs/editor-cmds-a
+        :gemacs/editor-cmds-b
+        :gemacs/editor-cmds-c)
 
 ;;;============================================================================
 ;;; Register all commands

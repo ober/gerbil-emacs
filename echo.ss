@@ -1,5 +1,5 @@
 ;;; -*- Gerbil -*-
-;;; TUI echo area / minibuffer for gerbil-emacs
+;;; TUI echo area / minibuffer for gemacs
 ;;;
 ;;; The echo area occupies the last terminal row.
 ;;; It displays messages and handles simple line input for prompts.
@@ -23,7 +23,7 @@
         :std/sort
         :std/srfi/13
         :gerbil-scintilla/tui
-        :gerbil-emacs/core)
+        :gemacs/core)
 
 ;;;============================================================================
 ;;; Minibuffer history

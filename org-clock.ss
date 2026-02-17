@@ -15,9 +15,9 @@
         :std/sort
         :gerbil-scintilla/scintilla
         :gerbil-scintilla/constants
-        :gerbil-emacs/core
-        :gerbil-emacs/echo
-        :gerbil-emacs/org-parse)
+        :gemacs/core
+        :gemacs/echo
+        :gemacs/org-parse)
 
 ;;;============================================================================
 ;;; Clock State

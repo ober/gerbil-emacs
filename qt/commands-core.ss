@@ -8,19 +8,19 @@
         :std/sort
         :std/srfi/13
         :std/text/base64
-        :gerbil-emacs/qt/sci-shim
-        :gerbil-emacs/core
-        :gerbil-emacs/editor
-        :gerbil-emacs/repl
-        :gerbil-emacs/eshell
-        :gerbil-emacs/shell
-        :gerbil-emacs/terminal
-        :gerbil-emacs/qt/buffer
-        :gerbil-emacs/qt/window
-        :gerbil-emacs/persist
-        :gerbil-emacs/qt/echo
-        :gerbil-emacs/qt/highlight
-        :gerbil-emacs/qt/modeline)
+        :gemacs/qt/sci-shim
+        :gemacs/core
+        :gemacs/editor
+        :gemacs/repl
+        :gemacs/eshell
+        :gemacs/shell
+        :gemacs/terminal
+        :gemacs/qt/buffer
+        :gemacs/qt/window
+        :gemacs/persist
+        :gemacs/qt/echo
+        :gemacs/qt/highlight
+        :gemacs/qt/modeline)
 
 ;;; ========================================================================
 ;;; Winner mode — undo/redo window configuration changes
@@ -280,15 +280,15 @@ Returns #t if changed, #f if not or if no record exists."
               (> current recorded)))))
 
 ;;;============================================================================
-;;; Directory-local variables (.gerbil-emacs-config)
+;;; Directory-local variables (.gemacs-config)
 ;;;============================================================================
 
 (def *dir-locals-cache* (make-hash-table))  ; dir -> (mtime . alist)
 
 (def (find-dir-locals-file dir)
-  "Search DIR and parent directories for .gerbil-emacs-config file."
+  "Search DIR and parent directories for .gemacs-config file."
   (let loop ((d dir))
-    (let ((config-path (path-expand ".gerbil-emacs-config" d)))
+    (let ((config-path (path-expand ".gemacs-config" d)))
       (cond
         ((file-exists? config-path) config-path)
         ((string=? d "/") #f)

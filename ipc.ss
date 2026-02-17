@@ -12,7 +12,7 @@
 ;;;============================================================================
 
 (def *ipc-server-file*
-  (path-expand ".gerbil-emacs-server" (getenv "HOME")))
+  (path-expand ".gemacs-server" (getenv "HOME")))
 
 ;; Mutex-protected queue of file paths received from clients
 (def *ipc-queue* [])

@@ -1,5 +1,5 @@
 ;;; -*- Gerbil -*-
-;;; Status line rendering for gerbil-emacs
+;;; Status line rendering for gemacs
 ;;;
 ;;; Format: -UUU:**-  buffer-name    (mode) L42 C1  Top
 ;;; Drawn with reversed colors via tui-print!
@@ -10,10 +10,10 @@
         :gerbil-scintilla/constants
         :gerbil-scintilla/scintilla
         :gerbil-scintilla/tui
-        :gerbil-emacs/core
-        :gerbil-emacs/buffer
-        :gerbil-emacs/window
-        :gerbil-emacs/highlight)
+        :gemacs/core
+        :gemacs/buffer
+        :gemacs/window
+        :gemacs/highlight)
 
 ;;;============================================================================
 ;;; Git branch detection (cached)

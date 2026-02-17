@@ -8,26 +8,26 @@
         :std/sort
         :std/srfi/13
         :std/text/base64
-        :gerbil-emacs/qt/sci-shim
-        :gerbil-emacs/core
-        :gerbil-emacs/editor
-        :gerbil-emacs/repl
-        :gerbil-emacs/eshell
-        :gerbil-emacs/shell
-        :gerbil-emacs/terminal
-        :gerbil-emacs/qt/buffer
-        :gerbil-emacs/qt/window
-        :gerbil-emacs/qt/echo
-        :gerbil-emacs/qt/highlight
-        :gerbil-emacs/qt/modeline
-        :gerbil-emacs/qt/commands-core
-        :gerbil-emacs/qt/commands-edit
-        :gerbil-emacs/qt/commands-search
-        :gerbil-emacs/qt/commands-file
-        :gerbil-emacs/qt/commands-sexp
-        :gerbil-emacs/qt/commands-ide
-        :gerbil-emacs/qt/commands-vcs
-        :gerbil-emacs/qt/commands-shell)
+        :gemacs/qt/sci-shim
+        :gemacs/core
+        :gemacs/editor
+        :gemacs/repl
+        :gemacs/eshell
+        :gemacs/shell
+        :gemacs/terminal
+        :gemacs/qt/buffer
+        :gemacs/qt/window
+        :gemacs/qt/echo
+        :gemacs/qt/highlight
+        :gemacs/qt/modeline
+        :gemacs/qt/commands-core
+        :gemacs/qt/commands-edit
+        :gemacs/qt/commands-search
+        :gemacs/qt/commands-file
+        :gemacs/qt/commands-sexp
+        :gemacs/qt/commands-ide
+        :gemacs/qt/commands-vcs
+        :gemacs/qt/commands-shell)
 
 
 (def (cmd-expand-abbrev app)
@@ -143,7 +143,7 @@
       (let* ((port (open-process
                      (list path: "curl"
                            arguments: ["-sL" "-m" "10"
-                                       "-A" "Mozilla/5.0 (compatible; gerbil-emacs eww)"
+                                       "-A" "Mozilla/5.0 (compatible; gemacs eww)"
                                        url]
                            stdout-redirection: #t
                            stderr-redirection: #f
@@ -490,7 +490,7 @@
 
 ;; --- Runtime key rebinding ---
 (def *custom-keys-path*
-  (path-expand ".gerbil-emacs-keys" (user-info-home (user-info (user-name)))))
+  (path-expand ".gemacs-keys" (user-info-home (user-info (user-name)))))
 
 (def (cmd-global-set-key app)
   "Bind a key to a command interactively."
@@ -584,10 +584,10 @@
 ;;; ============================================================================
 
 (def *init-file-path*
-  (path-expand ".gerbil-emacs-init.ss" (user-info-home (user-info (user-name)))))
+  (path-expand ".gemacs-init.ss" (user-info-home (user-info (user-name)))))
 
 (def (load-init-file!)
-  "Load user init file (~/.gerbil-emacs-init.ss) if it exists."
+  "Load user init file (~/.gemacs-init.ss) if it exists."
   (with-catch
     (lambda (e) #f)
     (lambda ()
@@ -635,7 +635,7 @@
 ;;; ============================================================================
 
 (def *scratch-file-path*
-  (path-expand ".gerbil-emacs-scratch" (user-info-home (user-info (user-name)))))
+  (path-expand ".gemacs-scratch" (user-info-home (user-info (user-name)))))
 
 (def (scratch-save!)
   "Save scratch buffer contents to disk."

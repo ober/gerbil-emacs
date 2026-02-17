@@ -10,13 +10,27 @@
         :gerbil-scintilla/constants
         :gerbil-scintilla/scintilla
         :gerbil-scintilla/tui
-        :gerbil-emacs/core
-        :gerbil-emacs/keymap
-        :gerbil-emacs/buffer
-        :gerbil-emacs/window
-        :gerbil-emacs/modeline
-        :gerbil-emacs/echo
-        :gerbil-emacs/editor-extra-helpers)
+        :gemacs/core
+        :gemacs/keymap
+        :gemacs/buffer
+        :gemacs/window
+        :gemacs/modeline
+        :gemacs/echo
+        :gemacs/editor-extra-helpers
+        (only-in :gemacs/highlight register-custom-highlighter!)
+        (only-in :gemacs/org-highlight
+                 setup-org-styles! org-highlight-buffer! org-set-fold-levels!))
+
+;;;============================================================================
+;;; Register org-mode syntax highlighter
+;;;============================================================================
+
+(register-custom-highlighter! 'org
+  (lambda (ed)
+    (setup-org-styles! ed)
+    (let ((text (editor-get-text ed)))
+      (org-highlight-buffer! ed text)
+      (org-set-fold-levels! ed text))))
 
 ;;;============================================================================
 ;;; Org-mode

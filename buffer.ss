@@ -1,5 +1,5 @@
 ;;; -*- Gerbil -*-
-;;; TUI buffer management for gerbil-emacs
+;;; TUI buffer management for gemacs
 ;;;
 ;;; Each buffer owns a Scintilla document pointer (via SCI_CREATEDOCUMENT/
 ;;; SCI_ADDREFDOCUMENT/SCI_RELEASEDOCUMENT). Switching buffers calls
@@ -23,7 +23,7 @@
 (import :std/sugar
         :gerbil-scintilla/constants
         :gerbil-scintilla/scintilla
-        :gerbil-emacs/core)
+        :gemacs/core)
 
 ;;;============================================================================
 ;;; Buffer creation (Scintilla-specific)

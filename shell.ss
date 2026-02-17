@@ -17,7 +17,7 @@
         strip-ansi-codes)
 
 (import :std/sugar
-        :gerbil-emacs/core)
+        :gemacs/core)
 
 ;;;============================================================================
 ;;; Shell state

@@ -1,5 +1,5 @@
 ;;; -*- Gerbil -*-
-;;; Qt frame/window management for gerbil-emacs
+;;; Qt frame/window management for gemacs
 ;;;
 ;;; Uses QSplitter to hold multiple QPlainTextEdit panes.
 ;;; Each editor slot is wrapped in a QStackedWidget so image buffers
@@ -18,9 +18,9 @@
         qt-frame-other-window!)
 
 (import :std/sugar
-        :gerbil-emacs/qt/sci-shim
-        :gerbil-emacs/core
-        :gerbil-emacs/qt/buffer)
+        :gemacs/qt/sci-shim
+        :gemacs/core
+        :gemacs/qt/buffer)
 
 ;;;============================================================================
 ;;; Structures

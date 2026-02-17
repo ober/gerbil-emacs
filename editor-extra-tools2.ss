@@ -12,14 +12,14 @@
         :gerbil-scintilla/constants
         :gerbil-scintilla/scintilla
         :gerbil-scintilla/tui
-        :gerbil-emacs/core
-        :gerbil-emacs/keymap
-        :gerbil-emacs/buffer
-        :gerbil-emacs/window
-        :gerbil-emacs/modeline
-        :gerbil-emacs/echo
-        :gerbil-emacs/editor-extra-helpers
-        :gerbil-emacs/editor-extra-tools)
+        :gemacs/core
+        :gemacs/keymap
+        :gemacs/buffer
+        :gemacs/window
+        :gemacs/modeline
+        :gemacs/echo
+        :gemacs/editor-extra-helpers
+        :gemacs/editor-extra-tools)
 
 ;; Bookmark extras
 (def (cmd-bookmark-bmenu-list app)
@@ -201,7 +201,7 @@
 ;; Emacs server / client
 (def (cmd-server-force-delete app)
   "Force delete editor server socket."
-  (let ((sock (string-append "/tmp/gerbil-emacs-server")))
+  (let ((sock (string-append "/tmp/gemacs-server")))
     (when (file-exists? sock) (delete-file sock))
     (echo-message! (app-state-echo app) "Server socket deleted")))
 

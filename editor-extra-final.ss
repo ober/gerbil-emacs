@@ -14,20 +14,20 @@
         :gerbil-scintilla/constants
         :gerbil-scintilla/scintilla
         :gerbil-scintilla/tui
-        :gerbil-emacs/core
-        :gerbil-emacs/keymap
-        :gerbil-emacs/buffer
-        :gerbil-emacs/window
-        :gerbil-emacs/modeline
-        :gerbil-emacs/echo
-        (only-in :gerbil-emacs/editor-core
+        :gemacs/core
+        :gemacs/keymap
+        :gemacs/buffer
+        :gemacs/window
+        :gemacs/modeline
+        :gemacs/echo
+        (only-in :gemacs/editor-core
                  search-forward-regexp-impl!)
-        (only-in :gerbil-emacs/editor-ui
+        (only-in :gemacs/editor-ui
                  position-cursor-for-replace!)
-        :gerbil-emacs/editor-extra-helpers
-        :gerbil-emacs/editor-extra-web
-        :gerbil-emacs/editor-extra-media
-        :gerbil-emacs/editor-extra-modes)
+        :gemacs/editor-extra-helpers
+        :gemacs/editor-extra-web
+        :gemacs/editor-extra-media
+        :gemacs/editor-extra-modes)
 
 ;;;============================================================================
 ;;; Task #51: Additional unique commands to cross 1000 registrations
@@ -644,7 +644,7 @@
 ;;;============================================================================
 
 (def *command-history* [])
-(def *command-history-file* "~/.gerbil-emacs-cmd-history")
+(def *command-history-file* "~/.gemacs-cmd-history")
 
 (def (command-history-load!)
   "Load M-x command history from disk."
@@ -1021,7 +1021,7 @@
           (lambda (e)
             (echo-error! echo "Sudo save failed"))
           (lambda ()
-            (let ((tmp (string-append "/tmp/.gerbil-emacs-sudo-"
+            (let ((tmp (string-append "/tmp/.gemacs-sudo-"
                          (number->string (random-integer 999999)))))
               ;; Write to temp, then sudo mv
               (call-with-output-file tmp
@@ -1322,7 +1322,7 @@
 ;;; --- Toggle persistent scratch mode ---
 
 (def *persistent-scratch-file*
-  (string-append (or (getenv "HOME") ".") "/.gerbil-emacs-scratch"))
+  (string-append (or (getenv "HOME") ".") "/.gemacs-scratch"))
 
 (def (cmd-save-persistent-scratch app)
   "Save the *scratch* buffer to disk for persistence."

@@ -4,10 +4,10 @@
 (import :std/test
         :std/srfi/13
         :gerbil-scintilla/scintilla
-        :gerbil-emacs/core
-        :gerbil-emacs/buffer
-        :gerbil-emacs/persist
-        (only-in :gerbil-emacs/editor register-all-commands!))
+        :gemacs/core
+        :gemacs/buffer
+        :gemacs/persist
+        (only-in :gemacs/editor register-all-commands!))
 
 (export persist-test)
 
@@ -109,7 +109,7 @@
 
     (test-case "init-file-path is a string"
       (check (string? *init-file-path*) => #t)
-      (check (not (not (string-contains *init-file-path* ".gerbil-emacs-init"))) => #t))
+      (check (not (not (string-contains *init-file-path* ".gemacs-init"))) => #t))
 
     (test-case "persist command registration"
       (register-all-commands!)

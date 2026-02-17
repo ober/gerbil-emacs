@@ -1,5 +1,5 @@
 ;;; -*- Gerbil -*-
-;;; REPL subprocess management for gerbil-emacs
+;;; REPL subprocess management for gemacs
 ;;;
 ;;; Manages a gxi subprocess: spawn, send input, read output, stop.
 ;;; No backend imports — shared between TUI and Qt.
@@ -13,7 +13,7 @@
   repl-prompt)
 
 (import :std/sugar
-        :gerbil-emacs/core)
+        :gemacs/core)
 
 ;;;============================================================================
 ;;; REPL state

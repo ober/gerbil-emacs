@@ -1,4 +1,4 @@
-# gerbil-emacs
+# gemacs
 
 An Emacs-like text editor written in [Gerbil Scheme](https://cons.io/) with
 **dual backends** — a terminal UI (TUI) using [Scintilla](https://www.scintilla.org/)
@@ -9,8 +9,8 @@ covering the breadth of GNU Emacs functionality.
 
 - **1,001 commands** — navigation, editing, search, buffers, windows, files,
   version control, programming, org-mode, shells, and more
-- **Dual backends** — run in the terminal (`gerbil-emacs`) or as a native
-  Qt desktop application (`gerbil-emacs-qt`)
+- **Dual backends** — run in the terminal (`gemacs`) or as a native
+  Qt desktop application (`gemacs-qt`)
 - **Gerbil syntax highlighting** — built-in lexer-based highlighting for
   Gerbil Scheme source files
 - **Embedded shells** — eshell (built-in Gerbil shell), external `$SHELL`
@@ -39,8 +39,8 @@ cd ~/mine/gerbil-scintilla && make build
 # Optionally build gerbil-qt for the Qt backend
 cd ~/mine/gerbil-qt && make build
 
-# Build gerbil-emacs (both TUI and Qt executables)
-cd ~/mine/gerbil-emacs
+# Build gemacs (both TUI and Qt executables)
+cd ~/mine/gemacs
 make          # compile all modules + executables
 make test     # run unit tests (55+ checks, 30+ test cases)
 make install  # install binaries to ~/.local/bin/
@@ -56,12 +56,12 @@ make install PREFIX=/usr/local
 
 ```sh
 # Terminal UI
-gerbil-emacs                    # open with *scratch* buffer
-gerbil-emacs file1.txt file2.ss # open files
+gemacs                    # open with *scratch* buffer
+gemacs file1.txt file2.ss # open files
 
 # Qt GUI
-gerbil-emacs-qt                 # open with *scratch* buffer
-gerbil-emacs-qt file1.txt       # open files
+gemacs-qt                 # open with *scratch* buffer
+gemacs-qt file1.txt       # open files
 ```
 
 ## Key Bindings
@@ -211,7 +211,7 @@ The 1,001 commands span these areas:
 ## Architecture
 
 ```
-gerbil-emacs/
+gemacs/
   core.ss           Shared state, buffer predicates, eval helpers, default keybindings
   keymap.ss         Key event translation and keymap state machine
   buffer.ss         Buffer management with Scintilla document pointers

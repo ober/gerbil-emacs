@@ -11,13 +11,13 @@
         :gerbil-scintilla/constants
         :gerbil-scintilla/scintilla
         :gerbil-scintilla/tui
-        :gerbil-emacs/core
-        :gerbil-emacs/keymap
-        :gerbil-emacs/buffer
-        :gerbil-emacs/window
-        :gerbil-emacs/modeline
-        :gerbil-emacs/echo
-        :gerbil-emacs/editor-extra-helpers)
+        :gemacs/core
+        :gemacs/keymap
+        :gemacs/buffer
+        :gemacs/window
+        :gemacs/modeline
+        :gemacs/echo
+        :gemacs/editor-extra-helpers)
 
 ;; Artist mode — simple ASCII drawing
 (def (cmd-artist-mode app)
@@ -524,7 +524,7 @@
             (echo-error! echo (string-append "SSH failed: "
               (with-output-to-string (lambda () (display-exception e))))))
           (lambda ()
-            (let* ((tmp-file (string-append "/tmp/gerbil-emacs-ssh-" (number->string (random-integer 99999))))
+            (let* ((tmp-file (string-append "/tmp/gemacs-ssh-" (number->string (random-integer 99999))))
                    (proc (open-process
                            (list path: "scp"
                                  arguments: (list path tmp-file)
@@ -706,7 +706,7 @@
 (def (cmd-server-start app)
   "Note about editor server."
   (echo-message! (app-state-echo app)
-    "Server mode: use gerbil-emacs <file> to open files"))
+    "Server mode: use gemacs <file> to open files"))
 
 (def (cmd-server-edit app)
   "Open a file by name (alias for find-file)."

@@ -1,5 +1,5 @@
 ;;; -*- Gerbil -*-
-;;; Qt syntax highlighting for gerbil-emacs
+;;; Qt syntax highlighting for gemacs
 ;;;
 ;;; Uses QScintilla's built-in Lexilla lexers for syntax highlighting.
 ;;; Detects language from file extension and configures lexer + style colors.
@@ -13,8 +13,8 @@
 
 (import :std/sugar
         :std/srfi/13
-        :gerbil-emacs/qt/sci-shim
-        :gerbil-emacs/core)
+        :gemacs/qt/sci-shim
+        :gemacs/core)
 
 ;;;============================================================================
 ;;; Color constants (dark theme)

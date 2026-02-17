@@ -1,21 +1,21 @@
 ;;; -*- Gerbil -*-
-;;; Extra TUI editor commands for gerbil-emacs
+;;; Extra TUI editor commands for gemacs
 ;;; Facade module: imports sub-modules and registers all commands.
 
 (export register-extra-commands!
         winner-save-config!)
 
-(import :gerbil-emacs/core
-        :gerbil-emacs/editor-extra-helpers
-        :gerbil-emacs/editor-extra-org
-        :gerbil-emacs/editor-extra-web
-        :gerbil-emacs/editor-extra-vcs
-        :gerbil-emacs/editor-extra-editing
-        :gerbil-emacs/editor-extra-tools
-        :gerbil-emacs/editor-extra-tools2
-        :gerbil-emacs/editor-extra-media
-        :gerbil-emacs/editor-extra-modes
-        :gerbil-emacs/editor-extra-final)
+(import :gemacs/core
+        :gemacs/editor-extra-helpers
+        :gemacs/editor-extra-org
+        :gemacs/editor-extra-web
+        :gemacs/editor-extra-vcs
+        :gemacs/editor-extra-editing
+        :gemacs/editor-extra-tools
+        :gemacs/editor-extra-tools2
+        :gemacs/editor-extra-media
+        :gemacs/editor-extra-modes
+        :gemacs/editor-extra-final)
 
 ;;;============================================================================
 ;;; Register extra commands

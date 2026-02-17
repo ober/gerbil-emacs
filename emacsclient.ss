@@ -1,10 +1,10 @@
 ;;; -*- Gerbil -*-
-;;; gemacs-client: Open files in a running gerbil-emacs session.
+;;; gemacs-client: Open files in a running gemacs session.
 ;;; Analogous to Emacs's emacsclient.
 
 (export main)
 
-(import :gerbil-emacs/ipc)
+(import :gemacs/ipc)
 
 (include "manifest.ss")
 
@@ -14,7 +14,7 @@
      (displayln "gemacs-client " (cdar version-manifest)))
     ((or (member "--help" args) (member "-h" args))
      (displayln "Usage: gemacs-client [OPTIONS] FILE...")
-     (displayln "Open files in a running gerbil-emacs session.")
+     (displayln "Open files in a running gemacs session.")
      (displayln)
      (displayln "Options:")
      (displayln "  --version   Show version information")

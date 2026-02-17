@@ -10,16 +10,16 @@
         :gerbil-scintilla/constants
         :gerbil-scintilla/scintilla
         :gerbil-scintilla/tui
-        :gerbil-emacs/core
-        (only-in :gerbil-emacs/editor-core
+        :gemacs/core
+        (only-in :gemacs/editor-core
                  *auto-save-enabled* make-auto-save-path)
-        :gerbil-emacs/keymap
-        :gerbil-emacs/buffer
-        :gerbil-emacs/window
-        :gerbil-emacs/modeline
-        :gerbil-emacs/echo
-        :gerbil-emacs/editor-extra-helpers
-        :gerbil-emacs/editor-extra-web)
+        :gemacs/keymap
+        :gemacs/buffer
+        :gemacs/window
+        :gemacs/modeline
+        :gemacs/echo
+        :gemacs/editor-extra-helpers
+        :gemacs/editor-extra-web)
 
 ;; --- Task #48: EWW, EMMS, PDF tools, Calc, ace-jump, expand-region, etc. ---
 

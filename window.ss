@@ -1,5 +1,5 @@
 ;;; -*- Gerbil -*-
-;;; Frame and window layout for gerbil-emacs
+;;; Frame and window layout for gemacs
 ;;;
 ;;; Layout model (vertical splitting):
 ;;;   | edit-window-0 (edit area)   | rows y..y+h-2
@@ -31,7 +31,7 @@
 (import :std/sugar
         :gerbil-scintilla/scintilla
         :gerbil-scintilla/tui
-        :gerbil-emacs/buffer)
+        :gemacs/buffer)
 
 ;;;============================================================================
 ;;; Structures

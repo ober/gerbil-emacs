@@ -1,5 +1,5 @@
 ;;; -*- Gerbil -*-
-;;; Image viewing for gerbil-emacs Qt backend
+;;; Image viewing for gemacs Qt backend
 ;;;
 ;;; Supports two modes:
 ;;; 1. Inline display: images shown inside the editor area via QStackedWidget
@@ -15,9 +15,9 @@
 
 (import :std/sugar
         :std/srfi/13
-        :gerbil-emacs/qt/sci-shim
-        :gerbil-emacs/core
-        :gerbil-emacs/qt/window)
+        :gemacs/qt/sci-shim
+        :gemacs/core
+        :gemacs/qt/window)
 
 ;;;============================================================================
 ;;; Image file detection

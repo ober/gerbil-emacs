@@ -14,17 +14,17 @@
         :gerbil-scintilla/scintilla
         :gerbil-scintilla/style
         :gerbil-scintilla/tui
-        :gerbil-emacs/core
-        :gerbil-emacs/repl
-        :gerbil-emacs/eshell
-        :gerbil-emacs/shell
-        :gerbil-emacs/keymap
-        :gerbil-emacs/buffer
-        :gerbil-emacs/window
-        :gerbil-emacs/modeline
-        :gerbil-emacs/echo
-        :gerbil-emacs/highlight
-        :gerbil-emacs/editor-core)
+        :gemacs/core
+        :gemacs/repl
+        :gemacs/eshell
+        :gemacs/shell
+        :gemacs/keymap
+        :gemacs/buffer
+        :gemacs/window
+        :gemacs/modeline
+        :gemacs/echo
+        :gemacs/highlight
+        :gemacs/editor-core)
 
 ;;;============================================================================
 ;;; Goto line

@@ -18,7 +18,7 @@
         :std/srfi/13
         :std/misc/process
         :std/pregexp
-        :gerbil-emacs/core)
+        :gemacs/core)
 
 ;;;============================================================================
 ;;; Eshell state

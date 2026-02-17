@@ -1,5 +1,5 @@
 ;;; -*- Gerbil -*-
-;;; Qt key event adapter for gerbil-emacs
+;;; Qt key event adapter for gemacs
 ;;;
 ;;; Converts Qt key events to the same "C-x", "M-f", "<up>" string format
 ;;; used by the shared keymap in core.ss.
@@ -8,8 +8,8 @@
         qt-key-state-feed!)
 
 (import :std/sugar
-        :gerbil-emacs/qt/sci-shim
-        :gerbil-emacs/core)
+        :gemacs/qt/sci-shim
+        :gemacs/core)
 
 ;;;============================================================================
 ;;; Qt key event -> Emacs key string conversion

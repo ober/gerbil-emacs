@@ -17,9 +17,8 @@
                  add-duration time-duration)
         :std/pregexp
         :std/misc/string
-        :std/misc/ports
-        :gerbil-emacs/core
-        :gerbil-emacs/org-parse)
+        :gemacs/core
+        :gemacs/org-parse)
 
 ;;;============================================================================
 ;;; Agenda Item Structure
@@ -57,21 +56,17 @@
         (let ((sched (org-heading-scheduled h)))
           (when (and sched (org-timestamp-in-range? sched date-from date-to))
             (set! items (cons (make-org-agenda-item
-                                heading: h type: 'scheduled
-                                date: sched
-                                time-string: (org-timestamp-time-str sched)
-                                file: file-path
-                                line: (org-heading-line-number h))
+                                h 'scheduled sched
+                                (org-timestamp-time-str sched)
+                                file-path (org-heading-line-number h))
                               items))))
         ;; Check DEADLINE
         (let ((dead (org-heading-deadline h)))
           (when (and dead (org-timestamp-in-range? dead date-from date-to))
             (set! items (cons (make-org-agenda-item
-                                heading: h type: 'deadline
-                                date: dead
-                                time-string: (org-timestamp-time-str dead)
-                                file: file-path
-                                line: (org-heading-line-number h))
+                                h 'deadline dead
+                                (org-timestamp-time-str dead)
+                                file-path (org-heading-line-number h))
                               items)))))
       headings)
     (reverse items)))
@@ -205,12 +200,7 @@
 
 (def (org-make-date-ts year month day)
   "Create an org-timestamp for a date."
-  (make-org-timestamp
-    type: 'active
-    year: year month: month day: day
-    day-name: #f hour: #f minute: #f
-    end-hour: #f end-minute: #f
-    repeater: #f warning: #f))
+  (make-org-timestamp 'active year month day #f #f #f #f #f #f #f))
 
 (def (org-advance-date-ts date-ts days)
   "Advance an org-timestamp by N days."
@@ -220,13 +210,9 @@
          (new-t (add-duration t dur))
          (new-d (time-utc->date new-t 0)))
     (make-org-timestamp
-      type: (org-timestamp-type date-ts)
-      year: (date-year new-d)
-      month: (date-month new-d)
-      day: (date-day new-d)
-      day-name: #f hour: #f minute: #f
-      end-hour: #f end-minute: #f
-      repeater: #f warning: #f)))
+      (org-timestamp-type date-ts)
+      (date-year new-d) (date-month new-d) (date-day new-d)
+      #f #f #f #f #f #f #f)))
 
 (def (org-today-ts)
   "Get today as an org-timestamp."
@@ -299,7 +285,7 @@
         (make-string (+ 13 (string-length tag-expr)) #\=) "\n"
         (string-join
           (map (lambda (h)
-                 (let ((level (org-heading-level h))
+                 (let ((level (org-heading-stars h))
                        (kw (or (org-heading-keyword h) ""))
                        (title (org-heading-title h))
                        (tags (let ((t (org-heading-tags h)))
@@ -355,11 +341,10 @@
           (for-each
             (lambda (ts)
               (set! items (cons (make-org-agenda-item
-                                  heading: heading type: 'scheduled
-                                  date: ts
-                                  time-string: (org-timestamp-time-str ts)
-                                  file: (org-heading-file-path heading)
-                                  line: (org-heading-line-number heading))
+                                  heading 'scheduled ts
+                                  (org-timestamp-time-str ts)
+                                  (org-heading-file-path heading)
+                                  (org-heading-line-number heading))
                                 items)))
             occurrences))))
     ;; Check deadline
@@ -369,11 +354,10 @@
           (for-each
             (lambda (ts)
               (set! items (cons (make-org-agenda-item
-                                  heading: heading type: 'deadline
-                                  date: ts
-                                  time-string: (org-timestamp-time-str ts)
-                                  file: (org-heading-file-path heading)
-                                  line: (org-heading-line-number heading))
+                                  heading 'deadline ts
+                                  (org-timestamp-time-str ts)
+                                  (org-heading-file-path heading)
+                                  (org-heading-line-number heading))
                                 items)))
             occurrences))))
     (reverse items)))
@@ -425,7 +409,7 @@
     (filter
       (lambda (h)
         ;; Must have children and no TODO/NEXT child
-        (let* ((level (org-heading-level h))
+        (let* ((level (org-heading-stars h))
                (idx (list-index h headings))
                (has-children? #f)
                (has-todo-child? #f))
@@ -433,7 +417,7 @@
             (let loop ((i (+ idx 1)))
               (when (< i total)
                 (let* ((child (list-ref headings i))
-                       (child-level (org-heading-level child)))
+                       (child-level (org-heading-stars child)))
                   (cond
                     ((<= child-level level) (void)) ; past subtree
                     ((= child-level (+ level 1))

@@ -1,11 +1,11 @@
 ;;; -*- Gerbil -*-
-;;; Qt menu bar and toolbar for gerbil-emacs
+;;; Qt menu bar and toolbar for gemacs
 
 (export qt-setup-menubar!)
 
 (import :std/sugar
-        :gerbil-emacs/qt/sci-shim
-        :gerbil-emacs/core)
+        :gemacs/qt/sci-shim
+        :gemacs/core)
 
 ;;;============================================================================
 ;;; Menu bar setup

@@ -1,5 +1,5 @@
 ;;; -*- Gerbil -*-
-;;; Shared core for gerbil-emacs
+;;; Shared core for gemacs
 ;;;
 ;;; Backend-agnostic logic: keymap data structures, command registry,
 ;;; echo state, buffer metadata, app state, file I/O helpers.

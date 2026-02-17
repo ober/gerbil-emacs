@@ -1,5 +1,5 @@
 ;;; -*- Gerbil -*-
-;;; Qt echo area / minibuffer for gerbil-emacs
+;;; Qt echo area / minibuffer for gemacs
 ;;;
 ;;; Uses a QLabel for displaying messages and an inline QLineEdit
 ;;; (in the same echo-area row) for minibuffer prompts — no popup dialog.
@@ -13,9 +13,9 @@
 (import :std/sugar
         :std/sort
         :std/srfi/1
-        :gerbil-emacs/qt/sci-shim
-        :gerbil-emacs/core
-        :gerbil-emacs/qt/window)
+        :gemacs/qt/sci-shim
+        :gemacs/core
+        :gemacs/qt/window)
 
 ;;;============================================================================
 ;;; Draw the echo area (QLabel)

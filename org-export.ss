@@ -10,7 +10,7 @@
                  string-pad-right string-suffix?)
         :std/pregexp
         :std/misc/string
-        :gerbil-emacs/org-parse)
+        :gemacs/org-parse)
 
 ;;;============================================================================
 ;;; Inline Markup Conversion
@@ -120,7 +120,7 @@ Types: heading, paragraph, src-block, example-block, quote-block, table, keyword
             ;; Block begin (quote, example, etc.)
             ((and (org-block-begin? line) (not (org-src-block-line? line)))
              (flush!)
-             (let* ((block-type-match (pregexp-match "(?i)#\\+begin_(\\S+)" line))
+             (let* ((block-type-match (pregexp-match "#\\+[Bb][Ee][Gg][Ii][Nn]_(\\S+)" line))
                     (block-name (if block-type-match
                                   (string-downcase (list-ref block-type-match 1))
                                   "block")))
@@ -247,7 +247,7 @@ Types: heading, paragraph, src-block, example-block, quote-block, table, keyword
                      body-parts)))
             ((src-block)
              (let* ((first (car lines))
-                    (lang-match (pregexp-match "(?i)#\\+begin_src\\s+(\\S+)" first))
+                    (lang-match (pregexp-match "#\\+[Bb][Ee][Gg][Ii][Nn]_[Ss][Rr][Cc]\\s+(\\S+)" first))
                     (lang (if lang-match (list-ref lang-match 1) ""))
                     (body-lines (cdr (let loop ((ls (cdr lines)) (acc '()))
                                        (if (or (null? ls) (org-src-block-end? (car ls)))
@@ -341,7 +341,7 @@ Types: heading, paragraph, src-block, example-block, quote-block, table, keyword
              (set! parts (cons (org-export-inline (string-join lines "\n") 'markdown) parts)))
             ((src-block)
              (let* ((first (car lines))
-                    (lang-match (pregexp-match "(?i)#\\+begin_src\\s+(\\S+)" first))
+                    (lang-match (pregexp-match "#\\+[Bb][Ee][Gg][Ii][Nn]_[Ss][Rr][Cc]\\s+(\\S+)" first))
                     (lang (if lang-match (list-ref lang-match 1) ""))
                     (body-lines (cdr (let loop ((ls (cdr lines)) (acc '()))
                                        (if (or (null? ls) (org-src-block-end? (car ls)))

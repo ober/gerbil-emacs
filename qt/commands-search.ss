@@ -8,20 +8,20 @@
         :std/sort
         :std/srfi/13
         :std/text/base64
-        :gerbil-emacs/qt/sci-shim
-        :gerbil-emacs/core
-        :gerbil-emacs/editor
-        :gerbil-emacs/repl
-        :gerbil-emacs/eshell
-        :gerbil-emacs/shell
-        :gerbil-emacs/terminal
-        :gerbil-emacs/qt/buffer
-        :gerbil-emacs/qt/window
-        :gerbil-emacs/qt/echo
-        :gerbil-emacs/qt/highlight
-        :gerbil-emacs/qt/modeline
-        :gerbil-emacs/qt/commands-core
-        :gerbil-emacs/qt/commands-edit)
+        :gemacs/qt/sci-shim
+        :gemacs/core
+        :gemacs/editor
+        :gemacs/repl
+        :gemacs/eshell
+        :gemacs/shell
+        :gemacs/terminal
+        :gemacs/qt/buffer
+        :gemacs/qt/window
+        :gemacs/qt/echo
+        :gemacs/qt/highlight
+        :gemacs/qt/modeline
+        :gemacs/qt/commands-core
+        :gemacs/qt/commands-edit)
 
 ;;;============================================================================
 ;;; Mark word
@@ -948,7 +948,7 @@ Returns (file line col message) or #f."
              (current-text (qt-plain-text-edit-text ed))
              (file-text (read-file-as-string path))
              ;; Write current buffer to temp file for diff
-             (tmp-path (string-append "/tmp/gerbil-emacs-diff-" (number->string (random-integer 100000))))
+             (tmp-path (string-append "/tmp/gemacs-diff-" (number->string (random-integer 100000))))
              (_ (write-string-to-file tmp-path current-text))
              (result (with-catch
                        (lambda (e) "Error running diff")

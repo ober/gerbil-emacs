@@ -13,13 +13,13 @@
         :gerbil-scintilla/constants
         :gerbil-scintilla/scintilla
         :gerbil-scintilla/tui
-        :gerbil-emacs/core
-        :gerbil-emacs/keymap
-        :gerbil-emacs/buffer
-        :gerbil-emacs/window
-        :gerbil-emacs/modeline
-        :gerbil-emacs/echo
-        :gerbil-emacs/editor-extra-helpers)
+        :gemacs/core
+        :gemacs/keymap
+        :gemacs/buffer
+        :gemacs/window
+        :gemacs/modeline
+        :gemacs/echo
+        :gemacs/editor-extra-helpers)
 
 
 ;; EWW browser - text-mode web browser using curl + html2text
@@ -1156,7 +1156,7 @@
     ("lua" "lua")
     ("php" "php")
     ("go" "go run")
-    ("rs" "rustc -o /tmp/gerbil-emacs-run && /tmp/gerbil-emacs-run")
+    ("rs" "rustc -o /tmp/gemacs-run && /tmp/gemacs-run")
     ("ss" "gxi")
     ("scm" "gxi")
     ("el" "emacs --script")

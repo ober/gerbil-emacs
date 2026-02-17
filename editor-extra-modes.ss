@@ -10,15 +10,15 @@
         :gerbil-scintilla/constants
         :gerbil-scintilla/scintilla
         :gerbil-scintilla/tui
-        :gerbil-emacs/core
-        :gerbil-emacs/keymap
-        :gerbil-emacs/buffer
-        :gerbil-emacs/window
-        :gerbil-emacs/modeline
-        :gerbil-emacs/echo
-        :gerbil-emacs/editor-extra-helpers
-        :gerbil-emacs/editor-extra-vcs
-        :gerbil-emacs/editor-extra-media)
+        :gemacs/core
+        :gemacs/keymap
+        :gemacs/buffer
+        :gemacs/window
+        :gemacs/modeline
+        :gemacs/echo
+        :gemacs/editor-extra-helpers
+        :gemacs/editor-extra-vcs
+        :gemacs/editor-extra-media)
 
 ;; --- Task #49: elisp mode, scheme mode, regex builder, color picker, etc. ---
 

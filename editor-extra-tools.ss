@@ -10,14 +10,14 @@
         :gerbil-scintilla/constants
         :gerbil-scintilla/scintilla
         :gerbil-scintilla/tui
-        :gerbil-emacs/core
-        :gerbil-emacs/keymap
-        :gerbil-emacs/buffer
-        :gerbil-emacs/window
-        :gerbil-emacs/modeline
-        :gerbil-emacs/echo
-        :gerbil-emacs/highlight
-        :gerbil-emacs/editor-extra-helpers)
+        :gemacs/core
+        :gemacs/keymap
+        :gemacs/buffer
+        :gemacs/window
+        :gemacs/modeline
+        :gemacs/echo
+        :gemacs/highlight
+        :gemacs/editor-extra-helpers)
 
 ;; --- Task #47: xref, ibuffer, which-key, markdown, auto-insert, and more ---
 

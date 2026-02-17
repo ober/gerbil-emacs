@@ -11,13 +11,13 @@
         :gerbil-scintilla/constants
         :gerbil-scintilla/scintilla
         :gerbil-scintilla/tui
-        :gerbil-emacs/core
-        :gerbil-emacs/keymap
-        :gerbil-emacs/buffer
-        :gerbil-emacs/window
-        :gerbil-emacs/modeline
-        :gerbil-emacs/echo
-        :gerbil-emacs/editor-extra-helpers)
+        :gemacs/core
+        :gemacs/keymap
+        :gemacs/buffer
+        :gemacs/window
+        :gemacs/modeline
+        :gemacs/echo
+        :gemacs/editor-extra-helpers)
 
 ;; Additional VC commands
 (def (cmd-vc-register app)
@@ -227,7 +227,7 @@
   (let* ((bufs (buffer-list))
          (files (filter (lambda (f) f)
                         (map buffer-file-path bufs)))
-         (session-file (string-append (or (getenv "HOME") ".") "/.gerbil-emacs-session")))
+         (session-file (string-append (or (getenv "HOME") ".") "/.gemacs-session")))
     (with-exception-catcher
       (lambda (e) (echo-message! (app-state-echo app) "Error saving session"))
       (lambda ()
@@ -239,7 +239,7 @@
 
 (def (cmd-desktop-read app)
   "Restore desktop session."
-  (let ((session-file (string-append (or (getenv "HOME") ".") "/.gerbil-emacs-session")))
+  (let ((session-file (string-append (or (getenv "HOME") ".") "/.gemacs-session")))
     (if (file-exists? session-file)
       (with-exception-catcher
         (lambda (e) (echo-message! (app-state-echo app) "Error reading session"))
@@ -269,7 +269,7 @@
 
 (def (cmd-desktop-clear app)
   "Clear saved session."
-  (let ((session-file (string-append (or (getenv "HOME") ".") "/.gerbil-emacs-session")))
+  (let ((session-file (string-append (or (getenv "HOME") ".") "/.gemacs-session")))
     (when (file-exists? session-file)
       (delete-file session-file))
     (echo-message! (app-state-echo app) "Session cleared")))
@@ -376,7 +376,7 @@
       (echo-message! (app-state-echo app) "No compilation in progress"))))
 
 ;; Flyspell extras — uses aspell/ispell for spell checking
-;; flyspell-check-word is imported from :gerbil-emacs/editor-extra-helpers
+;; flyspell-check-word is imported from :gemacs/editor-extra-helpers
 
 (def (cmd-flyspell-auto-correct-word app)
   "Auto-correct word at point using aspell's first suggestion."
@@ -782,7 +782,7 @@
             ;; Apply via patch
             (let* ((hunk-text (string-join (reverse hunk-lines) "\n"))
                    ;; Write to temp file and apply
-                   (tmp-file "/tmp/gerbil-emacs-hunk.patch"))
+                   (tmp-file "/tmp/gemacs-hunk.patch"))
               (with-exception-catcher
                 (lambda (e) (echo-error! echo "Failed to apply hunk"))
                 (lambda ()
@@ -817,7 +817,7 @@
         (let loop ((i hunk-line) (hunk-lines '()))
           (if (>= i (length lines))
             (let* ((hunk-text (string-join (reverse hunk-lines) "\n"))
-                   (tmp-file "/tmp/gerbil-emacs-revert-hunk.patch"))
+                   (tmp-file "/tmp/gemacs-revert-hunk.patch"))
               (with-exception-catcher
                 (lambda (e) (echo-error! echo "Failed to revert hunk"))
                 (lambda ()

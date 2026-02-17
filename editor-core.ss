@@ -14,18 +14,18 @@
         :gerbil-scintilla/scintilla
         :gerbil-scintilla/style
         :gerbil-scintilla/tui
-        :gerbil-emacs/core
-        :gerbil-emacs/repl
-        :gerbil-emacs/eshell
-        :gerbil-emacs/shell
-        :gerbil-emacs/terminal
-        :gerbil-emacs/keymap
-        :gerbil-emacs/buffer
-        :gerbil-emacs/window
-        :gerbil-emacs/modeline
-        :gerbil-emacs/echo
-        :gerbil-emacs/highlight
-        :gerbil-emacs/persist)
+        :gemacs/core
+        :gemacs/repl
+        :gemacs/eshell
+        :gemacs/shell
+        :gemacs/terminal
+        :gemacs/keymap
+        :gemacs/buffer
+        :gemacs/window
+        :gemacs/modeline
+        :gemacs/echo
+        :gemacs/highlight
+        :gemacs/persist)
 
 ;;;============================================================================
 ;;; Shared state (used across editor sub-modules)

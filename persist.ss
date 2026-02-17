@@ -1,5 +1,5 @@
 ;;; -*- Gerbil -*-
-;;; Persistence for gerbil-emacs
+;;; Persistence for gemacs
 ;;;
 ;;; Backend-agnostic persistence: recent files, minibuffer history,
 ;;; desktop (session) save/restore. No Scintilla or Qt imports.
@@ -69,7 +69,7 @@
 (import :std/sugar
         :std/sort
         :std/srfi/13
-        :gerbil-emacs/core)
+        :gemacs/core)
 
 ;;;============================================================================
 ;;; Persistence file paths
@@ -82,9 +82,9 @@
 (def (persist-path name)
   (path-expand name (persist-dir)))
 
-(def *recent-files-file* ".gerbil-emacs-recent-files")
-(def *savehist-file*     ".gerbil-emacs-history")
-(def *desktop-file*      ".gerbil-emacs-desktop")
+(def *recent-files-file* ".gemacs-recent-files")
+(def *savehist-file*     ".gemacs-history")
+(def *desktop-file*      ".gemacs-desktop")
 
 ;;;============================================================================
 ;;; Recent files
@@ -427,7 +427,7 @@
 ;;; Persistent scratch buffer
 ;;;============================================================================
 
-(def *scratch-file* ".gerbil-emacs-scratch")
+(def *scratch-file* ".gemacs-scratch")
 
 (def (scratch-save! text)
   "Save scratch buffer content to disk."
@@ -455,7 +455,7 @@
 ;;;============================================================================
 
 (def *init-file-path*
-  (path-expand ".gerbil-emacs-init" (user-info-home (user-info (user-name)))))
+  (path-expand ".gemacs-init" (user-info-home (user-info (user-name)))))
 
 (def (init-file-load!)
   "Load init file and apply settings.
@@ -519,7 +519,7 @@
 ;;;============================================================================
 
 (def *save-place-enabled* #t)
-(def *save-place-file* ".gerbil-emacs-places")
+(def *save-place-file* ".gemacs-places")
 (def *save-place-alist* (make-hash-table)) ;; file-path -> position
 (def *save-place-max* 500) ;; max entries to persist
 

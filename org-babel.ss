@@ -10,13 +10,13 @@
                  string-pad-right string-index)
         :std/pregexp
         :std/misc/string
-        :std/misc/ports
+        (only-in :std/misc/ports read-all-as-string)
         :std/misc/process
         :gerbil-scintilla/scintilla
         :gerbil-scintilla/constants
-        :gerbil-emacs/core
-        :gerbil-emacs/echo
-        :gerbil-emacs/org-parse)
+        :gemacs/core
+        :gemacs/echo
+        :gemacs/org-parse)
 
 ;;;============================================================================
 ;;; Language Executor Registry
@@ -79,7 +79,7 @@
                     ;; Check for #+NAME: on previous line
                     (let ((name (and (> begin-line 0)
                                      (let ((prev (list-ref lines (- begin-line 1))))
-                                       (let ((m (pregexp-match "(?i)^#\\+NAME:\\s*(.+)" prev)))
+                                       (let ((m (pregexp-match "^#\\+[Nn][Aa][Mm][Ee]:\\s*(.+)" prev)))
                                          (and m (string-trim (list-ref m 1))))))))
                       (values lang header-args
                               (string-join body-lines "\n")
@@ -87,7 +87,7 @@
 
 (def (org-babel-parse-begin-line line)
   "Parse #+BEGIN_SRC line. Returns (lang . header-args-hash) or #f."
-  (let ((m (pregexp-match "(?i)^#\\+BEGIN_SRC\\s+(\\S+)(.*)" line)))
+  (let ((m (pregexp-match "^#\\+[Bb][Ee][Gg][Ii][Nn]_[Ss][Rr][Cc]\\s+(\\S+)(.*)" line)))
     (if (not m)
       #f
       (let ((lang (list-ref m 1))
@@ -250,7 +250,7 @@
          (has-results?
            (and (< next-line total)
                 (let ((l (editor-get-line ed next-line)))
-                  (pregexp-match "(?i)^#\\+RESULTS:" l)))))
+                  (pregexp-match "^#\\+[Rr][Ee][Ss][Uu][Ll][Tt][Ss]:" l)))))
     (if has-results?
       ;; Replace existing results
       (let* ((results-start (editor-position-from-line ed next-line))
@@ -286,7 +286,7 @@
       ((org-table-line-check? line) 'table)
       ((string-contains line "[ ]") 'checkbox)
       ((string-contains line "[X]") 'checkbox)
-      ((pregexp-match "(?i)^#\\+" line) 'keyword)
+      ((pregexp-match "^#\\+" line) 'keyword)
       ((org-heading-line? line) 'heading)
       (else 'none))))
 
@@ -329,7 +329,7 @@
       (cond
         ((>= i total) #f)
         ((let ((line (list-ref lines i)))
-           (let ((m (pregexp-match "(?i)^#\\+NAME:\\s*(.+)" line)))
+           (let ((m (pregexp-match "^#\\+[Nn][Aa][Mm][Ee]:\\s*(.+)" line)))
              (and m (string=? (string-trim (list-ref m 1)) name)
                   (< (+ i 1) total)
                   (org-block-begin? (list-ref lines (+ i 1))))))

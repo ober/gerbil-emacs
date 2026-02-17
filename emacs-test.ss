@@ -1,5 +1,5 @@
 ;;; -*- Gerbil -*-
-;;; Tests for gerbil-emacs
+;;; Tests for gemacs
 ;;; Includes both pure-logic tests and headless Scintilla editor tests.
 ;;; Scintilla works headlessly (no terminal needed) for all operations
 ;;; except scintilla_refresh(). Lexer/syntax highlighting requires Lexilla
@@ -11,36 +11,36 @@
         :gerbil-scintilla/constants
         :gerbil-scintilla/tui
         :gerbil-scintilla/lexer
-        :gerbil-emacs/core
-        :gerbil-emacs/repl
-        :gerbil-emacs/eshell
-        :gerbil-emacs/shell
-        :gerbil-emacs/keymap
-        :gerbil-emacs/buffer
-        :gerbil-emacs/window
-        :gerbil-emacs/echo
-        :gerbil-emacs/editor-core
-        (only-in :gerbil-emacs/editor-ui
+        :gemacs/core
+        :gemacs/repl
+        :gemacs/eshell
+        :gemacs/shell
+        :gemacs/keymap
+        :gemacs/buffer
+        :gemacs/window
+        :gemacs/echo
+        :gemacs/editor-core
+        (only-in :gemacs/editor-ui
                  cmd-transpose-chars cmd-upcase-word cmd-downcase-word
                  cmd-capitalize-word cmd-kill-word cmd-toggle-comment
                  cmd-list-buffers cmd-indent-or-complete org-buffer?)
-        (only-in :gerbil-emacs/editor-text
+        (only-in :gemacs/editor-text
                  cmd-transpose-words cmd-transpose-lines
                  cmd-upcase-region cmd-downcase-region
                  cmd-backward-kill-word
                  cmd-forward-paragraph cmd-backward-paragraph
                  cmd-join-line cmd-fill-paragraph cmd-just-one-space
                  cmd-indent-region cmd-delete-blank-lines)
-        (only-in :gerbil-emacs/editor-advanced
+        (only-in :gemacs/editor-advanced
                  cmd-exchange-point-and-mark
                  cmd-hippie-expand)
-        (only-in :gerbil-emacs/editor-text
+        (only-in :gemacs/editor-text
                  cmd-dabbrev-expand collect-dabbrev-matches)
-        (only-in :gerbil-emacs/editor-cmds-a
+        (only-in :gemacs/editor-cmds-a
                  cmd-copy-region-as-kill
                  cmd-forward-sexp cmd-backward-sexp cmd-backward-kill-sexp
                  cmd-balance-windows)
-        (only-in :gerbil-emacs/org-parse
+        (only-in :gemacs/org-parse
                  org-parse-timestamp org-timestamp? org-timestamp-type
                  org-timestamp-year org-timestamp-month org-timestamp-day
                  org-timestamp-day-name org-timestamp-hour org-timestamp-minute
@@ -59,8 +59,9 @@
                  org-table-line? org-comment-line?
                  org-keyword-line? org-block-begin?
                  org-heading-stars-of-line org-current-timestamp-string
-                 org-heading-clocks org-heading-title)
-        (only-in :gerbil-emacs/org-table
+                 org-heading-clocks org-heading-title
+                 make-org-heading)
+        (only-in :gemacs/org-table
                  org-table-row? org-table-separator? org-table-parse-row
                  org-table-column-widths org-table-format-row
                  org-table-format-separator org-numeric-cell?
@@ -69,19 +70,39 @@
                  org-table-insert-row org-table-delete-row
                  org-table-sort org-table-to-csv org-csv-to-table
                  org-table-parse-tblfm)
-        (only-in :gerbil-emacs/org-clock
+        (only-in :gemacs/org-clock
                  org-clock-in-at-point org-clock-out
                  org-clock-display org-clock-modeline-string
                  *org-clock-start* *org-clock-heading*
                  org-elapsed-minutes)
-        (only-in :gerbil-emacs/org-list
+        (only-in :gemacs/org-list
                  org-list-item? org-meta-return
                  org-cycle-list-bullet org-count-leading-spaces
                  org-update-checkbox-statistics!)
-        (only-in :gerbil-emacs/org-export
+        (only-in :gemacs/org-export
                  org-export-buffer org-export-inline
                  org-split-into-blocks html-escape)
-        (only-in :gerbil-emacs/editor-extra-org
+        (only-in :gemacs/org-babel
+                 org-babel-parse-header-args org-babel-parse-begin-line
+                 org-babel-find-src-block org-babel-inside-src-block?
+                 org-babel-format-result org-babel-find-named-block
+                 org-babel-tangle org-babel-inject-variables
+                 org-babel-expand-noweb org-ctrl-c-ctrl-c-context)
+        (only-in :gemacs/org-agenda
+                 org-collect-agenda-items org-agenda-sort-items
+                 org-format-agenda-item org-agenda-todo-list
+                 org-agenda-tags-match org-agenda-search
+                 org-timestamp-in-range? org-make-date-ts
+                 org-advance-date-ts org-date-weekday
+                 org-find-stuck-projects make-org-agenda-item
+                 org-agenda-item-heading)
+        (only-in :gemacs/org-capture
+                 org-capture-expand-template org-capture-cursor-position
+                 org-capture-start org-capture-finalize org-capture-abort
+                 org-refile-targets org-insert-under-heading
+                 org-capture-menu-string
+                 *org-capture-templates* *org-capture-active?*)
+        (only-in :gemacs/editor-extra-org
                  cmd-org-todo cmd-org-export cmd-org-cycle cmd-org-shift-tab
                  cmd-org-store-link *org-stored-link*
                  cmd-org-promote cmd-org-demote
@@ -113,8 +134,8 @@
                  *global-json-mode* *global-csv-mode*
                  *global-protobuf-mode* *global-graphql-mode*
                  *global-nix-mode*)
-        (only-in :gerbil-emacs/editor register-all-commands!)
-        (only-in :gerbil-emacs/editor-extra-media
+        (only-in :gemacs/editor register-all-commands!)
+        (only-in :gemacs/editor-extra-media
                  *consult-mode* *orderless-mode* *embark-mode*
                  *undo-fu-session* *auto-package-mode*
                  *corfu-mode* *cape-mode* *nerd-icons-mode*
@@ -131,7 +152,7 @@
                  *global-zig-mode* *global-ocaml-mode*
                  *global-fsharp-mode* *global-dart-mode*
                  *global-julia-mode*)
-        (only-in :gerbil-emacs/editor-extra-editing
+        (only-in :gemacs/editor-extra-editing
                  occur-parse-source-name
                  text-find-matching-close text-sexp-end
                  parse-grep-line-text find-number-at-pos
@@ -156,9 +177,9 @@
                  *global-r-mode* *global-ess*
                  *global-sql-mode* *global-ein*
                  *global-conda* *global-pyvenv* *global-pipenv*)
-        (only-in :gerbil-emacs/editor-extra-vcs
+        (only-in :gemacs/editor-extra-vcs
                  fuzzy-match? fuzzy-score)
-        (only-in :gerbil-emacs/editor-extra-final
+        (only-in :gemacs/editor-extra-final
                  parse-editorconfig find-editorconfig
                  find-url-at-point collect-buffer-words
                  *command-history* command-history-add!
@@ -192,7 +213,7 @@
                  *global-haskell-mode* *global-lua-mode*
                  *global-ruby-mode* *global-php-mode*
                  *global-swift-mode*)
-        (only-in :gerbil-emacs/editor-extra-tools2
+        (only-in :gemacs/editor-extra-tools2
                  *highlight-changes-mode* *saved-window-layouts*
                  *known-modes* *password-chars*
                  *cursor-blink* *header-line-mode*
@@ -213,7 +234,7 @@
                  *global-org-super-agenda* *global-org-noter*
                  *global-org-download* *global-org-cliplink*
                  *global-org-present*)
-        (only-in :gerbil-emacs/editor-extra-tools
+        (only-in :gemacs/editor-extra-tools
                  *cursor-type* *modeline-visible*
                  *indent-guide-mode* *rainbow-mode*
                  *electric-quote-mode* *visible-mark-mode*
@@ -239,7 +260,7 @@
                  *global-lsp-ivy* *global-dap-mode*
                  *global-lsp-headerline* *global-lsp-lens*
                  *global-lsp-semantic-tokens*)
-        (only-in :gerbil-emacs/editor-extra-web
+        (only-in :gemacs/editor-extra-web
                  url-encode url-decode
                  html-encode-entities html-decode-entities
                  csv-split-line detect-file-encoding
@@ -265,7 +286,7 @@
                  *global-python-black* *global-elpy*
                  *global-js2-mode* *global-typescript-mode*
                  *global-web-mode*)
-        (only-in :gerbil-emacs/editor-extra-modes
+        (only-in :gemacs/editor-extra-modes
                  cmd-eval-last-sexp cmd-eval-defun cmd-eval-print-last-sexp
                  *global-envrc* *global-direnv* *global-editorconfig*
                  *global-dtrt-indent* *global-ws-trim*
@@ -274,7 +295,7 @@
                  *global-terraform* *global-ansible*
                  *global-vagrant* *global-restclient*
                  *global-ob-http*)
-        (only-in :gerbil-emacs/editor-extra-vcs
+        (only-in :gemacs/editor-extra-vcs
                  *comment-style* *flymake-mode*
                  *delete-selection-mode* *word-count-mode*
                  *column-ruler-mode* *soft-wrap-mode*
@@ -297,26 +318,26 @@
                  *global-meson-mode* *global-ninja-mode*
                  *global-groovy-mode* *global-kotlin-mode*
                  *global-scala-mode*)
-        (only-in :gerbil-emacs/highlight
+        (only-in :gemacs/highlight
                  detect-file-language gerbil-file-extension?
                  setup-highlighting-for-file!)
-        (only-in :gerbil-emacs/terminal
+        (only-in :gemacs/terminal
                  parse-ansi-segments text-segment-text
                  text-segment-fg-color text-segment-bold?
                  terminal-buffer? color-to-style
                  *term-style-base*)
-        (only-in :gerbil-emacs/echo
+        (only-in :gemacs/echo
                  *minibuffer-history* minibuffer-history-add!)
-        (only-in :gerbil-emacs/editor-core
+        (only-in :gemacs/editor-core
                  make-auto-save-path file-mod-time
                  *buffer-mod-times* update-buffer-mod-time!)
-        (only-in :gerbil-emacs/editor-ui cmd-list-buffers)
+        (only-in :gemacs/editor-ui cmd-list-buffers)
 )
 
 (export emacs-test)
 
 (def emacs-test
-  (test-suite "gerbil-emacs"
+  (test-suite "gemacs"
 
     (test-case "key-event->string: Ctrl keys"
       ;; C-a = key 0x01
@@ -1530,7 +1551,7 @@
 
     (test-case "file I/O helpers"
       ;; Write and read a temp file
-      (let ((tmp "/tmp/gerbil-emacs-test-file.txt"))
+      (let ((tmp "/tmp/gemacs-test-file.txt"))
         (write-string-to-file tmp "hello world\n")
         (check (read-file-as-string tmp) => "hello world\n")
         ;; Cleanup
@@ -4375,6 +4396,211 @@
         (check (not (not (string-contains txt "World"))) => #t)
         ;; Should not have * prefix
         (check (not (string-contains txt "* ")) => #t)))
+
+    ;;; ================================================================
+    ;;; Org Babel tests (Phase 4)
+    ;;; ================================================================
+
+    (test-case "org-babel: parse header args"
+      (let ((h (org-babel-parse-header-args ":var x=5 :results output :dir /tmp")))
+        (check (hash-get h "var") => "x=5")
+        (check (hash-get h "results") => "output")
+        (check (hash-get h "dir") => "/tmp")))
+
+    (test-case "org-babel: parse begin line"
+      (let ((parsed (org-babel-parse-begin-line "#+BEGIN_SRC python :var x=5")))
+        (check (car parsed) => "python")
+        (check (hash-get (cdr parsed) "var") => "x=5")))
+
+    (test-case "org-babel: parse begin line - no args"
+      (let ((parsed (org-babel-parse-begin-line "#+BEGIN_SRC bash")))
+        (check (car parsed) => "bash")))
+
+    (test-case "org-babel: find src block"
+      (let* ((text "Some text\n#+BEGIN_SRC bash\necho hello\n#+END_SRC\nMore text")
+             (lines (string-split text #\newline)))
+        (let-values (((lang hargs body begin end name)
+                      (org-babel-find-src-block lines 2)))
+          (check lang => "bash")
+          (check body => "echo hello")
+          (check begin => 1)
+          (check end => 3))))
+
+    (test-case "org-babel: inside src block"
+      (let* ((text "#+BEGIN_SRC python\nprint(42)\n#+END_SRC")
+             (lines (string-split text #\newline)))
+        (check (org-babel-inside-src-block? lines 1) => #t)
+        (check (org-babel-inside-src-block? lines 0) => #f)))
+
+    (test-case "org-babel: format result output"
+      (check (org-babel-format-result "hello\nworld" "output")
+        => ": hello\n: world"))
+
+    (test-case "org-babel: format result value"
+      (check (org-babel-format-result "42" "value") => "42"))
+
+    (test-case "org-babel: find named block"
+      (let ((text "#+NAME: greet\n#+BEGIN_SRC bash\necho hi\n#+END_SRC"))
+        (check (org-babel-find-named-block text "greet") => "echo hi")
+        (check (org-babel-find-named-block text "missing") => #f)))
+
+    (test-case "org-babel: tangle extraction"
+      (let* ((text (string-append
+                     "#+BEGIN_SRC bash :tangle /tmp/test.sh\n"
+                     "echo hello\n"
+                     "#+END_SRC\n"
+                     "Some text\n"
+                     "#+BEGIN_SRC python :tangle /tmp/test.py\n"
+                     "print(42)\n"
+                     "#+END_SRC"))
+             (pairs (org-babel-tangle text)))
+        (check (length pairs) => 2)))
+
+    (test-case "org-babel: variable injection bash"
+      (let ((result (org-babel-inject-variables "bash" '(("x" . "5") ("y" . "hello")))))
+        (check (not (not (string-contains result "x='5'"))) => #t)
+        (check (not (not (string-contains result "y='hello'"))) => #t)))
+
+    (test-case "org-babel: variable injection python"
+      (let ((result (org-babel-inject-variables "python" '(("x" . "5")))))
+        (check (not (not (string-contains result "x = 5"))) => #t)))
+
+    (test-case "org-babel: noweb expansion"
+      (let ((text "#+NAME: helper\n#+BEGIN_SRC bash\necho hi\n#+END_SRC"))
+        (check (org-babel-expand-noweb text "<<helper>>") => "echo hi")))
+
+    (test-case "org-babel: C-c C-c context detection"
+      (let ((lines '("* Heading" "#+BEGIN_SRC python" "print(42)" "#+END_SRC" "| a | b |")))
+        (check (org-ctrl-c-ctrl-c-context lines 0) => 'heading)
+        (check (org-ctrl-c-ctrl-c-context lines 2) => 'src-block)
+        (check (org-ctrl-c-ctrl-c-context lines 4) => 'table)))
+
+    ;;; ================================================================
+    ;;; Org Agenda tests (Phase 7)
+    ;;; ================================================================
+
+    (test-case "org-agenda: date weekday calculation"
+      ;; 2024-01-15 is a Monday (1)
+      (check (org-date-weekday 2024 1 15) => 1)
+      ;; 2024-01-14 is a Sunday (0)
+      (check (org-date-weekday 2024 1 14) => 0))
+
+    (test-case "org-agenda: make-date-ts"
+      (let ((ts (org-make-date-ts 2024 3 15)))
+        (check (org-timestamp-year ts) => 2024)
+        (check (org-timestamp-month ts) => 3)
+        (check (org-timestamp-day ts) => 15)))
+
+    (test-case "org-agenda: timestamp in range"
+      (let ((ts (org-make-date-ts 2024 1 15))
+            (from (org-make-date-ts 2024 1 10))
+            (to (org-make-date-ts 2024 1 20)))
+        (check (org-timestamp-in-range? ts from to) => #t))
+      ;; Out of range
+      (let ((ts (org-make-date-ts 2024 2 1))
+            (from (org-make-date-ts 2024 1 10))
+            (to (org-make-date-ts 2024 1 20)))
+        (check (org-timestamp-in-range? ts from to) => #f)))
+
+    (test-case "org-agenda: advance date"
+      (let* ((ts (org-make-date-ts 2024 1 30))
+             (advanced (org-advance-date-ts ts 3)))
+        (check (org-timestamp-year advanced) => 2024)
+        (check (org-timestamp-month advanced) => 2)
+        (check (org-timestamp-day advanced) => 2)))
+
+    (test-case "org-agenda: collect items"
+      (let* ((text (string-append
+                     "* TODO Task 1\n"
+                     "  SCHEDULED: <2024-01-15 Mon>\n"
+                     "* DONE Task 2\n"
+                     "  DEADLINE: <2024-01-18 Thu>\n"))
+             (from (org-make-date-ts 2024 1 14))
+             (to (org-make-date-ts 2024 1 20))
+             (items (org-collect-agenda-items text "test.org" from to)))
+        (check (length items) => 2)))
+
+    (test-case "org-agenda: sort items by time"
+      (let* ((h1 (make-org-heading 1 "TODO" #f "Morning" '() #f #f #f #f '() 0 #f))
+             (h2 (make-org-heading 1 "TODO" #f "Evening" '() #f #f #f #f '() 0 #f))
+             (ts1 (org-parse-timestamp "<2024-01-15 Mon 09:00>"))
+             (ts2 (org-parse-timestamp "<2024-01-15 Mon 17:00>"))
+             (i1 (make-org-agenda-item h1 'scheduled ts1 "09:00" "t" 0))
+             (i2 (make-org-agenda-item h2 'scheduled ts2 "17:00" "t" 0))
+             (sorted (org-agenda-sort-items (list i2 i1))))
+        ;; i1 (09:00) should come first
+        (check (org-heading-title (org-agenda-item-heading (car sorted)))
+          => "Morning")))
+
+    (test-case "org-agenda: TODO list"
+      (let* ((text "* TODO Task A\n* DONE Task B\n* TODO Task C\n")
+             (result (org-agenda-todo-list text "test.org")))
+        (check (not (not (string-contains result "Task A"))) => #t)
+        (check (not (not (string-contains result "Task C"))) => #t)
+        ;; DONE should not appear
+        (check (not (string-contains result "Task B")) => #t)))
+
+    (test-case "org-agenda: tag search"
+      (let* ((text "* TODO Task A :work:\n* TODO Task B :home:\n* DONE Task C :work:\n")
+             (result (org-agenda-tags-match text "test.org" "work")))
+        (check (not (not (string-contains result "Task A"))) => #t)
+        (check (not (not (string-contains result "Task C"))) => #t)
+        (check (not (string-contains result "Task B")) => #t)))
+
+    (test-case "org-agenda: text search"
+      (let* ((text "* Meeting with Alice\n* Lunch break\n* Call Bob\n")
+             (result (org-agenda-search text "test.org" "alice")))
+        (check (not (not (string-contains result "Alice"))) => #t)
+        (check (not (string-contains result "Bob")) => #t)))
+
+    ;;; ================================================================
+    ;;; Org Capture tests (Phase 9)
+    ;;; ================================================================
+
+    (test-case "org-capture: template expansion %U"
+      (let ((result (org-capture-expand-template "* TODO %?\n  %U\n" "test.org" "/tmp/test.org")))
+        ;; Should contain an inactive timestamp [...]
+        (check (not (not (string-contains result "["))) => #t)
+        ;; %? should be removed
+        (check (not (string-contains result "%?")) => #t)))
+
+    (test-case "org-capture: template expansion %f"
+      (let ((result (org-capture-expand-template "From: %f" "myfile.org" "/tmp/myfile.org")))
+        (check result => "From: myfile.org")))
+
+    (test-case "org-capture: template expansion %%"
+      (let ((result (org-capture-expand-template "100%% done" "f" "p")))
+        (check result => "100% done")))
+
+    (test-case "org-capture: cursor position"
+      (check (org-capture-cursor-position "* TODO %?\n  %U") => 7)
+      (check (org-capture-cursor-position "no cursor here") => #f))
+
+    (test-case "org-capture: menu string"
+      (let ((menu (org-capture-menu-string)))
+        (check (not (not (string-contains menu "[t]"))) => #t)
+        (check (not (not (string-contains menu "TODO"))) => #t)))
+
+    (test-case "org-capture: refile targets"
+      (let* ((text "* Heading A\nBody\n** Sub B\n* Heading C\n")
+             (targets (org-refile-targets text)))
+        (check (length targets) => 3)
+        (check (caar targets) => "Heading A")))
+
+    (test-case "org-capture: insert under heading"
+      (let* ((text "* Tasks\n* Notes\n")
+             (result (org-insert-under-heading text "Tasks" "** New task\n")))
+        (check (not (not (string-contains result "New task"))) => #t)
+        ;; New task should be between Tasks and Notes
+        (let ((task-pos (string-contains result "New task"))
+              (notes-pos (string-contains result "Notes")))
+          (check (< task-pos notes-pos) => #t))))
+
+    (test-case "org-capture: start and abort"
+      (org-capture-start "t" "test.org" "/tmp/test.org")
+      (check *org-capture-active?* => #t)
+      (org-capture-abort)
+      (check *org-capture-active?* => #f))
 
     (test-case "headless: command registration for new org commands"
       (register-all-commands!)

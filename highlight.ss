@@ -1,5 +1,5 @@
 ;;; -*- Gerbil -*-
-;;; Syntax highlighting for gerbil-emacs
+;;; Syntax highlighting for gemacs
 ;;;
 ;;; Shared keyword lists and Scintilla lexer setup for Gerbil Scheme.
 ;;; Colors based on gerbil-mode.el face definitions.
@@ -8,7 +8,9 @@
         setup-highlighting-for-file!
         detect-file-language
         detect-language-from-shebang
-        gerbil-file-extension?)
+        gerbil-file-extension?
+        register-custom-highlighter!
+        *custom-highlighters*)
 
 (import :std/sugar
         :std/srfi/13
@@ -1024,6 +1026,8 @@
            ((member ext '(".dockerfile")) 'bash)
            ;; Diff / Patch
            ((member ext '(".diff" ".patch")) 'diff)
+           ;; Org-mode
+           ((string=? ext ".org") 'org)
            (else #f)))))
 
 (def (enable-code-file-features! ed)
@@ -1060,6 +1064,13 @@
   ;; Edge color: subtle dark line
   (send-message ed 2364 #x333333 0))  ;; SCI_SETEDGECOLOUR
 
+;; Custom highlighter registry for languages loaded after this module
+(def *custom-highlighters* (make-hash-table-eq))
+
+(def (register-custom-highlighter! lang setup-fn)
+  "Register a custom highlighter for a language symbol."
+  (hash-put! *custom-highlighters* lang setup-fn))
+
 (def (setup-highlighting-for-file! ed filename)
   "Set up syntax highlighting based on file extension.
    Dispatches to the appropriate language-specific setup."
@@ -1083,7 +1094,10 @@
       ((sql)      (setup-sql-highlighting! ed))
       ((makefile)  (setup-makefile-highlighting! ed))
       ((diff)     (setup-diff-highlighting! ed))
-      (else (void)))
+      (else
+        ;; Check custom highlighters for languages like org
+        (let ((custom (hash-get *custom-highlighters* lang)))
+          (when custom (custom ed)))))
     ;; Enable folding, indent guides, and column indicator for code files
     (when lang
       (enable-code-file-features! ed))))

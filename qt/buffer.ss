@@ -1,5 +1,5 @@
 ;;; -*- Gerbil -*-
-;;; Qt document management for gerbil-emacs
+;;; Qt document management for gemacs
 ;;;
 ;;; Uses Scintilla document model for multi-buffer support.
 ;;; Each buffer owns a Scintilla document (preserves undo history per buffer).
@@ -9,8 +9,8 @@
         qt-buffer-attach!)
 
 (import :std/sugar
-        :gerbil-emacs/qt/sci-shim
-        :gerbil-emacs/core)
+        :gemacs/qt/sci-shim
+        :gemacs/core)
 
 ;;;============================================================================
 ;;; Qt buffer operations

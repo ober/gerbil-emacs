@@ -2,7 +2,7 @@
 
 ## Context
 
-gerbil-emacs has a basic org-mode with ~24 commands (TODO cycling, headings, folding, templates, basic scheduling, etc.) in `editor-extra-org.ss`. However critical features are missing or broken: tables are template-only (no alignment/navigation), there's no babel (code execution), the agenda is buggy, export is plain-text only, clock elapsed time is hardcoded to `0:00`, and there's no syntax highlighting. This plan delivers full Emacs-compatible org-mode with comprehensive tests.
+gemacs has a basic org-mode with ~24 commands (TODO cycling, headings, folding, templates, basic scheduling, etc.) in `editor-extra-org.ss`. However critical features are missing or broken: tables are template-only (no alignment/navigation), there's no babel (code execution), the agenda is buggy, export is plain-text only, clock elapsed time is hardcoded to `0:00`, and there's no syntax highlighting. This plan delivers full Emacs-compatible org-mode with comprehensive tests.
 
 ## File Organization
 
@@ -629,7 +629,7 @@ New bindings (in `*org-keymap*` or `*ctrl-c-map*`):
 
 1. **Build**: `make build` (or `HOME=/home/jafourni GERBIL_LOADPATH=/home/jafourni/.gerbil/lib gerbil build`)
 2. **Test**: `HOME=/home/jafourni LD_LIBRARY_PATH=/home/linuxbrew/.linuxbrew/opt/openssl@3/lib GERBIL_LOADPATH=/home/jafourni/.gerbil/lib timeout 120 gerbil test`
-3. **Both binaries**: `.gerbil/bin/gerbil-emacs --version` and `QT_QPA_PLATFORM=offscreen .gerbil/bin/gerbil-emacs-qt --version`
+3. **Both binaries**: `.gerbil/bin/gemacs --version` and `QT_QPA_PLATFORM=offscreen .gerbil/bin/gemacs-qt --version`
 4. **MCP tools**: `gerbil_verify` on each new `.ss` file, `gerbil_check_balance` on large files
 
 ### Test Coverage Target

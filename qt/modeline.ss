@@ -1,5 +1,5 @@
 ;;; -*- Gerbil -*-
-;;; Qt status bar modeline for gerbil-emacs
+;;; Qt status bar modeline for gemacs
 ;;;
 ;;; Shows buffer name, line, column, modified indicator, mode,
 ;;; position percentage, and git branch in the main window's status bar.
@@ -9,9 +9,9 @@
         *buffer-eol-cache*)
 
 (import :std/sugar
-        :gerbil-emacs/qt/sci-shim
-        :gerbil-emacs/core
-        :gerbil-emacs/qt/window)
+        :gemacs/qt/sci-shim
+        :gemacs/core
+        :gemacs/qt/window)
 
 ;;;============================================================================
 ;;; Git branch detection (cached per directory)

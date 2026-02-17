@@ -8,21 +8,21 @@
         :std/sort
         :std/srfi/13
         :std/text/base64
-        :gerbil-emacs/qt/sci-shim
-        :gerbil-emacs/core
-        :gerbil-emacs/editor
-        :gerbil-emacs/repl
-        :gerbil-emacs/eshell
-        :gerbil-emacs/shell
-        :gerbil-emacs/terminal
-        :gerbil-emacs/qt/buffer
-        :gerbil-emacs/qt/window
-        :gerbil-emacs/qt/echo
-        :gerbil-emacs/qt/highlight
-        :gerbil-emacs/qt/modeline
-        :gerbil-emacs/qt/commands-core
-        :gerbil-emacs/qt/commands-edit
-        :gerbil-emacs/qt/commands-search)
+        :gemacs/qt/sci-shim
+        :gemacs/core
+        :gemacs/editor
+        :gemacs/repl
+        :gemacs/eshell
+        :gemacs/shell
+        :gemacs/terminal
+        :gemacs/qt/buffer
+        :gemacs/qt/window
+        :gemacs/qt/echo
+        :gemacs/qt/highlight
+        :gemacs/qt/modeline
+        :gemacs/qt/commands-core
+        :gemacs/qt/commands-edit
+        :gemacs/qt/commands-search)
 
 ;;;============================================================================
 ;;; Avy-style jump-to-char navigation
@@ -881,7 +881,7 @@
           (qt-plain-text-edit-set-cursor-position! ed 0))))))
 
 (def *bookmarks-path*
-  (path-expand ".gerbil-emacs-bookmarks" (user-info-home (user-info (user-name)))))
+  (path-expand ".gemacs-bookmarks" (user-info-home (user-info (user-name)))))
 
 (def (bookmarks-save! app)
   "Persist bookmarks to disk. Format: one line per bookmark: name\tfile-path\tposition"

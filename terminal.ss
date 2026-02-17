@@ -27,7 +27,7 @@
 (import :std/sugar
         :gerbil-scintilla/constants
         :gerbil-scintilla/scintilla
-        :gerbil-emacs/core)
+        :gemacs/core)
 
 ;;;============================================================================
 ;;; Scintilla styling message IDs (not in constants.ss)

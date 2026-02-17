@@ -12,8 +12,8 @@
         :std/misc/string
         :gerbil-scintilla/scintilla
         :gerbil-scintilla/constants
-        :gerbil-emacs/core
-        :gerbil-emacs/org-parse)
+        :gemacs/core
+        :gemacs/org-parse)
 
 ;;;============================================================================
 ;;; List Item Detection

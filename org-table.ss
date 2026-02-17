@@ -6,15 +6,15 @@
 
 (import :std/sugar
         (only-in :std/srfi/13
-                 string-trim string-pad string-pad-right string-join
+                 string-trim string-trim-both string-pad string-pad-right string-join
                  string-prefix? string-contains string<?)
         :std/sort
         :std/pregexp
         :std/misc/string
         :gerbil-scintilla/scintilla
         :gerbil-scintilla/constants
-        :gerbil-emacs/core
-        :gerbil-emacs/org-parse)
+        :gemacs/core
+        :gemacs/org-parse)
 
 ;;;============================================================================
 ;;; Internal helpers (thin wrappers over Scintilla API)
@@ -66,7 +66,7 @@
                       (substring trimmed 1 (- len 1))
                       (substring trimmed 1 len)))
              (parts (string-split inner #\|)))
-        (map string-trim parts)))))
+        (map string-trim-both parts)))))
 
 (def (org-table-find-bounds ed)
   "Find the start and end lines of the table containing cursor.

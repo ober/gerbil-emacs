@@ -1,5 +1,5 @@
 ;;; -*- Gerbil -*-
-;;; TUI keybinding adapter for gerbil-emacs
+;;; TUI keybinding adapter for gemacs
 ;;;
 ;;; Converts termbox key events to Emacs key strings.
 ;;; Keymap data structures and bindings are in core.ss.
@@ -18,7 +18,7 @@
 
 (import :std/sugar
         :gerbil-scintilla/tui
-        :gerbil-emacs/core)
+        :gemacs/core)
 
 ;;;============================================================================
 ;;; Key event -> string conversion (TUI-specific)

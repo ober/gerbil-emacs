@@ -15,19 +15,19 @@
         :gerbil-scintilla/scintilla
         :gerbil-scintilla/style
         :gerbil-scintilla/tui
-        :gerbil-emacs/core
-        :gerbil-emacs/repl
-        :gerbil-emacs/eshell
-        :gerbil-emacs/shell
-        :gerbil-emacs/keymap
-        :gerbil-emacs/buffer
-        :gerbil-emacs/window
-        :gerbil-emacs/modeline
-        :gerbil-emacs/echo
-        :gerbil-emacs/highlight
-        :gerbil-emacs/editor-core
-        :gerbil-emacs/editor-ui
-        :gerbil-emacs/editor-text)
+        :gemacs/core
+        :gemacs/repl
+        :gemacs/eshell
+        :gemacs/shell
+        :gemacs/keymap
+        :gemacs/buffer
+        :gemacs/window
+        :gemacs/modeline
+        :gemacs/echo
+        :gemacs/highlight
+        :gemacs/editor-core
+        :gemacs/editor-ui
+        :gemacs/editor-text)
 
 ;;;============================================================================
 ;;; Misc navigation commands
@@ -582,8 +582,8 @@
                (buf-text (editor-get-text ed))
                ;; Write both to temp files and run diff
                (pid (number->string (##current-process-id)))
-               (tmp1 (string-append "/tmp/gerbil-emacs-diff-file-" pid))
-               (tmp2 (string-append "/tmp/gerbil-emacs-diff-buf-" pid)))
+               (tmp1 (string-append "/tmp/gemacs-diff-file-" pid))
+               (tmp2 (string-append "/tmp/gemacs-diff-buf-" pid)))
           (write-string-to-file file-text tmp1)
           (write-string-to-file buf-text tmp2)
           (let* ((proc (open-process
@@ -1270,7 +1270,7 @@
       (echo-error! echo "Buffer has no file path")
       (let* ((text (editor-get-text ed))
              (pid (number->string (##current-process-id)))
-             (tmp (string-append "/tmp/gerbil-emacs-sudo-" pid)))
+             (tmp (string-append "/tmp/gemacs-sudo-" pid)))
         (write-string-to-file tmp text)
         (let* ((proc (open-process
                         (list path: "/usr/bin/sudo"

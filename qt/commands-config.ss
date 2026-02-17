@@ -8,27 +8,27 @@
         :std/sort
         :std/srfi/13
         :std/text/base64
-        :gerbil-emacs/qt/sci-shim
-        :gerbil-emacs/core
-        :gerbil-emacs/editor
-        :gerbil-emacs/repl
-        :gerbil-emacs/eshell
-        :gerbil-emacs/shell
-        :gerbil-emacs/terminal
-        :gerbil-emacs/qt/buffer
-        :gerbil-emacs/qt/window
-        :gerbil-emacs/qt/echo
-        :gerbil-emacs/qt/highlight
-        :gerbil-emacs/qt/modeline
-        :gerbil-emacs/qt/commands-core
-        :gerbil-emacs/qt/commands-edit
-        :gerbil-emacs/qt/commands-search
-        :gerbil-emacs/qt/commands-file
-        :gerbil-emacs/qt/commands-sexp
-        :gerbil-emacs/qt/commands-ide
-        :gerbil-emacs/qt/commands-vcs
-        :gerbil-emacs/qt/commands-shell
-        :gerbil-emacs/qt/commands-modes)
+        :gemacs/qt/sci-shim
+        :gemacs/core
+        :gemacs/editor
+        :gemacs/repl
+        :gemacs/eshell
+        :gemacs/shell
+        :gemacs/terminal
+        :gemacs/qt/buffer
+        :gemacs/qt/window
+        :gemacs/qt/echo
+        :gemacs/qt/highlight
+        :gemacs/qt/modeline
+        :gemacs/qt/commands-core
+        :gemacs/qt/commands-edit
+        :gemacs/qt/commands-search
+        :gemacs/qt/commands-file
+        :gemacs/qt/commands-sexp
+        :gemacs/qt/commands-ide
+        :gemacs/qt/commands-vcs
+        :gemacs/qt/commands-shell
+        :gemacs/qt/commands-modes)
 
 ;;; ============================================================================
 

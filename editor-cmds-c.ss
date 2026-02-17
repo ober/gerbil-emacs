@@ -14,22 +14,22 @@
         :gerbil-scintilla/scintilla
         :gerbil-scintilla/style
         :gerbil-scintilla/tui
-        :gerbil-emacs/core
-        :gerbil-emacs/repl
-        :gerbil-emacs/eshell
-        :gerbil-emacs/shell
-        :gerbil-emacs/keymap
-        :gerbil-emacs/buffer
-        :gerbil-emacs/window
-        :gerbil-emacs/modeline
-        :gerbil-emacs/echo
-        :gerbil-emacs/highlight
-        :gerbil-emacs/editor-core
-        :gerbil-emacs/editor-ui
-        :gerbil-emacs/editor-text
-        :gerbil-emacs/editor-advanced
-        :gerbil-emacs/editor-cmds-a
-        :gerbil-emacs/editor-cmds-b)
+        :gemacs/core
+        :gemacs/repl
+        :gemacs/eshell
+        :gemacs/shell
+        :gemacs/keymap
+        :gemacs/buffer
+        :gemacs/window
+        :gemacs/modeline
+        :gemacs/echo
+        :gemacs/highlight
+        :gemacs/editor-core
+        :gemacs/editor-ui
+        :gemacs/editor-text
+        :gemacs/editor-advanced
+        :gemacs/editor-cmds-a
+        :gemacs/editor-cmds-b)
 
 ;;;============================================================================
 ;;; Task #44: Help system, dired, buffer management, and more
@@ -476,7 +476,7 @@
       (lambda (e)
         (echo-message! (app-state-echo app) "Error saving bookmarks"))
       (lambda ()
-        (call-with-output-file "~/.gerbil-emacs-bookmarks"
+        (call-with-output-file "~/.gemacs-bookmarks"
           (lambda (port)
             (for-each
               (lambda (pair)
@@ -493,7 +493,7 @@
     (lambda (e)
       (echo-message! (app-state-echo app) "No saved bookmarks found"))
     (lambda ()
-      (let* ((content (read-file-as-string "~/.gerbil-emacs-bookmarks"))
+      (let* ((content (read-file-as-string "~/.gemacs-bookmarks"))
              (lines (string-split content #\newline))
              (bmarks (app-state-bookmarks app)))
         (for-each
@@ -1676,11 +1676,11 @@
 
 (def (cmd-emacs-version app)
   "Display editor version."
-  (echo-message! (app-state-echo app) "gerbil-emacs 0.1"))
+  (echo-message! (app-state-echo app) "gemacs 0.1"))
 
 (def (cmd-report-bug app)
   "Report a bug."
-  (echo-message! (app-state-echo app) "Report bugs at: https://github.com/ober/gerbil-emacs/issues"))
+  (echo-message! (app-state-echo app) "Report bugs at: https://github.com/ober/gemacs/issues"))
 
 (def (cmd-view-echo-area-messages app)
   "View echo area message log in *Messages* buffer."

@@ -12,12 +12,11 @@
                  current-date date->string)
         :std/pregexp
         :std/misc/string
-        :std/misc/ports
         :gerbil-scintilla/scintilla
         :gerbil-scintilla/constants
-        :gerbil-emacs/core
-        :gerbil-emacs/echo
-        :gerbil-emacs/org-parse)
+        :gemacs/core
+        :gemacs/echo
+        :gemacs/org-parse)
 
 ;;;============================================================================
 ;;; Capture Template Structure
@@ -31,20 +30,17 @@
 (def *org-capture-templates*
   (list
     (make-org-capture-template
-      key: "t" description: "TODO"
-      type: 'entry
-      target: '(file+headline "~/org/inbox.org" "Tasks")
-      template: "* TODO %?\n  %U\n")
+      "t" "TODO" 'entry
+      '(file+headline "~/org/inbox.org" "Tasks")
+      "* TODO %?\n  %U\n")
     (make-org-capture-template
-      key: "n" description: "Note"
-      type: 'entry
-      target: '(file "~/org/notes.org")
-      template: "* %?\n  %U\n")
+      "n" "Note" 'entry
+      '(file "~/org/notes.org")
+      "* %?\n  %U\n")
     (make-org-capture-template
-      key: "j" description: "Journal"
-      type: 'entry
-      target: '(file+datetree "~/org/journal.org")
-      template: "* %U %?\n")))
+      "j" "Journal" 'entry
+      '(file+datetree "~/org/journal.org")
+      "* %U %?\n")))
 
 ;; Capture state
 (def *org-capture-active?* #f)
@@ -71,11 +67,13 @@
          (now (current-date))
          (active-ts (org-current-timestamp-string #t))
          (inactive-ts (org-current-timestamp-string #f))
-         (active-date (org-current-date-string #t))
-         (inactive-date (org-current-date-string #f))
+         (active-date (org-current-date-string))
+         ;; Create inactive date by replacing < > with [ ]
+         (inactive-date (let ((d (org-current-date-string)))
+                          (string-append "[" (substring d 1 (- (string-length d) 1)) "]")))
          (result tmpl))
     ;; Replace %% first to avoid double-expansion
-    (set! result (pregexp-replace* "%%" result "\x00PERCENT\x00"))
+    (set! result (pregexp-replace* "%%" result "__PCNT__"))
     (set! result (pregexp-replace* "%U" result inactive-ts))
     (set! result (pregexp-replace* "%T" result active-ts))
     (set! result (pregexp-replace* "%t" result active-date))
@@ -85,7 +83,7 @@
     ;; Remove %? marker (just a cursor position hint)
     (set! result (pregexp-replace* "%\\?" result ""))
     ;; Restore literal %
-    (set! result (pregexp-replace* "\x00PERCENT\x00" result "%"))
+    (set! result (pregexp-replace* "__PCNT__" result "%"))
     result))
 
 (def (org-capture-cursor-position tmpl)
@@ -205,9 +203,10 @@
         (reverse result)
         (let ((line (list-ref lines i)))
           (if (org-heading-line? line)
-            (let* ((parsed (org-parse-heading-line line))
-                   (title (if parsed (org-heading-title parsed) "")))
-              (loop (+ i 1) (cons (cons title i) result)))
+            (let-values (((level keyword priority title tags)
+                          (org-parse-heading-line line)))
+              (let ((t (or title "")))
+                (loop (+ i 1) (cons (cons t i) result))))
             (loop (+ i 1) result)))))))
 
 (def (org-extract-subtree text line-num)

@@ -1,5 +1,5 @@
 ;;; -*- Gerbil -*-
-;;; Main application and event loop for gerbil-emacs
+;;; Main application and event loop for gemacs
 
 (export app-init! app-run! main)
 
@@ -8,20 +8,20 @@
         :gerbil-scintilla/scintilla
         :gerbil-scintilla/style
         :gerbil-scintilla/tui
-        :gerbil-emacs/core
-        :gerbil-emacs/repl
-        :gerbil-emacs/shell
-        :gerbil-emacs/terminal
-        :gerbil-emacs/keymap
-        :gerbil-emacs/buffer
-        :gerbil-emacs/window
-        :gerbil-emacs/modeline
-        :gerbil-emacs/echo
-        :gerbil-emacs/editor
-        :gerbil-emacs/editor-core
-        :gerbil-emacs/highlight
-        :gerbil-emacs/persist
-        :gerbil-emacs/ipc)
+        :gemacs/core
+        :gemacs/repl
+        :gemacs/shell
+        :gemacs/terminal
+        :gemacs/keymap
+        :gemacs/buffer
+        :gemacs/window
+        :gemacs/modeline
+        :gemacs/echo
+        :gemacs/editor
+        :gemacs/editor-core
+        :gemacs/highlight
+        :gemacs/persist
+        :gemacs/ipc)
 
 ;;;============================================================================
 ;;; Application initialization

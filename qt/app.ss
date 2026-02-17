@@ -1,27 +1,27 @@
 ;;; -*- Gerbil -*-
-;;; Qt application and event loop for gerbil-emacs
+;;; Qt application and event loop for gemacs
 
 (export qt-main qt-open-file!)
 
 (import :std/sugar
         :std/misc/string
-        :gerbil-emacs/qt/sci-shim
-        :gerbil-emacs/core
-        :gerbil-emacs/editor
-        :gerbil-emacs/repl
-        :gerbil-emacs/eshell
-        :gerbil-emacs/shell
-        :gerbil-emacs/terminal
-        :gerbil-emacs/qt/keymap
-        :gerbil-emacs/qt/buffer
-        :gerbil-emacs/qt/window
-        :gerbil-emacs/qt/modeline
-        :gerbil-emacs/qt/echo
-        :gerbil-emacs/qt/highlight
-        :gerbil-emacs/qt/image
-        :gerbil-emacs/qt/commands
-        :gerbil-emacs/qt/menubar
-        :gerbil-emacs/ipc)
+        :gemacs/qt/sci-shim
+        :gemacs/core
+        :gemacs/editor
+        :gemacs/repl
+        :gemacs/eshell
+        :gemacs/shell
+        :gemacs/terminal
+        :gemacs/qt/keymap
+        :gemacs/qt/buffer
+        :gemacs/qt/window
+        :gemacs/qt/modeline
+        :gemacs/qt/echo
+        :gemacs/qt/highlight
+        :gemacs/qt/image
+        :gemacs/qt/commands
+        :gemacs/qt/menubar
+        :gemacs/ipc)
 
 ;;;============================================================================
 ;;; Qt Application
@@ -46,7 +46,7 @@
                   (if modified? "* " "")
                   name
                   (if path (string-append " - " path) "")
-                  " - gerbil-emacs")))
+                  " - gemacs")))
     (qt-main-window-set-title! win title)))
 
 (def (qt-update-mark-selection! app)
@@ -726,7 +726,7 @@
 
       ;; Show window
       (qt-main-window-set-central-widget! win central)
-      (qt-main-window-set-title! win "gerbil-emacs")
+      (qt-main-window-set-title! win "gemacs")
       (qt-widget-resize! win 800 600)
       (qt-widget-show! win)
 
