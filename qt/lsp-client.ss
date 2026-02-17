@@ -10,7 +10,8 @@
 
 (import :std/sugar
         :std/text/json
-        :std/misc/string)
+        :std/misc/string
+        (only-in :gemacs/core *lsp-server-command*))
 
 ;;;============================================================================
 ;;; State
@@ -48,6 +49,7 @@
 
 ;; Workspace root path
 (def *lsp-workspace-root* #f)
+
 
 ;;;============================================================================
 ;;; UI action queue (thread-safe, ipc.ss pattern)
@@ -300,7 +302,7 @@
                 (lambda (e) #f)
                 (lambda ()
                   (open-process
-                    (list path: "gerbil-lsp"
+                    (list path: *lsp-server-command*
                           arguments: '("--stdio")
                           directory: workspace-root
                           stdin-redirection: #t

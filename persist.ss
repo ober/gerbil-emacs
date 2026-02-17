@@ -551,6 +551,11 @@
                                (let ((n (string->number val)))
                                  (when (and n (> n 0) (<= n 2000))
                                    (set! *chord-timeout* n))))
+                              ;; LSP server command: lsp-server-command PATH
+                              ;; e.g. "lsp-server-command /home/user/gerbil-lsp/.gerbil/bin/gerbil-lsp"
+                              ((string=? key "lsp-server-command")
+                               (when (> (string-length val) 0)
+                                 (set! *lsp-server-command* val)))
                               ))))))
                   (loop))))))))))
 
