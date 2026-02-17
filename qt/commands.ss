@@ -707,7 +707,8 @@
         (let ((replacement (if (< (+ tbl-end 1) total-lines)
                              (string-append new-text "\n")
                              new-text)))
-          (sci-send/string ed SCI_REPLACETARGET replacement))
+          (sci-send/string ed SCI_REPLACETARGET replacement
+                          (string-length replacement)))
         ;; Move to next cell
         (let* ((next-col (+ cur-col 1))
                (next-line cur-line))
