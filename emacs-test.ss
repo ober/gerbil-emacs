@@ -57,7 +57,30 @@
                  org-parse-buffer
                  org-parse-buffer-settings org-parse-tag-expr
                  org-table-line? org-comment-line?
-                 org-keyword-line? org-block-begin?)
+                 org-keyword-line? org-block-begin?
+                 org-heading-stars-of-line org-current-timestamp-string
+                 org-heading-clocks org-heading-title)
+        (only-in :gerbil-emacs/org-table
+                 org-table-row? org-table-separator? org-table-parse-row
+                 org-table-column-widths org-table-format-row
+                 org-table-format-separator org-numeric-cell?
+                 org-table-align org-table-next-cell
+                 org-table-insert-column org-table-delete-column
+                 org-table-insert-row org-table-delete-row
+                 org-table-sort org-table-to-csv org-csv-to-table
+                 org-table-parse-tblfm)
+        (only-in :gerbil-emacs/org-clock
+                 org-clock-in-at-point org-clock-out
+                 org-clock-display org-clock-modeline-string
+                 *org-clock-start* *org-clock-heading*
+                 org-elapsed-minutes)
+        (only-in :gerbil-emacs/org-list
+                 org-list-item? org-meta-return
+                 org-cycle-list-bullet org-count-leading-spaces
+                 org-update-checkbox-statistics!)
+        (only-in :gerbil-emacs/org-export
+                 org-export-buffer org-export-inline
+                 org-split-into-blocks html-escape)
         (only-in :gerbil-emacs/editor-extra-org
                  cmd-org-todo cmd-org-export cmd-org-cycle cmd-org-shift-tab
                  cmd-org-store-link *org-stored-link*
@@ -4137,6 +4160,221 @@
         (editor-goto-pos ed 2)
         (cmd-org-template-expand app)
         (check (editor-get-text ed) => "<z")))
+
+    ;;=========================================================================
+    ;; Org-table: pure function tests
+    ;;=========================================================================
+
+    (test-case "org-table-row?: detects table rows"
+      (check (org-table-row? "| a | b |") => #t)
+      (check (org-table-row? "|---+---|") => #t)
+      (check (org-table-row? "  | x |") => #t)
+      (check (org-table-row? "not a row") => #f)
+      (check (org-table-row? "") => #f))
+
+    (test-case "org-table-separator?: detects separators"
+      (check (org-table-separator? "|---+---|") => #t)
+      (check (org-table-separator? "|---|") => #t)
+      (check (org-table-separator? "| a | b |") => #f))
+
+    (test-case "org-table-parse-row: splits cells"
+      (check (org-table-parse-row "| a | bb | ccc |") => '("a" "bb" "ccc"))
+      (check (org-table-parse-row "|x|y|") => '("x" "y"))
+      (check (org-table-parse-row "| single |") => '("single"))
+      (check (org-table-parse-row "not a row") => '()))
+
+    (test-case "org-table-column-widths: computes widths"
+      (let ((rows '(("a" "bb" "ccc")
+                     ("dddd" "e" "ff"))))
+        (check (org-table-column-widths rows) => '(4 2 3))))
+
+    (test-case "org-table-format-row: pads cells"
+      (let ((widths '(4 3 5)))
+        (check (org-table-format-row '("a" "bb" "ccc") widths)
+               => "| a    | bb  | ccc   |")))
+
+    (test-case "org-table-format-separator: generates separator"
+      (check (org-table-format-separator '(3 4 5))
+             => "|-----+------+-------|"))
+
+    (test-case "org-numeric-cell?: detects numbers"
+      (check (org-numeric-cell? "123") => #t)
+      (check (org-numeric-cell? "3.14") => #t)
+      (check (org-numeric-cell? "-5") => #t)
+      (check (org-numeric-cell? "50%") => #t)
+      (check (org-numeric-cell? "abc") => #f)
+      (check (org-numeric-cell? "") => #f))
+
+    (test-case "org-table-parse-tblfm: parses formulas"
+      (let ((result (org-table-parse-tblfm "#+TBLFM: $3=$1+$2")))
+        (check (length result) => 1)
+        (check (caar result) => "$3")
+        (check (cdar result) => "$1+$2")))
+
+    (test-case "org-csv-to-table: converts CSV to org"
+      (let ((result (org-csv-to-table "a,b,c\n1,2,3")))
+        (check (not (not (string-contains result "| a"))) => #t)
+        (check (not (not (string-contains result "| 1"))) => #t)))
+
+    (test-case "headless: org-table-align basic"
+      (let* ((ed (create-scintilla-editor width: 80 height: 24))
+             (buf (make-buffer "test.org" #f
+                    (send-message ed SCI_GETDOCPOINTER) #f #f #f #f))
+             (win (make-edit-window ed buf 0 0 80 24 0))
+             (fr (make-frame [win] 0 80 24 'vertical))
+             (app (new-app-state fr)))
+        (editor-set-text ed "| a | bb |\n| ccc | d |")
+        (editor-goto-pos ed 2)
+        (org-table-align ed)
+        (let ((text (editor-get-text ed)))
+          ;; Both columns should be padded to same width
+          (check (not (not (string-contains text "| a   |"))) => #t)
+          (check (not (not (string-contains text "| ccc |"))) => #t))))
+
+    (test-case "headless: org-table-align with separator"
+      (let* ((ed (create-scintilla-editor width: 80 height: 24))
+             (buf (make-buffer "test.org" #f
+                    (send-message ed SCI_GETDOCPOINTER) #f #f #f #f))
+             (win (make-edit-window ed buf 0 0 80 24 0))
+             (fr (make-frame [win] 0 80 24 'vertical))
+             (app (new-app-state fr)))
+        (editor-set-text ed "| Name | Age |\n|---+---|\n| Alice | 30 |")
+        (editor-goto-pos ed 2)
+        (org-table-align ed)
+        (let ((text (editor-get-text ed)))
+          ;; Separator should be regenerated with proper widths
+          (check (not (not (string-contains text "|"))) => #t)
+          (check (not (not (string-contains text "Alice"))) => #t))))
+
+    (test-case "headless: org-table-insert-row"
+      (let* ((ed (create-scintilla-editor width: 80 height: 24))
+             (buf (make-buffer "test.org" #f
+                    (send-message ed SCI_GETDOCPOINTER) #f #f #f #f))
+             (win (make-edit-window ed buf 0 0 80 24 0))
+             (fr (make-frame [win] 0 80 24 'vertical))
+             (app (new-app-state fr)))
+        (editor-set-text ed "| a | b |\n| c | d |")
+        (editor-goto-pos ed 2) ;; on first row
+        (org-table-insert-row ed)
+        (let ((text (editor-get-text ed)))
+          ;; Should now have 3 rows
+          (let ((row-count (length (filter (lambda (l) (org-table-row? l))
+                                          (string-split text #\newline)))))
+            (check (= row-count 3) => #t)))))
+
+    (test-case "headless: org-table-to-csv"
+      (let* ((ed (create-scintilla-editor width: 80 height: 24))
+             (buf (make-buffer "test.org" #f
+                    (send-message ed SCI_GETDOCPOINTER) #f #f #f #f))
+             (win (make-edit-window ed buf 0 0 80 24 0))
+             (fr (make-frame [win] 0 80 24 'vertical))
+             (app (new-app-state fr)))
+        (editor-set-text ed "| Name | Age |\n|---+---|\n| Alice | 30 |")
+        (editor-goto-pos ed 2)
+        (let ((csv (org-table-to-csv ed)))
+          (check (not (not (string-contains csv "Name"))) => #t)
+          (check (not (not (string-contains csv "Alice"))) => #t))))
+
+    ;;=========================================================================
+    ;; Org-clock: elapsed time tests
+    ;;=========================================================================
+
+    (test-case "org-elapsed-minutes: basic"
+      (let ((start (org-parse-timestamp "[2024-01-15 Mon 10:00]"))
+            (end   (org-parse-timestamp "[2024-01-15 Mon 11:30]")))
+        (check (org-elapsed-minutes start end) => 90)))
+
+    (test-case "org-elapsed-minutes: zero"
+      (let ((start (org-parse-timestamp "[2024-01-15 Mon 10:00]"))
+            (end   (org-parse-timestamp "[2024-01-15 Mon 10:00]")))
+        (check (org-elapsed-minutes start end) => 0)))
+
+    (test-case "org-clock-modeline-string: returns #f when not clocking"
+      (set! *org-clock-start* #f)
+      (check (org-clock-modeline-string) => #f))
+
+    ;;=========================================================================
+    ;; Org-list: detection tests
+    ;;=========================================================================
+
+    (test-case "org-list-item?: unordered dash"
+      (let-values (((type indent marker) (org-list-item? "- item")))
+        (check type => 'unordered)
+        (check indent => 0)
+        (check marker => "-")))
+
+    (test-case "org-list-item?: unordered indented"
+      (let-values (((type indent marker) (org-list-item? "  + sub item")))
+        (check type => 'unordered)
+        (check indent => 2)
+        (check marker => "+")))
+
+    (test-case "org-list-item?: ordered"
+      (let-values (((type indent marker) (org-list-item? "1. First item")))
+        (check type => 'ordered)
+        (check marker => "1.")))
+
+    (test-case "org-list-item?: checkbox unchecked"
+      (let-values (((type indent marker) (org-list-item? "- [ ] Todo item")))
+        (check type => 'checkbox-unchecked)))
+
+    (test-case "org-list-item?: checkbox checked"
+      (let-values (((type indent marker) (org-list-item? "- [X] Done item")))
+        (check type => 'checkbox-checked)))
+
+    (test-case "org-list-item?: not a list"
+      (let-values (((type indent marker) (org-list-item? "Regular text")))
+        (check type => #f)))
+
+    (test-case "org-count-leading-spaces: counts"
+      (check (org-count-leading-spaces "  hello") => 2)
+      (check (org-count-leading-spaces "hello") => 0)
+      (check (org-count-leading-spaces "    ") => 4))
+
+    ;;=========================================================================
+    ;; Org-export: inline markup tests
+    ;;=========================================================================
+
+    (test-case "org-export-inline: bold to HTML"
+      (check (org-export-inline " *bold* " 'html) => " <b>bold</b> "))
+
+    (test-case "org-export-inline: code to markdown"
+      (check (org-export-inline "use ~code~ here" 'markdown) => "use `code` here"))
+
+    (test-case "html-escape: escapes special chars"
+      (check (html-escape "<script>") => "&lt;script&gt;")
+      (check (html-escape "a & b") => "a &amp; b")
+      (check (html-escape "\"hi\"") => "&quot;hi&quot;"))
+
+    (test-case "org-split-into-blocks: headings and paragraphs"
+      (let ((blocks (org-split-into-blocks "* Heading\nSome text\n\n** Sub")))
+        ;; Should have heading, paragraph, blank, heading
+        (check (>= (length blocks) 3) => #t)
+        (check (caar blocks) => 'heading)))
+
+    (test-case "org-export-buffer: HTML output"
+      (let ((html (org-export-buffer "#+TITLE: Test\n* Hello\nWorld" 'html)))
+        (check (not (not (string-contains html "<h1"))) => #t)
+        (check (not (not (string-contains html "Hello"))) => #t)
+        (check (not (not (string-contains html "World"))) => #t)
+        (check (not (not (string-contains html "<!DOCTYPE"))) => #t)))
+
+    (test-case "org-export-buffer: Markdown output"
+      (let ((md (org-export-buffer "* Hello\nWorld" 'markdown)))
+        (check (not (not (string-contains md "# Hello"))) => #t)
+        (check (not (not (string-contains md "World"))) => #t)))
+
+    (test-case "org-export-buffer: LaTeX output"
+      (let ((tex (org-export-buffer "#+TITLE: Test\n* Hello\nWorld" 'latex)))
+        (check (not (not (string-contains tex "\\section"))) => #t)
+        (check (not (not (string-contains tex "\\documentclass"))) => #t)))
+
+    (test-case "org-export-buffer: plain text"
+      (let ((txt (org-export-buffer "* Hello\nWorld" 'text)))
+        (check (not (not (string-contains txt "Hello"))) => #t)
+        (check (not (not (string-contains txt "World"))) => #t)
+        ;; Should not have * prefix
+        (check (not (string-contains txt "* ")) => #t)))
 
     (test-case "headless: command registration for new org commands"
       (register-all-commands!)

@@ -12,6 +12,7 @@
                  date->time-utc time-difference time-second)
         :std/pregexp
         :std/misc/string
+        :std/sort
         :gerbil-scintilla/scintilla
         :gerbil-scintilla/constants
         :gerbil-emacs/core
