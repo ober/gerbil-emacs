@@ -116,6 +116,9 @@
     ;; Org-mode modules (must compile before editor-extra-org)
     "org-parse"
     "org-table"
+    "org-clock"
+    "org-list"
+    "org-export"
     ;; editor-extra sub-modules (must compile before facade)
     "editor-extra-helpers"
     "editor-extra-org"
