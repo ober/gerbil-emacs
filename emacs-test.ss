@@ -40,6 +40,7 @@
                  cmd-copy-region-as-kill
                  cmd-forward-sexp cmd-backward-sexp cmd-backward-kill-sexp
                  cmd-balance-windows)
+        :gerbil-emacs/org-parse
         (only-in :gerbil-emacs/editor-extra-org
                  cmd-org-todo cmd-org-export cmd-org-cycle cmd-org-shift-tab
                  cmd-org-store-link *org-stored-link*

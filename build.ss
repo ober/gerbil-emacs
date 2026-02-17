@@ -113,6 +113,8 @@
     "window"
     "modeline"
     "echo"
+    ;; Org-mode modules (must compile before editor-extra-org)
+    "org-parse"
     ;; editor-extra sub-modules (must compile before facade)
     "editor-extra-helpers"
     "editor-extra-org"
