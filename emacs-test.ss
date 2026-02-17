@@ -40,7 +40,24 @@
                  cmd-copy-region-as-kill
                  cmd-forward-sexp cmd-backward-sexp cmd-backward-kill-sexp
                  cmd-balance-windows)
-        :gerbil-emacs/org-parse
+        (only-in :gerbil-emacs/org-parse
+                 org-parse-timestamp org-timestamp? org-timestamp-type
+                 org-timestamp-year org-timestamp-month org-timestamp-day
+                 org-timestamp-day-name org-timestamp-hour org-timestamp-minute
+                 org-timestamp-end-hour org-timestamp-end-minute
+                 org-timestamp-repeater org-timestamp-warning
+                 org-timestamp->string org-timestamp-elapsed
+                 org-current-timestamp-string pad-02
+                 org-parse-heading-line org-heading-stars
+                 org-heading-keyword org-heading-title
+                 org-heading-priority org-heading-tags org-heading-scheduled
+                 org-heading-line-number
+                 org-parse-planning-line org-parse-properties
+                 org-parse-clock-line
+                 org-parse-buffer
+                 org-parse-buffer-settings org-parse-tag-expr
+                 org-table-line? org-comment-line?
+                 org-keyword-line? org-block-begin?)
         (only-in :gerbil-emacs/editor-extra-org
                  cmd-org-todo cmd-org-export cmd-org-cycle cmd-org-shift-tab
                  cmd-org-store-link *org-stored-link*
@@ -3444,7 +3461,298 @@
         (check (editor-get-text ed) => "firstsecond")))
 
     ;;=========================================================================
-    ;; Org-mode: helper function tests
+    ;; Org-parse: timestamp parsing tests
+    ;;=========================================================================
+
+    (test-case "org-parse-timestamp: active date only"
+      (let ((ts (org-parse-timestamp "<2024-01-15>")))
+        (check (org-timestamp? ts) => #t)
+        (check (org-timestamp-type ts) => 'active)
+        (check (org-timestamp-year ts) => 2024)
+        (check (org-timestamp-month ts) => 1)
+        (check (org-timestamp-day ts) => 15)
+        (check (org-timestamp-day-name ts) => #f)
+        (check (org-timestamp-hour ts) => #f)
+        (check (org-timestamp-minute ts) => #f)))
+
+    (test-case "org-parse-timestamp: active with day name and time"
+      (let ((ts (org-parse-timestamp "<2024-01-15 Mon 10:30>")))
+        (check (org-timestamp? ts) => #t)
+        (check (org-timestamp-type ts) => 'active)
+        (check (org-timestamp-year ts) => 2024)
+        (check (org-timestamp-month ts) => 1)
+        (check (org-timestamp-day ts) => 15)
+        (check (org-timestamp-day-name ts) => "Mon")
+        (check (org-timestamp-hour ts) => 10)
+        (check (org-timestamp-minute ts) => 30)))
+
+    (test-case "org-parse-timestamp: inactive"
+      (let ((ts (org-parse-timestamp "[2024-03-20 Wed 14:00]")))
+        (check (org-timestamp? ts) => #t)
+        (check (org-timestamp-type ts) => 'inactive)
+        (check (org-timestamp-year ts) => 2024)
+        (check (org-timestamp-month ts) => 3)
+        (check (org-timestamp-day ts) => 20)
+        (check (org-timestamp-hour ts) => 14)
+        (check (org-timestamp-minute ts) => 0)))
+
+    (test-case "org-parse-timestamp: time range"
+      (let ((ts (org-parse-timestamp "<2024-01-15 Mon 10:00-11:30>")))
+        (check (org-timestamp-hour ts) => 10)
+        (check (org-timestamp-minute ts) => 0)
+        (check (org-timestamp-end-hour ts) => 11)
+        (check (org-timestamp-end-minute ts) => 30)))
+
+    (test-case "org-parse-timestamp: with repeater"
+      (let ((ts (org-parse-timestamp "<2024-01-15 Mon 10:00 +1w>")))
+        (check (org-timestamp-repeater ts) => "+1w")
+        (check (org-timestamp-warning ts) => #f)))
+
+    (test-case "org-parse-timestamp: with warning"
+      (let ((ts (org-parse-timestamp "<2024-01-15 Mon 10:00 -3d>")))
+        (check (org-timestamp-warning ts) => "-3d")))
+
+    (test-case "org-parse-timestamp: invalid returns #f"
+      (check (org-parse-timestamp "not a timestamp") => #f)
+      (check (org-parse-timestamp "") => #f)
+      (check (org-parse-timestamp "short") => #f))
+
+    (test-case "org-timestamp->string: round-trip"
+      (let ((ts (org-parse-timestamp "<2024-01-15 Mon 10:30>")))
+        (check (org-timestamp->string ts) => "<2024-01-15 Mon 10:30>"))
+      (let ((ts (org-parse-timestamp "[2024-03-20]")))
+        (check (org-timestamp->string ts) => "[2024-03-20]")))
+
+    (test-case "org-timestamp-elapsed: basic"
+      (let ((start (org-parse-timestamp "[2024-01-15 Mon 10:00]"))
+            (end   (org-parse-timestamp "[2024-01-15 Mon 11:30]")))
+        (check (org-timestamp-elapsed start end) => "1:30")))
+
+    (test-case "org-timestamp-elapsed: zero"
+      (let ((start (org-parse-timestamp "[2024-01-15 Mon 10:00]"))
+            (end   (org-parse-timestamp "[2024-01-15 Mon 10:00]")))
+        (check (org-timestamp-elapsed start end) => "0:00")))
+
+    (test-case "org-timestamp-elapsed: multi-hour"
+      (let ((start (org-parse-timestamp "[2024-01-15 Mon 09:00]"))
+            (end   (org-parse-timestamp "[2024-01-15 Mon 17:45]")))
+        (check (org-timestamp-elapsed start end) => "8:45")))
+
+    ;;=========================================================================
+    ;; Org-parse: heading parsing tests
+    ;;=========================================================================
+
+    (test-case "org-parse-heading-line: full heading"
+      (let-values (((level keyword priority title tags)
+                    (org-parse-heading-line "** TODO [#A] My Task :work:urgent:")))
+        (check level => 2)
+        (check keyword => "TODO")
+        (check priority => #\A)
+        (check title => "My Task")
+        (check tags => '("work" "urgent"))))
+
+    (test-case "org-parse-heading-line: minimal heading"
+      (let-values (((level keyword priority title tags)
+                    (org-parse-heading-line "* Hello")))
+        (check level => 1)
+        (check keyword => #f)
+        (check priority => #f)
+        (check title => "Hello")
+        (check tags => '())))
+
+    (test-case "org-parse-heading-line: no keyword no tags"
+      (let-values (((level keyword priority title tags)
+                    (org-parse-heading-line "*** Just a title")))
+        (check level => 3)
+        (check keyword => #f)
+        (check priority => #f)
+        (check title => "Just a title")
+        (check tags => '())))
+
+    (test-case "org-parse-heading-line: DONE keyword"
+      (let-values (((level keyword priority title tags)
+                    (org-parse-heading-line "* DONE Finished")))
+        (check level => 1)
+        (check keyword => "DONE")
+        (check title => "Finished")))
+
+    (test-case "org-parse-heading-line: not a heading"
+      (let-values (((level keyword priority title tags)
+                    (org-parse-heading-line "Not a heading")))
+        (check level => #f)))
+
+    ;;=========================================================================
+    ;; Org-parse: planning line tests
+    ;;=========================================================================
+
+    (test-case "org-parse-planning-line: SCHEDULED only"
+      (let-values (((sched dead closed)
+                    (org-parse-planning-line "  SCHEDULED: <2024-01-15 Mon 10:00>")))
+        (check (org-timestamp? sched) => #t)
+        (check (org-timestamp-day sched) => 15)
+        (check dead => #f)
+        (check closed => #f)))
+
+    (test-case "org-parse-planning-line: DEADLINE only"
+      (let-values (((sched dead closed)
+                    (org-parse-planning-line "  DEADLINE: <2024-02-28>")))
+        (check sched => #f)
+        (check (org-timestamp? dead) => #t)
+        (check (org-timestamp-month dead) => 2)))
+
+    (test-case "org-parse-planning-line: both SCHEDULED and DEADLINE"
+      (let-values (((sched dead closed)
+                    (org-parse-planning-line "  SCHEDULED: <2024-01-15> DEADLINE: <2024-02-28>")))
+        (check (org-timestamp? sched) => #t)
+        (check (org-timestamp? dead) => #t)))
+
+    ;;=========================================================================
+    ;; Org-parse: property drawer tests
+    ;;=========================================================================
+
+    (test-case "org-parse-properties: basic"
+      (let* ((lines '(":PROPERTIES:" ":ID: abc123" ":CATEGORY: work" ":END:"))
+             (props (org-parse-properties lines 0)))
+        (check (hash-get props "ID") => "abc123")
+        (check (hash-get props "CATEGORY") => "work")))
+
+    ;;=========================================================================
+    ;; Org-parse: clock line tests
+    ;;=========================================================================
+
+    (test-case "org-parse-clock-line: closed clock"
+      (let-values (((start end dur)
+                    (org-parse-clock-line "  CLOCK: [2024-01-15 Mon 10:00]--[2024-01-15 Mon 11:30] =>  1:30")))
+        (check (org-timestamp? start) => #t)
+        (check (org-timestamp? end) => #t)
+        (check dur => "1:30")))
+
+    (test-case "org-parse-clock-line: open clock"
+      (let-values (((start end dur)
+                    (org-parse-clock-line "  CLOCK: [2024-01-15 Mon 10:00]")))
+        (check (org-timestamp? start) => #t)
+        (check end => #f)
+        (check dur => #f)))
+
+    ;;=========================================================================
+    ;; Org-parse: buffer-level parsing tests
+    ;;=========================================================================
+
+    (test-case "org-parse-buffer: multiple headings"
+      (let* ((text (string-append
+                    "* TODO First heading\n"
+                    "Some body text\n"
+                    "** Sub heading\n"
+                    "More body\n"
+                    "* DONE Second heading\n"))
+             (headings (org-parse-buffer text)))
+        (check (length headings) => 3)
+        (let ((h1 (car headings)))
+          (check (org-heading-stars h1) => 1)
+          (check (org-heading-keyword h1) => "TODO")
+          (check (org-heading-title h1) => "First heading")
+          (check (org-heading-line-number h1) => 0))
+        (let ((h2 (cadr headings)))
+          (check (org-heading-stars h2) => 2)
+          (check (org-heading-title h2) => "Sub heading"))
+        (let ((h3 (caddr headings)))
+          (check (org-heading-stars h3) => 1)
+          (check (org-heading-keyword h3) => "DONE"))))
+
+    (test-case "org-parse-buffer: with planning"
+      (let* ((text (string-append
+                    "* TODO Task\n"
+                    "  SCHEDULED: <2024-01-15 Mon 10:00>\n"
+                    "  Body text\n"))
+             (headings (org-parse-buffer text)))
+        (check (length headings) => 1)
+        (let ((h (car headings)))
+          (check (org-timestamp? (org-heading-scheduled h)) => #t)
+          (check (org-timestamp-day (org-heading-scheduled h)) => 15))))
+
+    ;;=========================================================================
+    ;; Org-parse: buffer settings tests
+    ;;=========================================================================
+
+    (test-case "org-parse-buffer-settings: basic"
+      (let* ((text (string-append
+                    "#+TITLE: My Document\n"
+                    "#+AUTHOR: Test User\n"
+                    "#+STARTUP: overview\n"))
+             (settings (org-parse-buffer-settings text)))
+        (check (hash-get settings "title") => "My Document")
+        (check (hash-get settings "author") => "Test User")
+        (check (hash-get settings "startup") => "overview")))
+
+    (test-case "org-parse-buffer-settings: TODO keywords"
+      (let* ((text "#+TODO: TODO NEXT | DONE CANCELLED\n")
+             (settings (org-parse-buffer-settings text)))
+        (check (hash-get settings "todo-active") => '("TODO" "NEXT"))
+        (check (hash-get settings "todo-done") => '("DONE" "CANCELLED"))))
+
+    ;;=========================================================================
+    ;; Org-parse: tag matching tests
+    ;;=========================================================================
+
+    (test-case "org-parse-tag-expr: basic"
+      (let ((terms (org-parse-tag-expr "+work-personal")))
+        (check (length terms) => 2)
+        (check (car (car terms)) => '+)
+        (check (cdr (car terms)) => "work")
+        (check (car (cadr terms)) => '-)
+        (check (cdr (cadr terms)) => "personal")))
+
+    (test-case "org-parse-tag-expr: simple tag name"
+      (let ((terms (org-parse-tag-expr "work")))
+        (check (length terms) => 1)
+        (check (car (car terms)) => '+)
+        (check (cdr (car terms)) => "work")))
+
+    ;;=========================================================================
+    ;; Org-parse: utility function tests
+    ;;=========================================================================
+
+    (test-case "org-heading-line?: detects headings"
+      (check (org-heading-line? "* Heading") => #t)
+      (check (org-heading-line? "** Sub") => #t)
+      (check (org-heading-line? "Not a heading") => #f)
+      (check (org-heading-line? "") => #f))
+
+    (test-case "org-table-line?: detects tables"
+      (check (org-table-line? "| a | b |") => #t)
+      (check (org-table-line? "|---+---|") => #t)
+      (check (org-table-line? "not a table") => #f))
+
+    (test-case "org-comment-line?: detects comments"
+      (check (org-comment-line? "# This is a comment") => #t)
+      (check (org-comment-line? "#+TITLE: Not a comment") => #f)
+      (check (org-comment-line? "Regular text") => #f))
+
+    (test-case "org-keyword-line?: detects keywords"
+      (check (org-keyword-line? "#+TITLE: Hello") => #t)
+      (check (org-keyword-line? "#+BEGIN_SRC") => #t)
+      (check (org-keyword-line? "Not a keyword") => #f))
+
+    (test-case "org-block-begin?: detects block starts"
+      (check (org-block-begin? "#+BEGIN_SRC python") => #t)
+      (check (org-block-begin? "#+begin_quote") => #t)
+      (check (org-block-begin? "not a block") => #f))
+
+    (test-case "org-current-timestamp-string: produces valid format"
+      (let ((ts (org-current-timestamp-string)))
+        (check (char=? (string-ref ts 0) #\<) => #t)
+        (check (char=? (string-ref ts (- (string-length ts) 1)) #\>) => #t)
+        ;; Should contain a date pattern
+        (check (> (string-length ts) 15) => #t)))
+
+    (test-case "pad-02: zero-pads correctly"
+      (check (pad-02 0) => "00")
+      (check (pad-02 5) => "05")
+      (check (pad-02 10) => "10")
+      (check (pad-02 31) => "31"))
+
+    ;;=========================================================================
+    ;; Org-mode: helper function tests (existing)
     ;;=========================================================================
 
     (test-case "org-heading-level: counts stars"

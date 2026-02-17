@@ -115,6 +115,7 @@
     "echo"
     ;; Org-mode modules (must compile before editor-extra-org)
     "org-parse"
+    "org-table"
     ;; editor-extra sub-modules (must compile before facade)
     "editor-extra-helpers"
     "editor-extra-org"

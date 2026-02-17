@@ -166,7 +166,7 @@ Returns an org-timestamp struct or #f on parse failure."
 ;;;============================================================================
 
 (defstruct org-heading
-  (level        ; integer: number of leading *
+  (stars        ; integer: number of leading *
    keyword      ; string or #f: "TODO", "DONE", etc.
    priority     ; char or #f: #\A, #\B, #\C
    title        ; string: heading text (sans keyword/priority/tags)
@@ -612,7 +612,7 @@ Returns a new org-timestamp with updated fields."
   (and (> (string-length line) 0)
        (char=? (string-ref line 0) #\*)))
 
-(def (org-heading-level-of-line line)
+(def (org-heading-stars-of-line line)
   "Count leading * chars."
   (let loop ((i 0))
     (if (and (< i (string-length line)) (char=? (string-ref line i) #\*))
@@ -626,7 +626,7 @@ Returns a new org-timestamp with updated fields."
       ((>= i (length lines)) i)
       ((let ((l (list-ref lines i)))
          (and (org-heading-line? l)
-              (<= (org-heading-level-of-line l) level)))
+              (<= (org-heading-stars-of-line l) level)))
        i)
       (else (loop (+ i 1))))))
 
