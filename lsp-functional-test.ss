@@ -278,6 +278,7 @@
   "Verify that open-process + thread I/O works in this compiled exe.
    If this fails, Qt is interfering with Gambit's I/O scheduler."
   (displayln "=== Group 1b: Subprocess I/O Diagnostic ===")
+  (force-output (current-output-port))
   (def result #f)
   (def reader-exn #f)
   (def proc
