@@ -416,7 +416,12 @@
 (def *magit-dir* #f)  ;; working directory for magit operations
 
 (def (magit-run-git args dir)
-  "Run a git command and return output as string."
+  "Run a git command and return output as string.
+   Note: intentionally omits process-status to avoid a race with Qt's
+   SIGCHLD handler (which calls waitpid(-1,...) and can reap the child
+   before Gambit's waitpid(pid,...) runs, causing an indefinite block).
+   read-line already blocks until stdout EOF (process exit closes the pipe).
+   The zombie is reaped by Qt's SIGCHLD handler or OS cleanup on exit."
   (with-catch
     (lambda (e) "")
     (lambda ()
@@ -426,8 +431,7 @@
                             directory: dir
                             stdout-redirection: #t
                             stderr-redirection: #t)))
-             (output (read-line proc #f))
-             (_ (process-status proc)))
+             (output (read-line proc #f)))
         (close-port proc)
         (or output "")))))
 

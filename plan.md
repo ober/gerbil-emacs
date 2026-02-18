@@ -1,279 +1,271 @@
-# Plan: Comprehensive Functional Test Suite for Gemacs
+# Gemacs Feature Plan
 
-## Context
+## Feature 1: Full Magit Functional Testing
 
-Org-mode `<s TAB` has regressed 5 times. Root cause: **all existing tests call leaf command functions directly** (e.g., `cmd-org-template-expand`), bypassing the dispatch chain that real users go through. When dispatch logic breaks, tests pass but features are broken. This isn't just an org-mode problem — it's a structural testing gap across the entire editor. The Qt binary has a completely separate `cmd-indent-or-complete` and many other commands that are **never tested at all**.
+### Goal
+Verify all magit/git operations work correctly through the dispatch chain, matching Emacs magit behavior. Both TUI and Qt paths need coverage.
 
-### What "functional test" means here
+### Current State
+- **7 magit commands** registered in Qt: `magit-status`, `magit-stage`, `magit-unstage`, `magit-commit`, `magit-diff`, `magit-stage-all`, `magit-log`
+- **4 quick-access git commands**: `show-git-status`, `show-git-log`, `show-git-diff`, `show-git-blame`
+- **4 VC commands**: `vc-annotate`, `vc-diff-head`, `vc-log-file`, `vc-revert`
+- **TUI has 8 basic VC commands**: `vc-register`, `vc-dir`, `vc-pull`, `vc-push`, `vc-create-tag`, `vc-print-log`, `vc-stash`, `vc-stash-pop`
+- Existing tests: 8 TUI magit tests in `functional-test.ss`, 8 Qt helper tests + dispatch tests in `qt-functional-test.ss`
 
-A functional test simulates what the user does:
-1. Open a buffer with specific content and mode
-2. Position cursor
-3. Press a key (or key sequence)
-4. Verify the resulting buffer text, cursor position, and editor state
+### What to Test
+All tests go through `execute-command!` (never call leaf functions directly).
 
-This means calling `cmd-indent-or-complete` (the TAB handler), NOT `cmd-org-template-expand`. It means feeding key events through `key-state-feed!` for multi-key sequences, NOT calling `cmd-find-file` directly. **Test the dispatch chain, not the leaf.**
+#### TUI Tests (`functional-test.ss`)
+Each test creates a temp git repo, runs the command, and verifies the output buffer content.
 
-## Plan
+1. **magit-status** — verify `*Magit*` buffer contains "Head:", staged/unstaged/untracked sections
+2. **magit-stage** — stage a file, verify it moves from unstaged to staged in status
+3. **magit-unstage** — unstage a file, verify it moves back to unstaged
+4. **magit-commit** — commit staged changes, verify clean working tree after
+5. **magit-diff** — verify diff output for a modified file shows `+`/`-` lines
+6. **magit-stage-all** — verify all files move to staged
+7. **magit-log** — verify log output contains commit hashes and messages
+8. **show-git-status** — verify `*Git Status*` buffer content
+9. **show-git-log** — verify `*Git Log*` buffer shows commit history
+10. **show-git-diff** — verify `*Git Diff*` buffer shows changes
+11. **show-git-blame** — verify `*Git Blame*` buffer for current file
+12. **vc-annotate** — verify blame alias works
+13. **vc-diff-head** — verify diff alias works
+14. **vc-log-file** — verify per-file log works
+15. **vc-revert** — verify file is reverted and buffer reloaded
+16. **vc-register** — verify `git add` works
+17. **vc-dir** — verify status display
+18. **vc-pull/push** — smoke test (may need mock remote)
+19. **vc-stash/stash-pop** — verify stash round-trip
 
-### Step 1: Create `functional-test.ss` — comprehensive TUI functional tests
+#### Qt Tests (`qt-functional-test.ss`)
+Mirror the TUI tests using the Qt dispatch chain with `execute-command!`.
 
-Single new file, organized into test groups by feature area. Every test goes through the real dispatch path.
+#### Test Infrastructure
+- Create a helper `with-temp-git-repo` that sets up a temporary git directory with initial commit
+- Helper to create/modify/stage files in the temp repo
+- Helper to override `*magit-dir*` for testing
 
-#### 1a. Test Framework Helpers
+### Missing Commands to Implement
+- `magit-branch` — create/switch/delete branches (registered in test but not implemented)
+- `magit-push` / `magit-pull` — interactive push/pull with remote selection
+- `magit-stash` — stash management
+- `magit-rebase` — interactive rebase
+- `magit-cherry-pick` — cherry pick commits
+- `magit-reset` — reset to commit
+- `magit-refresh` — bound to `g` in magit buffer
+
+### Implementation Steps
+1. Add `with-temp-git-repo` test helper to both test files
+2. Expand TUI magit tests to cover all commands with real git repos
+3. Add Qt magit dispatch tests mirroring TUI
+4. Implement missing commands (branch, push, pull, stash, rebase)
+5. Add magit keymap for the `*Magit*` buffer (`s`=stage, `u`=unstage, `c`=commit, `d`=diff, `g`=refresh, `q`=quit, `b`=branch, `P`=push, `F`=pull, `z`=stash)
+
+---
+
+## Feature 2: Emacs Theme Support
+
+### Goal
+Load and apply color themes that define both UI chrome and syntax highlighting colors. Support importing from existing Emacs theme ecosystems.
+
+### Current State
+- **4 built-in themes** in `qt/commands-core.ss`: Dark, Solarized Dark, Light, Monokai
+- Themes only affect **UI chrome** (tab bar, modeline, echo area backgrounds/foregrounds)
+- **Syntax highlighting colors are hardcoded** in `highlight.ss` (TUI) and `qt/highlight.ss` (Qt) as compile-time constants
+- The two layers are completely disconnected — switching themes does NOT change code colors
+
+### Theme Architecture
+
+#### Native Theme Format: `.gemacs-theme` files
+
+A theme is an alist or simple S-expression file that defines ~20 semantic color slots:
 
 ```scheme
-;; Create headless org editor with full command registry
-(defrule (with-org-editor (ed app) body ...)
-  (let* ((ed (create-scintilla-editor width: 80 height: 24))
-         (buf (make-buffer "test.org" "/tmp/test.org"
-                (send-message ed SCI_GETDOCPOINTER) #f #f #f #f))
-         (win (make-edit-window ed buf 0 0 80 24 0))
-         (fr (make-frame [win] 0 80 24 'vertical))
-         (app (new-app-state fr)))
-    (register-all-commands!)
-    body ...))
+;; ~/.gemacs-themes/dracula.theme
+(theme
+  (name "Dracula")
+  (variant dark)  ; dark or light
 
-;; Create headless editor for arbitrary file type
-(defrule (with-editor (ed app filename) body ...)
-  (let* ((ed (create-scintilla-editor width: 80 height: 24))
-         (buf (make-buffer filename #f
-                (send-message ed SCI_GETDOCPOINTER) #f #f #f #f))
-         (win (make-edit-window ed buf 0 0 80 24 0))
-         (fr (make-frame [win] 0 80 24 'vertical))
-         (app (new-app-state fr)))
-    (register-all-commands!)
-    body ...))
+  ;; UI colors
+  (bg         "#282a36")
+  (fg         "#f8f8f2")
+  (cursor     "#f8f8f0")
+  (selection  "#44475a")
+  (line-hl    "#2a2c3a")
+  (modeline-bg "#282a36")
+  (modeline-fg "#f8f8f2")
+  (line-number-fg "#6272a4")
+  (line-number-bg "#21222c")
+  (brace-match-fg "#f1fa8c")
+  (brace-match-bg "#44475a")
+  (brace-bad-fg   "#ff5555")
+  (brace-bad-bg   "#44475a")
 
-;; Execute a command by symbol through the REAL dispatch chain
-;; (execute-command! already exists in core.ss:1039)
+  ;; Syntax colors
+  (keyword     "#ff79c6" bold)
+  (string      "#f1fa8c")
+  (comment     "#6272a4" italic)
+  (number      "#bd93f9")
+  (type        "#8be9fd" italic)
+  (builtin     "#8be9fd")
+  (function    "#50fa7b")
+  (operator    "#ff79c6")
+  (preprocessor "#ff79c6")
+  (constant    "#bd93f9")
+  (error       "#ff5555")
+  (doc-comment "#6272a4" italic)
 
-;; Simulate a full key sequence: feed events through key-state-feed!
-;; then execute the resulting command
-(def (simulate-keys app keys) ...)
+  ;; Org-mode colors (optional)
+  (org-heading-1 "#ff79c6" bold)
+  (org-heading-2 "#bd93f9" bold)
+  (org-heading-3 "#50fa7b" bold)
+  (org-heading-4 "#f1fa8c" bold)
+  (org-todo      "#ff5555" bold)
+  (org-done      "#50fa7b" bold)
+  (org-link      "#8be9fd" underline)
+  (org-code-bg   "#21222c"))
 ```
 
-The `simulate-keys` helper converts key strings like `"C-x C-f"`, `"TAB"`, `"M-f"` into the same dispatch that `app.ss:dispatch-key-normal!` uses: `key-state-feed!` → `execute-command!`. This is the **critical missing piece** — it tests the full chain from keymap lookup through command execution.
+#### Importing Themes — Three Approaches
 
-#### 1b. Test Groups (~120+ test cases total)
+**Approach A: Base16 YAML → gemacs converter (RECOMMENDED primary approach)**
 
-**Group 1: Org-Mode TAB Dispatch (24 tests)** — the immediate fire
+- 250+ pre-made color schemes available at [tinted-theming/base16-schemes](https://github.com/tinted-theming/base16-schemes)
+- Each scheme is a 16-color YAML file with fixed semantic roles
+- Write a Gerbil script `base16-to-gemacs` that maps base16 colors to our ~20 slots:
+  ```
+  base00 → bg              base08 → error, constant
+  base01 → line-number-bg  base09 → number, preprocessor
+  base02 → selection       base0A → type
+  base03 → comment         base0B → string
+  base04 → line-number-fg  base0C → builtin
+  base05 → fg, operator    base0D → function
+  base06 → (unused)        base0E → keyword
+  base07 → cursor          base0F → (deprecated markers)
+  ```
+- One-time conversion, then ship the result as `.gemacs-theme` files
+- **Pro**: Instant access to 250+ themes. Simple YAML parsing.
+- **Con**: Only 16 colors — some themes want more granularity.
 
-- All 9 templates via `cmd-indent-or-complete`: `<s`, `<e`, `<q`, `<v`, `<c`, `<C`, `<l`, `<h`, `<a`
-- Dispatch priority: table line > template > heading > plain text indent
-- Edge cases: indented template, mid-file template, content preservation, cursor positioning
-- Negative: non-org buffer, unknown template `<z`, empty line
-- Registration guards: `org-template-expand` and `org-cycle` are registered procedures
-- Heading TAB → org-cycle (fold/unfold)
-- Org table TAB → next-cell
+**Approach B: Emacs `deftheme` elisp → gemacs converter**
 
-**Group 2: Navigation (15 tests)**
+- Parse the `custom-theme-set-faces` S-expression from `.el` files
+- Extract `font-lock-*-face` colors and map to our semantic slots
+- A restricted S-expression parser handles simple themes with literal hex colors
+- For complex themes (doom-themes using `let*` + color functions), pre-resolve the palette by evaluating in Emacs and exporting the resolved faces:
+  ```elisp
+  ;; Run in Emacs to dump resolved face colors:
+  (dolist (face '(font-lock-keyword-face font-lock-string-face ...))
+    (let ((fg (face-attribute face :foreground)))
+      (insert (format "%s %s\n" face fg))))
+  ```
+- **Pro**: Access to the full Emacs theme ecosystem.
+- **Con**: Complex themes need Emacs to resolve; simple parser covers maybe 60% of themes.
 
-- `forward-char` / `backward-char` — cursor moves, wraps at line boundary
-- `next-line` / `previous-line` — moves line, preserves goal column
-- `forward-word` / `backward-word` — word-boundary detection
-- `beginning-of-line` / `end-of-line` — first/last position
-- `beginning-of-buffer` / `end-of-buffer` — extreme positions
-- `goto-line` — jump to specific line (via `execute-command!`)
-- Edge: navigation at buffer start/end (no crash, no-op)
+**Approach C: VS Code JSON themes → gemacs converter**
 
-**Group 3: Basic Editing (20 tests)**
+- VS Code themes are pure JSON with `tokenColors` scope arrays
+- Map TextMate scopes to our semantic slots:
+  ```
+  keyword → keyword
+  string → string
+  comment → comment
+  constant.numeric → number
+  entity.name.type → type
+  entity.name.function → function
+  ```
+- **Pro**: 10,000+ themes. Already JSON, trivially parseable.
+- **Con**: Scope mapping is imprecise; may need per-theme tweaks.
 
-- Self-insert: character appears at cursor, cursor advances
-- `delete-char` / `backward-delete-char` — character removal
-- `kill-line` — kills to end of line, empty line kills newline
-- `newline` — splits line, cursor on new line
-- `open-line` — inserts newline but cursor stays
-- `undo` / `redo` — reverses and re-applies edits
-- `transpose-chars` — swaps characters around cursor
-- Auto-pairing: `(` inserts `()`, cursor between
-- Prefix argument: `C-u 3 a` inserts `aaa`
-- Edge: delete at buffer end, backspace at buffer start
+#### Implementation Steps
 
-**Group 4: Kill Ring & Yank (10 tests)**
+1. **Refactor highlight colors to be data-driven**:
+   - Replace hardcoded `kw-r`/`kw-g`/`kw-b` variables in `highlight.ss` and `qt/highlight.ss` with a global `*current-theme*` hash table
+   - `setup-lisp-styles!` reads colors from `*current-theme*` instead of constants
+   - Same for all other language `setup-*-styles!` functions
 
-- `kill-line` then `yank` — round-trip
-- `kill-region` then `yank` — region kill/paste
-- `copy-region` then `yank` — copy without removing
-- `yank-pop` — cycles through kill ring
-- Multiple kills accumulate in ring
-- Kill-line on empty line kills newline only
+2. **Define the `.gemacs-theme` file format** (S-expression as shown above)
 
-**Group 5: Mark & Region (10 tests)**
+3. **Theme loading**:
+   - `load-theme!` reads a `.gemacs-theme` file, populates `*current-theme*`
+   - Re-applies both UI chrome (existing `apply-theme!`) and syntax highlighting (new `apply-syntax-theme!`)
+   - `apply-syntax-theme!` walks all open editors and calls `setup-*-styles!` to refresh colors
 
-- `set-mark` then movement → active region
-- `kill-region` — deletes marked region
-- `exchange-point-and-mark` — swaps positions
-- `mark-word` / `mark-whole-buffer` — sets region automatically
-- Region persists through navigation
+4. **Ship 8-10 built-in themes**:
+   - Dark (current default), Light, Solarized Dark, Solarized Light, Monokai, Dracula, Nord, Gruvbox Dark, Catppuccin Mocha
+   - Hand-tuned from official palettes for best results
 
-**Group 6: Search (10 tests)**
+5. **Write `base16-to-gemacs` converter script** for bulk importing
 
-- `isearch-forward` — activate, type chars, match found
-- `isearch-backward` — reverse direction
-- `query-replace` — find and replace pattern
-- `occur` — list matching lines (output buffer created)
-- Edge: search with no matches, wraparound
+6. **`M-x load-theme` command**: Interactive theme selector with completion from `~/.gemacs-themes/` and built-in themes
 
-**Group 7: Buffer Management (10 tests)**
+7. **Persist theme choice** in `~/.gemacs-config` so it loads on startup
 
-- `switch-buffer` — changes current buffer
-- `kill-buffer-cmd` — removes buffer from list
-- `previous-buffer` / `next-buffer` — cycling
-- Buffer creation via find-file flow
-- `*scratch*` buffer always exists
-- `toggle-read-only` — prevents editing
+### Minimal Semantic Color Set (18 syntax + 12 UI = 30 slots)
 
-**Group 8: Window Management (8 tests)**
+| Category | Slots |
+|----------|-------|
+| **UI** | bg, fg, cursor, selection, line-hl, modeline-bg, modeline-fg, line-number-fg, line-number-bg, brace-match-fg, brace-match-bg, brace-bad-fg |
+| **Syntax** | keyword, string, comment, number, type, builtin, function, operator, preprocessor, constant, error, doc-comment |
+| **Org** | org-heading-1..4, org-todo, org-done, org-link, org-code-bg |
+| **Modifiers** | Each syntax slot can optionally specify `bold`, `italic`, `underline` |
 
-- `split-window` — creates two windows showing same buffer
-- `other-window` — switches active window
-- `delete-window` — removes split
-- `delete-other-windows` — returns to single window
-- `balance-windows` — equalizes sizes
-- Window switching preserves buffer and cursor per-window
+---
 
-**Group 9: Text Transforms (8 tests)**
+## Feature 3: Font Selection and Font Size
 
-- `upcase-word` / `downcase-word` / `capitalize-word`
-- `upcase-region` / `downcase-region`
-- `comment-region` / `uncomment-region` / `toggle-comment`
-- `sort-lines` — alphabetical sort of region
-- `join-line` — joins current line with next
+### Goal
+Allow users to choose their preferred monospace font and default size, like Emacs `set-frame-font` / `customize-face default`.
 
-**Group 10: Org Commands Beyond TAB (15 tests)**
+### Current State
+- Font is hardcoded to `"Monospace"` at 11pt in `qt/window.ss:72-73`
+- Qt UI elements hardcode `font-family: monospace; font-size: 10pt` in stylesheets
+- Zoom (C-=, C--, C-x C-0) changes size relative to base, but the base is fixed
+- `*font-size*` global in `qt/commands-shell.ss` tracks current size but resets on restart
 
-- `org-todo` via dispatch — cycles TODO states through `execute-command!`
-- `org-promote` / `org-demote` via dispatch
-- `org-move-subtree-up` / `org-move-subtree-down`
-- `org-toggle-checkbox`
-- `org-priority` cycling
-- `org-insert-heading`
-- `org-insert-src-block`
-- `org-shift-tab` — global visibility cycling
-- `org-store-link`
-- Org table alignment via `cmd-indent-or-complete` on table line
-- Org table row/column operations
+### Implementation Steps
 
-**Group 11: Mode-Specific Dispatch (5 tests)**
+1. **Add font configuration to `~/.gemacs-config`**:
+   ```scheme
+   (font-family "JetBrains Mono")
+   (font-size 12)
+   ```
 
-- `.org` file → `org-buffer?` returns true, TAB dispatches to org
-- `.py` file → TAB inserts spaces (no org behavior)
-- `.ss` file → TAB inserts spaces
-- Dired buffer → TAB is no-op
-- REPL buffer → TAB inserts spaces only after prompt
+2. **`M-x set-frame-font` command**:
+   - Show completion list of available monospace fonts (query Qt for installed fonts)
+   - Apply immediately to all open editors
+   - Update `*font-family*` global
 
-**Group 12: Prefix Arguments (5 tests)**
+3. **`M-x set-font-size` command**:
+   - Prompt for size (6-72 range)
+   - Apply to all open editors and UI elements
+   - Update `*font-size*` global and base size for zoom
 
-- `C-u` sets prefix to 4
-- `M-3` sets prefix to 3
-- Prefix consumed by movement (forward-char 3x)
-- Prefix consumed by insert (self-insert 4x)
-- Prefix resets after command execution
+4. **Startup font loading**:
+   - On startup, read `font-family` and `font-size` from `~/.gemacs-config`
+   - Apply to `STYLE_DEFAULT` before `STYLECLEARALL` in `qt-scintilla-setup-editor!`
+   - Apply to all Qt stylesheets
 
-### Step 2: Create `qt-functional-test.ss` — Qt functional tests (exe target)
+5. **Persist font choice**:
+   - Write font settings to `~/.gemacs-config` when changed via commands
+   - Zoom level is NOT persisted (matches Emacs behavior)
 
-Follows `qt-highlight-test.ss` pattern: exe binary, `with-qt-app`, manual pass/fail counting, runs with `QT_QPA_PLATFORM=offscreen`.
+6. **Qt implementation details**:
+   - `qt-scintilla-setup-editor!` reads from `*font-family*` and `*font-size*` globals instead of hardcoded values
+   - `theme-stylesheet` function interpolates current font into CSS
+   - All `font-family: monospace; font-size: 10pt` in echo.ss, app.ss, etc. replaced with dynamic values
 
-Tests the **Qt-specific** `cmd-indent-or-complete` from `qt/commands.ss:842` and `qt-try-org-template-expand` from `qt/commands.ss:495`.
+### Font Discovery
+- Use Qt's `QFontDatabase` to enumerate installed monospace fonts
+- Filter to monospace/fixed-width families
+- Present as completion list in `set-frame-font`
+- Will need a small FFI addition to `qt_shim` or use `qt-font-families` if available in gerbil-qt
 
-**30 test cases** mirroring the most critical TUI tests:
+---
 
-- All 9 org template expansions via Qt TAB dispatch
-- Qt dispatch priority (table > template > heading > snippet > completion > indent)
-- `<s` with indentation preservation
-- Non-org buffer exclusion
-- Qt heading fold/unfold via TAB
-- Qt table next-cell via TAB
-- Content preservation around templates
-- Cursor positioning after expansion
-- Qt self-insert (character via QScintilla)
-- Qt navigation (forward/backward char via QScintilla)
-- Qt kill-line + yank round-trip
-- Qt buffer switching
-- Qt window split/other-window
+## Priority Order
 
-Key structural difference from TUI tests: uses `qt-scintilla-create`, `qt-edit-window`, `qt-frame`, and `qt-register-all-commands!` instead of TUI equivalents.
-
-### Step 3: Update `build.ss`
-
-```
-line ~151: add "functional-test" after "persist-test"
-line ~181: add exe target for qt-functional-test (same cc/ld options as qt-highlight-test)
-```
-
-### Step 4: Update `Makefile`
-
-Add targets:
-```makefile
-test-qt: build
-	QT_QPA_PLATFORM=offscreen .gerbil/bin/qt-highlight-test
-	QT_QPA_PLATFORM=offscreen .gerbil/bin/qt-functional-test
-
-test-all: build test test-qt
-```
-
-### Step 5: Update CLAUDE.md with testing policy
-
-Add a section requiring that any code change to a `cmd-*` function or dispatch path must be accompanied by a functional test in `functional-test.ss` (TUI) or `qt-functional-test.ss` (Qt) that exercises the change through `cmd-indent-or-complete` or `execute-command!` — never by calling the leaf function directly.
-
-## Files to create/modify
-
-| File | Action | Purpose |
-|------|--------|---------|
-| `functional-test.ss` | **CREATE** | TUI functional tests (~120+ cases) |
-| `qt-functional-test.ss` | **CREATE** | Qt functional tests (~30 cases, exe) |
-| `build.ss` | EDIT | Add test module + Qt exe target |
-| `Makefile` | EDIT | Add `test-qt` and `test-all` targets |
-| `CLAUDE.md` (project) | EDIT | Add testing policy for dispatch-level tests |
-
-## Key imports
-
-**`functional-test.ss`**:
-- `:std/test`, `:std/srfi/13`
-- `:gerbil-scintilla/scintilla`, `:gerbil-scintilla/constants`
-- `:gemacs/core` (keymaps, execute-command!, find-command, app-state, buffer, make-frame, make-edit-window, register-command!)
-- `:gemacs/buffer` (make-buffer, buffer-name, buffer-file-path, etc.)
-- `:gemacs/window` (make-edit-window, make-frame, current-window)
-- `:gemacs/echo` (echo state)
-- `:gemacs/editor-core` (self-insert, navigation, editing primitives)
-- `:gemacs/editor-ui` (cmd-indent-or-complete, org-buffer?, and other TUI dispatch functions)
-- `:gemacs/keymap` (key-state-feed!, make-key-state — for simulate-keys helper)
-- `:gemacs/editor` (register-all-commands!)
-- `:gemacs/editor-extra-org` (org-table-on-table-line?, org-highlight-buffer!, etc.)
-
-**`qt-functional-test.ss`**:
-- `:std/sugar`
-- `:gerbil-qt/qt`
-- `:gerbil-scintilla/constants`
-- `:gemacs/qt/sci-shim` (qt-plain-text-edit-*, qt-scintilla-create, sci-send)
-- `:gemacs/core` (app-state, buffer structs)
-- `:gemacs/qt/window` (qt-edit-window, qt-frame, qt-current-window)
-- `:gemacs/qt/commands-core` (current-qt-editor, current-qt-buffer)
-- `:gemacs/qt/commands` (cmd-indent-or-complete, qt-register-all-commands!, qt-org-buffer?)
-
-## Verification
-
-1. `make build` — both test files compile
-2. `HOME=/home/jafourni GERBIL_LOADPATH=/home/jafourni/.gerbil/lib timeout 120 gerbil test 2>&1` — TUI functional tests pass
-3. `QT_QPA_PLATFORM=offscreen .gerbil/bin/qt-functional-test` — Qt functional tests pass
-4. `.gerbil/bin/gemacs --version` — TUI binary unaffected
-5. `QT_QPA_PLATFORM=offscreen .gerbil/bin/gemacs-qt --version` — Qt binary unaffected
-
-## Why this catches regressions permanently
-
-Every functional test calls through the **dispatch chain**, not leaf functions:
-- `cmd-indent-or-complete` for TAB behavior (not `cmd-org-template-expand`)
-- `execute-command!` for named commands (not `cmd-org-todo` directly)
-- `simulate-keys` for multi-key sequences (not bypassing keymap lookup)
-
-If anyone touches `cmd-indent-or-complete`, `org-buffer?`, `key-state-feed!`, the character gate in the template detector, the command registration, or ANY part of the dispatch chain — the functional tests fail. The leaf-function tests in `emacs-test.ss` remain for unit-level coverage. The functional tests in `functional-test.ss` ensure the pieces actually work together.
-
-## Implementation order
-
-1. `functional-test.ss` Group 1 (org TAB) — **immediate regression fix**
-2. `functional-test.ss` Groups 2-5 (nav, editing, kill ring, mark) — **core editing**
-3. `functional-test.ss` Groups 6-12 (search, buffers, windows, transforms, etc.) — **full coverage**
-4. `qt-functional-test.ss` — **Qt parity**
-5. `build.ss` + `Makefile` updates
-6. `CLAUDE.md` testing policy
+1. **Theme support** — highest visual impact, foundation for the other features
+2. **Font selection** — quick win, small code change
+3. **Magit testing** — important for correctness, can be done incrementally
