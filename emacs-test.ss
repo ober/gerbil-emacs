@@ -342,6 +342,12 @@
                  make-auto-save-path file-mod-time
                  *buffer-mod-times* update-buffer-mod-time!)
         (only-in :gemacs/editor-ui cmd-list-buffers)
+        (only-in :gemacs/qt/lsp-client
+                 lsp-content-changed? lsp-record-sent-content!
+                 *lsp-on-initialized-handler* *lsp-last-sent-content*
+                 lsp-queue-ui-action! lsp-poll-ui-actions!
+                 file-path->uri uri->file-path lsp-language-id
+                 *lsp-initialized* *lsp-initializing*)
 )
 
 (export emacs-test)
@@ -8440,6 +8446,85 @@
           ;; Should have inserted spaces (indent), not done table alignment
           (let ((text-after (editor-get-text ed)))
             (check (> (string-length text-after) (string-length text-before)) => #t)))))
+
+    ;; -----------------------------------------------------------------------
+    ;; LSP client protocol layer tests (qt/lsp-client.ss has no Qt deps)
+    ;; These guard against regressions in the initialization timing fix
+    ;; and the didChange deduplication logic added to make visual feedback work.
+    ;; -----------------------------------------------------------------------
+
+    (test-case "lsp-client: content deduplication — lsp-content-changed?"
+      ;; New URIs are always considered changed (so didOpen/didChange is sent)
+      (let ((uri "file:///tmp/test-lsp-changed.ss"))
+        ;; Not yet seen → must report changed
+        (check (lsp-content-changed? uri "hello") => #t)
+        ;; Record it
+        (lsp-record-sent-content! uri "hello")
+        ;; Same content → not changed (prevents flooding server)
+        (check (lsp-content-changed? uri "hello") => #f)
+        ;; Different content → changed (new edit must be sent)
+        (check (lsp-content-changed? uri "hello world") => #t)
+        ;; Record the new content
+        (lsp-record-sent-content! uri "hello world")
+        (check (lsp-content-changed? uri "hello world") => #f)
+        ;; Empty string is distinct from missing
+        (check (lsp-content-changed? uri "") => #t)
+        ;; Unrelated URI is always fresh
+        (check (lsp-content-changed? "file:///other.ss" "hello") => #t)
+        ;; Cleanup so other tests see a clean slate
+        (hash-remove! *lsp-last-sent-content* uri)))
+
+    (test-case "lsp-client: *lsp-on-initialized-handler* callback mechanism"
+      ;; This is the core of the initialization timing fix:
+      ;; after the async initialize handshake completes, the callback
+      ;; fires on the UI thread to send didOpen for all open buffers.
+      (check (box? *lsp-on-initialized-handler*) => #t)
+      (let ((fired #f))
+        ;; Install a test callback
+        (set-box! *lsp-on-initialized-handler* (lambda () (set! fired #t)))
+        ;; Simulate what lsp-send-initialize! does on completion:
+        ;; fire the callback via the UI action queue
+        (let ((h (unbox *lsp-on-initialized-handler*)))
+          (when h (lsp-queue-ui-action! h)))
+        ;; Handler not yet called — still pending in queue
+        (check fired => #f)
+        ;; Drain the queue (simulating the 50ms UI timer)
+        (lsp-poll-ui-actions!)
+        ;; Now the callback fired
+        (check fired => #t)
+        ;; Restore to safe state
+        (set-box! *lsp-on-initialized-handler* #f)))
+
+    (test-case "lsp-client: UI action queue — multiple thunks run in order"
+      (let ((log []))
+        (lsp-queue-ui-action! (lambda () (set! log (append log [1]))))
+        (lsp-queue-ui-action! (lambda () (set! log (append log [2]))))
+        (lsp-queue-ui-action! (lambda () (set! log (append log [3]))))
+        (lsp-poll-ui-actions!)
+        (check log => [1 2 3])))
+
+    (test-case "lsp-client: URI conversion round-trip"
+      (check (file-path->uri "/home/user/test.ss")
+             => "file:///home/user/test.ss")
+      (check (uri->file-path "file:///home/user/test.ss")
+             => "/home/user/test.ss")
+      ;; Non-file URIs pass through unchanged
+      (check (uri->file-path "other://example") => "other://example"))
+
+    (test-case "lsp-client: language-id mapping for Gerbil files"
+      (check (lsp-language-id "/path/file.ss")  => "scheme")
+      (check (lsp-language-id "/path/file.scm") => "scheme")
+      (check (lsp-language-id "/path/file.sld") => "scheme")
+      (check (lsp-language-id "/path/file.py")  => "python")
+      (check (lsp-language-id "/path/file.rs")  => "rust")
+      (check (lsp-language-id "/path/file.go")  => "go")
+      (check (lsp-language-id "/path/file.txt") => "plaintext"))
+
+    (test-case "lsp-client: starts in not-running state"
+      ;; LSP must not be initialized at startup — important invariant
+      ;; that prevents spurious didChange sends before the server is ready
+      (check *lsp-initialized*  => #f)
+      (check *lsp-initializing* => #f))
 
     ))
 

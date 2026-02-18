@@ -269,6 +269,12 @@
 ;; Callback for show-message
 (def *lsp-show-message-handler* (box #f))
 
+;; Callback fired once on UI thread when LSP server becomes initialized
+(def *lsp-on-initialized-handler* (box #f))
+
+;; Tracks last didChange content sent per URI (deduplication)
+(def *lsp-last-sent-content* (make-hash-table))
+
 (def (lsp-store-diagnostics! params)
   "Store diagnostics from publishDiagnostics notification."
   (when (and params (hash-table? params))
@@ -287,6 +293,14 @@
   (let ((handler (unbox *lsp-show-message-handler*)))
     (when (and params handler)
       (handler params))))
+
+(def (lsp-content-changed? uri text)
+  "Return #t if text differs from last sent content for uri."
+  (not (equal? (hash-get *lsp-last-sent-content* uri) text)))
+
+(def (lsp-record-sent-content! uri text)
+  "Record the last content sent via didOpen/didChange for uri."
+  (hash-put! *lsp-last-sent-content* uri text))
 
 ;;;============================================================================
 ;;; Process management
@@ -360,6 +374,7 @@
   (set! *lsp-server-capabilities* (make-hash-table))
   (set! *lsp-diagnostics* (make-hash-table))
   (set! *lsp-doc-versions* (make-hash-table))
+  (set! *lsp-last-sent-content* (make-hash-table))
   (set! *lsp-ui-queue* []))
 
 (def (lsp-running?)
@@ -429,7 +444,11 @@
         ;; Send initialized notification
         (lsp-send-notification! "initialized" (make-hash-table))
         (set! *lsp-initialized* #t)
-        (set! *lsp-initializing* #f)))))
+        (set! *lsp-initializing* #f)
+        ;; Fire post-initialization callback on UI thread (sends didOpen for open buffers)
+        (let ((h (unbox *lsp-on-initialized-handler*)))
+          (when h (lsp-queue-ui-action! h)))))))
+
 
 ;;;============================================================================
 ;;; Document sync notifications

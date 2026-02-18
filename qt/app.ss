@@ -660,6 +660,24 @@
         (qt-on-timeout! lsp-timer lsp-poll-ui-actions!)
         (qt-timer-start! lsp-timer 50))
 
+      ;; LSP didChange timer — send buffer content to server 1s after last edit,
+      ;; so diagnostics update while typing (not just on save).
+      (let ((lsp-change-timer (qt-timer-create)))
+        (qt-on-timeout! lsp-change-timer
+          (lambda ()
+            (when (lsp-running?)
+              (let* ((fr (app-state-frame app))
+                     (buf (qt-current-buffer fr))
+                     (ed (qt-current-editor fr)))
+                (when (and buf (buffer-file-path buf))
+                  (let* ((path (buffer-file-path buf))
+                         (uri (file-path->uri path))
+                         (text (qt-plain-text-edit-text ed)))
+                    (when (lsp-content-changed? uri text)
+                      (lsp-hook-did-change! app buf)
+                      (lsp-record-sent-content! uri text))))))))
+        (qt-timer-start! lsp-change-timer 1000))
+
       ;; Install LSP UI handlers
       (lsp-install-handlers! app)
 

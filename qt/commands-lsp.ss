@@ -100,7 +100,28 @@
       (let ((msg (hash-get params "message")))
         (when msg
           (echo-message! (app-state-echo app)
-            (string-append "LSP: " msg)))))))
+            (string-append "LSP: " msg))))))
+  ;; After initialization, send didOpen for all currently open .ss/.scm buffers.
+  ;; This is needed because lsp-hook-did-open! is called immediately after
+  ;; lsp-start!, before the async initialize handshake completes.
+  (set-box! *lsp-on-initialized-handler*
+    (lambda ()
+      (let* ((ed (current-qt-editor app))
+             (cur-buf (current-qt-buffer app)))
+        (for-each
+          (lambda (buf)
+            (when (buffer-file-path buf)
+              (let* ((path (buffer-file-path buf))
+                     (ext (path-extension path)))
+                (when (or (string=? ext ".ss") (string=? ext ".scm"))
+                  (let* ((uri (file-path->uri path))
+                         (lang-id (lsp-language-id path))
+                         (text (if (eq? buf cur-buf)
+                                 (qt-plain-text-edit-text ed)
+                                 (or (read-file-as-string path) ""))))
+                    (lsp-record-sent-content! uri text)
+                    (lsp-did-open! uri lang-id text))))))
+          *buffer-list*)))))
 
 (def (lsp-handle-diagnostics! app uri diags)
   "Handle publishDiagnostics — update indicators and compilation error list."
