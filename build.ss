@@ -185,6 +185,9 @@
     (exe: "qt-functional-test" bin: "qt-functional-test"
           "-cc-options" ,qt-cc-opts
           "-ld-options" ,qt-ld-opts)
+    (exe: "lsp-functional-test" bin: "lsp-functional-test"
+          "-cc-options" ,qt-cc-opts
+          "-ld-options" ,qt-ld-opts)
     (exe: "qt/main" bin: "gemacs-qt"
           "-cc-options" ,qt-cc-opts
           "-ld-options" ,qt-ld-opts)))

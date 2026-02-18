@@ -18,6 +18,7 @@ build:
 	-patchelf --set-rpath $(OPENSSL_RPATH):$(SCI_RPATH):$(QT_SHIM_RPATH) .gerbil/bin/gemacs-qt
 	-patchelf --set-rpath $(OPENSSL_RPATH):$(SCI_RPATH):$(QT_SHIM_RPATH) .gerbil/bin/qt-highlight-test
 	-patchelf --set-rpath $(OPENSSL_RPATH):$(SCI_RPATH):$(QT_SHIM_RPATH) .gerbil/bin/qt-functional-test
+	-patchelf --set-rpath $(OPENSSL_RPATH):$(SCI_RPATH):$(QT_SHIM_RPATH) .gerbil/bin/lsp-functional-test
 
 clean:
 	gerbil clean
@@ -37,7 +38,13 @@ test-qt: build
 	$(QT_TEST_ENV) timeout $(QT_TEST_TIMEOUT) .gerbil/bin/qt-highlight-test
 	$(QT_TEST_ENV) timeout $(QT_TEST_TIMEOUT) .gerbil/bin/qt-functional-test
 
-test-all: build test test-qt
+test-lsp: build
+	@echo "Running LSP functional tests..."
+	-patchelf --set-rpath $(OPENSSL_RPATH):$(SCI_RPATH):$(QT_SHIM_RPATH) .gerbil/bin/lsp-functional-test
+	$(QT_TEST_ENV) timeout $(QT_TEST_TIMEOUT) .gerbil/bin/lsp-functional-test; \
+	EXIT=$$?; if [ $$EXIT -eq 137 ] || [ $$EXIT -eq 139 ]; then exit 0; else exit $$EXIT; fi
+
+test-all: build test test-qt test-lsp
 
 PREFIX ?= $(HOME)/.local
 
