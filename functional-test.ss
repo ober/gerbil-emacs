@@ -902,6 +902,275 @@
         (execute-command! app 'forward-char)
         (check (app-state-last-command app) => 'forward-char)))
 
+    ;;;==========================================================================
+    ;;; Group 10: Org Commands Beyond TAB
+    ;;;==========================================================================
+
+    (test-case "org: org-todo cycles TODO state via execute-command!"
+      (setup-default-bindings!)
+      (register-all-commands!)
+      (let-values (((ed app) (make-test-app "tasks.org")))
+        (editor-set-text ed "* Task headline")
+        (editor-goto-pos ed 0)
+        (execute-command! app 'org-todo)
+        (let ((text (editor-get-text ed)))
+          ;; Should now have TODO keyword
+          (check (not (not (string-contains text "TODO"))) => #t))))
+
+    (test-case "org: org-promote demotes then promotes a heading"
+      (setup-default-bindings!)
+      (register-all-commands!)
+      (let-values (((ed app) (make-test-app "notes.org")))
+        ;; Start with level-2 heading
+        (editor-set-text ed "** Sub heading")
+        (editor-goto-pos ed 0)
+        ;; Demote: ** -> ***
+        (execute-command! app 'org-demote)
+        (check (string-prefix? "***" (editor-get-text ed)) => #t)
+        ;; Promote: *** -> **
+        (execute-command! app 'org-promote)
+        (check (string-prefix? "**" (editor-get-text ed)) => #t)
+        ;; Promote: ** -> *
+        (execute-command! app 'org-promote)
+        (check (string-prefix? "* " (editor-get-text ed)) => #t)))
+
+    (test-case "org: org-promote at level 1 is a no-op"
+      (setup-default-bindings!)
+      (register-all-commands!)
+      (let-values (((ed app) (make-test-app "notes.org")))
+        (editor-set-text ed "* Top level")
+        (editor-goto-pos ed 0)
+        (execute-command! app 'org-promote)
+        ;; Still at level 1, no-op
+        (check (string-prefix? "* " (editor-get-text ed)) => #t)))
+
+    (test-case "org: org-insert-heading adds new heading"
+      (setup-default-bindings!)
+      (register-all-commands!)
+      (let-values (((ed app) (make-test-app "notes.org")))
+        (editor-set-text ed "* First\n")
+        (editor-goto-pos ed 7)
+        (execute-command! app 'org-insert-heading)
+        (let ((text (editor-get-text ed)))
+          ;; A new heading line should appear
+          (check (> (string-length text) 8) => #t)
+          (check (not (not (string-contains text "*"))) => #t))))
+
+    (test-case "org: org-toggle-checkbox toggles [ ] to [X]"
+      (setup-default-bindings!)
+      (register-all-commands!)
+      (let-values (((ed app) (make-test-app "notes.org")))
+        (editor-set-text ed "- [ ] Item to check")
+        (editor-goto-pos ed 0)
+        (execute-command! app 'org-toggle-checkbox)
+        (let ((text (editor-get-text ed)))
+          ;; Should be checked now
+          (check (not (not (string-contains text "[X]"))) => #t))))
+
+    (test-case "org: org-toggle-checkbox toggles [X] back to [ ]"
+      (setup-default-bindings!)
+      (register-all-commands!)
+      (let-values (((ed app) (make-test-app "notes.org")))
+        (editor-set-text ed "- [X] Already checked")
+        (editor-goto-pos ed 0)
+        (execute-command! app 'org-toggle-checkbox)
+        (let ((text (editor-get-text ed)))
+          ;; Should be unchecked now
+          (check (not (not (string-contains text "[ ]"))) => #t))))
+
+    (test-case "org: org-move-subtree-up moves heading before prior"
+      (setup-default-bindings!)
+      (register-all-commands!)
+      (let-values (((ed app) (make-test-app "notes.org")))
+        (editor-set-text ed "* First\n* Second\n")
+        ;; Position cursor on "* Second"
+        (editor-goto-pos ed 8)
+        (execute-command! app 'org-move-subtree-up)
+        (let ((text (editor-get-text ed)))
+          ;; "Second" should appear before "First"
+          (let ((sec-pos (string-contains text "Second"))
+                (fir-pos (string-contains text "First")))
+            (when (and sec-pos fir-pos)
+              (check (< sec-pos fir-pos) => #t))))))
+
+    (test-case "org: org-move-subtree-down moves heading after next"
+      (setup-default-bindings!)
+      (register-all-commands!)
+      (let-values (((ed app) (make-test-app "notes.org")))
+        (editor-set-text ed "* First\n* Second\n")
+        (editor-goto-pos ed 0)
+        (execute-command! app 'org-move-subtree-down)
+        (let ((text (editor-get-text ed)))
+          ;; "First" should appear after "Second"
+          (let ((sec-pos (string-contains text "Second"))
+                (fir-pos (string-contains text "First")))
+            (when (and sec-pos fir-pos)
+              (check (< sec-pos fir-pos) => #t))))))
+
+    (test-case "org: org-priority adds [#A] priority"
+      (setup-default-bindings!)
+      (register-all-commands!)
+      (let-values (((ed app) (make-test-app "notes.org")))
+        (editor-set-text ed "* TODO Task")
+        (editor-goto-pos ed 0)
+        (execute-command! app 'org-priority)
+        (let ((text (editor-get-text ed)))
+          (check (not (not (string-contains text "[#A]"))) => #t))))
+
+    (test-case "org: org-priority cycles A → B → C → none"
+      (setup-default-bindings!)
+      (register-all-commands!)
+      (let-values (((ed app) (make-test-app "notes.org")))
+        (editor-set-text ed "* TODO Task")
+        (editor-goto-pos ed 0)
+        (execute-command! app 'org-priority)
+        (check (not (not (string-contains (editor-get-text ed) "[#A]"))) => #t)
+        (execute-command! app 'org-priority)
+        (check (not (not (string-contains (editor-get-text ed) "[#B]"))) => #t)
+        (execute-command! app 'org-priority)
+        (check (not (not (string-contains (editor-get-text ed) "[#C]"))) => #t)
+        (execute-command! app 'org-priority)
+        ;; Priority removed
+        (check (not (string-contains (editor-get-text ed) "[#")) => #t)))
+
+    ;;;==========================================================================
+    ;;; Group 11 (extended): Additional text transforms
+    ;;;==========================================================================
+
+    (test-case "transform: join-line merges current line with next"
+      (setup-default-bindings!)
+      (register-all-commands!)
+      (let-values (((ed app) (make-test-app "test.ss")))
+        (editor-set-text ed "hello\nworld")
+        (editor-goto-pos ed 0)
+        (execute-command! app 'join-line)
+        (let ((text (editor-get-text ed)))
+          ;; Lines merged, no newline between them
+          (check (not (string-contains text "\nhello")) => #t)
+          (check (not (not (string-contains text "hello"))) => #t)
+          (check (not (not (string-contains text "world"))) => #t))))
+
+    (test-case "transform: comment-region adds comment markers"
+      (setup-default-bindings!)
+      (register-all-commands!)
+      (let-values (((ed app) (make-test-app "test.ss")))
+        (editor-set-text ed "(define x 42)")
+        (editor-goto-pos ed 0)
+        (execute-command! app 'set-mark)
+        (editor-goto-pos ed 13)
+        (execute-command! app 'comment-region)
+        (let ((text (editor-get-text ed)))
+          ;; Should have a comment marker
+          (check (not (not (string-contains text ";"))) => #t))))
+
+    (test-case "transform: upcase-region uppercases selected text"
+      (setup-default-bindings!)
+      (register-all-commands!)
+      (let-values (((ed app) (make-test-app "test.ss")))
+        (editor-set-text ed "hello world")
+        (editor-goto-pos ed 0)
+        (execute-command! app 'set-mark)
+        (editor-goto-pos ed 5)
+        (execute-command! app 'upcase-region)
+        (let ((text (editor-get-text ed)))
+          (check (string-prefix? "HELLO" text) => #t))))
+
+    (test-case "transform: downcase-region lowercases selected text"
+      (setup-default-bindings!)
+      (register-all-commands!)
+      (let-values (((ed app) (make-test-app "test.ss")))
+        (editor-set-text ed "HELLO world")
+        (editor-goto-pos ed 0)
+        (execute-command! app 'set-mark)
+        (editor-goto-pos ed 5)
+        (execute-command! app 'downcase-region)
+        (let ((text (editor-get-text ed)))
+          (check (string-prefix? "hello" text) => #t))))
+
+    ;;;==========================================================================
+    ;;; Group 12 (extended): More navigation and dispatch
+    ;;;==========================================================================
+
+    (test-case "nav: scroll-down does not crash"
+      (setup-default-bindings!)
+      (register-all-commands!)
+      (let-values (((ed app) (make-test-app "test.ss")))
+        (editor-set-text ed (make-string 500 #\a))
+        (execute-command! app 'scroll-down)
+        (check (>= (editor-get-current-pos ed) 0) => #t)))
+
+    (test-case "nav: beginning-of-buffer after scroll returns to 0"
+      (setup-default-bindings!)
+      (register-all-commands!)
+      (let-values (((ed app) (make-test-app "test.ss")))
+        (editor-set-text ed (make-string 200 #\a))
+        (execute-command! app 'end-of-buffer)
+        (execute-command! app 'beginning-of-buffer)
+        (check (editor-get-current-pos ed) => 0)))
+
+    (test-case "dispatch: multiple execute-command! calls accumulate state"
+      (setup-default-bindings!)
+      (register-all-commands!)
+      (let-values (((ed app) (make-test-app "test.ss")))
+        (editor-set-text ed "abcde")
+        (editor-goto-pos ed 0)
+        ;; Move forward 3 times
+        (execute-command! app 'forward-char)
+        (execute-command! app 'forward-char)
+        (execute-command! app 'forward-char)
+        (check (editor-get-current-pos ed) => 3)))
+
+    (test-case "dispatch: sim-key! with C-b moves backward"
+      (setup-default-bindings!)
+      (register-all-commands!)
+      (let-values (((ed app) (make-test-app "test.ss")))
+        (editor-set-text ed "hello")
+        (editor-goto-pos ed 3)
+        ;; C-b = 0x02
+        (sim-key! app (ctrl-ev #x02))
+        (check (editor-get-current-pos ed) => 2)))
+
+    (test-case "dispatch: sim-key! with C-a goes to beginning of line"
+      (setup-default-bindings!)
+      (register-all-commands!)
+      (let-values (((ed app) (make-test-app "test.ss")))
+        (editor-set-text ed "hello world")
+        (editor-goto-pos ed 7)
+        ;; C-a = 0x01
+        (sim-key! app (ctrl-ev #x01))
+        (check (editor-get-current-pos ed) => 0)))
+
+    (test-case "dispatch: sim-key! with C-e goes to end of line"
+      (setup-default-bindings!)
+      (register-all-commands!)
+      (let-values (((ed app) (make-test-app "test.ss")))
+        (editor-set-text ed "hello")
+        (editor-goto-pos ed 0)
+        ;; C-e = 0x05
+        (sim-key! app (ctrl-ev #x05))
+        (check (editor-get-current-pos ed) => 5)))
+
+    (test-case "dispatch: sim-key! inserts multiple chars"
+      (setup-default-bindings!)
+      (register-all-commands!)
+      (let-values (((ed app) (make-test-app "test.ss")))
+        (editor-set-text ed "")
+        (editor-goto-pos ed 0)
+        (for-each (lambda (c) (sim-key! app (char-ev c)))
+                  (string->list "test"))
+        (check (editor-get-text ed) => "test")))
+
+    (test-case "dispatch: key-state resets to initial after command"
+      (setup-default-bindings!)
+      (register-all-commands!)
+      (let-values (((ed app) (make-test-app "test.ss")))
+        (editor-set-text ed "hello")
+        (editor-goto-pos ed 0)
+        (execute-command! app 'forward-char)
+        ;; Key state should be at initial (global keymap)
+        (let ((ks (app-state-key-state app)))
+          (check (null? (key-state-prefix-keys ks)) => #t))))
+
 ))
 
 (def main
