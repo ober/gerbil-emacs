@@ -1281,6 +1281,76 @@
             ;; Visual selection should be active (not collapsed)
             (check (< sel-start sel-end) => #t)))))
 
+    ;;=========================================================================
+    ;; Group 9: magit-style git interface
+    ;; Tests that magit commands create appropriate buffers via dispatch chain.
+    ;;=========================================================================
+
+    (test-case "magit: magit-status creates buffer containing Head: header"
+      (setup-default-bindings!)
+      (register-all-commands!)
+      (let-values (((ed app) (make-test-app "test.ss")))
+        (execute-command! app 'magit-status)
+        (let ((text (editor-get-text ed)))
+          (check (not (eq? #f (string-contains text "Head:"))) => #t))))
+
+    (test-case "magit: magit-status buffer contains Staged/Unstaged or clean message"
+      (setup-default-bindings!)
+      (register-all-commands!)
+      (let-values (((ed app) (make-test-app "test.ss")))
+        (execute-command! app 'magit-status)
+        (let ((text (editor-get-text ed)))
+          ;; Should contain either change sections or clean message
+          (check (or (not (eq? #f (string-contains text "Staged")))
+                     (not (eq? #f (string-contains text "Unstaged")))
+                     (not (eq? #f (string-contains text "clean")))
+                     (not (eq? #f (string-contains text "Recent commits")))) => #t))))
+
+    (test-case "magit: magit-log creates buffer containing Git Log header"
+      (setup-default-bindings!)
+      (register-all-commands!)
+      (let-values (((ed app) (make-test-app "test.ss")))
+        (execute-command! app 'magit-log)
+        (let ((text (editor-get-text ed)))
+          (check (not (eq? #f (string-contains text "Git Log"))) => #t))))
+
+    (test-case "magit: magit-diff creates buffer containing Git Diff header"
+      (setup-default-bindings!)
+      (register-all-commands!)
+      (let-values (((ed app) (make-test-app "test.ss")))
+        (execute-command! app 'magit-diff)
+        (let ((text (editor-get-text ed)))
+          (check (not (eq? #f (string-contains text "Git Diff"))) => #t))))
+
+    (test-case "magit: magit-stage-file with no file-path buffer does not crash"
+      (setup-default-bindings!)
+      (register-all-commands!)
+      (let-values (((ed app) (make-test-app "*scratch*")))
+        ;; Buffer has no file-path → command echoes "Buffer has no file"
+        (execute-command! app 'magit-stage-file)
+        (check #t => #t)))
+
+    (test-case "magit: magit-unstage-file with no file-path buffer does not crash"
+      (setup-default-bindings!)
+      (register-all-commands!)
+      (let-values (((ed app) (make-test-app "*scratch*")))
+        (execute-command! app 'magit-unstage-file)
+        (check #t => #t)))
+
+    (test-case "magit: git-log-file with no file-path buffer does not crash"
+      (setup-default-bindings!)
+      (register-all-commands!)
+      (let-values (((ed app) (make-test-app "*scratch*")))
+        (execute-command! app 'git-log-file)
+        (check #t => #t)))
+
+    (test-case "magit: magit-branch command runs without error"
+      (setup-default-bindings!)
+      (register-all-commands!)
+      (let-values (((ed app) (make-test-app "test.ss")))
+        (execute-command! app 'magit-branch)
+        (check #t => #t)))
+
 ))
 
 (def main

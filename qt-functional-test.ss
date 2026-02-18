@@ -40,7 +40,11 @@
                  qt-edit-window-buffer
                  qt-frame-windows)
         (only-in :gemacs/qt/commands
-                 qt-register-all-commands!))
+                 qt-register-all-commands!)
+        (only-in :gemacs/qt/commands-ide
+                 magit-parse-status
+                 magit-format-status
+                 magit-file-at-point))
 
 (export main)
 
@@ -726,6 +730,105 @@
     (map (lambda (w) (qt-edit-window-buffer w))
          (qt-frame-windows fr))))
 
+;;; Simple substring search helper (no SRFI-13 needed)
+(def (contains? haystack needle)
+  (let* ((hlen (string-length haystack))
+         (nlen (string-length needle)))
+    (if (= nlen 0)
+      #t
+      (let loop ((i 0))
+        (cond
+          ((> (+ i nlen) hlen) #f)
+          ((string=? (substring haystack i (+ i nlen)) needle) #t)
+          (else (loop (+ i 1))))))))
+
+;;;============================================================================
+;;; Group 8: magit-style git helper functions and command dispatch
+;;;============================================================================
+
+(def (run-group-8-magit)
+  (displayln "\n=== Group 8: Magit helpers and dispatch ===")
+
+  ;; --- magit-parse-status ---
+  (displayln "Test: magit-parse-status returns list for staged file")
+  (let ((entries (magit-parse-status "M  commands.ss\n?? newfile.txt\n")))
+    (if (pair? entries)
+      (pass! "magit-parse-status returns non-empty list")
+      (fail! "magit-parse-status non-empty" entries "pair")))
+
+  (displayln "Test: magit-parse-status detects untracked entry")
+  (let ((entries (magit-parse-status "?? newfile.txt\n")))
+    (let ((first (and (pair? entries) (car entries))))
+      (if (and first (string=? (car first) "??"))
+        (pass! "magit-parse-status detects untracked ??")
+        (fail! "magit-parse-status untracked" first '("??" . "newfile.txt")))))
+
+  (displayln "Test: magit-parse-status empty string returns empty list")
+  (let ((entries (magit-parse-status "")))
+    (if (null? entries)
+      (pass! "magit-parse-status empty input -> nil")
+      (fail! "magit-parse-status empty" entries "'()")))
+
+  ;; --- magit-format-status ---
+  (displayln "Test: magit-format-status contains Head: header")
+  (let* ((entries (list (cons "M" "file.ss")))
+         (text (magit-format-status entries "master")))
+    (if (and (string? text) (contains? text "Head: master"))
+      (pass! "magit-format-status contains 'Head: master'")
+      (fail! "magit-format-status head" text "contains 'Head: master'")))
+
+  (displayln "Test: magit-format-status clean tree message when no entries")
+  (let ((text (magit-format-status '() "main")))
+    (if (and (string? text) (contains? text "Nothing to commit"))
+      (pass! "magit-format-status shows clean tree message")
+      (fail! "magit-format-status clean" text "contains 'Nothing to commit'")))
+
+  (displayln "Test: magit-format-status shows Keys: section")
+  (let ((text (magit-format-status '() "main")))
+    (if (and (string? text) (contains? text "Keys:"))
+      (pass! "magit-format-status shows Keys: section")
+      (fail! "magit-format-status keys" text "contains 'Keys:'")))
+
+  ;; --- magit-file-at-point ---
+  (displayln "Test: magit-file-at-point extracts filename from staged line")
+  (let* ((text "Head: master\n\nStaged changes:\n  M commands.ss\n")
+         ;; Position on the "  M commands.ss" line (after "  M ")
+         (pos (+ (string-length "Head: master\n\nStaged changes:\n") 5)))
+    (let ((file (magit-file-at-point text pos)))
+      (if (and (string? file) (string=? file "commands.ss"))
+        (pass! "magit-file-at-point extracts 'commands.ss'")
+        (fail! "magit-file-at-point staged" file "\"commands.ss\""))))
+
+  (displayln "Test: magit-file-at-point returns #f for header line")
+  (let* ((text "Head: master\n\n")
+         (pos 5))
+    (let ((file (magit-file-at-point text pos)))
+      (if (not file)
+        (pass! "magit-file-at-point returns #f for 'Head: master' line")
+        (fail! "magit-file-at-point header" file "#f"))))
+
+  ;; --- cmd-magit-status via dispatch chain ---
+  (displayln "Test: cmd-magit-status creates buffer containing Head: header")
+  (let-values (((ed w app) (make-qt-test-app "test.ss")))
+    (execute-command! app 'magit-status)
+    (let ((text (qt-plain-text-edit-text ed)))
+      (if (contains? text "Head:")
+        (pass! "cmd-magit-status buffer contains 'Head:'")
+        (fail! "cmd-magit-status head" (substring text 0 (min 60 (string-length text))) "contains 'Head:'")))
+    (destroy-qt-test-app! ed w))
+
+  ;; --- cmd-magit-log via dispatch chain ---
+  ;; magit-status sets *magit-dir*, so run status first then log
+  (displayln "Test: cmd-magit-log creates buffer with log content")
+  (let-values (((ed w app) (make-qt-test-app "test.ss")))
+    (execute-command! app 'magit-status)   ; sets *magit-dir*
+    (execute-command! app 'magit-log)
+    (let ((text (qt-plain-text-edit-text ed)))
+      (if (> (string-length text) 0)
+        (pass! "cmd-magit-log buffer has content")
+        (fail! "cmd-magit-log" (string-length text) "> 0")))
+    (destroy-qt-test-app! ed w)))
+
 ;;;============================================================================
 ;;; Main
 ;;;============================================================================
@@ -742,6 +845,7 @@
     (run-group-5-text-transforms)
     (run-group-6-dispatch-chain)
     (run-group-7-mark-region)
+    (run-group-8-magit)
 
     (displayln "---")
     (displayln "Results: " *passes* " passed, " *failures* " failed")
