@@ -251,12 +251,17 @@
   (edit-window-buffer (current-window (app-state-frame app))))
 
 (def (app-read-string app prompt)
-  "Convenience wrapper: read a string from the echo area."
-  (let* ((echo (app-state-echo app))
-         (fr (app-state-frame app))
-         (row (- (frame-height fr) 1))
-         (width (frame-width fr)))
-    (echo-read-string echo prompt row width)))
+  "Convenience wrapper: read a string from the echo area.
+   In tests, dequeues from *test-echo-responses* if non-empty."
+  (if (pair? *test-echo-responses*)
+    (let ((r (car *test-echo-responses*)))
+      (set! *test-echo-responses* (cdr *test-echo-responses*))
+      r)
+    (let* ((echo (app-state-echo app))
+           (fr (app-state-frame app))
+           (row (- (frame-height fr) 1))
+           (width (frame-width fr)))
+      (echo-read-string echo prompt row width))))
 
 (def (editor-replace-selection ed text)
   "Replace the current selection with text. SCI_REPLACESEL=2170."

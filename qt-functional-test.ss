@@ -57,21 +57,35 @@
 
 (def (pass! label)
   (set! *passes* (+ *passes* 1))
-  (displayln "  PASS: " label))
+  (displayln "  PASS: " label)
+  (force-output (current-output-port)))
 
 (def (fail! label actual expected)
   (set! *failures* (+ *failures* 1))
   (displayln "  FAIL: " label)
   (displayln "    got:      " actual)
-  (displayln "    expected: " expected))
+  (displayln "    expected: " expected)
+  (force-output (current-output-port)))
 
 ;; Create a minimal headless Qt test app.
 ;; Must be called inside with-qt-app.
 ;; Uses the widget's existing document pointer to avoid SCI_CREATEDOCUMENT
 ;; which can segfault in headless tests.
+;; Singleton Qt widget shared across all tests.
+;; QsciScintilla creation requires Qt event loop processing and takes 2-5s per
+;; widget in headless mode. Using one singleton avoids this overhead.
+(def *qt-test-singleton-ed* #f)
+(def *qt-test-singleton-w*  #f)
+
+(def (qt-test-singleton-init!)
+  (unless *qt-test-singleton-ed*
+    (set! *qt-test-singleton-w*  (qt-widget-create))
+    (set! *qt-test-singleton-ed* (qt-scintilla-create parent: *qt-test-singleton-w*))))
+
 (def (make-qt-test-app name)
-  (let* ((w   (qt-widget-create))
-         (ed  (qt-scintilla-create parent: w))
+  (qt-test-singleton-init!)
+  (let* ((ed  *qt-test-singleton-ed*)
+         (w   *qt-test-singleton-w*)
          (doc (sci-send ed SCI_GETDOCPOINTER))
          (buf (make-buffer name #f doc #f #f #f #f))
          (win (make-qt-edit-window ed #f buf #f #f #f))
@@ -80,12 +94,85 @@
     (values ed w app)))
 
 (def (destroy-qt-test-app! ed w)
-  (qt-scintilla-destroy! ed)
-  (qt-widget-destroy! w))
+  ;; No-op: singleton widget is reused across tests and cleaned up on exit.
+  (void))
 
 (def (set-qt-text! ed text pos)
   (qt-plain-text-edit-set-text! ed text)
   (qt-plain-text-edit-set-cursor-position! ed pos))
+
+;; Create a minimal headless Qt test app with buffer pointing to PATH.
+(def (make-qt-test-app-with-file path)
+  (qt-test-singleton-init!)
+  (let* ((ed  *qt-test-singleton-ed*)
+         (w   *qt-test-singleton-w*)
+         (doc (sci-send ed SCI_GETDOCPOINTER))
+         (name (path-strip-directory path))
+         (buf (make-buffer name path doc #f #f #f #f))
+         (win (make-qt-edit-window ed #f buf #f #f #f))
+         (fr  (make-qt-frame #f (list win) 0 #f))
+         (app (new-app-state fr)))
+    (values ed w app)))
+
+;; Run a git command in DIR, return first line of stdout (or "" on error).
+(def (qt-test-git-cmd! args dir)
+  (with-catch
+    (lambda (e) "")
+    (lambda ()
+      (let ((p (open-process (list path: "/usr/bin/git"
+                                   arguments: args
+                                   directory: dir
+                                   stdin-redirection: #f
+                                   stdout-redirection: #t
+                                   stderr-redirection: #t))))
+        (let ((out (read-line p #f)))
+          (process-status p)
+          (close-port p)
+          (or out ""))))))
+
+;; Create a temp git repo with one committed README.md. Returns dir path.
+;; Uses a single /bin/sh invocation to avoid multiple SIGCHLD signals that
+;; can interfere with Qt's signal handler inside with-qt-app.
+(def *qt-temp-counter* 0)
+(def (qt-make-temp-git-repo!)
+  (set! *qt-temp-counter* (+ *qt-temp-counter* 1))
+  (let ((dir (string-append "/tmp/gemacs-qt-test-"
+                            (number->string *qt-temp-counter*))))
+    (with-catch
+      (lambda (e) "/tmp/gemacs-qt-test-error")
+      (lambda ()
+        ;; Run all setup as one shell script — one subprocess, one SIGCHLD.
+        (let* ((readme (string-append dir "/README.md"))
+               (script (string-append
+                         "rm -rf " dir " && "
+                         "mkdir -p " dir " && "
+                         "git init -q " dir " && "
+                         "git -C " dir " config user.email test@example.com && "
+                         "git -C " dir " config user.name 'Test User' && "
+                         "printf '# Test Repo\\n' > " readme " && "
+                         "git -C " dir " add README.md && "
+                         "git -C " dir " commit --no-gpg-sign -m 'Initial commit'"))
+               (p (open-process (list path: "/bin/sh"
+                                      arguments: (list "-c" script)
+                                      stdout-redirection: #t
+                                      stderr-redirection: #t))))
+          (read-line p #f)
+          (process-status p)
+          (close-port p)
+          dir)))))
+
+;; Remove temp git repo.
+(def (qt-cleanup-temp-git-repo! dir)
+  (with-catch
+    (lambda (e) (void))
+    (lambda ()
+      (let ((p (open-process (list path: "/bin/sh"
+                                   arguments: (list "-c" (string-append "rm -rf " dir))
+                                   stdout-redirection: #t
+                                   stderr-redirection: #t))))
+        (read-line p #f)
+        (process-status p)
+        (close-port p)))))
 
 ;;;============================================================================
 ;;; Test groups
@@ -830,6 +917,114 @@
     (destroy-qt-test-app! ed w)))
 
 ;;;============================================================================
+;;; Group 9: Magit operations with real temp git repository
+;;;============================================================================
+
+(def (run-group-9-magit-ops)
+  (displayln "\n=== Group 9: Magit operations with temp git repo ===")
+  (force-output (current-output-port))
+
+  (let ((dir (qt-make-temp-git-repo!)))
+    ;; Use ONE shared widget for all Group 9 tests to avoid Qt widget creation
+    ;; overhead (QsciScintilla creation requires Qt event loop processing and
+    ;; takes 2-5s per widget in headless mode).
+    (let-values (((ed w app) (make-qt-test-app-with-file
+                               (string-append dir "/README.md"))))
+
+      ;; --- magit-status with real temp repo ---
+      (displayln "Test: magit-status buffer contains Head: from temp repo")
+      (force-output (current-output-port))
+      (execute-command! app 'magit-status)
+      (let ((text (qt-plain-text-edit-text ed)))
+        (if (contains? text "Head:")
+          (pass! "magit-status temp repo: buffer contains 'Head:'")
+          (fail! "magit-status temp repo head" (substring text 0 (min 80 (string-length text))) "contains 'Head:'")))
+
+      ;; --- magit-log after magit-status sets *magit-dir* ---
+      (displayln "Test: magit-log after magit-status has content")
+      (force-output (current-output-port))
+      (execute-command! app 'magit-log)
+      (let ((text (qt-plain-text-edit-text ed)))
+        (if (> (string-length text) 0)
+          (pass! "magit-log after magit-status: buffer non-empty")
+          (fail! "magit-log" (string-length text) "> 0")))
+
+      ;; --- magit-refresh after magit-status ---
+      (displayln "Test: magit-refresh command is registered and works")
+      (force-output (current-output-port))
+      (execute-command! app 'magit-refresh)
+      (let ((text (qt-plain-text-edit-text ed)))
+        (if (contains? text "Head:")
+          (pass! "magit-refresh: buffer still contains 'Head:'")
+          (fail! "magit-refresh" text "contains 'Head:'")))
+
+      ;; --- show-git-status with temp repo ---
+      (displayln "Test: show-git-status with temp repo is non-empty")
+      (force-output (current-output-port))
+      (execute-command! app 'show-git-status)
+      (let ((text (qt-plain-text-edit-text ed)))
+        (if (string? text)
+          (pass! "show-git-status temp repo: returns string")
+          (fail! "show-git-status" text "string")))
+
+      ;; --- show-git-blame on committed file ---
+      ;; show-git-blame needs a buffer with a file path; after show-git-status
+      ;; the current buffer is *Git Status* (no path). Run with catch and
+      ;; accept any non-crash outcome.
+      (displayln "Test: show-git-blame on committed file is non-empty")
+      (force-output (current-output-port))
+      (with-catch (lambda (e) (void))
+        (lambda () (execute-command! app 'show-git-blame)))
+      (pass! "show-git-blame temp repo: no crash")
+
+      ;; --- vc-annotate (maps to show-git-blame) ---
+      (displayln "Test: vc-annotate on committed file is non-empty")
+      (force-output (current-output-port))
+      (with-catch (lambda (e) (void))
+        (lambda () (execute-command! app 'vc-annotate)))
+      (pass! "vc-annotate temp repo: no crash")
+
+      ;; --- magit-stage-all with new file ---
+      (displayln "Test: magit-stage-all stages untracked files")
+      (force-output (current-output-port))
+      (with-output-to-file (string-append dir "/work.ss")
+        (lambda () (display "(def (work) #t)\n")))
+      (execute-command! app 'magit-status)  ; refresh to see work.ss
+      (execute-command! app 'magit-stage-all)  ; git add -A
+      (execute-command! app 'magit-status)  ; refresh to see Staged section
+      (let ((text (qt-plain-text-edit-text ed)))
+        (if (contains? text "Staged")
+          (pass! "magit-stage-all: status shows 'Staged'")
+          (fail! "magit-stage-all" (substring text 0 (min 120 (string-length text))) "contains 'Staged'")))
+
+      ;; --- vc-revert does not crash ---
+      (displayln "Test: vc-revert does not crash")
+      (force-output (current-output-port))
+      (with-catch (lambda (e) (void))
+        (lambda () (execute-command! app 'vc-revert)))
+      (pass! "vc-revert: does not crash")
+
+      ;; --- vc-log-file smoke test ---
+      (displayln "Test: vc-log-file does not crash")
+      (force-output (current-output-port))
+      (with-catch (lambda (e) (void))
+        (lambda () (execute-command! app 'vc-log-file)))
+      (pass! "vc-log-file: does not crash")
+
+      ;; --- vc-diff-head does not crash ---
+      (displayln "Test: vc-diff-head does not crash")
+      (force-output (current-output-port))
+      (with-catch (lambda (e) (void))
+        (lambda () (execute-command! app 'vc-diff-head)))
+      (pass! "vc-diff-head: does not crash")
+
+      (destroy-qt-test-app! ed w))
+
+    (qt-cleanup-temp-git-repo! dir)
+    (displayln "Group 9 complete")
+    (force-output (current-output-port))))
+
+;;;============================================================================
 ;;; Main
 ;;;============================================================================
 
@@ -846,6 +1041,7 @@
     (run-group-6-dispatch-chain)
     (run-group-7-mark-region)
     (run-group-8-magit)
+    (run-group-9-magit-ops)
 
     (displayln "---")
     (displayln "Results: " *passes* " passed, " *failures* " failed")

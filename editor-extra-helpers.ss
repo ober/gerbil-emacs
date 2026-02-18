@@ -38,12 +38,17 @@
     (editor-goto-pos ed 0)))
 
 (def (app-read-string app prompt)
-  "Convenience wrapper: read a string from the echo area."
-  (let* ((echo (app-state-echo app))
-         (fr (app-state-frame app))
-         (row (- (frame-height fr) 1))
-         (width (frame-width fr)))
-    (echo-read-string echo prompt row width)))
+  "Convenience wrapper: read a string from the echo area.
+   In tests, dequeues from *test-echo-responses* if non-empty."
+  (if (pair? *test-echo-responses*)
+    (let ((r (car *test-echo-responses*)))
+      (set! *test-echo-responses* (cdr *test-echo-responses*))
+      r)
+    (let* ((echo (app-state-echo app))
+           (fr (app-state-frame app))
+           (row (- (frame-height fr) 1))
+           (width (frame-width fr)))
+      (echo-read-string echo prompt row width))))
 
 (def (extra-word-char? ch)
   (or (char-alphabetic? ch) (char-numeric? ch) (char=? ch #\_) (char=? ch #\-)))

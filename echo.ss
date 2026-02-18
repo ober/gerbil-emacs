@@ -17,7 +17,8 @@
   echo-read-string-with-completion
   echo-read-file-with-completion
   *minibuffer-history*
-  minibuffer-history-add!)
+  minibuffer-history-add!
+  *test-echo-responses*)
 
 (import :std/sugar
         :std/sort
@@ -28,6 +29,11 @@
 ;;;============================================================================
 ;;; Minibuffer history
 ;;;============================================================================
+
+;; Test-only: queue of canned responses for app-read-string mock.
+;; Set to a list of strings before calling commands that prompt for input.
+;; Each app-read-string call dequeues one response.
+(def *test-echo-responses* '())
 
 ;; Global minibuffer history (most recent first)
 (def *minibuffer-history* [])

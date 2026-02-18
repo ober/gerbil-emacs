@@ -618,6 +618,10 @@
       (qt-text-document-set-modified! (buffer-doc-pointer log-buf) #f)
       (qt-plain-text-edit-set-cursor-position! ed 0))))
 
+(def (cmd-magit-refresh app)
+  "Refresh the magit status buffer."
+  (cmd-magit-status app))
+
 ;;;============================================================================
 ;;; Text manipulation
 ;;;============================================================================

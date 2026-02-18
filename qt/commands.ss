@@ -1803,6 +1803,7 @@
   (register-command! 'magit-diff cmd-magit-diff)
   (register-command! 'magit-stage-all cmd-magit-stage-all)
   (register-command! 'magit-log cmd-magit-log)
+  (register-command! 'magit-refresh cmd-magit-refresh)
   ;; Org-mode
   (register-command! 'org-mode cmd-org-mode)
   (register-command! 'org-todo-cycle cmd-org-todo-cycle)
