@@ -25,6 +25,11 @@ clean:
 test: build
 	gerbil test
 
+test-qt: build
+	QT_QPA_PLATFORM=offscreen .gerbil/bin/qt-highlight-test
+
+test-all: build test test-qt
+
 PREFIX ?= $(HOME)/.local
 
 install: build
