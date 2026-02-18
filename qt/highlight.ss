@@ -827,10 +827,14 @@
 ;;;============================================================================
 
 (def (qt-org-block-src-language line)
-  "Extract language symbol from #+BEGIN_SRC lang line. Returns symbol or #f."
-  (let ((m (pregexp-match "(?i)^[[:space:]]*#\\+begin_src[[:space:]]+(\\S+)" line)))
+  "Extract language symbol from #+BEGIN_SRC lang line. Returns symbol or #f.
+  Note: std/pregexp does not support (?i) inline flags, so we downcase first."
+  ;; Downcase the trimmed line so we can use a plain lowercase pattern.
+  ;; org-block-begin? already verified the #+begin_ prefix (case-insensitive).
+  (let* ((lower (string-downcase (string-trim line)))
+         (m (pregexp-match "^#\\+begin_src\\s+(\\S+)" lower)))
     (and m
-         (let ((lang-str (string-downcase (list-ref m 1))))
+         (let ((lang-str (list-ref m 1)))
            (cond
              ((member lang-str '("sh" "shell" "bash" "zsh" "fish")) 'shell)
              ((member lang-str '("python" "python3" "py")) 'python)
