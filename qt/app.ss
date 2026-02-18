@@ -63,7 +63,12 @@
          (mark (buffer-mark buf)))
     (if mark
       (let ((pos (qt-plain-text-edit-cursor-position ed)))
-        (qt-plain-text-edit-set-selection! ed (min mark pos) (max mark pos)))
+        ;; anchor=mark (fixed end), caret=pos (moving end).
+        ;; Must NOT normalize with min/max: that swaps anchor/caret when
+        ;; navigating backwards (mark > pos), causing SCI_GETCURRENTPOS to
+        ;; return the mark position and making collapse-selection-to-caret!
+        ;; snap back to the mark on every subsequent keypress.
+        (qt-plain-text-edit-set-selection! ed mark pos))
       ;; No mark — deselect if anything is selected
       (let ((pos (qt-plain-text-edit-cursor-position ed)))
         (qt-plain-text-edit-set-selection! ed pos pos)))))

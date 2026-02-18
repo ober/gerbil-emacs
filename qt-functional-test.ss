@@ -798,17 +798,21 @@
     (execute-command! app 'end-of-buffer)
     (let ((end-pos (qt-plain-text-edit-cursor-position ed)))
       (execute-command! app 'set-mark)
+      ;; First arrow up
       (execute-command! app 'previous-line)
-      (execute-command! app 'previous-line)
-      (let ((new-pos (qt-plain-text-edit-cursor-position ed))
-            (sel-start (qt-plain-text-edit-selection-start ed))
-            (sel-end   (qt-plain-text-edit-selection-end ed)))
-        (if (< new-pos end-pos)
-          (pass! "moved up 2 lines from end in org buffer")
-          (fail! "moved up" new-pos "< end-pos"))
-        (if (< sel-start sel-end)
-          (pass! "multi-line region highlighted in org buffer")
-          (fail! "multi-line region" sel-start "< sel-end"))))
+      (let ((pos-after-1 (qt-plain-text-edit-cursor-position ed)))
+        ;; Second arrow up — this was the regression: cursor would snap back
+        ;; to end-pos each time instead of continuing upward
+        (execute-command! app 'previous-line)
+        (let ((new-pos (qt-plain-text-edit-cursor-position ed))
+              (sel-start (qt-plain-text-edit-selection-start ed))
+              (sel-end   (qt-plain-text-edit-selection-end ed)))
+          (if (< new-pos pos-after-1)
+            (pass! "second previous-line moved further up (regression check)")
+            (fail! "second previous-line" new-pos (string-append "< " (number->string pos-after-1))))
+          (if (< sel-start sel-end)
+            (pass! "multi-line region highlighted in org buffer")
+            (fail! "multi-line region" sel-start "< sel-end")))))
     (destroy-qt-test-app! ed w)))
 
 ;;; Helper: get buffer list from app
