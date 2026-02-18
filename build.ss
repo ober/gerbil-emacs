@@ -149,6 +149,7 @@
     "app"
     "emacs-test"
     "persist-test"
+    "functional-test"
     (exe: "main" bin: "gemacs"
           "-cc-options" ,cc-opts
           "-ld-options" ,ld-opts)
