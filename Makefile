@@ -1,4 +1,4 @@
-.PHONY: all build clean test install install-qt
+.PHONY: all build clean test test-qt test-all install install-qt
 
 export GERBIL_LOADPATH := $(HOME)/.gerbil/lib
 
@@ -27,6 +27,7 @@ test: build
 
 test-qt: build
 	QT_QPA_PLATFORM=offscreen .gerbil/bin/qt-highlight-test
+	QT_QPA_PLATFORM=offscreen .gerbil/bin/qt-functional-test
 
 test-all: build test test-qt
 

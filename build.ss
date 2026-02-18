@@ -182,6 +182,9 @@
     (exe: "qt-highlight-test" bin: "qt-highlight-test"
           "-cc-options" ,qt-cc-opts
           "-ld-options" ,qt-ld-opts)
+    (exe: "qt-functional-test" bin: "qt-functional-test"
+          "-cc-options" ,qt-cc-opts
+          "-ld-options" ,qt-ld-opts)
     (exe: "qt/main" bin: "gemacs-qt"
           "-cc-options" ,qt-cc-opts
           "-ld-options" ,qt-ld-opts)))
