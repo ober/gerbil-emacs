@@ -1171,6 +1171,116 @@
         (let ((ks (app-state-key-state app)))
           (check (null? (key-state-prefix-keys ks)) => #t))))
 
+    ;;=========================================================================
+    ;; Group 8: set-mark + navigation region highlight (transient-mark-mode)
+    ;; Tests the bug: set-mark from bottom of file, arrow up should highlight
+    ;;=========================================================================
+
+    (test-case "mark: set-mark stores cursor position in buffer-mark"
+      (setup-default-bindings!)
+      (register-all-commands!)
+      (let-values (((ed app) (make-test-app "test.org")))
+        (editor-set-text ed "line1\nline2\nline3")
+        (editor-goto-pos ed 10)
+        (execute-command! app 'set-mark)
+        (let ((buf (current-buffer-from-app app)))
+          (check (buffer-mark buf) => 10))))
+
+    (test-case "mark: set-mark at end-of-buffer then previous-line highlights region"
+      (setup-default-bindings!)
+      (register-all-commands!)
+      (let-values (((ed app) (make-test-app "test.org")))
+        (editor-set-text ed "line1\nline2\nline3")
+        ;; Go to end of buffer and set mark
+        (execute-command! app 'end-of-buffer)
+        (let ((end-pos (editor-get-current-pos ed)))
+          (execute-command! app 'set-mark)
+          ;; Move up one line (previous-line)
+          (execute-command! app 'previous-line)
+          ;; Selection anchor should be at end-pos (mark), caret at new pos
+          (let ((sel-start (editor-get-selection-start ed))
+                (sel-end (editor-get-selection-end ed))
+                (new-pos (editor-get-current-pos ed)))
+            ;; Region should be active: selection start <= new-pos, end = mark
+            (check (< new-pos end-pos) => #t)  ; cursor moved up
+            (check (or (= sel-start new-pos) (= sel-end new-pos)) => #t)))))
+
+    (test-case "mark: set-mark then forward-char extends selection forward"
+      (setup-default-bindings!)
+      (register-all-commands!)
+      (let-values (((ed app) (make-test-app "test.ss")))
+        (editor-set-text ed "hello world")
+        (editor-goto-pos ed 0)
+        (execute-command! app 'set-mark)
+        ;; Move forward 5 chars
+        (execute-command! app 'forward-char)
+        (execute-command! app 'forward-char)
+        (execute-command! app 'forward-char)
+        (execute-command! app 'forward-char)
+        (execute-command! app 'forward-char)
+        (let ((sel-start (editor-get-selection-start ed))
+              (sel-end (editor-get-selection-end ed)))
+          ;; Selection from 0 (mark) to 5 (point)
+          (check sel-start => 0)
+          (check sel-end => 5))))
+
+    (test-case "mark: set-mark then backward-char extends selection backward"
+      (setup-default-bindings!)
+      (register-all-commands!)
+      (let-values (((ed app) (make-test-app "test.ss")))
+        (editor-set-text ed "hello world")
+        (editor-goto-pos ed 5)
+        (execute-command! app 'set-mark)
+        ;; Move backward 3 chars
+        (execute-command! app 'backward-char)
+        (execute-command! app 'backward-char)
+        (execute-command! app 'backward-char)
+        (let ((sel-start (editor-get-selection-start ed))
+              (sel-end (editor-get-selection-end ed)))
+          ;; Selection: anchor at 5 (mark), caret at 2 (point)
+          ;; Scintilla stores as start=2, end=5 with reversed caret
+          (check sel-start => 2)
+          (check sel-end => 5))))
+
+    (test-case "mark: keyboard-quit clears mark and visual selection"
+      (setup-default-bindings!)
+      (register-all-commands!)
+      (let-values (((ed app) (make-test-app "test.ss")))
+        (editor-set-text ed "hello world")
+        (editor-goto-pos ed 0)
+        (execute-command! app 'set-mark)
+        (execute-command! app 'forward-char)
+        (execute-command! app 'forward-char)
+        (execute-command! app 'forward-char)
+        ;; Now C-g to clear mark
+        (execute-command! app 'keyboard-quit)
+        (let* ((buf (current-buffer-from-app app))
+               (sel-start (editor-get-selection-start ed))
+               (sel-end (editor-get-selection-end ed)))
+          (check (buffer-mark buf) => #f)
+          ;; Selection should be collapsed (start == end)
+          (check (= sel-start sel-end) => #t))))
+
+    (test-case "mark: set-mark in org buffer, previous-line from last line highlights"
+      (setup-default-bindings!)
+      (register-all-commands!)
+      (let-values (((ed app) (make-test-app "test.org")))
+        (editor-set-text ed "* Heading\nsome text\nanother line")
+        ;; Go to very end
+        (execute-command! app 'end-of-buffer)
+        (let ((end-pos (editor-get-current-pos ed)))
+          (execute-command! app 'set-mark)
+          ;; Move up 2 lines
+          (execute-command! app 'previous-line)
+          (execute-command! app 'previous-line)
+          (let ((new-pos (editor-get-current-pos ed))
+                (sel-start (editor-get-selection-start ed))
+                (sel-end (editor-get-selection-end ed)))
+            ;; Cursor should have moved up
+            (check (< new-pos end-pos) => #t)
+            ;; Visual selection should be active (not collapsed)
+            (check (< sel-start sel-end) => #t)))))
+
 ))
 
 (def main

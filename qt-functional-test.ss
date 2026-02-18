@@ -22,17 +22,23 @@
                  qt-plain-text-edit-cursor-position
                  qt-plain-text-edit-set-cursor-position!
                  qt-plain-text-edit-insert-text!
+                 qt-plain-text-edit-selection-start
+                 qt-plain-text-edit-selection-end
                  qt-scintilla-destroy!)
         (only-in :gemacs/core
                  new-app-state
                  execute-command!
                  find-command
                  make-buffer
+                 buffer-mark
+                 app-state-frame
                  app-state-last-command
                  app-state-prefix-arg)
         (only-in :gemacs/qt/window
                  make-qt-edit-window
-                 make-qt-frame)
+                 make-qt-frame
+                 qt-edit-window-buffer
+                 qt-frame-windows)
         (only-in :gemacs/qt/commands
                  qt-register-all-commands!))
 
@@ -606,6 +612,121 @@
     (destroy-qt-test-app! ed w)))
 
 ;;;============================================================================
+;;; Group 7: set-mark + navigation region highlight (transient-mark-mode)
+;;; Tests the bug: set-mark at end of org file, arrow up should highlight region
+;;;============================================================================
+
+(def (run-group-7-mark-region)
+  (displayln "Group 7: set-mark + navigation (transient-mark-mode)")
+
+  (displayln "Test: set-mark stores position in buffer-mark")
+  (let-values (((ed w app) (make-qt-test-app "test.org")))
+    (set-qt-text! ed "line1\nline2\nline3" 10)
+    (execute-command! app 'set-mark)
+    (let ((buf-mark (buffer-mark (car (list-buffers app)))))
+      (if (= buf-mark 10)
+        (pass! "set-mark stores position 10")
+        (fail! "set-mark position" buf-mark 10)))
+    (destroy-qt-test-app! ed w))
+
+  (displayln "Test: set-mark at end, previous-line highlights region")
+  (let-values (((ed w app) (make-qt-test-app "test.org")))
+    (set-qt-text! ed "line1\nline2\nline3" 0)
+    ;; Go to end of buffer
+    (execute-command! app 'end-of-buffer)
+    (let ((end-pos (qt-plain-text-edit-cursor-position ed)))
+      (execute-command! app 'set-mark)
+      ;; Move up one line
+      (execute-command! app 'previous-line)
+      (let ((new-pos (qt-plain-text-edit-cursor-position ed))
+            (sel-start (qt-plain-text-edit-selection-start ed))
+            (sel-end   (qt-plain-text-edit-selection-end ed)))
+        ;; Cursor moved up
+        (if (< new-pos end-pos)
+          (pass! "previous-line moved cursor up from end")
+          (fail! "previous-line" new-pos (string-append "< " (number->string end-pos))))
+        ;; Selection is active (start < end)
+        (if (< sel-start sel-end)
+          (pass! "region is highlighted (selection active)")
+          (fail! "region highlight" sel-start "< sel-end"))))
+    (destroy-qt-test-app! ed w))
+
+  (displayln "Test: set-mark then forward-char extends selection")
+  (let-values (((ed w app) (make-qt-test-app "test.ss")))
+    (set-qt-text! ed "hello world" 0)
+    (execute-command! app 'set-mark)
+    (execute-command! app 'forward-char)
+    (execute-command! app 'forward-char)
+    (execute-command! app 'forward-char)
+    (execute-command! app 'forward-char)
+    (execute-command! app 'forward-char)
+    (let ((sel-start (qt-plain-text-edit-selection-start ed))
+          (sel-end   (qt-plain-text-edit-selection-end ed)))
+      (if (and (= sel-start 0) (= sel-end 5))
+        (pass! "forward-char extends selection 0..5")
+        (fail! "forward-char selection" (string-append (number->string sel-start) ".." (number->string sel-end)) "0..5")))
+    (destroy-qt-test-app! ed w))
+
+  (displayln "Test: set-mark then backward-char creates reversed selection")
+  (let-values (((ed w app) (make-qt-test-app "test.ss")))
+    (set-qt-text! ed "hello world" 5)
+    (execute-command! app 'set-mark)
+    (execute-command! app 'backward-char)
+    (execute-command! app 'backward-char)
+    (execute-command! app 'backward-char)
+    (let ((sel-start (qt-plain-text-edit-selection-start ed))
+          (sel-end   (qt-plain-text-edit-selection-end ed)))
+      (if (and (= sel-start 2) (= sel-end 5))
+        (pass! "backward-char reversed selection 2..5")
+        (fail! "backward-char selection" (string-append (number->string sel-start) ".." (number->string sel-end)) "2..5")))
+    (destroy-qt-test-app! ed w))
+
+  (displayln "Test: keyboard-quit clears mark and collapses selection")
+  (let-values (((ed w app) (make-qt-test-app "test.ss")))
+    (set-qt-text! ed "hello world" 0)
+    (execute-command! app 'set-mark)
+    (execute-command! app 'forward-char)
+    (execute-command! app 'forward-char)
+    (execute-command! app 'forward-char)
+    (execute-command! app 'keyboard-quit)
+    (let* ((buffers (list-buffers app))
+           (mark (if (pair? buffers) (buffer-mark (car buffers)) #f))
+           (sel-start (qt-plain-text-edit-selection-start ed))
+           (sel-end   (qt-plain-text-edit-selection-end ed)))
+      (if (not mark)
+        (pass! "keyboard-quit clears buffer-mark")
+        (fail! "keyboard-quit mark" mark #f))
+      (if (= sel-start sel-end)
+        (pass! "keyboard-quit collapses selection")
+        (fail! "keyboard-quit selection" (string-append (number->string sel-start) ".." (number->string sel-end)) "collapsed")))
+    (destroy-qt-test-app! ed w))
+
+  (displayln "Test: set-mark in org buffer at end, up 2 lines highlights correctly")
+  (let-values (((ed w app) (make-qt-test-app "test.org")))
+    (set-qt-text! ed "* Heading\nsome text\nanother line" 0)
+    (execute-command! app 'end-of-buffer)
+    (let ((end-pos (qt-plain-text-edit-cursor-position ed)))
+      (execute-command! app 'set-mark)
+      (execute-command! app 'previous-line)
+      (execute-command! app 'previous-line)
+      (let ((new-pos (qt-plain-text-edit-cursor-position ed))
+            (sel-start (qt-plain-text-edit-selection-start ed))
+            (sel-end   (qt-plain-text-edit-selection-end ed)))
+        (if (< new-pos end-pos)
+          (pass! "moved up 2 lines from end in org buffer")
+          (fail! "moved up" new-pos "< end-pos"))
+        (if (< sel-start sel-end)
+          (pass! "multi-line region highlighted in org buffer")
+          (fail! "multi-line region" sel-start "< sel-end"))))
+    (destroy-qt-test-app! ed w)))
+
+;;; Helper: get buffer list from app
+(def (list-buffers app)
+  (let ((fr (app-state-frame app)))
+    (map (lambda (w) (qt-edit-window-buffer w))
+         (qt-frame-windows fr))))
+
+;;;============================================================================
 ;;; Main
 ;;;============================================================================
 
@@ -620,6 +741,7 @@
     (run-group-4-org-commands)
     (run-group-5-text-transforms)
     (run-group-6-dispatch-chain)
+    (run-group-7-mark-region)
 
     (displayln "---")
     (displayln "Results: " *passes* " passed, " *failures* " failed")

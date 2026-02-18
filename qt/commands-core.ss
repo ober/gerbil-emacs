@@ -307,33 +307,57 @@ Returns #t if changed, #f if not or if no record exists."
 ;;; Navigation commands
 ;;;============================================================================
 
+(def (update-mark-region! app ed)
+  "If mark is active, extend visual selection between mark and current point.
+   This implements Emacs transient-mark-mode behavior for Qt."
+  (let* ((buf (current-qt-buffer app))
+         (mark (buffer-mark buf)))
+    (when mark
+      ;; SCI_SETSEL anchor caret: anchor=mark (fixed), caret=point (moves)
+      (qt-plain-text-edit-set-selection! ed mark (qt-plain-text-edit-cursor-position ed)))))
+
+(def (collapse-selection-to-caret! ed)
+  "Collapse any existing selection to the caret position before movement.
+   Required so that move-cursor! advances the caret rather than collapsing
+   an existing selection to its endpoint."
+  (let ((pos (qt-plain-text-edit-cursor-position ed)))
+    (qt-plain-text-edit-set-selection! ed pos pos)))
+
 (def (cmd-forward-char app)
   (let ((n (get-prefix-arg app)) (ed (current-qt-editor app)))
+    (collapse-selection-to-caret! ed)
     (let loop ((i 0))
       (when (< i (abs n))
         (qt-plain-text-edit-move-cursor! ed (if (>= n 0) QT_CURSOR_NEXT_CHAR QT_CURSOR_PREVIOUS_CHAR))
-        (loop (+ i 1))))))
+        (loop (+ i 1))))
+    (update-mark-region! app ed)))
 
 (def (cmd-backward-char app)
   (let ((n (get-prefix-arg app)) (ed (current-qt-editor app)))
+    (collapse-selection-to-caret! ed)
     (let loop ((i 0))
       (when (< i (abs n))
         (qt-plain-text-edit-move-cursor! ed (if (>= n 0) QT_CURSOR_PREVIOUS_CHAR QT_CURSOR_NEXT_CHAR))
-        (loop (+ i 1))))))
+        (loop (+ i 1))))
+    (update-mark-region! app ed)))
 
 (def (cmd-next-line app)
   (let ((n (get-prefix-arg app)) (ed (current-qt-editor app)))
+    (collapse-selection-to-caret! ed)
     (let loop ((i 0))
       (when (< i (abs n))
         (qt-plain-text-edit-move-cursor! ed (if (>= n 0) QT_CURSOR_DOWN QT_CURSOR_UP))
-        (loop (+ i 1))))))
+        (loop (+ i 1))))
+    (update-mark-region! app ed)))
 
 (def (cmd-previous-line app)
   (let ((n (get-prefix-arg app)) (ed (current-qt-editor app)))
+    (collapse-selection-to-caret! ed)
     (let loop ((i 0))
       (when (< i (abs n))
         (qt-plain-text-edit-move-cursor! ed (if (>= n 0) QT_CURSOR_UP QT_CURSOR_DOWN))
-        (loop (+ i 1))))))
+        (loop (+ i 1))))
+    (update-mark-region! app ed)))
 
 (def (cmd-beginning-of-line app)
   "Smart beginning of line: toggle between first non-whitespace and column 0."
@@ -361,25 +385,29 @@ Returns #t if changed, #f if not or if no record exists."
     ;; Toggle: if at indentation, go to column 0; otherwise go to indentation
     (if (= pos indent-pos)
       (qt-plain-text-edit-set-cursor-position! ed line-start)
-      (qt-plain-text-edit-set-cursor-position! ed indent-pos))))
+      (qt-plain-text-edit-set-cursor-position! ed indent-pos))
+    (update-mark-region! app ed)))
 
 (def (cmd-end-of-line app)
-  (qt-plain-text-edit-move-cursor! (current-qt-editor app)
-                                   QT_CURSOR_END_OF_BLOCK))
+  (let ((ed (current-qt-editor app)))
+    (qt-plain-text-edit-move-cursor! ed QT_CURSOR_END_OF_BLOCK)
+    (update-mark-region! app ed)))
 
 (def (cmd-forward-word app)
   (let ((n (get-prefix-arg app)) (ed (current-qt-editor app)))
     (let loop ((i 0))
       (when (< i (abs n))
         (qt-plain-text-edit-move-cursor! ed (if (>= n 0) QT_CURSOR_NEXT_WORD QT_CURSOR_PREVIOUS_WORD))
-        (loop (+ i 1))))))
+        (loop (+ i 1))))
+    (update-mark-region! app ed)))
 
 (def (cmd-backward-word app)
   (let ((n (get-prefix-arg app)) (ed (current-qt-editor app)))
     (let loop ((i 0))
       (when (< i (abs n))
         (qt-plain-text-edit-move-cursor! ed (if (>= n 0) QT_CURSOR_PREVIOUS_WORD QT_CURSOR_NEXT_WORD))
-        (loop (+ i 1))))))
+        (loop (+ i 1))))
+    (update-mark-region! app ed)))
 
 ;;; Subword movement (camelCase / snake_case boundaries)
 (def (subword-boundary? text i direction)
@@ -442,12 +470,14 @@ Returns #t if changed, #f if not or if no record exists."
           (loop (+ i 1)))))))
 
 (def (cmd-beginning-of-buffer app)
-  (qt-plain-text-edit-move-cursor! (current-qt-editor app)
-                                   QT_CURSOR_START))
+  (let ((ed (current-qt-editor app)))
+    (qt-plain-text-edit-move-cursor! ed QT_CURSOR_START)
+    (update-mark-region! app ed)))
 
 (def (cmd-end-of-buffer app)
-  (qt-plain-text-edit-move-cursor! (current-qt-editor app)
-                                   QT_CURSOR_END))
+  (let ((ed (current-qt-editor app)))
+    (qt-plain-text-edit-move-cursor! ed QT_CURSOR_END)
+    (update-mark-region! app ed)))
 
 (def (cmd-scroll-down app)
   ;; Move down 20 lines to simulate page down
@@ -456,6 +486,7 @@ Returns #t if changed, #f if not or if no record exists."
       (when (< i 20)
         (qt-plain-text-edit-move-cursor! ed QT_CURSOR_DOWN)
         (loop (+ i 1))))
+    (update-mark-region! app ed)
     (qt-plain-text-edit-ensure-cursor-visible! ed)))
 
 (def (cmd-scroll-up app)
@@ -465,6 +496,7 @@ Returns #t if changed, #f if not or if no record exists."
       (when (< i 20)
         (qt-plain-text-edit-move-cursor! ed QT_CURSOR_UP)
         (loop (+ i 1))))
+    (update-mark-region! app ed)
     (qt-plain-text-edit-ensure-cursor-visible! ed)))
 
 (def (cmd-recenter app)
@@ -1248,7 +1280,14 @@ Returns (path . line) or #f. Handles file:line format."
 
 (def (cmd-keyboard-quit app)
   (echo-message! (app-state-echo app) "Quit")
-  (set! (app-state-key-state app) (make-initial-key-state)))
+  (set! (app-state-key-state app) (make-initial-key-state))
+  ;; Deactivate mark and clear visual selection (Emacs C-g behavior)
+  (let* ((buf (current-qt-buffer app))
+         (ed (current-qt-editor app)))
+    (when (buffer-mark buf)
+      (set! (buffer-mark buf) #f)
+      (let ((pos (qt-plain-text-edit-cursor-position ed)))
+        (qt-plain-text-edit-set-selection! ed pos pos)))))
 
 ;;;============================================================================
 ;;; Scroll margin commands (Qt)

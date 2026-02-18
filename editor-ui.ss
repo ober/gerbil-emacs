@@ -695,7 +695,14 @@
 
 (def (cmd-keyboard-quit app)
   (echo-message! (app-state-echo app) "Quit")
-  (set! (app-state-key-state app) (make-initial-key-state)))
+  (set! (app-state-key-state app) (make-initial-key-state))
+  ;; Deactivate mark and clear visual selection (Emacs C-g behavior)
+  (let* ((buf (current-buffer-from-app app))
+         (ed (current-editor app)))
+    (when (buffer-mark buf)
+      (set! (buffer-mark buf) #f)
+      (let ((pos (editor-get-current-pos ed)))
+        (editor-set-selection ed pos pos)))))
 
 (def (cmd-quit app)
   "Quit the editor, prompting if there are unsaved file buffers."

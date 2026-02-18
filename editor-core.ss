@@ -337,29 +337,54 @@
 ;;; Navigation commands
 ;;;============================================================================
 
+(def (update-mark-region! app ed)
+  "If mark is active, extend visual selection between mark and current point.
+   This implements Emacs transient-mark-mode behavior."
+  (let* ((buf (current-buffer-from-app app))
+         (mark (buffer-mark buf)))
+    (when mark
+      ;; SCI_SETSEL anchor caret: anchor=mark (fixed), caret=point (moves)
+      (editor-set-selection ed mark (editor-get-current-pos ed)))))
+
+(def (collapse-selection-to-caret! ed)
+  "Collapse any existing Scintilla selection to the caret position.
+   Required before SCK_* key events when mark is active — without this,
+   SCK_RIGHT with a selection collapses to the selection end instead of
+   advancing the caret past it."
+  (let ((pos (editor-get-current-pos ed)))
+    (editor-set-selection ed pos pos)))
+
 (def (cmd-forward-char app)
   (let ((n (get-prefix-arg app)) (ed (current-editor app)))
+    (collapse-selection-to-caret! ed)
     (if (>= n 0)
       (let loop ((i 0)) (when (< i n) (editor-send-key ed SCK_RIGHT) (loop (+ i 1))))
-      (let loop ((i 0)) (when (< i (- n)) (editor-send-key ed SCK_LEFT) (loop (+ i 1)))))))
+      (let loop ((i 0)) (when (< i (- n)) (editor-send-key ed SCK_LEFT) (loop (+ i 1)))))
+    (update-mark-region! app ed)))
 
 (def (cmd-backward-char app)
   (let ((n (get-prefix-arg app)) (ed (current-editor app)))
+    (collapse-selection-to-caret! ed)
     (if (>= n 0)
       (let loop ((i 0)) (when (< i n) (editor-send-key ed SCK_LEFT) (loop (+ i 1))))
-      (let loop ((i 0)) (when (< i (- n)) (editor-send-key ed SCK_RIGHT) (loop (+ i 1)))))))
+      (let loop ((i 0)) (when (< i (- n)) (editor-send-key ed SCK_RIGHT) (loop (+ i 1)))))
+    (update-mark-region! app ed)))
 
 (def (cmd-next-line app)
   (let ((n (get-prefix-arg app)) (ed (current-editor app)))
+    (collapse-selection-to-caret! ed)
     (if (>= n 0)
       (let loop ((i 0)) (when (< i n) (editor-send-key ed SCK_DOWN) (loop (+ i 1))))
-      (let loop ((i 0)) (when (< i (- n)) (editor-send-key ed SCK_UP) (loop (+ i 1)))))))
+      (let loop ((i 0)) (when (< i (- n)) (editor-send-key ed SCK_UP) (loop (+ i 1)))))
+    (update-mark-region! app ed)))
 
 (def (cmd-previous-line app)
   (let ((n (get-prefix-arg app)) (ed (current-editor app)))
+    (collapse-selection-to-caret! ed)
     (if (>= n 0)
       (let loop ((i 0)) (when (< i n) (editor-send-key ed SCK_UP) (loop (+ i 1))))
-      (let loop ((i 0)) (when (< i (- n)) (editor-send-key ed SCK_DOWN) (loop (+ i 1)))))))
+      (let loop ((i 0)) (when (< i (- n)) (editor-send-key ed SCK_DOWN) (loop (+ i 1)))))
+    (update-mark-region! app ed)))
 
 (def (cmd-beginning-of-line app)
   "Smart beginning of line: toggle between first non-whitespace and column 0."
@@ -380,34 +405,47 @@
     ;; If already at indentation, go to column 0; otherwise go to indentation
     (if (= pos indent-pos)
       (editor-goto-pos ed line-start)
-      (editor-goto-pos ed indent-pos))))
+      (editor-goto-pos ed indent-pos))
+    (update-mark-region! app ed)))
 
 (def (cmd-end-of-line app)
-  (editor-send-key (current-editor app) SCK_END))
+  (let ((ed (current-editor app)))
+    (editor-send-key ed SCK_END)
+    (update-mark-region! app ed)))
 
 (def (cmd-forward-word app)
   (let ((n (get-prefix-arg app)) (ed (current-editor app)))
     (if (>= n 0)
       (let loop ((i 0)) (when (< i n) (editor-send-key ed SCK_RIGHT ctrl: #t) (loop (+ i 1))))
-      (let loop ((i 0)) (when (< i (- n)) (editor-send-key ed SCK_LEFT ctrl: #t) (loop (+ i 1)))))))
+      (let loop ((i 0)) (when (< i (- n)) (editor-send-key ed SCK_LEFT ctrl: #t) (loop (+ i 1)))))
+    (update-mark-region! app ed)))
 
 (def (cmd-backward-word app)
   (let ((n (get-prefix-arg app)) (ed (current-editor app)))
     (if (>= n 0)
       (let loop ((i 0)) (when (< i n) (editor-send-key ed SCK_LEFT ctrl: #t) (loop (+ i 1))))
-      (let loop ((i 0)) (when (< i (- n)) (editor-send-key ed SCK_RIGHT ctrl: #t) (loop (+ i 1)))))))
+      (let loop ((i 0)) (when (< i (- n)) (editor-send-key ed SCK_RIGHT ctrl: #t) (loop (+ i 1)))))
+    (update-mark-region! app ed)))
 
 (def (cmd-beginning-of-buffer app)
-  (editor-send-key (current-editor app) SCK_HOME ctrl: #t))
+  (let ((ed (current-editor app)))
+    (editor-send-key ed SCK_HOME ctrl: #t)
+    (update-mark-region! app ed)))
 
 (def (cmd-end-of-buffer app)
-  (editor-send-key (current-editor app) SCK_END ctrl: #t))
+  (let ((ed (current-editor app)))
+    (editor-send-key ed SCK_END ctrl: #t)
+    (update-mark-region! app ed)))
 
 (def (cmd-scroll-down app)
-  (editor-send-key (current-editor app) SCK_NEXT))
+  (let ((ed (current-editor app)))
+    (editor-send-key ed SCK_NEXT)
+    (update-mark-region! app ed)))
 
 (def (cmd-scroll-up app)
-  (editor-send-key (current-editor app) SCK_PRIOR))
+  (let ((ed (current-editor app)))
+    (editor-send-key ed SCK_PRIOR)
+    (update-mark-region! app ed)))
 
 (def (cmd-recenter app)
   "Center the current line on screen (C-l behavior)."
