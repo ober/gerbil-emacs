@@ -66,6 +66,11 @@
   ;; Base dark theme
   (sci-send ed SCI_STYLESETBACK STYLE_DEFAULT (rgb->sci #x1e #x1e #x2e))
   (sci-send ed SCI_STYLESETFORE STYLE_DEFAULT (rgb->sci #xd4 #xd4 #xd4))
+  ;; Set monospace font on STYLE_DEFAULT before STYLECLEARALL so all styles inherit it.
+  ;; This is critical for org-table column alignment — CSS font-family alone doesn't
+  ;; affect Scintilla's internal text renderer.
+  (sci-send/string ed SCI_STYLESETFONT "Monospace" STYLE_DEFAULT)
+  (sci-send ed SCI_STYLESETSIZE STYLE_DEFAULT 11)
   (sci-send ed SCI_STYLECLEARALL)
   ;; Line number margin
   (sci-send ed SCI_SETMARGINTYPEN 0 SC_MARGIN_NUMBER)

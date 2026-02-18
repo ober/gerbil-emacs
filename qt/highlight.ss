@@ -7,6 +7,7 @@
 (export qt-setup-highlighting!
         qt-remove-highlighting!
         qt-setup-org-styles!
+        qt-org-highlight-buffer!
         qt-update-visual-decorations!
         qt-highlight-search-matches!
         qt-clear-search-highlights!
@@ -14,8 +15,14 @@
 
 (import :std/sugar
         :std/srfi/13
+        :std/pregexp
+        :std/misc/string
         :gemacs/qt/sci-shim
-        :gemacs/core)
+        :gemacs/core
+        (only-in :gemacs/org-parse
+                 org-heading-line? org-heading-stars-of-line
+                 org-comment-line? org-keyword-line?
+                 org-table-line? org-block-begin? org-block-end?))
 
 ;;;============================================================================
 ;;; Color constants (dark theme)
@@ -476,7 +483,10 @@
       (apply-base-dark-theme! ed)
       ;; Disable any built-in lexer for manual styling (SCI_SETILEXER = 4033)
       (sci-send ed 4033 0)
-      (qt-setup-org-styles! ed))
+      (qt-setup-org-styles! ed)
+      ;; Apply full-buffer org highlighting (headings, tables, blocks, etc.)
+      (let ((text (qt-plain-text-edit-text ed)))
+        (qt-org-highlight-buffer! ed text)))
     (when (and ed lexer-name)
       ;; Store language in buffer
       (set! (buffer-lexer-lang buf) lang)
@@ -592,7 +602,348 @@
   (sci-send ed SCI_STYLESETFORE 56 (rgb->sci #x32 #xB4 #x32))
   (sci-send ed SCI_STYLESETFORE 57 (rgb->sci #xDC #x32 #x32))
   ;; Table (58)
-  (sci-send ed SCI_STYLESETFORE 58 (rgb->sci #x32 #xB4 #xB4)))
+  (sci-send ed SCI_STYLESETFORE 58 (rgb->sci #x32 #xB4 #xB4))
+  ;; Source block inline highlighting (59-62)
+  (sci-send ed SCI_STYLESETFORE 59 (rgb->sci kw-r kw-g kw-b))   ; keyword — purple bold
+  (sci-send ed SCI_STYLESETBOLD 59 1)
+  (sci-send ed SCI_STYLESETFORE 60 (rgb->sci st-r st-g st-b))   ; string — green
+  (sci-send ed SCI_STYLESETFORE 61 (rgb->sci cm-r cm-g cm-b))   ; comment — gray italic
+  (sci-send ed SCI_STYLESETITALIC 61 1)
+  (sci-send ed SCI_STYLESETFORE 62 (rgb->sci nm-r nm-g nm-b)))  ; number — orange
+
+;;;============================================================================
+;;; Qt Org full-buffer highlighting (mirrors org-highlight.ss for Qt editors)
+;;;============================================================================
+
+;; Scintilla style message constants
+(def SCI_STARTSTYLING 2032)
+(def SCI_SETSTYLING   2033)
+
+;; Org style IDs (must match qt-setup-org-styles! above and TUI org-highlight.ss)
+(def QT_ORG_DEFAULT       32)
+(def QT_ORG_HEADING_1     33)
+(def QT_ORG_TODO          41)
+(def QT_ORG_DONE          42)
+(def QT_ORG_TAGS          43)
+(def QT_ORG_COMMENT       44)
+(def QT_ORG_KEYWORD       45)
+(def QT_ORG_BOLD          46)
+(def QT_ORG_ITALIC        47)
+(def QT_ORG_UNDERLINE     48)
+(def QT_ORG_VERBATIM      49)
+(def QT_ORG_CODE          50)
+(def QT_ORG_LINK          51)
+(def QT_ORG_DATE          52)
+(def QT_ORG_PROPERTY      53)
+(def QT_ORG_BLOCK_DELIM   54)
+(def QT_ORG_BLOCK_BODY    55)
+(def QT_ORG_CHECKBOX_ON   56)
+(def QT_ORG_CHECKBOX_OFF  57)
+(def QT_ORG_TABLE         58)
+;; Source block inline highlighting styles
+(def QT_ORG_SRC_KW        59)   ; keyword (purple bold)
+(def QT_ORG_SRC_STR       60)   ; string literal (green)
+(def QT_ORG_SRC_COMMENT   61)   ; comment (gray italic)
+(def QT_ORG_SRC_NUMBER    62)   ; numeric literal (orange)
+
+(def (qt-org-style-line! ed pos len style)
+  (when (> len 0)
+    (sci-send ed SCI_STARTSTYLING pos 0)
+    (sci-send ed SCI_SETSTYLING len style)))
+
+(def (qt-org-style-range! ed pos len style)
+  (when (> len 0)
+    (sci-send ed SCI_STARTSTYLING pos 0)
+    (sci-send ed SCI_SETSTYLING len style)))
+
+(def (qt-org-heading-style level)
+  (cond ((<= level 0) QT_ORG_DEFAULT)
+        ((<= level 8) (+ QT_ORG_HEADING_1 (- level 1)))
+        (else (+ QT_ORG_HEADING_1 7))))
+
+(def (qt-org-highlight-heading! ed pos line line-len)
+  (let* ((level (org-heading-stars-of-line line))
+         (style (qt-org-heading-style level)))
+    (qt-org-style-line! ed pos line-len style)
+    ;; Highlight TODO/DONE keyword
+    (let ((m (pregexp-match "^(\\*+)\\s+(TODO|NEXT|DOING|WAITING|HOLD)\\s" line)))
+      (when m
+        (let* ((stars-len (string-length (list-ref m 1)))
+               (kw-start (+ stars-len 1))
+               (kw-len (string-length (list-ref m 2))))
+          (qt-org-style-range! ed (+ pos kw-start) kw-len QT_ORG_TODO))))
+    (let ((m (pregexp-match "^(\\*+)\\s+(DONE|CANCELLED)\\s" line)))
+      (when m
+        (let* ((stars-len (string-length (list-ref m 1)))
+               (kw-start (+ stars-len 1))
+               (kw-len (string-length (list-ref m 2))))
+          (qt-org-style-range! ed (+ pos kw-start) kw-len QT_ORG_DONE))))
+    ;; Highlight tags at end of line
+    (let ((m (pregexp-match "(:\\S+:)\\s*$" line)))
+      (when m
+        (let* ((tag-str (list-ref m 1))
+               (tag-pos (string-contains line tag-str)))
+          (when tag-pos
+            (qt-org-style-range! ed (+ pos tag-pos) (string-length tag-str)
+                                 QT_ORG_TAGS)))))))
+
+(def (qt-org-highlight-markup-pairs! ed pos line marker style)
+  (let* ((marker-char (string-ref marker 0))
+         (len (string-length line)))
+    (let loop ((i 0))
+      (when (< i (- len 2))
+        (if (and (char=? (string-ref line i) marker-char)
+                 (or (= i 0) (char-whitespace? (string-ref line (- i 1))))
+                 (not (char-whitespace? (string-ref line (+ i 1)))))
+          (let close-loop ((j (+ i 2)))
+            (cond
+              ((>= j len) (loop (+ i 1)))
+              ((and (char=? (string-ref line j) marker-char)
+                    (not (char-whitespace? (string-ref line (- j 1))))
+                    (or (= j (- len 1))
+                        (let ((c (string-ref line (+ j 1))))
+                          (or (char-whitespace? c)
+                              (memv c '(#\. #\, #\; #\: #\! #\? #\) #\]))))))
+               (qt-org-style-range! ed (+ pos i) (+ (- j i) 1) style)
+               (loop (+ j 1)))
+              (else (close-loop (+ j 1)))))
+          (loop (+ i 1)))))))
+
+(def (qt-org-highlight-links! ed pos line)
+  (let ((len (string-length line)))
+    (let loop ((i 0))
+      (when (< i (- len 3))
+        (if (and (char=? (string-ref line i) #\[)
+                 (< (+ i 1) len)
+                 (char=? (string-ref line (+ i 1)) #\[))
+          (let close-loop ((j (+ i 2)))
+            (cond
+              ((>= j (- len 1)) (loop (+ i 1)))
+              ((and (char=? (string-ref line j) #\])
+                    (char=? (string-ref line (+ j 1)) #\]))
+               (qt-org-style-range! ed (+ pos i) (+ (- j i) 2) QT_ORG_LINK)
+               (loop (+ j 2)))
+              (else (close-loop (+ j 1)))))
+          (loop (+ i 1)))))))
+
+(def (qt-org-highlight-dates! ed pos line)
+  (let ((len (string-length line)))
+    ;; Active timestamps <...>
+    (let loop ((i 0))
+      (when (< i (- len 5))
+        (if (and (char=? (string-ref line i) #\<)
+                 (< (+ i 5) len)
+                 (char-numeric? (string-ref line (+ i 1))))
+          (let close-loop ((j (+ i 2)))
+            (cond
+              ((>= j len) (loop (+ i 1)))
+              ((char=? (string-ref line j) #\>)
+               (qt-org-style-range! ed (+ pos i) (+ (- j i) 1) QT_ORG_DATE)
+               (loop (+ j 1)))
+              (else (close-loop (+ j 1)))))
+          (loop (+ i 1)))))
+    ;; Inactive timestamps [...]
+    (let loop ((i 0))
+      (when (< i (- len 5))
+        (if (and (char=? (string-ref line i) #\[)
+                 (< (+ i 5) len)
+                 (char-numeric? (string-ref line (+ i 1))))
+          (let close-loop ((j (+ i 2)))
+            (cond
+              ((>= j len) (loop (+ i 1)))
+              ((char=? (string-ref line j) #\])
+               (qt-org-style-range! ed (+ pos i) (+ (- j i) 1) QT_ORG_DATE)
+               (loop (+ j 1)))
+              (else (close-loop (+ j 1)))))
+          (loop (+ i 1)))))))
+
+(def (qt-org-highlight-checkboxes! ed pos line)
+  (let ((len (string-length line)))
+    (let loop ((i 0))
+      (when (< i (- len 2))
+        (if (char=? (string-ref line i) #\[)
+          (cond
+            ((and (< (+ i 2) len)
+                  (char=? (string-ref line (+ i 2)) #\]))
+             (let ((inner (string-ref line (+ i 1))))
+               (cond
+                 ((or (char=? inner #\X) (char=? inner #\x))
+                  (qt-org-style-range! ed (+ pos i) 3 QT_ORG_CHECKBOX_ON))
+                 ((char=? inner #\space)
+                  (qt-org-style-range! ed (+ pos i) 3 QT_ORG_CHECKBOX_OFF)))
+               (loop (+ i 3))))
+            (else (loop (+ i 1))))
+          (loop (+ i 1)))))))
+
+(def (qt-org-highlight-inline! ed pos line line-len)
+  (qt-org-highlight-markup-pairs! ed pos line "*" QT_ORG_BOLD)
+  (qt-org-highlight-markup-pairs! ed pos line "/" QT_ORG_ITALIC)
+  (qt-org-highlight-markup-pairs! ed pos line "_" QT_ORG_UNDERLINE)
+  (qt-org-highlight-markup-pairs! ed pos line "=" QT_ORG_VERBATIM)
+  (qt-org-highlight-markup-pairs! ed pos line "~" QT_ORG_CODE)
+  (qt-org-highlight-links! ed pos line)
+  (qt-org-highlight-dates! ed pos line)
+  (qt-org-highlight-checkboxes! ed pos line))
+
+(def (qt-org-table-separator? line)
+  "True if the line is an org table separator row (only |, -, + chars)."
+  (let ((trimmed (string-trim-both line)))
+    (and (> (string-length trimmed) 1)
+         (char=? (string-ref trimmed 0) #\|)
+         ;; No char other than |, -, + present
+         (not (pregexp-match "[^|+\\-]" trimmed)))))
+
+(def (qt-org-highlight-table-line! ed pos line line-len)
+  "Style org table line: separators get full table color;
+   content rows get default body color with only '|' chars colored."
+  (if (qt-org-table-separator? line)
+    ;; Horizontal rule — color everything
+    (qt-org-style-line! ed pos line-len QT_ORG_TABLE)
+    ;; Content row — default body, then paint each '|' in table color
+    (begin
+      (qt-org-style-line! ed pos line-len QT_ORG_DEFAULT)
+      (let loop ((i 0))
+        (when (< i line-len)
+          (when (char=? (string-ref line i) #\|)
+            (qt-org-style-range! ed (+ pos i) 1 QT_ORG_TABLE))
+          (loop (+ i 1)))))))
+
+(def (qt-org-highlight-normal-line! ed pos line line-len)
+  (cond
+    ((org-heading-line? line)
+     (qt-org-highlight-heading! ed pos line line-len))
+    ((org-comment-line? line)
+     (qt-org-style-line! ed pos line-len QT_ORG_COMMENT))
+    ((org-keyword-line? line)
+     (qt-org-style-line! ed pos line-len QT_ORG_KEYWORD))
+    ((org-table-line? line)
+     (qt-org-highlight-table-line! ed pos line line-len))
+    (else
+     (qt-org-style-line! ed pos line-len QT_ORG_DEFAULT)
+     (qt-org-highlight-inline! ed pos line line-len))))
+
+;;;============================================================================
+;;; Org source block syntax highlighting
+;;;============================================================================
+
+(def (qt-org-block-src-language line)
+  "Extract language symbol from #+BEGIN_SRC lang line. Returns symbol or #f."
+  (let ((m (pregexp-match "(?i)^[[:space:]]*#\\+begin_src[[:space:]]+(\\S+)" line)))
+    (and m
+         (let ((lang-str (string-downcase (list-ref m 1))))
+           (cond
+             ((member lang-str '("sh" "shell" "bash" "zsh" "fish")) 'shell)
+             ((member lang-str '("python" "python3" "py")) 'python)
+             ((member lang-str '("scheme" "gerbil" "lisp" "elisp" "emacs-lisp" "cl" "common-lisp")) 'scheme)
+             ((member lang-str '("javascript" "js" "typescript" "ts" "node")) 'javascript)
+             ((member lang-str '("c" "cpp" "c++" "cxx" "objc")) 'c)
+             ((member lang-str '("rust")) 'rust)
+             ((member lang-str '("go" "golang")) 'go)
+             ((member lang-str '("ruby" "rb")) 'ruby)
+             ((member lang-str '("sql")) 'sql)
+             ((member lang-str '("json")) 'json)
+             ((member lang-str '("yaml" "yml")) 'yaml)
+             (else 'text))))))
+
+(def (qt-org-src-comment? trimmed lang)
+  "True if trimmed line looks like a comment in language lang."
+  (and (> (string-length trimmed) 0)
+       (case lang
+         ((shell python ruby yaml)
+          (string-prefix? "#" trimmed))
+         ((scheme lisp)
+          (string-prefix? ";" trimmed))
+         ((c javascript go rust java)
+          (or (string-prefix? "//" trimmed)
+              (string-prefix? "/*" trimmed)))
+         ((sql)
+          (string-prefix? "--" trimmed))
+         (else #f))))
+
+(def *dquote* (integer->char 34))   ; " — avoids confusing the Gerbil reader
+
+(def (qt-org-highlight-src-strings! ed pos line line-len)
+  "Highlight double-quoted string literals in a src block body line."
+  (let loop ((i 0) (in-str #f) (str-start 0))
+    (when (< i line-len)
+      (let ((ch (string-ref line i)))
+        (cond
+          ;; Enter string
+          ((and (not in-str) (char=? ch *dquote*))
+           (loop (+ i 1) #t i))
+          ;; Backslash escape inside string — skip next char
+          ((and in-str (char=? ch #\\) (< (+ i 1) line-len))
+           (loop (+ i 2) in-str str-start))
+          ;; Closing double-quote — style the whole string token
+          ((and in-str (char=? ch *dquote*))
+           (qt-org-style-range! ed (+ pos str-start) (+ (- i str-start) 1) QT_ORG_SRC_STR)
+           (loop (+ i 1) #f 0))
+          (else
+           (loop (+ i 1) in-str str-start)))))))
+
+(def (qt-org-highlight-src-line! ed pos line line-len lang)
+  "Apply language-appropriate highlighting to a src block body line."
+  ;; Default: dim block body color for the whole line
+  (qt-org-style-line! ed pos line-len QT_ORG_BLOCK_BODY)
+  (let ((trimmed (string-trim line)))
+    (cond
+      ;; Empty line — nothing more to do
+      ((= (string-length trimmed) 0) (void))
+      ;; Comment line — override with comment style
+      ((qt-org-src-comment? trimmed lang)
+       (qt-org-style-line! ed pos line-len QT_ORG_SRC_COMMENT))
+      ;; Non-comment: highlight string literals
+      (else
+       (qt-org-highlight-src-strings! ed pos line line-len)))))
+
+(def (qt-org-highlight-buffer! ed text)
+  "Full-buffer org-mode highlighting for Qt editors using sci-send.
+  State is 'normal, (cons 'block lang), or 'drawer.
+  lang = #f for non-src blocks; a symbol for #+BEGIN_SRC lang blocks."
+  (let* ((lines (string-split text #\newline))
+         (total (length lines)))
+    (let loop ((i 0) (pos 0) (state 'normal))
+      (when (< i total)
+        (let* ((line (list-ref lines i))
+               (line-len (string-length line))
+               (next-pos (+ pos line-len 1)))
+          (cond
+            ;; Block begin
+            ((and (eq? state 'normal) (org-block-begin? line))
+             (qt-org-style-line! ed pos line-len QT_ORG_BLOCK_DELIM)
+             ;; Extract language for src blocks; #f for all other block types
+             (let ((lang (qt-org-block-src-language line)))
+               (loop (+ i 1) next-pos (cons 'block lang))))
+            ;; Block end
+            ((and (pair? state) (eq? (car state) 'block) (org-block-end? line))
+             (qt-org-style-line! ed pos line-len QT_ORG_BLOCK_DELIM)
+             (loop (+ i 1) next-pos 'normal))
+            ;; Inside block
+            ((and (pair? state) (eq? (car state) 'block))
+             (let ((lang (cdr state)))
+               (if lang
+                 (qt-org-highlight-src-line! ed pos line line-len lang)
+                 (qt-org-style-line! ed pos line-len QT_ORG_BLOCK_BODY)))
+             (loop (+ i 1) next-pos state))
+            ;; Drawer begin
+            ((and (eq? state 'normal)
+                  (or (pregexp-match "^\\s*:PROPERTIES:" line)
+                      (pregexp-match "^\\s*:LOGBOOK:" line)))
+             (qt-org-style-line! ed pos line-len QT_ORG_PROPERTY)
+             (loop (+ i 1) next-pos 'drawer))
+            ;; Drawer end
+            ((and (eq? state 'drawer)
+                  (pregexp-match "^\\s*:END:" line))
+             (qt-org-style-line! ed pos line-len QT_ORG_PROPERTY)
+             (loop (+ i 1) next-pos 'normal))
+            ;; Inside drawer
+            ((eq? state 'drawer)
+             (qt-org-style-line! ed pos line-len QT_ORG_PROPERTY)
+             (loop (+ i 1) next-pos 'drawer))
+            ;; Normal state
+            (else
+             (qt-org-highlight-normal-line! ed pos line line-len)
+             (loop (+ i 1) next-pos 'normal))))))))
 
 (def (qt-remove-highlighting! buf)
   (let* ((doc (buffer-doc-pointer buf))

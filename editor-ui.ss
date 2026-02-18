@@ -659,7 +659,7 @@
          (text (editor-get-text ed))
          (pos (editor-get-current-pos ed))
          (lines (string-split text #\newline))
-         (cleaned (map (lambda (line) (string-trim-right line))
+         (cleaned (map (lambda (line) (string-trim-right line char-whitespace?))
                        lines))
          (new-text (string-join cleaned "\n")))
     (when (not (string=? text new-text))

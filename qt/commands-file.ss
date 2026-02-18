@@ -240,7 +240,7 @@
   (let* ((ed (current-qt-editor app))
          (text (qt-plain-text-edit-text ed))
          (lines (string-split text #\newline))
-         (cleaned (map string-trim-right lines))
+         (cleaned (map (lambda (line) (string-trim-right line char-whitespace?)) lines))
          (new-text (string-join cleaned "\n"))
          (pos (qt-plain-text-edit-cursor-position ed)))
     (qt-plain-text-edit-set-text! ed new-text)
@@ -562,7 +562,7 @@
          (text (qt-plain-text-edit-text ed))
          (lines (string-split text #\newline))
          ;; Remove trailing whitespace
-         (cleaned (map string-trim-right lines))
+         (cleaned (map (lambda (line) (string-trim-right line char-whitespace?)) lines))
          ;; Remove trailing blank lines
          (trimmed (let loop ((ls (reverse cleaned)))
                     (if (and (pair? ls) (string=? (car ls) ""))

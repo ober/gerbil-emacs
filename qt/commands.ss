@@ -539,7 +539,10 @@
               ;; Place cursor on the blank line inside the block
               (qt-plain-text-edit-set-cursor-position! ed
                 (+ line-start (string-length begin-line) 1
-                   (string-length indent))))
+                   (string-length indent)))
+              ;; Re-apply org highlighting (set-text clears all styles)
+              (qt-setup-org-styles! ed)
+              (qt-org-highlight-buffer! ed new-text))
             (echo-message! (app-state-echo app)
               (string-append "Expanded <" key " to #+BEGIN_" block-type))
             #t)))
@@ -709,14 +712,8 @@
                              new-text)))
           (sci-send/string ed SCI_REPLACETARGET replacement
                           (string-length replacement)))
-        ;; Re-apply org table styling (manual styling, no lexer for org)
-        (let loop ((i tbl-start))
-          (when (<= i tbl-end)
-            (let ((ls (sci-send ed SCI_POSITIONFROMLINE i 0))
-                  (le (sci-send ed SCI_GETLINEENDPOSITION i)))
-              (sci-send ed SCI_STARTSTYLING ls 0)
-              (sci-send ed SCI_SETSTYLING (- le ls) 58)) ; 58 = org table style
-            (loop (+ i 1))))
+        ;; Re-apply full org highlighting (not just table — headings etc. too)
+        (qt-org-highlight-buffer! ed (qt-plain-text-edit-text ed))
         ;; Move to next cell
         (let* ((next-col (+ cur-col 1))
                (next-line cur-line))
@@ -992,13 +989,16 @@
   (register-command! 'yank cmd-yank)
   ;; Mark/Region
   (register-command! 'set-mark cmd-set-mark)
+  (register-command! 'set-mark-command cmd-set-mark)  ; Emacs alias
   (register-command! 'kill-region cmd-kill-region)
   (register-command! 'copy-region cmd-copy-region)
+  (register-command! 'kill-ring-save cmd-copy-region)  ; Emacs alias
   ;; File
   (register-command! 'find-file cmd-find-file)
   (register-command! 'find-file-at-point cmd-find-file-at-point)
   (register-command! 'ffap cmd-find-file-at-point)
   (register-command! 'save-buffer cmd-save-buffer)
+  (register-command! 'save-file cmd-save-buffer)  ; alias
   (register-command! 'write-file cmd-write-file)
   (register-command! 'revert-buffer cmd-revert-buffer)
   ;; Buffer

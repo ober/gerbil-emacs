@@ -944,12 +944,21 @@
   (editor-style-set-background ed STYLE_LINENUMBER #x181818))
 
 (def (cmd-split-window app)
-  (let ((new-ed (frame-split! (app-state-frame app))))
-    (setup-new-editor-defaults! new-ed)))
+  (let* ((fr (app-state-frame app))
+         (cur-buf (edit-window-buffer (current-window fr)))
+         (new-ed (frame-split! fr)))
+    (setup-new-editor-defaults! new-ed)
+    ;; Re-apply highlighting: SCI_STYLECLEARALL in setup erased the styles
+    ;; that buffer-attach! applied inside frame-split!
+    (*post-buffer-attach-hook* new-ed cur-buf)))
 
 (def (cmd-split-window-right app)
-  (let ((new-ed (frame-split-right! (app-state-frame app))))
-    (setup-new-editor-defaults! new-ed)))
+  (let* ((fr (app-state-frame app))
+         (cur-buf (edit-window-buffer (current-window fr)))
+         (new-ed (frame-split-right! fr)))
+    (setup-new-editor-defaults! new-ed)
+    ;; Re-apply highlighting: SCI_STYLECLEARALL in setup erased the styles
+    (*post-buffer-attach-hook* new-ed cur-buf)))
 
 (def (cmd-other-window app)
   (frame-other-window! (app-state-frame app)))

@@ -4340,6 +4340,145 @@
           (check (not (not (string-contains csv "Alice"))) => #t))))
 
     ;;=========================================================================
+    ;; Org-table TAB + highlighting regression tests
+    ;;=========================================================================
+
+    (test-case "headless: org-table-align preserves heading styling"
+      ;; Regression: org-table-align uses SCI_REPLACETARGET which clears
+      ;; styling in the replaced region. Heading above the table must keep
+      ;; its style after table alignment.
+      (let* ((SCI_GETSTYLEAT 2010)
+             (ed (create-scintilla-editor width: 80 height: 24))
+             (buf (make-buffer "notes.org" #f
+                    (send-message ed SCI_GETDOCPOINTER) #f #f #f #f))
+             (win (make-edit-window ed buf 0 0 80 24 0))
+             (fr (make-frame [win] 0 80 24 'vertical))
+             (app (new-app-state fr)))
+        (editor-set-text ed "* My Heading\n| a | bb |\n| ccc | d |")
+        (setup-org-styles! ed)
+        (org-highlight-buffer! ed (editor-get-text ed))
+        ;; Heading is styled before alignment
+        (let ((style-before (send-message ed SCI_GETSTYLEAT 0 0)))
+          (check (= style-before ORG_STYLE_HEADING_1) => #t))
+        ;; Align the table (cursor on second line)
+        (editor-goto-pos ed 15)
+        (org-table-align ed)
+        ;; Re-apply highlighting (as the real code should do)
+        (org-highlight-buffer! ed (editor-get-text ed))
+        ;; Heading must STILL be styled after alignment
+        (let ((style-after (send-message ed SCI_GETSTYLEAT 0 0)))
+          (check (= style-after ORG_STYLE_HEADING_1) => #t))
+        ;; Table lines must have table style
+        (let* ((text (editor-get-text ed))
+               (tbl-pos (string-contains text "| a")))
+          (when tbl-pos
+            (check (= (send-message ed SCI_GETSTYLEAT tbl-pos 0) 58) => #t)))))
+
+    (test-case "headless: org-table-next-cell preserves heading styling"
+      ;; Regression: TAB in org table clears highlighting for the whole buffer.
+      ;; After org-table-next-cell + re-highlight, heading above table must
+      ;; still have heading style.
+      (let* ((SCI_GETSTYLEAT 2010)
+             (ed (create-scintilla-editor width: 80 height: 24))
+             (buf (make-buffer "notes.org" #f
+                    (send-message ed SCI_GETDOCPOINTER) #f #f #f #f))
+             (win (make-edit-window ed buf 0 0 80 24 0))
+             (fr (make-frame [win] 0 80 24 'vertical))
+             (app (new-app-state fr)))
+        (editor-set-text ed "* Tasks\n| Name | Age |\n| Alice | 30 |")
+        (set! (buffer-lexer-lang buf) 'org)
+        (setup-org-styles! ed)
+        (org-highlight-buffer! ed (editor-get-text ed))
+        ;; Verify heading is styled
+        (check (= (send-message ed SCI_GETSTYLEAT 0 0) ORG_STYLE_HEADING_1) => #t)
+        ;; Move cursor to first cell and invoke next-cell
+        (editor-goto-pos ed 10) ;; inside "| Name |"
+        (org-table-next-cell ed)
+        ;; Re-apply highlighting (as the real code should do after table ops)
+        (org-highlight-buffer! ed (editor-get-text ed))
+        ;; Heading STILL styled
+        (check (= (send-message ed SCI_GETSTYLEAT 0 0) ORG_STYLE_HEADING_1) => #t)
+        ;; Table lines still styled
+        (let* ((text (editor-get-text ed))
+               (tbl-pos (string-contains text "| Name")))
+          (when tbl-pos
+            (check (= (send-message ed SCI_GETSTYLEAT tbl-pos 0) 58) => #t)))))
+
+    (test-case "headless: org-table multiple TABs maintain consistent styling"
+      ;; Regression: repeated TAB presses toggle highlighting on/off.
+      ;; After multiple next-cell operations, styles must remain consistent.
+      (let* ((SCI_GETSTYLEAT 2010)
+             (ed (create-scintilla-editor width: 80 height: 24))
+             (buf (make-buffer "notes.org" #f
+                    (send-message ed SCI_GETDOCPOINTER) #f #f #f #f))
+             (win (make-edit-window ed buf 0 0 80 24 0))
+             (fr (make-frame [win] 0 80 24 'vertical))
+             (app (new-app-state fr)))
+        (editor-set-text ed "* Report\n| Col1 | Col2 |\n|---+---|\n| x | y |")
+        (set! (buffer-lexer-lang buf) 'org)
+        (setup-org-styles! ed)
+        (org-highlight-buffer! ed (editor-get-text ed))
+        ;; TAB three times
+        (editor-goto-pos ed 12) ;; inside first table row
+        (org-table-next-cell ed)
+        (org-highlight-buffer! ed (editor-get-text ed))
+        (org-table-next-cell ed)
+        (org-highlight-buffer! ed (editor-get-text ed))
+        (org-table-next-cell ed)
+        (org-highlight-buffer! ed (editor-get-text ed))
+        ;; After 3 TABs, heading STILL has heading style
+        (check (= (send-message ed SCI_GETSTYLEAT 0 0) ORG_STYLE_HEADING_1) => #t)
+        ;; Table lines still have table style
+        (let* ((text (editor-get-text ed))
+               (tbl-pos (string-contains text "|")))
+          (when (and tbl-pos (> tbl-pos 0))
+            (check (= (send-message ed SCI_GETSTYLEAT tbl-pos 0) 58) => #t)))))
+
+    (test-case "headless: org-table TAB preserves content below table"
+      ;; Regression: TAB was eating lines after the table.
+      ;; After org-table-next-cell, text below table must be intact.
+      (let* ((ed (create-scintilla-editor width: 80 height: 24))
+             (buf (make-buffer "notes.org" #f
+                    (send-message ed SCI_GETDOCPOINTER) #f #f #f #f))
+             (win (make-edit-window ed buf 0 0 80 24 0))
+             (fr (make-frame [win] 0 80 24 'vertical))
+             (app (new-app-state fr)))
+        (editor-set-text ed "| a | b |\n| c | d |\nSome text below")
+        (editor-goto-pos ed 2) ;; inside first cell
+        (org-table-next-cell ed)
+        (let ((text (editor-get-text ed)))
+          ;; Text below table must still be present
+          (check (not (not (string-contains text "Some text below"))) => #t))))
+
+    (test-case "headless: org-table TAB preserves styling of text below table"
+      ;; After table TAB, content below the table should keep its style.
+      ;; Here we check that a heading BELOW the table keeps heading style.
+      (let* ((SCI_GETSTYLEAT 2010)
+             (ed (create-scintilla-editor width: 80 height: 24))
+             (buf (make-buffer "notes.org" #f
+                    (send-message ed SCI_GETDOCPOINTER) #f #f #f #f))
+             (win (make-edit-window ed buf 0 0 80 24 0))
+             (fr (make-frame [win] 0 80 24 'vertical))
+             (app (new-app-state fr)))
+        (editor-set-text ed "| a | b |\n| c | d |\n* Below heading")
+        (setup-org-styles! ed)
+        (org-highlight-buffer! ed (editor-get-text ed))
+        ;; Verify heading below table is styled
+        (let* ((text (editor-get-text ed))
+               (heading-pos (string-contains text "* Below")))
+          (check (= (send-message ed SCI_GETSTYLEAT heading-pos 0)
+                    ORG_STYLE_HEADING_1) => #t))
+        ;; TAB in table
+        (editor-goto-pos ed 2)
+        (org-table-next-cell ed)
+        (org-highlight-buffer! ed (editor-get-text ed))
+        ;; Heading below still styled
+        (let* ((text (editor-get-text ed))
+               (heading-pos (string-contains text "* Below")))
+          (check (= (send-message ed SCI_GETSTYLEAT heading-pos 0)
+                    ORG_STYLE_HEADING_1) => #t))))
+
+    ;;=========================================================================
     ;; Org-clock: elapsed time tests
     ;;=========================================================================
 

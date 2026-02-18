@@ -70,11 +70,14 @@
   (register-command! 'yank cmd-yank)
   ;; Mark/Region
   (register-command! 'set-mark cmd-set-mark)
+  (register-command! 'set-mark-command cmd-set-mark)  ; Emacs alias
   (register-command! 'kill-region cmd-kill-region)
   (register-command! 'copy-region cmd-copy-region)
+  (register-command! 'kill-ring-save cmd-copy-region)  ; Emacs alias
   ;; File
   (register-command! 'find-file cmd-find-file)
   (register-command! 'save-buffer cmd-save-buffer)
+  (register-command! 'save-file cmd-save-buffer)  ; alias
   ;; Buffer
   (register-command! 'switch-buffer cmd-switch-buffer)
   (register-command! 'kill-buffer-cmd cmd-kill-buffer-cmd)
