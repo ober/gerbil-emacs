@@ -58,23 +58,43 @@
             (loop (cdr lst) (+ n 1) (cons (car lst) acc))))))))
 
 ;;;============================================================================
+;;; Face helpers for TUI echo area
+;;;============================================================================
+
+(def (face-to-rgb-int face-name attr)
+  "Convert a face's fg or bg attribute to RGB integer for tui-print!.
+   attr should be 'fg or 'bg. Returns 24-bit RGB integer like #xd8d8d8."
+  (let ((f (face-get face-name)))
+    (if f
+      (let ((color-str (if (eq? attr 'fg) (face-fg f) (face-bg f))))
+        (if color-str
+          (let-values (((r g b) (parse-hex-color color-str)))
+            (+ (<< r 16) (<< g 8) b))
+          ;; Default: light gray for fg, dark gray for bg
+          (if (eq? attr 'fg) #xd8d8d8 #x181818)))
+      ;; Face not found: use defaults
+      (if (eq? attr 'fg) #xd8d8d8 #x181818))))
+
+;;;============================================================================
 ;;; Draw the echo area (TUI-specific)
 ;;;============================================================================
 
 (def (echo-draw! echo row width)
   "Draw the echo area at the given row."
-  ;; Clear the row (dark background matching editor theme)
-  (tui-print! 0 row #xd8d8d8 #x181818 (make-string width #\space))
+  ;; Clear the row using default face background
+  (let ((bg (face-to-rgb-int 'default 'bg))
+        (fg (face-to-rgb-int 'default 'fg)))
+    (tui-print! 0 row fg bg (make-string width #\space)))
   ;; Draw message if any
   (let ((msg (echo-state-message echo)))
     (when msg
-      (let ((fg (if (echo-state-error? echo)
-                  #xff4040    ; bright red for errors
-                  #xd8d8d8)) ; light gray for normal messages
-            (display-msg (if (> (string-length msg) width)
-                           (substring msg 0 width)
-                           msg)))
-        (tui-print! 0 row fg #x181818 display-msg)))))
+      (let* ((face-name (if (echo-state-error? echo) 'error 'default))
+             (fg (face-to-rgb-int face-name 'fg))
+             (bg (face-to-rgb-int 'default 'bg))
+             (display-msg (if (> (string-length msg) width)
+                            (substring msg 0 width)
+                            msg)))
+        (tui-print! 0 row fg bg display-msg)))))
 
 ;;;============================================================================
 ;;; Read a string from the user in the echo area (TUI-specific)

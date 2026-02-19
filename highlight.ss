@@ -17,7 +17,8 @@
         :gerbil-scintilla/constants
         :gerbil-scintilla/scintilla
         :gerbil-scintilla/lexer
-        :gerbil-scintilla/style)
+        :gerbil-scintilla/style
+        :gemacs/core)  ;; For face-get, parse-hex-color, face-fg, face-bg, face-bold, face-italic
 
 ;;;============================================================================
 ;;; Scintilla Lisp lexer style IDs (from SciLexer.h)
@@ -148,11 +149,41 @@
     " "))
 
 ;;;============================================================================
-;;; Color theme (dark, based on gerbil-mode.el / base16)
+;;; Face-aware color helpers
+;;;============================================================================
+
+(def (face-fg-rgb face-name)
+  "Get RGB values (0-255) from a face's foreground color.
+   Returns (values r g b). Falls back to gray (#d8d8d8) if face not found."
+  (let ((f (face-get face-name)))
+    (if (and f (face-fg f))
+      (parse-hex-color (face-fg f))
+      (values #xd8 #xd8 #xd8))))
+
+(def (face-bg-rgb face-name)
+  "Get RGB values (0-255) from a face's background color.
+   Returns (values r g b). Falls back to dark gray (#181818) if face not found."
+  (let ((f (face-get face-name)))
+    (if (and f (face-bg f))
+      (parse-hex-color (face-bg f))
+      (values #x18 #x18 #x18))))
+
+(def (face-has-bold? face-name)
+  "Check if a face has the bold attribute."
+  (let ((f (face-get face-name)))
+    (and f (face-bold f))))
+
+(def (face-has-italic? face-name)
+  "Check if a face has the italic attribute."
+  (let ((f (face-get face-name)))
+    (and f (face-italic f))))
+
+;;;============================================================================
+;;; Syntax highlighting (face-aware, theme-independent)
 ;;;============================================================================
 
 (def (setup-gerbil-highlighting! ed)
-  "Configure Scintilla's Lisp lexer for Gerbil with dark theme colors."
+  "Configure Scintilla's Lisp lexer for Gerbil using face system colors."
   ;; Set the Lisp lexer (same as Scheme)
   (editor-set-lexer-language ed "lisp")
 
@@ -160,57 +191,83 @@
   (editor-set-keywords ed 0 *gerbil-keywords*)
   (editor-set-keywords ed 1 *gerbil-builtins*)
 
-  ;; Default style: light gray on dark
-  (editor-style-set-foreground ed SCE_LISP_DEFAULT (rgb->scintilla #xd8 #xd8 #xd8))
-  (editor-style-set-background ed SCE_LISP_DEFAULT (rgb->scintilla #x18 #x18 #x18))
+  ;; Default style: from 'default face
+  (let-values (((fg-r fg-g fg-b) (face-fg-rgb 'default))
+               ((bg-r bg-g bg-b) (face-bg-rgb 'default)))
+    (editor-style-set-foreground ed SCE_LISP_DEFAULT (rgb->scintilla fg-r fg-g fg-b))
+    (editor-style-set-background ed SCE_LISP_DEFAULT (rgb->scintilla bg-r bg-g bg-b)))
 
-  ;; Comments: gray, italic
-  (editor-style-set-foreground ed SCE_LISP_COMMENT (rgb->scintilla #x99 #x99 #x99))
-  (editor-style-set-background ed SCE_LISP_COMMENT (rgb->scintilla #x18 #x18 #x18))
-  (editor-style-set-italic ed SCE_LISP_COMMENT #t)
+  ;; Comments: from font-lock-comment-face
+  (let-values (((fg-r fg-g fg-b) (face-fg-rgb 'font-lock-comment-face))
+               ((bg-r bg-g bg-b) (face-bg-rgb 'default)))
+    (editor-style-set-foreground ed SCE_LISP_COMMENT (rgb->scintilla fg-r fg-g fg-b))
+    (editor-style-set-background ed SCE_LISP_COMMENT (rgb->scintilla bg-r bg-g bg-b))
+    (when (face-has-italic? 'font-lock-comment-face)
+      (editor-style-set-italic ed SCE_LISP_COMMENT #t)))
 
-  ;; Multi-line comments: gray, italic
-  (editor-style-set-foreground ed SCE_LISP_MULTI_COMMENT (rgb->scintilla #x99 #x99 #x99))
-  (editor-style-set-background ed SCE_LISP_MULTI_COMMENT (rgb->scintilla #x18 #x18 #x18))
-  (editor-style-set-italic ed SCE_LISP_MULTI_COMMENT #t)
+  ;; Multi-line comments: from font-lock-comment-face
+  (let-values (((fg-r fg-g fg-b) (face-fg-rgb 'font-lock-comment-face))
+               ((bg-r bg-g bg-b) (face-bg-rgb 'default)))
+    (editor-style-set-foreground ed SCE_LISP_MULTI_COMMENT (rgb->scintilla fg-r fg-g fg-b))
+    (editor-style-set-background ed SCE_LISP_MULTI_COMMENT (rgb->scintilla bg-r bg-g bg-b))
+    (when (face-has-italic? 'font-lock-comment-face)
+      (editor-style-set-italic ed SCE_LISP_MULTI_COMMENT #t)))
 
-  ;; Numbers: orange
-  (editor-style-set-foreground ed SCE_LISP_NUMBER (rgb->scintilla #xf9 #x91 #x57))
-  (editor-style-set-background ed SCE_LISP_NUMBER (rgb->scintilla #x18 #x18 #x18))
+  ;; Numbers: from font-lock-number-face
+  (let-values (((fg-r fg-g fg-b) (face-fg-rgb 'font-lock-number-face))
+               ((bg-r bg-g bg-b) (face-bg-rgb 'default)))
+    (editor-style-set-foreground ed SCE_LISP_NUMBER (rgb->scintilla fg-r fg-g fg-b))
+    (editor-style-set-background ed SCE_LISP_NUMBER (rgb->scintilla bg-r bg-g bg-b)))
 
-  ;; Keywords (set 0): purple, bold
-  (editor-style-set-foreground ed SCE_LISP_KEYWORD (rgb->scintilla #xcc #x99 #xcc))
-  (editor-style-set-background ed SCE_LISP_KEYWORD (rgb->scintilla #x18 #x18 #x18))
-  (editor-style-set-bold ed SCE_LISP_KEYWORD #t)
+  ;; Keywords (set 0): from font-lock-keyword-face
+  (let-values (((fg-r fg-g fg-b) (face-fg-rgb 'font-lock-keyword-face))
+               ((bg-r bg-g bg-b) (face-bg-rgb 'default)))
+    (editor-style-set-foreground ed SCE_LISP_KEYWORD (rgb->scintilla fg-r fg-g fg-b))
+    (editor-style-set-background ed SCE_LISP_KEYWORD (rgb->scintilla bg-r bg-g bg-b))
+    (when (face-has-bold? 'font-lock-keyword-face)
+      (editor-style-set-bold ed SCE_LISP_KEYWORD #t)))
 
-  ;; Keywords KW (set 1): cyan
-  (editor-style-set-foreground ed SCE_LISP_KEYWORD_KW (rgb->scintilla #x66 #xcc #xcc))
-  (editor-style-set-background ed SCE_LISP_KEYWORD_KW (rgb->scintilla #x18 #x18 #x18))
+  ;; Keywords KW (set 1): from font-lock-builtin-face
+  (let-values (((fg-r fg-g fg-b) (face-fg-rgb 'font-lock-builtin-face))
+               ((bg-r bg-g bg-b) (face-bg-rgb 'default)))
+    (editor-style-set-foreground ed SCE_LISP_KEYWORD_KW (rgb->scintilla fg-r fg-g fg-b))
+    (editor-style-set-background ed SCE_LISP_KEYWORD_KW (rgb->scintilla bg-r bg-g bg-b)))
 
-  ;; Symbols (quoted): green
-  (editor-style-set-foreground ed SCE_LISP_SYMBOL (rgb->scintilla #x99 #xcc #x99))
-  (editor-style-set-background ed SCE_LISP_SYMBOL (rgb->scintilla #x18 #x18 #x18))
+  ;; Symbols (quoted): from font-lock-string-face (green)
+  (let-values (((fg-r fg-g fg-b) (face-fg-rgb 'font-lock-string-face))
+               ((bg-r bg-g bg-b) (face-bg-rgb 'default)))
+    (editor-style-set-foreground ed SCE_LISP_SYMBOL (rgb->scintilla fg-r fg-g fg-b))
+    (editor-style-set-background ed SCE_LISP_SYMBOL (rgb->scintilla bg-r bg-g bg-b)))
 
-  ;; Strings: green
-  (editor-style-set-foreground ed SCE_LISP_STRING (rgb->scintilla #x99 #xcc #x99))
-  (editor-style-set-background ed SCE_LISP_STRING (rgb->scintilla #x18 #x18 #x18))
+  ;; Strings: from font-lock-string-face
+  (let-values (((fg-r fg-g fg-b) (face-fg-rgb 'font-lock-string-face))
+               ((bg-r bg-g bg-b) (face-bg-rgb 'default)))
+    (editor-style-set-foreground ed SCE_LISP_STRING (rgb->scintilla fg-r fg-g fg-b))
+    (editor-style-set-background ed SCE_LISP_STRING (rgb->scintilla bg-r bg-g bg-b)))
 
-  ;; String EOL (unterminated string): red background
-  (editor-style-set-foreground ed SCE_LISP_STRINGEOL (rgb->scintilla #xf2 #x77 #x7a))
-  (editor-style-set-background ed SCE_LISP_STRINGEOL (rgb->scintilla #x28 #x18 #x18))
-  (editor-style-set-eol-filled ed SCE_LISP_STRINGEOL #t)
+  ;; String EOL (unterminated string): from 'error face with red background
+  (let-values (((fg-r fg-g fg-b) (face-fg-rgb 'error)))
+    (editor-style-set-foreground ed SCE_LISP_STRINGEOL (rgb->scintilla fg-r fg-g fg-b))
+    (editor-style-set-background ed SCE_LISP_STRINGEOL (rgb->scintilla #x28 #x18 #x18))
+    (editor-style-set-eol-filled ed SCE_LISP_STRINGEOL #t))
 
-  ;; Identifiers: light gray (default)
-  (editor-style-set-foreground ed SCE_LISP_IDENTIFIER (rgb->scintilla #xd8 #xd8 #xd8))
-  (editor-style-set-background ed SCE_LISP_IDENTIFIER (rgb->scintilla #x18 #x18 #x18))
+  ;; Identifiers: from 'default face
+  (let-values (((fg-r fg-g fg-b) (face-fg-rgb 'default))
+               ((bg-r bg-g bg-b) (face-bg-rgb 'default)))
+    (editor-style-set-foreground ed SCE_LISP_IDENTIFIER (rgb->scintilla fg-r fg-g fg-b))
+    (editor-style-set-background ed SCE_LISP_IDENTIFIER (rgb->scintilla bg-r bg-g bg-b)))
 
-  ;; Operators (parens, brackets): slightly brighter
-  (editor-style-set-foreground ed SCE_LISP_OPERATOR (rgb->scintilla #xb8 #xb8 #xb8))
-  (editor-style-set-background ed SCE_LISP_OPERATOR (rgb->scintilla #x18 #x18 #x18))
+  ;; Operators (parens, brackets): from font-lock-operator-face
+  (let-values (((fg-r fg-g fg-b) (face-fg-rgb 'font-lock-operator-face))
+               ((bg-r bg-g bg-b) (face-bg-rgb 'default)))
+    (editor-style-set-foreground ed SCE_LISP_OPERATOR (rgb->scintilla fg-r fg-g fg-b))
+    (editor-style-set-background ed SCE_LISP_OPERATOR (rgb->scintilla bg-r bg-g bg-b)))
 
-  ;; Special (#t, #f, #\char, etc.): blue
-  (editor-style-set-foreground ed SCE_LISP_SPECIAL (rgb->scintilla #x66 #x99 #xcc))
-  (editor-style-set-background ed SCE_LISP_SPECIAL (rgb->scintilla #x18 #x18 #x18))
+  ;; Special (#t, #f, #\char, etc.): from font-lock-builtin-face
+  (let-values (((fg-r fg-g fg-b) (face-fg-rgb 'font-lock-builtin-face))
+               ((bg-r bg-g bg-b) (face-bg-rgb 'default)))
+    (editor-style-set-foreground ed SCE_LISP_SPECIAL (rgb->scintilla fg-r fg-g fg-b))
+    (editor-style-set-background ed SCE_LISP_SPECIAL (rgb->scintilla bg-r bg-g bg-b)))
 
   ;; Trigger initial colorization
   (editor-colourise ed 0 -1))

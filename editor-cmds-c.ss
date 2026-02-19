@@ -1478,26 +1478,24 @@
 ;; --- Theme/color ---
 
 (def (cmd-load-theme app)
-  "Load a color theme (dark is the default and current theme)."
-  (let ((theme (app-read-string app "Load theme (dark): ")))
-    (when (and theme (not (string-empty? theme)))
-      (let ((ed (current-editor app)))
-        (cond
-          ((or (string=? theme "dark") (string=? theme "default"))
-           (editor-style-set-foreground ed STYLE_DEFAULT #xd8d8d8)
-           (editor-style-set-background ed STYLE_DEFAULT #x181818)
-           (send-message ed SCI_STYLECLEARALL)
-           (editor-set-caret-foreground ed #xFFFFFF)
-           (echo-message! (app-state-echo app) "Dark theme applied"))
-          ((string=? theme "light")
-           (editor-style-set-foreground ed STYLE_DEFAULT #x000000)
-           (editor-style-set-background ed STYLE_DEFAULT #xFFFFFF)
-           (send-message ed SCI_STYLECLEARALL)
-           (editor-set-caret-foreground ed #x000000)
-           (echo-message! (app-state-echo app) "Light theme applied"))
-          (else
-           (echo-message! (app-state-echo app)
-                          (string-append "Unknown theme: " theme " (available: dark, light)"))))))))
+  "Load a color theme from the theme registry."
+  (let* ((available (map symbol->string (theme-names)))
+         (theme-str (app-read-string app
+                      (string-append "Load theme (" (car available) "): "))))
+    (when (and theme-str (not (string-empty? theme-str)))
+      (let ((theme-sym (string->symbol theme-str)))
+        (if (theme-get theme-sym)
+          (begin
+            ;; Load theme faces into *faces* registry
+            (load-theme! theme-sym)
+            ;; Re-apply highlighting to current buffer
+            (let ((ed (current-editor app)))
+              (setup-gerbil-highlighting! ed))
+            (echo-message! (app-state-echo app)
+              (string-append "Theme: " theme-str)))
+          (echo-message! (app-state-echo app)
+            (string-append "Unknown theme: " theme-str
+                          " (available: " (string-join available ", ") ")")))))))
 
 (def (cmd-customize-face app)
   "Show Scintilla style info for current position."

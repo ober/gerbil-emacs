@@ -16,6 +16,24 @@
         :gemacs/highlight)
 
 ;;;============================================================================
+;;; Face helpers for TUI modeline
+;;;============================================================================
+
+(def (face-to-rgb-int face-name attr)
+  "Convert a face's fg or bg attribute to RGB integer for tui-print!.
+   attr should be 'fg or 'bg. Returns 24-bit RGB integer like #xd8d8d8."
+  (let ((f (face-get face-name)))
+    (if f
+      (let ((color-str (if (eq? attr 'fg) (face-fg f) (face-bg f))))
+        (if color-str
+          (let-values (((r g b) (parse-hex-color color-str)))
+            (+ (<< r 16) (<< g 8) b))
+          ;; Default: light gray for fg, dark gray for bg
+          (if (eq? attr 'fg) #xd8d8d8 #x282828)))
+      ;; Face not found: use defaults
+      (if (eq? attr 'fg) #xd8d8d8 #x282828))))
+
+;;;============================================================================
 ;;; Git branch detection (cached)
 ;;;============================================================================
 
@@ -163,7 +181,8 @@
                      (substring combined 0 w)
                      (string-append combined
                                     (make-string (- w (string-length combined)) #\-))))))
-         ;; Active window: dark on light; inactive: dimmer
-         (fg (if is-current #x000000 #x808080))
-         (bg (if is-current #xd8d8d8 #x282828)))
+         ;; Active window: modeline face; inactive: modeline-inactive face
+         (face-name (if is-current 'modeline 'modeline-inactive))
+         (fg (face-to-rgb-int face-name 'fg))
+         (bg (face-to-rgb-int face-name 'bg)))
     (tui-print! 0 y fg bg info)))

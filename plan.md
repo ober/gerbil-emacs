@@ -170,13 +170,13 @@ Updated `apply-theme!` in `qt/commands-core.ss` to:
 6. TODO: Update tab colors and window borders
 7. TODO: Update terminal ANSI colors (if theme defines them)
 
-#### 2.4 Make `apply-theme!` work for TUI
+#### 2.4 Make `apply-theme!` work for TUI ✅ COMPLETE
 
-Update `editor-cmds-c.ss:cmd-load-theme` to:
-1. Set STYLE_DEFAULT from `default` face
-2. Re-apply syntax highlighting for current buffer
-3. Update modeline colors
-4. Update echo area colors
+Updated `editor-cmds-c.ss:cmd-load-theme` to:
+1. ✅ Load theme faces from theme registry
+2. ✅ Re-apply syntax highlighting for current buffer
+3. ✅ Modeline now uses face system (see modeline.ss)
+4. ✅ Echo area now uses face system (see echo.ss)
 
 #### 2.5 Wire syntax highlighting to face system (Qt) ✅ COMPLETE
 
@@ -199,11 +199,23 @@ Modified `qt/highlight.ss`:
 - ✅ Updated `qt-setup-org-styles!` to read from org-mode faces (`org-heading-1` through `org-heading-8`, `org-todo`, `org-done`, `org-link`, `org-code`, `org-verbatim`, `org-table`, etc.)
 - ✅ Initialize face system at startup (`qt/app.ss:qt-main` calls `define-standard-faces!` and `load-theme!`)
 
-#### 2.6 Wire syntax highlighting to face system (TUI)
+#### 2.6 Wire syntax highlighting to face system (TUI) ✅ COMPLETE
 
-Modify `highlight.ss`:
-- Replace hardcoded Scintilla style colors with face lookups
-- All `editor-style-set-*` calls use faces
+Modified `highlight.ss`:
+- ✅ Added face helper functions: `face-fg-rgb`, `face-bg-rgb`, `face-has-bold?`, `face-has-italic?`
+- ✅ Replaced hardcoded Scintilla style colors with face lookups
+- ✅ All `editor-style-set-*` calls now use faces (`default`, `font-lock-*`, `org-*`)
+- ✅ Updated `setup-gerbil-highlighting!` to be face-aware
+
+Modified `modeline.ss`:
+- ✅ Added `face-to-rgb-int` helper to convert face colors to RGB integers for `tui-print!`
+- ✅ Modeline now reads from `modeline` and `modeline-inactive` faces
+
+Modified `echo.ss`:
+- ✅ Added `face-to-rgb-int` helper
+- ✅ Echo area now reads from `default` and `error` faces
+
+**Note**: `terminal.ss` ANSI color updates are optional and deferred (terminal colors are less critical than editor/UI)
 
 #### 2.7 Persist theme choice
 
@@ -517,8 +529,8 @@ New command: `M-x describe-theme` — opens a buffer showing all face definition
 2. **Phase 3.1-3.3** (font state + wiring) — ✅ COMPLETE - all Qt components use dynamic fonts
 3. **Phase 2.1-2.2** (theme structure + built-in themes) — ✅ COMPLETE - 10 comprehensive themes in themes.ss
 4. **Phase 2.3 & 2.5** (Qt face-aware highlighting) — ✅ COMPLETE - Qt syntax highlighting uses face system
-5. **Phase 2.4 & 2.6** (TUI face-aware highlighting) — NEXT - wire TUI highlighting to faces
-6. **Phase 3.4-3.6** (font commands + persistence) — depends on 3.1
+5. **Phase 2.4 & 2.6** (TUI face-aware highlighting) — ✅ COMPLETE - TUI syntax highlighting, modeline, echo use face system
+6. **Phase 3.4-3.6** (font commands + persistence) — NEXT - enhance font size commands to be global, add set-frame-font
 7. **Phase 2.7** (theme persistence) — depends on 2.3
 8. **Phase 4** (customize-face) — depends on Phases 1-2
 9. **Phase 5** (init file API) — depends on Phases 1-3
