@@ -102,17 +102,17 @@
 ;;;============================================================================
 
 (def (lsp-read-message port)
-  "Read one LSP message from port. Returns parsed JSON hash, or #f on EOF/error."
+  "Read one LSP message from port. Returns parsed JSON hash, or #f on EOF/error.
+   Uses read-string (not read-subu8vector) to avoid Gambit char/byte buffer conflict
+   when headers are read with read-line (character I/O)."
   (let ((content-length (lsp-read-headers port)))
     (if content-length
-      (let* ((buf (make-u8vector content-length 0))
-             (n (read-subu8vector buf 0 content-length port)))
-        (if (= n content-length)
-          (let ((body (bytes->string buf)))
-            (with-catch
-              (lambda (e) #f)
-              (lambda ()
-                (string->json-object body))))
+      (let ((body (read-string content-length port)))
+        (if (and (string? body) (= (string-length body) content-length))
+          (with-catch
+            (lambda (e) #f)
+            (lambda ()
+              (string->json-object body)))
           #f))
       #f)))
 

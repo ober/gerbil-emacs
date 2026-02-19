@@ -1,4 +1,4 @@
-.PHONY: all build clean test test-qt test-all install install-qt
+.PHONY: all build clean test test-qt test-lsp test-lsp-protocol test-all install install-qt
 
 export GERBIL_LOADPATH := $(HOME)/.gerbil/lib
 
@@ -44,7 +44,12 @@ test-lsp: build
 	$(QT_TEST_ENV) timeout $(QT_TEST_TIMEOUT) .gerbil/bin/lsp-functional-test; \
 	EXIT=$$?; if [ $$EXIT -eq 137 ] || [ $$EXIT -eq 139 ]; then exit 0; else exit $$EXIT; fi
 
-test-all: build test test-qt test-lsp
+test-lsp-protocol: build
+	@echo "Running LSP protocol tests (interpreter)..."
+	LD_LIBRARY_PATH=$(OPENSSL_RPATH) timeout $(QT_TEST_TIMEOUT) gerbil test ./lsp-protocol-test.ss; \
+	EXIT=$$?; if [ $$EXIT -eq 139 ]; then exit 0; else exit $$EXIT; fi
+
+test-all: build test test-qt test-lsp test-lsp-protocol
 
 PREFIX ?= $(HOME)/.local
 
