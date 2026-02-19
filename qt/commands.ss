@@ -1768,6 +1768,8 @@
   (register-command! 'display-line-numbers-relative cmd-display-line-numbers-relative)
   (register-command! 'font-lock-mode cmd-font-lock-mode)
   (register-command! 'customize-face cmd-customize-face)
+  (register-command! 'set-frame-font cmd-set-frame-font)
+  (register-command! 'set-font-size cmd-set-font-size)
   (register-command! 'list-colors cmd-list-colors)
   (register-command! 'load-theme cmd-load-theme)
   (register-command! 'fold-level cmd-fold-level)

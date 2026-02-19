@@ -35,28 +35,41 @@
 ;;;============================================================================
 
 ;; --- Font size ---
-(def *font-size* 10)
+;; Note: Font size state is now in face.ss (*default-font-size*)
+
+(def (apply-font-size-to-all-editors! app)
+  "Apply the current global font size to all open editors."
+  (let ((fr (app-state-frame app)))
+    (for-each
+      (lambda (win)
+        (let ((ed (qt-edit-window-editor win)))
+          (sci-send ed SCI_STYLESETSIZE STYLE_DEFAULT *default-font-size*)
+          (sci-send ed SCI_STYLECLEARALL)))
+      (qt-frame-windows fr)))
+  ;; Update Qt stylesheet so chrome widgets match
+  (when *qt-app-ptr*
+    (qt-app-set-style-sheet! *qt-app-ptr* (theme-stylesheet))))
 
 (def (cmd-increase-font-size app)
-  "Increase editor font size."
-  (set! *font-size* (min 48 (+ *font-size* 1)))
-  (let ((ed (current-qt-editor app)))
-    (qt-widget-set-font-size! ed *font-size*)
-    (echo-message! (app-state-echo app) (string-append "Font size: " (number->string *font-size*)))))
+  "Increase editor font size globally (all editors, all windows)."
+  (set! *default-font-size* (min 48 (+ *default-font-size* 1)))
+  (apply-font-size-to-all-editors! app)
+  (theme-settings-save! *current-theme* *default-font-family* *default-font-size*)
+  (echo-message! (app-state-echo app) (string-append "Font size: " (number->string *default-font-size*))))
 
 (def (cmd-decrease-font-size app)
-  "Decrease editor font size."
-  (set! *font-size* (max 6 (- *font-size* 1)))
-  (let ((ed (current-qt-editor app)))
-    (qt-widget-set-font-size! ed *font-size*)
-    (echo-message! (app-state-echo app) (string-append "Font size: " (number->string *font-size*)))))
+  "Decrease editor font size globally (all editors, all windows)."
+  (set! *default-font-size* (max 6 (- *default-font-size* 1)))
+  (apply-font-size-to-all-editors! app)
+  (theme-settings-save! *current-theme* *default-font-family* *default-font-size*)
+  (echo-message! (app-state-echo app) (string-append "Font size: " (number->string *default-font-size*))))
 
 (def (cmd-reset-font-size app)
-  "Reset font size to default."
-  (set! *font-size* 10)
-  (let ((ed (current-qt-editor app)))
-    (qt-widget-set-font-size! ed *font-size*)
-    (echo-message! (app-state-echo app) "Font size: 10 (default)")))
+  "Reset font size to default (11pt)."
+  (set! *default-font-size* 11)
+  (apply-font-size-to-all-editors! app)
+  (theme-settings-save! *current-theme* *default-font-family* *default-font-size*)
+  (echo-message! (app-state-echo app) "Font size: 11 (default)"))
 
 ;; --- Navigation ---
 (def (cmd-goto-first-non-blank app)

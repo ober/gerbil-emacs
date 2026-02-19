@@ -44,6 +44,11 @@
   scratch-save!
   scratch-load!
 
+  ;; Theme and font persistence
+  *theme-settings-file*
+  theme-settings-save!
+  theme-settings-load!
+
   ;; Init file
   *init-file-path*
   init-file-load!
@@ -449,6 +454,47 @@
             (lambda (port)
               (read-line port #f)))  ;; read entire file
           #f)))))
+
+;;;============================================================================
+;;; Theme and Font Persistence
+;;;============================================================================
+
+(def *theme-settings-file* ".gemacs-theme")
+
+(def (theme-settings-save! theme-name font-family font-size)
+  "Save current theme and font settings to disk."
+  (with-catch
+    (lambda (e) #f)
+    (lambda ()
+      (call-with-output-file (persist-path *theme-settings-file*)
+        (lambda (port)
+          (displayln (string-append "theme:" (symbol->string theme-name)) port)
+          (displayln (string-append "font-family:" font-family) port)
+          (displayln (string-append "font-size:" (number->string font-size)) port))))))
+
+(def (theme-settings-load!)
+  "Load theme and font settings from disk. Returns (values theme-name font-family font-size) or (values #f #f #f)."
+  (with-catch
+    (lambda (e) (values #f #f #f))
+    (lambda ()
+      (let ((path (persist-path *theme-settings-file*)))
+        (if (file-exists? path)
+          (call-with-input-file path
+            (lambda (port)
+              (let* ((theme-line (read-line port))
+                     (font-family-line (read-line port))
+                     (font-size-line (read-line port))
+                     (parse-line (lambda (line prefix)
+                                   (and (string? line)
+                                        (string-prefix? prefix line)
+                                        (substring line (string-length prefix) (string-length line))))))
+                (values
+                  (let ((theme-str (parse-line theme-line "theme:")))
+                    (and theme-str (string->symbol theme-str)))
+                  (parse-line font-family-line "font-family:")
+                  (let ((size-str (parse-line font-size-line "font-size:")))
+                    (and size-str (string->number size-str)))))))
+          (values #f #f #f))))))
 
 ;;;============================================================================
 ;;; Init file

@@ -217,11 +217,12 @@ Modified `echo.ss`:
 
 **Note**: `terminal.ss` ANSI color updates are optional and deferred (terminal colors are less critical than editor/UI)
 
-#### 2.7 Persist theme choice
+#### 2.7 Persist theme choice ✅ COMPLETE
 
-- Save current theme name to `~/.gemacs-settings` (or add to `.gemacs-init`)
-- Load theme at startup before opening buffers
-- `apply-theme!` writes the choice to disk
+- ✅ Save current theme name to `~/.gemacs-theme` (persisted with font settings)
+- ✅ Load theme at startup before opening buffers (qt/app.ss)
+- ✅ `cmd-load-theme` writes the choice to disk (both Qt and TUI)
+- ✅ Theme persistence uses same file as font persistence for consistency
 
 **Files modified**:
 - `qt/commands-core.ss` — rewrite theme system
@@ -287,25 +288,23 @@ Also updated hardcoded styles in:
 - `qt/app.ss:142-144` (tab bar button styles, with font size -2pt) ✅
 - `qt/app.ss:203` (echo label initial style) ✅
 
-#### 3.4 Font size commands — fix existing stubs
+#### 3.4 Font size commands — fix existing stubs ✅ COMPLETE
 
-**File**: `qt/commands-shell.ss:40-59` — already implemented, but only updates current editor widget.
+**File**: `qt/commands-shell.ss:40-59` — Enhanced to be comprehensive:
+1. ✅ Update `*default-font-size*` (use global from face.ss, removed local `*font-size*`)
+2. ✅ Apply to ALL open editors via `apply-font-size-to-all-editors!`
+3. ✅ Update Scintilla STYLE_DEFAULT size + SCI_STYLECLEARALL on each editor
+4. ✅ Update Qt stylesheet via `qt-app-set-style-sheet!`
+5. ✅ Persist to `~/.gemacs-theme` via `theme-settings-save!`
 
-Enhance to:
-1. Update `*default-font-size*`
-2. Apply to ALL open editors (all windows, not just current)
-3. Update Scintilla STYLE_DEFAULT size on each editor
-4. Update Qt stylesheet (so chrome widgets match)
-5. Persist to settings file
+**File**: `editor-cmds-b.ss:1119-1127` — TUI font size stubs already correct:
+- ✅ TUI commands delegate to `cmd-zoom-in`, `cmd-zoom-out`, `cmd-zoom-reset`
+- ✅ Zoom uses Scintilla SCI_ZOOMIN/SCI_ZOOMOUT (view multiplier, not base font size)
+- ✅ This is the correct approach for TUI (terminal emulator controls actual font rendering)
 
-**File**: `editor-cmds-b.ss:1119-1127` — implement TUI font size stubs:
-- TUI terminal font size is controlled by the terminal emulator, not the application
-- These should echo a message explaining this: "Font size is controlled by your terminal emulator"
-- Or, if using Scintilla TUI widget, use SCI_ZOOMIN/SCI_ZOOMOUT
+#### 3.5 New commands: `set-frame-font` and `set-font-size` ✅ COMPLETE
 
-#### 3.5 New commands: `set-frame-font` and `set-font-size`
-
-**File**: `qt/commands-config.ss` — add new commands
+**File**: `qt/commands-config.ss` — Added new commands:
 
 ```
 M-x set-frame-font    → prompts for font family with completion from system fonts
@@ -313,45 +312,46 @@ M-x set-font-size     → prompts for size (number)
 ```
 
 Implementation:
-- `cmd-set-frame-font`: Prompt with completion from available monospace fonts
-  - Use `fc-list :spacing=mono family` to enumerate available monospace fonts (Linux/macOS)
-  - Set `*default-font-family*`
-  - Apply to all editors via `SCI_STYLESETFONT` + `SCI_STYLECLEARALL`
-  - Update Qt stylesheet
-  - Persist choice
-- `cmd-set-font-size`: Prompt for size number
-  - Validate range (6-72)
-  - Apply to all editors
-  - Update Qt stylesheet
-  - Persist choice
+- ✅ `cmd-set-frame-font`: Prompt with completion from available monospace fonts
+  - ✅ `get-monospace-fonts` uses `fc-list :spacing=mono family` to enumerate (Linux/macOS)
+  - ✅ Fallback to common fonts if fc-list fails
+  - ✅ Set `*default-font-family*`
+  - ✅ Apply to all editors via `apply-font-to-all-editors!` (SCI_STYLESETFONT + SCI_STYLECLEARALL)
+  - ✅ Update Qt stylesheet via `qt-app-set-style-sheet!`
+  - ✅ Persist via `theme-settings-save!`
+- ✅ `cmd-set-font-size`: Prompt for size number
+  - ✅ Validate range (6-72)
+  - ✅ Apply to all editors via `apply-font-to-all-editors!`
+  - ✅ Update Qt stylesheet
+  - ✅ Persist via `theme-settings-save!`
 
-Register in `qt/commands.ss` (facade):
-```scheme
-(register-command! 'set-frame-font cmd-set-frame-font)
-(register-command! 'set-font-size cmd-set-font-size)
+Registered in `qt/commands.ss`:
+- ✅ `(register-command! 'set-frame-font cmd-set-frame-font)`
+- ✅ `(register-command! 'set-font-size cmd-set-font-size)`
+
+#### 3.6 Font persistence ✅ COMPLETE
+
+Font and theme settings persisted in `~/.gemacs-theme`:
+```
+theme:dark
+font-family:JetBrains Mono
+font-size:12
 ```
 
-#### 3.6 Font persistence
-
-Add to `~/.gemacs-settings` or persist alongside theme:
-```
-font-family: JetBrains Mono
-font-size: 12
-```
-
-Load at startup before creating editor widgets.
+✅ Load at startup before creating editor widgets (qt/app.ss:172-178)
 
 **Files modified**:
 - `face.ss` — font state variables ✅
 - `qt/window.ss` — use font variables in editor setup ✅
 - `qt/commands-core.ss` — use font variables in stylesheet ✅
 - `qt/echo.ss` — use font variables in echo/minibuffer styles ✅
-- `qt/app.ss` — use font variables in tab bar styles ✅
-- `qt/commands-shell.ss` — enhance font size commands (TODO)
-- `qt/commands-config.ss` — new set-frame-font, set-font-size commands (TODO)
-- `qt/commands.ss` — register new commands (TODO)
-- `editor-cmds-b.ss` — implement/fix TUI font stubs (TODO)
-- `persist.ss` — save/load font preferences (TODO)
+- `qt/app.ss` — use font variables in tab bar styles ✅ + load settings at startup ✅
+- `qt/commands-shell.ss` — enhance font size commands ✅
+- `qt/commands-config.ss` — new set-frame-font, set-font-size commands ✅
+- `qt/commands.ss` — register new commands ✅
+- `editor-cmds-b.ss` — TUI font stubs already correct (use zoom) ✅
+- `persist.ss` — save/load theme+font preferences ✅
+- `editor-cmds-c.ss` — TUI cmd-load-theme persists settings ✅
 
 ---
 
@@ -530,9 +530,9 @@ New command: `M-x describe-theme` — opens a buffer showing all face definition
 3. **Phase 2.1-2.2** (theme structure + built-in themes) — ✅ COMPLETE - 10 comprehensive themes in themes.ss
 4. **Phase 2.3 & 2.5** (Qt face-aware highlighting) — ✅ COMPLETE - Qt syntax highlighting uses face system
 5. **Phase 2.4 & 2.6** (TUI face-aware highlighting) — ✅ COMPLETE - TUI syntax highlighting, modeline, echo use face system
-6. **Phase 3.4-3.6** (font commands + persistence) — NEXT - enhance font size commands to be global, add set-frame-font
-7. **Phase 2.7** (theme persistence) — depends on 2.3
-8. **Phase 4** (customize-face) — depends on Phases 1-2
+6. **Phase 3.4-3.6** (font commands + persistence) — ✅ COMPLETE - global font commands, set-frame-font, set-font-size, persistence
+7. **Phase 2.7** (theme persistence) — ✅ COMPLETE - theme saved/loaded from ~/.gemacs-theme
+8. **Phase 4** (customize-face) — NEXT - interactive face customization command
 9. **Phase 5** (init file API) — depends on Phases 1-3
 10. **Phase 6** (user theme files) — depends on Phase 5
 

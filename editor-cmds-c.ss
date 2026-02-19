@@ -1491,6 +1491,8 @@
             ;; Re-apply highlighting to current buffer
             (let ((ed (current-editor app)))
               (setup-gerbil-highlighting! ed))
+            ;; Persist theme choice
+            (theme-settings-save! *current-theme* *default-font-family* *default-font-size*)
             (echo-message! (app-state-echo app)
               (string-append "Theme: " theme-str)))
           (echo-message! (app-state-echo app)

@@ -232,6 +232,90 @@
   "Customize face."
   (echo-message! (app-state-echo app) "Face customization not available in Qt backend"))
 
+(def (get-monospace-fonts)
+  "Get list of available monospace fonts from the system.
+   Returns a list of font family names."
+  (with-catch
+    (lambda (e)
+      ;; Fallback: common monospace fonts
+      '("Monospace" "Courier" "Monaco" "Consolas" "DejaVu Sans Mono"
+        "Liberation Mono" "Ubuntu Mono" "Fira Code" "JetBrains Mono"
+        "Source Code Pro" "Hack" "Noto Mono" "Inconsolata"))
+    (lambda ()
+      ;; Try fc-list to get actual system fonts
+      (let* ((proc (open-process
+                     (list path: "/usr/bin/fc-list"
+                           arguments: [":spacing=mono" "family"]
+                           stdin-redirection: #f
+                           stdout-redirection: #t
+                           stderr-redirection: #f)))
+             (lines (let loop ((acc []))
+                      (let ((line (read-line proc)))
+                        (if (eof-object? line)
+                          acc
+                          (loop (cons line acc)))))))
+        (process-status proc)
+        (close-port proc)
+        ;; Parse fc-list output: "Family Name,Variant:style=..."
+        ;; Take the first family name before comma
+        (let ((fonts (filter-map
+                       (lambda (line)
+                         (let ((idx (string-index line #\,)))
+                           (if idx
+                             (substring line 0 idx)
+                             line)))
+                       lines)))
+          (if (null? fonts)
+            ;; Fallback if fc-list returned nothing
+            '("Monospace" "Courier" "Monaco")
+            (sort fonts string<?)))))))
+
+(def (apply-font-to-all-editors! app)
+  "Apply the current global font family and size to all open editors."
+  (let ((fr (app-state-frame app)))
+    (for-each
+      (lambda (win)
+        (let ((ed (qt-edit-window-editor win)))
+          (sci-send/string ed SCI_STYLESETFONT *default-font-family* STYLE_DEFAULT)
+          (sci-send ed SCI_STYLESETSIZE STYLE_DEFAULT *default-font-size*)
+          (sci-send ed SCI_STYLECLEARALL)))
+      (qt-frame-windows fr)))
+  ;; Update Qt stylesheet so chrome widgets match
+  (when *qt-app-ptr*
+    (qt-app-set-style-sheet! *qt-app-ptr* (theme-stylesheet))))
+
+(def (cmd-set-frame-font app)
+  "Set the default font family for all editors.
+   Prompts with completion from available monospace fonts."
+  (let* ((fonts (get-monospace-fonts))
+         (input (app-read-string app "Font family: "
+                  completion: (lambda (prefix)
+                                (filter (lambda (f)
+                                          (string-prefix? prefix f))
+                                        fonts)))))
+    (when (and input (not (string-empty? input)))
+      (set! *default-font-family* input)
+      (apply-font-to-all-editors! app)
+      (theme-settings-save! *current-theme* *default-font-family* *default-font-size*)
+      (echo-message! (app-state-echo app)
+        (string-append "Font: " input)))))
+
+(def (cmd-set-font-size app)
+  "Set the default font size for all editors.
+   Prompts for a numeric size (6-72)."
+  (let ((input (app-read-string app "Font size (6-72): ")))
+    (when (and input (not (string-empty? input)))
+      (let ((size (string->number input)))
+        (if (and size (>= size 6) (<= size 72))
+          (begin
+            (set! *default-font-size* size)
+            (apply-font-to-all-editors! app)
+            (theme-settings-save! *current-theme* *default-font-family* *default-font-size*)
+            (echo-message! (app-state-echo app)
+              (string-append "Font size: " (number->string size))))
+          (echo-message! (app-state-echo app)
+            "Invalid font size (must be 6-72)"))))))
+
 (def (cmd-list-colors app)
   "List available colors."
   (echo-message! (app-state-echo app) "Color list not available"))
@@ -247,6 +331,7 @@
         (if (theme-get sym)
           (begin
             (apply-theme! app theme-name: sym)
+            (theme-settings-save! *current-theme* *default-font-family* *default-font-size*)
             (echo-message! (app-state-echo app)
               (string-append "Theme: " input)))
           (echo-error! (app-state-echo app)

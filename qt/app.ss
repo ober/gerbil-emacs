@@ -166,7 +166,18 @@
   (with-qt-app qt-app
     ;; Initialize face system with standard faces
     (define-standard-faces!)
-    ;; Load default theme (populates *faces* registry from theme definition)
+    ;; Load saved theme and font settings from ~/.gemacs-theme
+    (let-values (((saved-theme saved-font-family saved-font-size) (theme-settings-load!)))
+      ;; Apply saved theme if valid
+      (when (and saved-theme (theme-get saved-theme))
+        (set! *current-theme* saved-theme))
+      ;; Apply saved font family if valid
+      (when (and saved-font-family (not (string-empty? saved-font-family)))
+        (set! *default-font-family* saved-font-family))
+      ;; Apply saved font size if valid
+      (when (and saved-font-size (>= saved-font-size 6) (<= saved-font-size 72))
+        (set! *default-font-size* saved-font-size)))
+    ;; Load theme (populates *faces* registry from theme definition)
     (load-theme! *current-theme*)
     ;; Apply theme stylesheet
     (qt-app-set-style-sheet! qt-app (theme-stylesheet))
