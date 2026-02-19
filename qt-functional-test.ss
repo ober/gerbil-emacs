@@ -33,6 +33,7 @@
                  execute-command!
                  find-command
                  make-buffer
+                 buffer-name
                  buffer-mark
                  app-state-frame
                  app-state-last-command
@@ -1435,6 +1436,514 @@
             (fail! "complex: children types" (list left right) "both vertical nodes")))))))
 
 ;;;============================================================================
+;;; Group 11: Comprehensive window management real-world scenarios
+;;;
+;;; These tests exercise multi-step workflows that users actually do,
+;;; catching bugs that simple unit tests miss (e.g. "split right, jump to
+;;; other buffer, split vertically → splits on wrong side").
+;;;============================================================================
+
+;;; Helper: get buffer name for window at IDX in frame FR.
+(def (win-buf-name fr idx)
+  (buffer-name (qt-edit-window-buffer (list-ref (qt-frame-windows fr) idx))))
+
+;;; Helper: get editor for window at IDX in frame FR.
+(def (win-editor fr idx)
+  (qt-edit-window-editor (list-ref (qt-frame-windows fr) idx)))
+
+;;; Helper: set text in window at IDX.
+(def (set-win-text! fr idx text)
+  (let ((ed (win-editor fr idx)))
+    (qt-plain-text-edit-set-text! ed text)))
+
+;;; Helper: get text from window at IDX.
+(def (get-win-text fr idx)
+  (qt-plain-text-edit-text (win-editor fr idx)))
+
+;;; Helper: verify window count equals expected.
+(def (check-win-count! label fr expected)
+  (let ((actual (length (qt-frame-windows fr))))
+    (if (= actual expected)
+      (pass! (string-append label ": " (number->string expected) " windows"))
+      (fail! (string-append label ": window count") actual expected))))
+
+;;; Helper: verify current-idx equals expected.
+(def (check-current-idx! label fr expected)
+  (let ((actual (qt-frame-current-idx fr)))
+    (if (= actual expected)
+      (pass! (string-append label ": current-idx=" (number->string expected)))
+      (fail! (string-append label ": current-idx") actual expected))))
+
+;;; Helper: verify tree orientation at root.
+(def (check-root-orientation! label fr expected-orient)
+  (let ((root (qt-frame-root fr)))
+    (if (and (split-node? root) (= (split-node-orientation root) expected-orient))
+      (pass! label)
+      (fail! label
+             (if (split-node? root) (split-node-orientation root) "not-split-node")
+             expected-orient))))
+
+(def (run-group-11-window-scenarios)
+  (displayln "\n=== Group 11: Comprehensive window management scenarios ===")
+
+  ;; ══════════════════════════════════════════════════════════════════════════
+  ;; Scenario 1: THE REPORTED BUG — hsplit, jump to other, vsplit
+  ;; Expected: (A over A2) | B   but bug gave A | (B over B2)
+  ;; ══════════════════════════════════════════════════════════════════════════
+  (displayln "Scenario 1: hsplit → other-window(back) → vsplit (the reported bug)")
+  (let-values (((fr app) (make-qt-split-test-frame!)))
+    ;; Step 1: horizontal split → A | B, cursor on B (idx=1)
+    (execute-command! app 'split-window-right)
+    (check-win-count! "S1.1" fr 2)
+    (check-current-idx! "S1.1" fr 1)
+    ;; Step 2: other-window back to A (idx=0)
+    (execute-command! app 'other-window)
+    (check-current-idx! "S1.2" fr 0)
+    ;; Step 3: vsplit in A → (A1 over A2) | B, cursor on A2 (idx=1)
+    (execute-command! app 'split-window-below)
+    (check-win-count! "S1.3" fr 3)
+    ;; The split MUST happen on the LEFT side (window A), not the RIGHT (B)
+    (let* ((root (qt-frame-root fr))
+           (left (car (split-node-children root)))
+           (right (cadr (split-node-children root))))
+      (if (and (split-node? left)
+               (= (split-node-orientation left) QT_VERTICAL)
+               (split-leaf? right))
+        (pass! "S1.3: left is vertical split, right is untouched leaf")
+        (fail! "S1.3: tree structure"
+               (list "left:" (if (split-node? left) "split-node" "leaf")
+                     "right:" (if (split-node? right) "split-node" "leaf"))
+               "(vertical-node leaf)"))))
+
+  ;; ══════════════════════════════════════════════════════════════════════════
+  ;; Scenario 2: vsplit, jump to top, hsplit
+  ;; Expected: (A | A2) over B
+  ;; ══════════════════════════════════════════════════════════════════════════
+  (displayln "Scenario 2: vsplit → other-window(back) → hsplit")
+  (let-values (((fr app) (make-qt-split-test-frame!)))
+    ;; Step 1: vertical split → A over B, cursor on B (idx=1)
+    (execute-command! app 'split-window-below)
+    (check-win-count! "S2.1" fr 2)
+    (check-current-idx! "S2.1" fr 1)
+    ;; Step 2: other-window back to A (idx=0)
+    (execute-command! app 'other-window)
+    (check-current-idx! "S2.2" fr 0)
+    ;; Step 3: hsplit in A → (A1 | A2) over B
+    (execute-command! app 'split-window-right)
+    (check-win-count! "S2.3" fr 3)
+    (let* ((root (qt-frame-root fr))
+           (top (car (split-node-children root)))
+           (bottom (cadr (split-node-children root))))
+      (if (and (split-node? top)
+               (= (split-node-orientation top) QT_HORIZONTAL)
+               (split-leaf? bottom))
+        (pass! "S2.3: top is horizontal split, bottom is untouched leaf")
+        (fail! "S2.3: tree structure"
+               (list "top:" (if (split-node? top) "split-node" "leaf")
+                     "bottom:" (if (split-node? bottom) "split-node" "leaf"))
+               "(horizontal-node leaf)"))))
+
+  ;; ══════════════════════════════════════════════════════════════════════════
+  ;; Scenario 3: Four-pane grid — (A|D) over (B|C)
+  ;; ══════════════════════════════════════════════════════════════════════════
+  (displayln "Scenario 3: four-pane grid (A|D) over (B|C)")
+  (let-values (((fr app) (make-qt-split-test-frame!)))
+    ;; Step 1: vsplit → A over B [A=0, B=1], cursor=B(1)
+    (execute-command! app 'split-window-below)
+    ;; Step 2: hsplit in B → A over (B|C) [A=0, B=1, C=2], cursor=C(2)
+    (execute-command! app 'split-window-right)
+    ;; Step 3: Navigate to A (top) — one other-window: (2+1)%3 = 0
+    (execute-command! app 'other-window)
+    (check-current-idx! "S3.3" fr 0)
+    ;; Step 4: hsplit in A → (A|D) over (B|C)
+    (execute-command! app 'split-window-right)
+    (check-win-count! "S3.4" fr 4)
+    ;; Verify: root is vertical, both children are horizontal
+    (let* ((root (qt-frame-root fr))
+           (top (car (split-node-children root)))
+           (bottom (cadr (split-node-children root))))
+      (if (and (split-node? root)
+               (= (split-node-orientation root) QT_VERTICAL)
+               (split-node? top)
+               (= (split-node-orientation top) QT_HORIZONTAL)
+               (split-node? bottom)
+               (= (split-node-orientation bottom) QT_HORIZONTAL))
+        (pass! "S3.4: 2x2 grid — vertical root, both children horizontal")
+        (fail! "S3.4: grid structure" root "vertical(horizontal, horizontal)"))))
+
+  ;; ══════════════════════════════════════════════════════════════════════════
+  ;; Scenario 4: Three horizontal then delete middle
+  ;; Expected: A|B|C → delete B → A|C
+  ;; ══════════════════════════════════════════════════════════════════════════
+  (displayln "Scenario 4: three-way hsplit then delete middle pane")
+  (let-values (((fr app) (make-qt-split-test-frame!)))
+    ;; Create A|B|C
+    (execute-command! app 'split-window-right)   ; A|B, cursor=B(1)
+    (execute-command! app 'split-window-right)   ; A|B|C, cursor=C(2)
+    (check-win-count! "S4.1" fr 3)
+    ;; Navigate to B (idx=1)
+    (execute-command! app 'other-window) ; → 0
+    (execute-command! app 'other-window) ; → 1
+    (check-current-idx! "S4.2" fr 1)
+    ;; Delete B
+    (execute-command! app 'delete-window)
+    (check-win-count! "S4.3" fr 2)
+    ;; Root should still be horizontal with 2 children
+    (let ((root (qt-frame-root fr)))
+      (if (and (split-node? root)
+               (= (split-node-orientation root) QT_HORIZONTAL)
+               (= (length (split-node-children root)) 2))
+        (pass! "S4.3: after delete middle, root is horizontal with 2 children")
+        (fail! "S4.3: tree after delete"
+               root "horizontal with 2 children"))))
+
+  ;; ══════════════════════════════════════════════════════════════════════════
+  ;; Scenario 5: Nested delete — A|(B over C), delete C, result A|B
+  ;; SKIPPED: delete-window in nested splits segfaults in headless Qt
+  ;; (same known issue as Group 10 commented-out test). Needs Qt widget
+  ;; reparenting fix before this can be enabled.
+  ;; ══════════════════════════════════════════════════════════════════════════
+  (displayln "Scenario 5: SKIPPED — nested delete segfaults headless (known issue)")
+
+  ;; ══════════════════════════════════════════════════════════════════════════
+  ;; Scenario 6: other-window traversal order in complex layout
+  ;; (A1 over A2) | B — cycle should visit A1, A2, B in order
+  ;; ══════════════════════════════════════════════════════════════════════════
+  (displayln "Scenario 6: other-window traversal order in nested layout")
+  (let-values (((fr app) (make-qt-split-test-frame!)))
+    ;; A|B
+    (execute-command! app 'split-window-right)
+    ;; Back to A
+    (execute-command! app 'other-window)
+    ;; (A1 over A2) | B, cursor on A2
+    (execute-command! app 'split-window-below)
+    (check-win-count! "S6.1" fr 3)
+    ;; Verify traversal order: from A2(idx=1), next should go to B(idx=2)
+    (check-current-idx! "S6.1 start" fr 1)
+    (execute-command! app 'other-window)
+    (check-current-idx! "S6.2 → B" fr 2)
+    (execute-command! app 'other-window)
+    (check-current-idx! "S6.3 → A1" fr 0)
+    (execute-command! app 'other-window)
+    (check-current-idx! "S6.4 → A2" fr 1))
+
+  ;; ══════════════════════════════════════════════════════════════════════════
+  ;; Scenario 7: delete-other-windows from non-first window
+  ;; ══════════════════════════════════════════════════════════════════════════
+  (displayln "Scenario 7: delete-other-windows keeps current, not first")
+  (let-values (((fr app) (make-qt-split-test-frame!)))
+    ;; Create A|B|C
+    (execute-command! app 'split-window-right)   ; A|B
+    (execute-command! app 'split-window-right)   ; A|B|C
+    ;; Navigate to B (middle)
+    (execute-command! app 'other-window) ; → 0 (wraps from 2)
+    (execute-command! app 'other-window) ; → 1
+    (check-current-idx! "S7.1" fr 1)
+    ;; delete-other-windows from B — should keep B only
+    (execute-command! app 'delete-other-windows)
+    (check-win-count! "S7.2" fr 1)
+    (let ((root (qt-frame-root fr)))
+      (if (split-leaf? root)
+        (pass! "S7.2: root is single leaf")
+        (fail! "S7.2: root after delete-other" root "split-leaf"))))
+
+  ;; ══════════════════════════════════════════════════════════════════════════
+  ;; Scenario 8: delete sole window is a no-op (safety check)
+  ;; ══════════════════════════════════════════════════════════════════════════
+  (displayln "Scenario 8: delete-window on sole window is no-op")
+  (let-values (((fr app) (make-qt-split-test-frame!)))
+    (execute-command! app 'delete-window)
+    (check-win-count! "S8.1" fr 1)
+    (let ((root (qt-frame-root fr)))
+      (if (split-leaf? root)
+        (pass! "S8.1: root unchanged as leaf")
+        (fail! "S8.1: root" root "split-leaf"))))
+
+  ;; ══════════════════════════════════════════════════════════════════════════
+  ;; Scenario 9: Split panes share buffer but have independent editors
+  ;; (Emacs behavior: split shows same buffer in both panes)
+  ;; ══════════════════════════════════════════════════════════════════════════
+  (displayln "Scenario 9: split panes share buffer, have independent editors")
+  (let-values (((fr app) (make-qt-split-test-frame!)))
+    ;; Split right → A | B
+    (execute-command! app 'split-window-right)
+    ;; Both panes should share the same buffer
+    (let ((buf-a (qt-edit-window-buffer (list-ref (qt-frame-windows fr) 0)))
+          (buf-b (qt-edit-window-buffer (list-ref (qt-frame-windows fr) 1))))
+      (if (eq? buf-a buf-b)
+        (pass! "S9.1: split panes share same buffer (correct Emacs behavior)")
+        (fail! "S9.1: buffer sharing" "different buffers" "same buffer")))
+    ;; But each has its own editor widget
+    (let ((ed-a (win-editor fr 0))
+          (ed-b (win-editor fr 1)))
+      (if (not (eq? ed-a ed-b))
+        (pass! "S9.2: split panes have independent editor widgets")
+        (fail! "S9.2: editor independence" "same editor" "different editors"))))
+
+  ;; ══════════════════════════════════════════════════════════════════════════
+  ;; Scenario 10: Winner undo/redo with flat splits (no nested delete)
+  ;; A → A|B → A|B|C → winner-undo → A|B → winner-undo → A
+  ;; (Nested winner-undo segfaults headless — same as S5/Group 10 known issue)
+  ;; ══════════════════════════════════════════════════════════════════════════
+  (displayln "Scenario 10: winner-undo/redo with flat same-orientation splits")
+  (let-values (((fr app) (make-qt-split-test-frame!)))
+    ;; 1 → 2 windows (flat horizontal)
+    (execute-command! app 'split-window-right)
+    (check-win-count! "S10.1" fr 2)
+    ;; 2 → 3 windows (still flat horizontal — same orientation)
+    (execute-command! app 'split-window-right)
+    (check-win-count! "S10.2" fr 3)
+    ;; Undo → back to 2
+    (execute-command! app 'winner-undo)
+    (check-win-count! "S10.3 undo" fr 2)
+    ;; Undo → back to 1
+    (execute-command! app 'winner-undo)
+    (check-win-count! "S10.4 undo" fr 1)
+    ;; Redo → back to 2
+    (execute-command! app 'winner-redo)
+    (check-win-count! "S10.5 redo" fr 2)
+    ;; Redo → back to 3
+    (execute-command! app 'winner-redo)
+    (check-win-count! "S10.6 redo" fr 3))
+
+  ;; ══════════════════════════════════════════════════════════════════════════
+  ;; Scenario 11: Rapid split and cycle — stress the window list
+  ;; ══════════════════════════════════════════════════════════════════════════
+  (displayln "Scenario 11: rapid split-right x4 then cycle through all 5")
+  (let-values (((fr app) (make-qt-split-test-frame!)))
+    (execute-command! app 'split-window-right)
+    (execute-command! app 'split-window-right)
+    (execute-command! app 'split-window-right)
+    (execute-command! app 'split-window-right)
+    (check-win-count! "S11.1" fr 5)
+    ;; Cycle through all 5 windows and verify we wrap
+    (let ((start (qt-frame-current-idx fr)))
+      (execute-command! app 'other-window)
+      (execute-command! app 'other-window)
+      (execute-command! app 'other-window)
+      (execute-command! app 'other-window)
+      (execute-command! app 'other-window)
+      (let ((end (qt-frame-current-idx fr)))
+        (if (= start end)
+          (pass! "S11.2: 5 other-window calls wraps back to start")
+          (fail! "S11.2: wrap" end start)))))
+
+  ;; ══════════════════════════════════════════════════════════════════════════
+  ;; Scenario 12: Alternating h/v splits create correct nesting
+  ;; A → A|B → A|(B over C) → A|((B|D) over C)
+  ;; ══════════════════════════════════════════════════════════════════════════
+  (displayln "Scenario 12: alternating h/v/h splits — deep nesting")
+  (let-values (((fr app) (make-qt-split-test-frame!)))
+    ;; A|B
+    (execute-command! app 'split-window-right)
+    ;; A|(B over C), cursor on C
+    (execute-command! app 'split-window-below)
+    ;; Navigate back to B
+    (execute-command! app 'other-window) ; → next
+    (execute-command! app 'other-window) ; → next
+    ;; Find B's index — it should be idx 1 (A=0, B=1, C=2)
+    ;; After split-below from B, we're at C(idx=2). Two other-windows:
+    ;; 2→0, 0→1. So we're at B(idx=1).
+    (check-current-idx! "S12.1" fr 1)
+    ;; Split B right → A|((B|D) over C)
+    (execute-command! app 'split-window-right)
+    (check-win-count! "S12.2" fr 4)
+    ;; Verify: root=horizontal, right child=vertical,
+    ;; top of right child=horizontal (the B|D pair)
+    (let* ((root (qt-frame-root fr))
+           (right (cadr (split-node-children root))))
+      (if (and (split-node? right)
+               (= (split-node-orientation right) QT_VERTICAL))
+        (let ((right-top (car (split-node-children right))))
+          (if (and (split-node? right-top)
+                   (= (split-node-orientation right-top) QT_HORIZONTAL))
+            (pass! "S12.2: deep nesting — h(leaf, v(h(leaf,leaf), leaf))")
+            (fail! "S12.2: right-top" right-top "horizontal split-node")))
+        (fail! "S12.2: right child" right "vertical split-node"))))
+
+  ;; ══════════════════════════════════════════════════════════════════════════
+  ;; Scenario 13: Split, navigate, delete from non-last position
+  ;; A|B|C, delete A → B|C with correct current-idx
+  ;; ══════════════════════════════════════════════════════════════════════════
+  (displayln "Scenario 13: delete first window in three-way split")
+  (let-values (((fr app) (make-qt-split-test-frame!)))
+    (execute-command! app 'split-window-right)   ; A|B
+    (execute-command! app 'split-window-right)   ; A|B|C
+    ;; Navigate to A (idx=0)
+    (execute-command! app 'other-window)  ; wrap
+    (check-current-idx! "S13.1" fr 0)
+    ;; Delete A
+    (execute-command! app 'delete-window)
+    (check-win-count! "S13.2" fr 2)
+    ;; current-idx should be valid (0 or adjusted)
+    (let ((idx (qt-frame-current-idx fr)))
+      (if (and (>= idx 0) (< idx 2))
+        (pass! "S13.2: current-idx is valid after deleting first")
+        (fail! "S13.2: current-idx" idx "0 or 1"))))
+
+  ;; ══════════════════════════════════════════════════════════════════════════
+  ;; Scenario 14: Split right, split right, split below in middle
+  ;; A|B|C → A|(B over B2)|C — verify middle splits correctly
+  ;; ══════════════════════════════════════════════════════════════════════════
+  (displayln "Scenario 14: split below in middle of three-way horizontal")
+  (let-values (((fr app) (make-qt-split-test-frame!)))
+    ;; A|B|C
+    (execute-command! app 'split-window-right)   ; A|B, cursor=B(1)
+    (execute-command! app 'split-window-right)   ; A|B|C, cursor=C(2)
+    ;; Navigate to B
+    (execute-command! app 'other-window)  ; → 0
+    (execute-command! app 'other-window)  ; → 1
+    (check-current-idx! "S14.1" fr 1)
+    ;; Split B vertically
+    (execute-command! app 'split-window-below)
+    (check-win-count! "S14.2" fr 4)
+    ;; Root should be horizontal. The middle child should be a vertical node.
+    (let* ((root (qt-frame-root fr))
+           (children (split-node-children root)))
+      (if (and (= (length children) 3)
+               (split-leaf? (car children))          ; A
+               (split-node? (cadr children))         ; B/B2
+               (split-leaf? (caddr children)))        ; C
+        (let ((mid (cadr children)))
+          (if (= (split-node-orientation mid) QT_VERTICAL)
+            (pass! "S14.2: middle child is vertical node (B over B2)")
+            (fail! "S14.2: middle orientation" (split-node-orientation mid) QT_VERTICAL)))
+        (fail! "S14.2: root children"
+               (map (lambda (c) (if (split-node? c) 'node 'leaf)) children)
+               "(leaf node leaf)"))))
+
+  ;; ══════════════════════════════════════════════════════════════════════════
+  ;; Scenario 15: Winner undo after delete-other-windows
+  ;; A|B|C → delete-other → B alone → winner-undo → back to 3
+  ;; ══════════════════════════════════════════════════════════════════════════
+  (displayln "Scenario 15: winner-undo restores after delete-other-windows")
+  (let-values (((fr app) (make-qt-split-test-frame!)))
+    (execute-command! app 'split-window-right)
+    (execute-command! app 'split-window-right)
+    (check-win-count! "S15.1" fr 3)
+    ;; Go to middle pane
+    (execute-command! app 'other-window)
+    (execute-command! app 'other-window)
+    ;; delete-other-windows
+    (execute-command! app 'delete-other-windows)
+    (check-win-count! "S15.2" fr 1)
+    ;; winner-undo should go back to 3
+    (execute-command! app 'winner-undo)
+    (check-win-count! "S15.3 undo" fr 3))
+
+  ;; ══════════════════════════════════════════════════════════════════════════
+  ;; Scenario 16: Split inherits buffer, then navigation preserves it
+  ;; ══════════════════════════════════════════════════════════════════════════
+  (displayln "Scenario 16: split inherits buffer across navigation")
+  (let-values (((fr app) (make-qt-split-test-frame!)))
+    (let ((orig-buf-name (win-buf-name fr 0)))
+      (execute-command! app 'split-window-right)
+      ;; New window should have same buffer
+      (let ((new-buf-name (win-buf-name fr 1)))
+        (if (string=? orig-buf-name new-buf-name)
+          (pass! "S16.1: split inherits buffer name")
+          (fail! "S16.1: buffer inheritance" new-buf-name orig-buf-name)))
+      ;; Navigate away and back — buffer should persist
+      (execute-command! app 'other-window) ; → 0
+      (execute-command! app 'other-window) ; → 1
+      (let ((after-nav (win-buf-name fr 1)))
+        (if (string=? orig-buf-name after-nav)
+          (pass! "S16.2: buffer persists after navigation")
+          (fail! "S16.2: buffer after nav" after-nav orig-buf-name)))))
+
+  ;; ══════════════════════════════════════════════════════════════════════════
+  ;; Scenario 17: Repeated other-window with 2 panes (the most common case)
+  ;; ══════════════════════════════════════════════════════════════════════════
+  (displayln "Scenario 17: other-window ping-pong with 2 panes")
+  (let-values (((fr app) (make-qt-split-test-frame!)))
+    (execute-command! app 'split-window-right) ; idx=1
+    (execute-command! app 'other-window)       ; idx=0
+    (check-current-idx! "S17.1" fr 0)
+    (execute-command! app 'other-window)       ; idx=1
+    (check-current-idx! "S17.2" fr 1)
+    (execute-command! app 'other-window)       ; idx=0
+    (check-current-idx! "S17.3" fr 0)
+    (execute-command! app 'other-window)       ; idx=1
+    (check-current-idx! "S17.4" fr 1))
+
+  ;; ══════════════════════════════════════════════════════════════════════════
+  ;; Scenario 18: current-idx correctness after split-below from idx > 0
+  ;; ══════════════════════════════════════════════════════════════════════════
+  (displayln "Scenario 18: split-below from non-zero idx tracks correctly")
+  (let-values (((fr app) (make-qt-split-test-frame!)))
+    ;; A|B, cursor at B(1)
+    (execute-command! app 'split-window-right)
+    (check-current-idx! "S18.1" fr 1)
+    ;; Split B below → A|(B over C), cursor moves to C
+    ;; C should be at idx 2 in the flat list [A, B, C]
+    (execute-command! app 'split-window-below)
+    (check-win-count! "S18.2" fr 3)
+    (let ((idx (qt-frame-current-idx fr)))
+      (if (= idx 2)
+        (pass! "S18.2: cursor on new split window (idx=2)")
+        (fail! "S18.2: current-idx" idx 2))))
+
+  ;; ══════════════════════════════════════════════════════════════════════════
+  ;; Scenario 19: Build 2x2 grid and verify structure
+  ;; (A over C) | (B over D) — tests complex nesting
+  ;; (Delete portion SKIPPED: segfaults headless — same as S5/Group 10)
+  ;; ══════════════════════════════════════════════════════════════════════════
+  (displayln "Scenario 19: build 2x2 grid and verify structure")
+  (let-values (((fr app) (make-qt-split-test-frame!)))
+    ;; A|B
+    (execute-command! app 'split-window-right)
+    ;; Back to A, split below → (A over C) | B
+    (execute-command! app 'other-window) ; 0
+    (execute-command! app 'split-window-below) ; (A over C) | B
+    ;; Navigate to B: from idx 1 (C), other-window → idx 2 (B)
+    (execute-command! app 'other-window)
+    ;; Split B below → (A over C) | (B over D)
+    (execute-command! app 'split-window-below)
+    (check-win-count! "S19.1" fr 4)
+    ;; Verify: root=horizontal, both children=vertical
+    (let* ((root (qt-frame-root fr))
+           (left (car (split-node-children root)))
+           (right (cadr (split-node-children root))))
+      (if (and (split-node? root)
+               (= (split-node-orientation root) QT_HORIZONTAL)
+               (split-node? left)
+               (= (split-node-orientation left) QT_VERTICAL)
+               (split-node? right)
+               (= (split-node-orientation right) QT_VERTICAL))
+        (pass! "S19.1: 2x2 grid — horizontal root, both children vertical")
+        (fail! "S19.1: grid structure" root "horizontal(vertical, vertical)"))))
+
+  ;; ══════════════════════════════════════════════════════════════════════════
+  ;; Scenario 20: Split, cursor position persists in each pane
+  ;; ══════════════════════════════════════════════════════════════════════════
+  (displayln "Scenario 20: cursor position persists per-pane")
+  (let-values (((fr app) (make-qt-split-test-frame!)))
+    ;; Set up text and cursor in initial pane
+    (let ((ed0 (win-editor fr 0)))
+      (qt-plain-text-edit-set-text! ed0 "abcdefghij")
+      (qt-plain-text-edit-set-cursor-position! ed0 5))
+    ;; Split
+    (execute-command! app 'split-window-right)
+    ;; Set different cursor in new pane
+    (let ((ed1 (win-editor fr 1)))
+      (qt-plain-text-edit-set-cursor-position! ed1 2))
+    ;; Navigate back to original
+    (execute-command! app 'other-window)
+    ;; Check original's cursor is still at 5
+    (let ((pos0 (qt-plain-text-edit-cursor-position (win-editor fr 0))))
+      (if (= pos0 5)
+        (pass! "S20.1: original pane cursor preserved at 5")
+        (fail! "S20.1: cursor" pos0 5)))
+    ;; Navigate to second pane
+    (execute-command! app 'other-window)
+    (let ((pos1 (qt-plain-text-edit-cursor-position (win-editor fr 1))))
+      (if (= pos1 2)
+        (pass! "S20.2: second pane cursor preserved at 2")
+        (fail! "S20.2: cursor" pos1 2))))
+
+  (displayln "Group 11 complete"))
+
+;;;============================================================================
 ;;; Main
 ;;;============================================================================
 
@@ -1453,6 +1962,7 @@
     (run-group-8-magit)
     (run-group-9-magit-ops)
     (run-group-10-split-operations)
+    (run-group-11-window-scenarios)
 
     (displayln "---")
     (displayln "Results: " *passes* " passed, " *failures* " failed")
