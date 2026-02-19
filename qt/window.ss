@@ -274,8 +274,11 @@
                    ((eq? (car cs) cur-leaf)
                     (append (reverse (cons new-leaf (cons cur-leaf acc))) (cdr cs)))
                    (else (loop (cdr cs) (cons (car cs) acc))))))
-         (set! (qt-frame-windows fr) (append (qt-frame-windows fr) (list new-win)))
-         (set! (qt-frame-current-idx fr) (- (length (qt-frame-windows fr)) 1))
+         ;; Rebuild flat list from tree to maintain depth-first order
+         (set! (qt-frame-windows fr) (split-tree-flatten (qt-frame-root fr)))
+         ;; Find new window's index in the rebuilt list
+         (let ((new-idx (list-index (lambda (w) (eq? w new-win)) (qt-frame-windows fr))))
+           (set! (qt-frame-current-idx fr) (or new-idx 0)))
          (qt-edit-window-editor new-win)))
 
       ;; ── Case B: root is a leaf (very first split) ─────────────────────────
@@ -285,8 +288,11 @@
               (new-leaf (make-split-leaf new-win))
               (new-node (make-split-node orientation root-spl (list cur-leaf new-leaf))))
          (set! (qt-frame-root fr) new-node)
-         (set! (qt-frame-windows fr) (append (qt-frame-windows fr) (list new-win)))
-         (set! (qt-frame-current-idx fr) (- (length (qt-frame-windows fr)) 1))
+         ;; Rebuild flat list from tree to maintain depth-first order
+         (set! (qt-frame-windows fr) (split-tree-flatten (qt-frame-root fr)))
+         ;; Find new window's index in the rebuilt list
+         (let ((new-idx (list-index (lambda (w) (eq? w new-win)) (qt-frame-windows fr))))
+           (set! (qt-frame-current-idx fr) (or new-idx 0)))
          (qt-edit-window-editor new-win)))
 
       ;; ── Case C: no parent or different orientation — nest with new splitter ─
@@ -311,8 +317,11 @@
          (cond
            (parent (split-tree-replace-child! parent cur-leaf new-node))
            (else   (set! (qt-frame-root fr) new-node)))
-         (set! (qt-frame-windows fr) (append (qt-frame-windows fr) (list new-win)))
-         (set! (qt-frame-current-idx fr) (- (length (qt-frame-windows fr)) 1))
+         ;; Rebuild flat list from tree to maintain depth-first order
+         (set! (qt-frame-windows fr) (split-tree-flatten (qt-frame-root fr)))
+         ;; Find new window's index in the rebuilt list
+         (let ((new-idx (list-index (lambda (w) (eq? w new-win)) (qt-frame-windows fr))))
+           (set! (qt-frame-current-idx fr) (or new-idx 0)))
          (qt-edit-window-editor new-win))))))
 
 (def (qt-frame-split! fr)
@@ -426,6 +435,14 @@
 ;;;============================================================================
 ;;; Helpers
 ;;;============================================================================
+
+(def (list-index pred lst)
+  "Find the index of the first element matching pred, or #f."
+  (let loop ((l lst) (i 0))
+    (cond
+      ((null? l) #f)
+      ((pred (car l)) i)
+      (else (loop (cdr l) (+ i 1))))))
 
 (def (list-remove-idx lst idx)
   (let loop ((l lst) (i 0) (acc []))
