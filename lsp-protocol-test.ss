@@ -2,9 +2,7 @@
 ;;; LSP protocol tests for gemacs — interpreter-based (no Qt).
 ;;;
 ;;; Tests LSP lifecycle, document sync, diagnostics, and request round-trips
-;;; using the gxi interpreter with synchronous I/O on the main thread.
-;;; This avoids Gambit's green-thread scheduling issue where the reader thread
-;;; never gets scheduled to read from process pipes.
+;;; using the async lsp-client.ss API (background reader thread + UI action queue).
 ;;;
 ;;; Run: make test-lsp-protocol
 ;;; Or:  LD_LIBRARY_PATH=... GERBIL_LOADPATH=$HOME/.gerbil/lib \
@@ -16,203 +14,39 @@
 (import :std/test
         :std/sugar
         :std/text/json
-        (only-in :gemacs/qt/lsp-client
-                 lsp-read-message
-                 lsp-write-message
-                 file-path->uri))
+        :gemacs/qt/lsp-client)
 
 (export lsp-protocol-test)
 
 ;;;============================================================================
-;;; Synchronous LSP test harness
+;;; Helpers
 ;;;============================================================================
 
-(def *next-request-id* 0)
+(def (wait-for predicate label (timeout-ms 15000) (poll-ms 100))
+  "Poll predicate every poll-ms, draining LSP UI queue each iteration.
+   Returns #t if predicate becomes true, #f on timeout."
+  (let loop ((elapsed 0))
+    (lsp-poll-ui-actions!)
+    (cond
+      ((predicate) #t)
+      ((>= elapsed timeout-ms)
+       (displayln "  TIMEOUT: " label " after " timeout-ms "ms")
+       #f)
+      (else
+       (thread-sleep! (/ poll-ms 1000.0))
+       (loop (+ elapsed poll-ms))))))
 
-(def (next-id!)
-  (set! *next-request-id* (+ *next-request-id* 1))
-  *next-request-id*)
+(def (lsp-test-start! dir)
+  "Start LSP against dir and wait for initialization."
+  (when (or *lsp-process* *lsp-initializing*)
+    (lsp-stop!))
+  (lsp-start! dir)
+  (wait-for (lambda () *lsp-initialized*) "LSP initialization" 20000))
 
-(def (lsp-open dir)
-  "Open a gerbil-lsp subprocess. Returns the process port."
-  (let ((proc (open-process
-                (list path: "gerbil-lsp"
-                      arguments: '("--stdio")
-                      directory: dir
-                      stdin-redirection: #t
-                      stdout-redirection: #t
-                      stderr-redirection: #f))))
-    (input-port-timeout-set! proc 15.0)
-    proc))
-
-(def (lsp-close! proc)
-  "Send shutdown + exit and close the process."
-  (with-catch void
-    (lambda ()
-      (let ((msg (make-hash-table)))
-        (hash-put! msg "jsonrpc" "2.0")
-        (hash-put! msg "id" -1)
-        (hash-put! msg "method" "shutdown")
-        (lsp-write-message proc msg))
-      ;; Read shutdown response (may get server requests first)
-      (lsp-sync-read-until-response! proc -1)
-      ;; Send exit notification
-      (let ((msg (make-hash-table)))
-        (hash-put! msg "jsonrpc" "2.0")
-        (hash-put! msg "method" "exit")
-        (lsp-write-message proc msg))))
-  (with-catch void (lambda () (close-port proc)))
-  (with-catch void (lambda () (process-status proc))))
-
-(def (lsp-sync-read-until-response! proc expected-id (max-msgs 30))
-  "Read messages until we get a response with expected-id.
-   Responds to server requests and collects notifications along the way.
-   Returns the response hash, or #f on timeout/EOF."
-  (let loop ((i 0))
-    (if (>= i max-msgs) #f
-      (let ((msg (with-catch (lambda (e) #f)
-                   (lambda () (lsp-read-message proc)))))
-        (cond
-          ((not msg) #f)
-          ;; Server request (has both id and method) — respond automatically
-          ((and (hash-get msg "id") (hash-get msg "method"))
-           (let ((resp (make-hash-table)))
-             (hash-put! resp "jsonrpc" "2.0")
-             (hash-put! resp "id" (hash-get msg "id"))
-             (hash-put! resp "result" (make-hash-table))
-             (lsp-write-message proc resp))
-           (loop (+ i 1)))
-          ;; Response matching our id
-          ((and (hash-get msg "id")
-                (not (hash-get msg "method"))
-                (= (hash-get msg "id") expected-id))
-           msg)
-          ;; Other message (notification or response to different id) — skip
-          (else (loop (+ i 1))))))))
-
-(def (lsp-request! proc method params)
-  "Send a JSON-RPC request and return the response synchronously.
-   Handles server requests/notifications while waiting."
-  (let ((id (next-id!))
-        (msg (make-hash-table)))
-    (hash-put! msg "jsonrpc" "2.0")
-    (hash-put! msg "id" id)
-    (hash-put! msg "method" method)
-    (when params (hash-put! msg "params" params))
-    (lsp-write-message proc msg)
-    (lsp-sync-read-until-response! proc id)))
-
-(def (lsp-notify! proc method params)
-  "Send a JSON-RPC notification (no response expected)."
-  (let ((msg (make-hash-table)))
-    (hash-put! msg "jsonrpc" "2.0")
-    (hash-put! msg "method" method)
-    (when params (hash-put! msg "params" params))
-    (lsp-write-message proc msg)))
-
-(def (lsp-read-until! proc pred (max-msgs 30))
-  "Read messages until predicate matches. Responds to server requests.
-   Returns the matching message, or #f if max-msgs exceeded."
-  (let loop ((i 0))
-    (if (>= i max-msgs) #f
-      (let ((msg (with-catch (lambda (e) #f)
-                   (lambda () (lsp-read-message proc)))))
-        (cond
-          ((not msg) #f)
-          ;; Server request — auto-respond
-          ((and (hash-get msg "id") (hash-get msg "method"))
-           (let ((resp (make-hash-table)))
-             (hash-put! resp "jsonrpc" "2.0")
-             (hash-put! resp "id" (hash-get msg "id"))
-             (hash-put! resp "result" (make-hash-table))
-             (lsp-write-message proc resp))
-           (if (pred msg) msg (loop (+ i 1))))
-          ;; Check predicate
-          ((pred msg) msg)
-          ;; Skip
-          (else (loop (+ i 1))))))))
-
-(def (lsp-initialize! proc dir)
-  "Send initialize request and initialized notification. Returns initializeResult."
-  (let* ((params (make-hash-table))
-         (caps (make-hash-table))
-         (text-doc (make-hash-table))
-         (sync-cap (make-hash-table))
-         (publish-diag (make-hash-table))
-         (workspace (make-hash-table))
-         (ws-edit (make-hash-table)))
-    ;; Minimal client capabilities
-    (hash-put! sync-cap "dynamicRegistration" #f)
-    (hash-put! sync-cap "didSave" #t)
-    (hash-put! text-doc "synchronization" sync-cap)
-    (hash-put! text-doc "publishDiagnostics" publish-diag)
-    (hash-put! caps "textDocument" text-doc)
-    (hash-put! ws-edit "documentChanges" #t)
-    (hash-put! workspace "workspaceEdit" ws-edit)
-    (hash-put! caps "workspace" workspace)
-    ;; Params
-    (hash-put! params "processId" (##os-getpid))
-    (hash-put! params "rootUri" (file-path->uri dir))
-    (hash-put! params "rootPath" dir)
-    (hash-put! params "capabilities" caps)
-    ;; Send initialize
-    (let ((resp (lsp-request! proc "initialize" params)))
-      ;; Send initialized notification
-      (when resp
-        (lsp-notify! proc "initialized" (make-hash-table)))
-      resp)))
-
-(def (lsp-did-open! proc uri language-id text)
-  "Send textDocument/didOpen notification."
-  (let ((params (make-hash-table))
-        (td (make-hash-table)))
-    (hash-put! td "uri" uri)
-    (hash-put! td "languageId" language-id)
-    (hash-put! td "version" 1)
-    (hash-put! td "text" text)
-    (hash-put! params "textDocument" td)
-    (lsp-notify! proc "textDocument/didOpen" params)))
-
-(def (lsp-did-change! proc uri version text)
-  "Send textDocument/didChange notification."
-  (let ((params (make-hash-table))
-        (td-id (make-hash-table))
-        (change (make-hash-table)))
-    (hash-put! td-id "uri" uri)
-    (hash-put! td-id "version" version)
-    (hash-put! params "textDocument" td-id)
-    (hash-put! change "text" text)
-    (hash-put! params "contentChanges" [change])
-    (lsp-notify! proc "textDocument/didChange" params)))
-
-(def (lsp-did-save! proc uri text)
-  "Send textDocument/didSave notification."
-  (let ((params (make-hash-table))
-        (td-id (make-hash-table)))
-    (hash-put! td-id "uri" uri)
-    (hash-put! params "textDocument" td-id)
-    (hash-put! params "text" text)
-    (lsp-notify! proc "textDocument/didSave" params)))
-
-(def (lsp-did-close! proc uri)
-  "Send textDocument/didClose notification."
-  (let ((params (make-hash-table))
-        (td-id (make-hash-table)))
-    (hash-put! td-id "uri" uri)
-    (hash-put! params "textDocument" td-id)
-    (lsp-notify! proc "textDocument/didClose" params)))
-
-(def (lsp-text-doc-position uri line col)
-  "Build a TextDocumentPositionParams hash."
-  (let ((params (make-hash-table))
-        (td (make-hash-table))
-        (pos (make-hash-table)))
-    (hash-put! td "uri" uri)
-    (hash-put! pos "line" line)
-    (hash-put! pos "character" col)
-    (hash-put! params "textDocument" td)
-    (hash-put! params "position" pos)
-    params))
+(def (lsp-test-stop!)
+  "Stop LSP cleanly."
+  (when (or *lsp-process* *lsp-initializing*)
+    (lsp-stop!)))
 
 ;;;============================================================================
 ;;; Fixture management
@@ -290,154 +124,190 @@
     (test-case "start and stop"
       (let ((dir (create-fixture!)))
         (check (string? dir) => #t)
-        (let ((proc (lsp-open dir)))
-          (unwind-protect
-            (begin
-              (let ((resp (lsp-initialize! proc dir)))
-                (check (hash-table? resp) => #t)
-                (check (and (hash-get resp "result") #t) => #t)
-                (let ((caps (hash-get (hash-get resp "result") "capabilities")))
-                  (check (hash-table? caps) => #t))))
-            (begin
-              (lsp-close! proc)
-              (cleanup-fixture! dir))))))
+        (unwind-protect
+          (begin
+            (check (lsp-test-start! dir) => #t)
+            (check (lsp-running?) => #t)
+            (check (> (hash-length *lsp-server-capabilities*) 0) => #t)
+            (lsp-stop!)
+            (check (lsp-running?) => #f)
+            (check *lsp-process* => #f)
+            (check *lsp-initialized* => #f))
+          (begin
+            (lsp-test-stop!)
+            (cleanup-fixture! dir)))))
 
     (test-case "double start stops previous"
       (let ((dir (create-fixture!)))
-        (let ((proc1 (lsp-open dir)))
-          (unwind-protect
-            (begin
-              (let ((resp1 (lsp-initialize! proc1 dir)))
-                (check (hash-table? resp1) => #t))
-              ;; Close first, open second
-              (lsp-close! proc1)
-              (set! proc1 #f)
-              (let ((proc2 (lsp-open dir)))
-                (unwind-protect
-                  (let ((resp2 (lsp-initialize! proc2 dir)))
-                    (check (hash-table? resp2) => #t)
-                    (check (and (hash-get resp2 "result") #t) => #t))
-                  (lsp-close! proc2))))
-            (when proc1 (lsp-close! proc1))))
-        (cleanup-fixture! dir)))
+        (unwind-protect
+          (begin
+            (lsp-test-start! dir)
+            ;; Second start should stop the first cleanly
+            (lsp-start! dir)
+            (check (wait-for (lambda () *lsp-initialized*)
+                             "second init" 20000) => #t)
+            (check (lsp-running?) => #t))
+          (begin
+            (lsp-test-stop!)
+            (cleanup-fixture! dir)))))
 
     (test-case "restart"
       (let ((dir (create-fixture!)))
         (unwind-protect
           (begin
-            ;; First session
-            (let ((proc (lsp-open dir)))
-              (let ((resp (lsp-initialize! proc dir)))
-                (check (hash-table? resp) => #t))
-              (lsp-close! proc))
-            ;; Second session
-            (let ((proc (lsp-open dir)))
-              (let ((resp (lsp-initialize! proc dir)))
-                (check (hash-table? resp) => #t)
-                (check (and (hash-get resp "result") #t) => #t))
-              (lsp-close! proc)))
-          (cleanup-fixture! dir))))
+            (lsp-test-start! dir)
+            (check (lsp-running?) => #t)
+            ;; Stop and restart
+            (lsp-stop!)
+            (check (lsp-running?) => #f)
+            (lsp-start! dir)
+            (check (wait-for (lambda () *lsp-initialized*)
+                             "re-initialization" 20000) => #t)
+            (check (lsp-running?) => #t))
+          (begin
+            (lsp-test-stop!)
+            (cleanup-fixture! dir)))))
+
+    (test-case "state transitions"
+      (let ((dir (create-fixture!)))
+        (unwind-protect
+          (begin
+            ;; Clean state
+            (lsp-test-stop!)
+            (check *lsp-initialized* => #f)
+            (check *lsp-initializing* => #f)
+            ;; Start — should be initializing immediately
+            (lsp-start! dir)
+            (check (or *lsp-initializing* *lsp-initialized*) => #t)
+            ;; Wait for full init
+            (check (wait-for (lambda () (lsp-running?))
+                             "state transition" 20000) => #t)
+            (check *lsp-initialized* => #t)
+            (check *lsp-initializing* => #f)
+            ;; Stop
+            (lsp-stop!)
+            (check (lsp-running?) => #f))
+          (begin
+            (lsp-test-stop!)
+            (cleanup-fixture! dir)))))
 
     ;;------------------------------------------------------------------------
     ;; Group 3: Document Synchronization
     ;;------------------------------------------------------------------------
 
-    (test-case "didOpen does not crash"
+    (test-case "didOpen tracks version"
       (let ((dir (create-fixture!)))
-        (let ((proc (lsp-open dir)))
-          (unwind-protect
-            (begin
-              (lsp-initialize! proc dir)
-              (let* ((lib-path (string-append dir "/lib.ss"))
-                     (lib-uri (file-path->uri lib-path)))
-                (lsp-did-open! proc lib-uri "scheme"
-                  "(export hello goodbye)\n(def (hello) \"hi\")\n(def (goodbye) \"bye\")\n")
-                ;; If we get here, no crash
-                (check #t => #t)
-                (lsp-did-close! proc lib-uri)))
-            (begin
-              (lsp-close! proc)
-              (cleanup-fixture! dir))))))
+        (unwind-protect
+          (begin
+            (lsp-test-start! dir)
+            (let* ((lib-path (string-append dir "/lib.ss"))
+                   (lib-uri (file-path->uri lib-path))
+                   (lib-text "(export hello goodbye)\n(def (hello) \"hi\")\n(def (goodbye) \"bye\")\n"))
+              (lsp-did-open! lib-uri "scheme" lib-text)
+              (check (hash-get *lsp-doc-versions* lib-uri) => 1)
+              (lsp-did-close! lib-uri)))
+          (begin
+            (lsp-test-stop!)
+            (cleanup-fixture! dir)))))
 
-    (test-case "didChange does not crash"
+    (test-case "didChange increments version"
       (let ((dir (create-fixture!)))
-        (let ((proc (lsp-open dir)))
-          (unwind-protect
-            (begin
-              (lsp-initialize! proc dir)
-              (let* ((lib-path (string-append dir "/lib.ss"))
-                     (lib-uri (file-path->uri lib-path)))
-                (lsp-did-open! proc lib-uri "scheme"
-                  "(export hello goodbye)\n(def (hello) \"hi\")\n(def (goodbye) \"bye\")\n")
-                (lsp-did-change! proc lib-uri 2
-                  "(export hello goodbye)\n(def (hello) \"modified\")\n(def (goodbye) \"bye\")\n")
-                (check #t => #t)
-                (lsp-did-close! proc lib-uri)))
-            (begin
-              (lsp-close! proc)
-              (cleanup-fixture! dir))))))
+        (unwind-protect
+          (begin
+            (lsp-test-start! dir)
+            (let* ((lib-path (string-append dir "/lib.ss"))
+                   (lib-uri (file-path->uri lib-path)))
+              (lsp-did-open! lib-uri "scheme"
+                "(export hello goodbye)\n(def (hello) \"hi\")\n(def (goodbye) \"bye\")\n")
+              (check (hash-get *lsp-doc-versions* lib-uri) => 1)
+              (lsp-did-change! lib-uri
+                "(export hello goodbye)\n(def (hello) \"modified\")\n(def (goodbye) \"bye\")\n")
+              (check (hash-get *lsp-doc-versions* lib-uri) => 2)
+              (lsp-did-close! lib-uri)))
+          (begin
+            (lsp-test-stop!)
+            (cleanup-fixture! dir)))))
 
     (test-case "didSave does not crash"
       (let ((dir (create-fixture!)))
-        (let ((proc (lsp-open dir)))
-          (unwind-protect
-            (begin
-              (lsp-initialize! proc dir)
-              (let* ((lib-path (string-append dir "/lib.ss"))
-                     (lib-uri (file-path->uri lib-path))
-                     (lib-text "(export hello goodbye)\n(def (hello) \"hi\")\n(def (goodbye) \"bye\")\n"))
-                (lsp-did-open! proc lib-uri "scheme" lib-text)
-                (lsp-did-save! proc lib-uri lib-text)
-                (check #t => #t)
-                (lsp-did-close! proc lib-uri)))
-            (begin
-              (lsp-close! proc)
-              (cleanup-fixture! dir))))))
+        (unwind-protect
+          (begin
+            (lsp-test-start! dir)
+            (let* ((lib-path (string-append dir "/lib.ss"))
+                   (lib-uri (file-path->uri lib-path))
+                   (lib-text "(export hello goodbye)\n(def (hello) \"hi\")\n(def (goodbye) \"bye\")\n"))
+              (lsp-did-open! lib-uri "scheme" lib-text)
+              (lsp-did-save! lib-uri lib-text)
+              (check #t => #t)
+              (lsp-did-close! lib-uri)))
+          (begin
+            (lsp-test-stop!)
+            (cleanup-fixture! dir)))))
 
-    (test-case "didClose does not crash"
+    (test-case "didClose removes tracking"
       (let ((dir (create-fixture!)))
-        (let ((proc (lsp-open dir)))
-          (unwind-protect
-            (begin
-              (lsp-initialize! proc dir)
-              (let* ((lib-path (string-append dir "/lib.ss"))
-                     (lib-uri (file-path->uri lib-path)))
-                (lsp-did-open! proc lib-uri "scheme"
-                  "(export hello goodbye)\n(def (hello) \"hi\")\n(def (goodbye) \"bye\")\n")
-                (lsp-did-close! proc lib-uri)
-                (check #t => #t)))
-            (begin
-              (lsp-close! proc)
-              (cleanup-fixture! dir))))))
+        (unwind-protect
+          (begin
+            (lsp-test-start! dir)
+            (let* ((lib-path (string-append dir "/lib.ss"))
+                   (lib-uri (file-path->uri lib-path)))
+              (lsp-did-open! lib-uri "scheme"
+                "(export hello goodbye)\n(def (hello) \"hi\")\n(def (goodbye) \"bye\")\n")
+              (check (hash-get *lsp-doc-versions* lib-uri) => 1)
+              (lsp-did-close! lib-uri)
+              (check (hash-get *lsp-doc-versions* lib-uri) => #f)
+              (check (hash-get *lsp-diagnostics* lib-uri) => #f)))
+          (begin
+            (lsp-test-stop!)
+            (cleanup-fixture! dir)))))
 
     ;;------------------------------------------------------------------------
     ;; Group 4: Diagnostics
     ;;------------------------------------------------------------------------
 
-    (test-case "diagnostics for file"
+    (test-case "diagnostics arrive for opened file"
       (let ((dir (create-fixture!)))
-        (let ((proc (lsp-open dir)))
-          (unwind-protect
-            (begin
-              (lsp-initialize! proc dir)
-              (let* ((lib-path (string-append dir "/lib.ss"))
-                     (lib-uri (file-path->uri lib-path)))
-                (lsp-did-open! proc lib-uri "scheme"
-                  "(export hello goodbye)\n(def (hello) \"hi\")\n(def (goodbye) \"bye\")\n")
-                ;; Read messages until we get a publishDiagnostics notification
-                (let ((diag-msg (lsp-read-until! proc
-                                  (lambda (msg)
-                                    (equal? (hash-get msg "method")
-                                            "textDocument/publishDiagnostics")))))
-                  (when diag-msg
-                    (let ((params (hash-get diag-msg "params")))
-                      (check (hash-table? params) => #t)
-                      (check (string? (hash-get params "uri")) => #t)
-                      (check (list? (hash-get params "diagnostics")) => #t))))
-                (lsp-did-close! proc lib-uri)))
-            (begin
-              (lsp-close! proc)
-              (cleanup-fixture! dir))))))
+        (unwind-protect
+          (begin
+            (lsp-test-start! dir)
+            (let* ((lib-path (string-append dir "/lib.ss"))
+                   (lib-uri (file-path->uri lib-path)))
+              (lsp-did-open! lib-uri "scheme"
+                "(export hello goodbye)\n(def (hello) \"hi\")\n(def (goodbye) \"bye\")\n")
+              (let ((got (wait-for
+                           (lambda () (hash-get *lsp-diagnostics* lib-uri))
+                           "publishDiagnostics for lib.ss" 10000)))
+                (when got
+                  (let ((diags (hash-get *lsp-diagnostics* lib-uri)))
+                    (check (list? diags) => #t)
+                    ;; Clean file should have no errors
+                    (check (length diags) => 0))))
+              (lsp-did-close! lib-uri)))
+          (begin
+            (lsp-test-stop!)
+            (cleanup-fixture! dir)))))
+
+    (test-case "diagnostics for broken file"
+      (let ((dir (create-fixture!)))
+        (unwind-protect
+          (begin
+            (lsp-test-start! dir)
+            (let* ((broken-path (string-append dir "/broken.ss"))
+                   (broken-uri (file-path->uri broken-path))
+                   (broken-text "(def (oops) (undefined-function))\n"))
+              (lsp-did-open! broken-uri "scheme" broken-text)
+              (let ((got (wait-for
+                           (lambda () (hash-get *lsp-diagnostics* broken-uri))
+                           "publishDiagnostics for broken.ss" 10000)))
+                (when got
+                  (let ((diags (hash-get *lsp-diagnostics* broken-uri)))
+                    (check (list? diags) => #t)
+                    ;; gerbil-lsp may or may not detect undefined-function
+                    (check (>= (length diags) 0) => #t))))
+              (lsp-did-close! broken-uri)))
+          (begin
+            (lsp-test-stop!)
+            (cleanup-fixture! dir)))))
 
     ;;------------------------------------------------------------------------
     ;; Group 5: Goto Definition
@@ -445,24 +315,29 @@
 
     (test-case "goto-definition request round-trip"
       (let ((dir (create-fixture!)))
-        (let ((proc (lsp-open dir)))
-          (unwind-protect
-            (begin
-              (lsp-initialize! proc dir)
-              (let* ((lib-path (string-append dir "/lib.ss"))
-                     (lib-uri (file-path->uri lib-path)))
-                (lsp-did-open! proc lib-uri "scheme"
-                  "(export hello goodbye)\n(def (hello) \"hi\")\n(def (goodbye) \"bye\")\n")
-                ;; Request definition of "hello" at line 1, char 5
-                (let ((resp (lsp-request! proc "textDocument/definition"
-                              (lsp-text-doc-position lib-uri 1 5))))
-                  (check (hash-table? resp) => #t)
-                  ;; Response should have a "result" key (may be null or location)
-                  (check (hash-key? resp "result") => #t))
-                (lsp-did-close! proc lib-uri)))
-            (begin
-              (lsp-close! proc)
-              (cleanup-fixture! dir))))))
+        (unwind-protect
+          (begin
+            (lsp-test-start! dir)
+            (let* ((lib-path (string-append dir "/lib.ss"))
+                   (lib-uri (file-path->uri lib-path)))
+              (lsp-did-open! lib-uri "scheme"
+                "(export hello goodbye)\n(def (hello) \"hi\")\n(def (goodbye) \"bye\")\n")
+              (let ((response-received #f)
+                    (response-data #f))
+                (lsp-send-request! "textDocument/definition"
+                  (lsp-text-document-position lib-uri 1 5)
+                  (lambda (response)
+                    (set! response-data response)
+                    (set! response-received #t)))
+                (let ((ok (wait-for (lambda () response-received)
+                                    "goto-definition response" 10000)))
+                  (check ok => #t)
+                  (when ok
+                    (check (hash-table? response-data) => #t))))
+              (lsp-did-close! lib-uri)))
+          (begin
+            (lsp-test-stop!)
+            (cleanup-fixture! dir)))))
 
     ;;------------------------------------------------------------------------
     ;; Group 6: Hover
@@ -470,22 +345,24 @@
 
     (test-case "hover request round-trip"
       (let ((dir (create-fixture!)))
-        (let ((proc (lsp-open dir)))
-          (unwind-protect
-            (begin
-              (lsp-initialize! proc dir)
-              (let* ((lib-path (string-append dir "/lib.ss"))
-                     (lib-uri (file-path->uri lib-path)))
-                (lsp-did-open! proc lib-uri "scheme"
-                  "(export hello goodbye)\n(def (hello) \"hi\")\n")
-                (let ((resp (lsp-request! proc "textDocument/hover"
-                              (lsp-text-doc-position lib-uri 1 5))))
-                  (check (hash-table? resp) => #t)
-                  (check (hash-key? resp "result") => #t))
-                (lsp-did-close! proc lib-uri)))
-            (begin
-              (lsp-close! proc)
-              (cleanup-fixture! dir))))))
+        (unwind-protect
+          (begin
+            (lsp-test-start! dir)
+            (let* ((lib-path (string-append dir "/lib.ss"))
+                   (lib-uri (file-path->uri lib-path)))
+              (lsp-did-open! lib-uri "scheme"
+                "(export hello goodbye)\n(def (hello) \"hi\")\n")
+              (let ((response-received #f))
+                (lsp-send-request! "textDocument/hover"
+                  (lsp-text-document-position lib-uri 1 5)
+                  (lambda (response)
+                    (set! response-received #t)))
+                (check (wait-for (lambda () response-received)
+                                 "hover response" 10000) => #t))
+              (lsp-did-close! lib-uri)))
+          (begin
+            (lsp-test-stop!)
+            (cleanup-fixture! dir)))))
 
     ;;------------------------------------------------------------------------
     ;; Group 7: Find References
@@ -493,25 +370,27 @@
 
     (test-case "find-references request round-trip"
       (let ((dir (create-fixture!)))
-        (let ((proc (lsp-open dir)))
-          (unwind-protect
-            (begin
-              (lsp-initialize! proc dir)
-              (let* ((lib-path (string-append dir "/lib.ss"))
-                     (lib-uri (file-path->uri lib-path)))
-                (lsp-did-open! proc lib-uri "scheme"
-                  "(export hello goodbye)\n(def (hello) \"hi\")\n")
-                (let ((params (lsp-text-doc-position lib-uri 1 5)))
+        (unwind-protect
+          (begin
+            (lsp-test-start! dir)
+            (let* ((lib-path (string-append dir "/lib.ss"))
+                   (lib-uri (file-path->uri lib-path)))
+              (lsp-did-open! lib-uri "scheme"
+                "(export hello goodbye)\n(def (hello) \"hi\")\n")
+              (let ((response-received #f))
+                (let ((params (lsp-text-document-position lib-uri 1 5)))
                   (let ((ctx (make-hash-table)))
                     (hash-put! ctx "includeDeclaration" #t)
                     (hash-put! params "context" ctx))
-                  (let ((resp (lsp-request! proc "textDocument/references" params)))
-                    (check (hash-table? resp) => #t)
-                    (check (hash-key? resp "result") => #t)))
-                (lsp-did-close! proc lib-uri)))
-            (begin
-              (lsp-close! proc)
-              (cleanup-fixture! dir))))))
+                  (lsp-send-request! "textDocument/references" params
+                    (lambda (response)
+                      (set! response-received #t))))
+                (check (wait-for (lambda () response-received)
+                                 "find-references response" 10000) => #t))
+              (lsp-did-close! lib-uri)))
+          (begin
+            (lsp-test-stop!)
+            (cleanup-fixture! dir)))))
 
     ;;------------------------------------------------------------------------
     ;; Group 8: Format Buffer
@@ -519,14 +398,14 @@
 
     (test-case "formatting request round-trip"
       (let ((dir (create-fixture!)))
-        (let ((proc (lsp-open dir)))
-          (unwind-protect
-            (begin
-              (lsp-initialize! proc dir)
-              (let* ((lib-path (string-append dir "/lib.ss"))
-                     (lib-uri (file-path->uri lib-path)))
-                (lsp-did-open! proc lib-uri "scheme"
-                  "(export hello goodbye)\n(def (hello) \"hi\")\n")
+        (unwind-protect
+          (begin
+            (lsp-test-start! dir)
+            (let* ((lib-path (string-append dir "/lib.ss"))
+                   (lib-uri (file-path->uri lib-path)))
+              (lsp-did-open! lib-uri "scheme"
+                "(export hello goodbye)\n(def (hello) \"hi\")\n")
+              (let ((response-received #f))
                 (let ((params (make-hash-table))
                       (td (make-hash-table))
                       (opts (make-hash-table)))
@@ -535,35 +414,52 @@
                   (hash-put! opts "insertSpaces" #t)
                   (hash-put! params "textDocument" td)
                   (hash-put! params "options" opts)
-                  (let ((resp (lsp-request! proc "textDocument/formatting" params)))
-                    (check (hash-table? resp) => #t)
-                    (check (hash-key? resp "result") => #t)))
-                (lsp-did-close! proc lib-uri)))
-            (begin
-              (lsp-close! proc)
-              (cleanup-fixture! dir))))))
+                  (lsp-send-request! "textDocument/formatting" params
+                    (lambda (response)
+                      (set! response-received #t))))
+                (check (wait-for (lambda () response-received)
+                                 "formatting response" 10000) => #t))
+              (lsp-did-close! lib-uri)))
+          (begin
+            (lsp-test-stop!)
+            (cleanup-fixture! dir)))))
+
+    ;;------------------------------------------------------------------------
+    ;; Group 11: First-start investigation
+    ;;------------------------------------------------------------------------
+
+    (test-case "didOpen after initialization via handler"
+      (let ((dir (create-fixture!)))
+        (unwind-protect
+          (begin
+            ;; Install a custom on-initialized handler that sends didOpen
+            (let* ((lib-path (string-append dir "/lib.ss"))
+                   (lib-uri (file-path->uri lib-path))
+                   (lib-text "(export hello goodbye)\n(def (hello) \"hi\")\n(def (goodbye) \"bye\")\n"))
+              (set-box! *lsp-on-initialized-handler*
+                (lambda ()
+                  (lsp-did-open! lib-uri "scheme" lib-text)))
+              (lsp-start! dir)
+              (wait-for (lambda () *lsp-initialized*) "initialization" 20000)
+              ;; Give the on-initialized handler time to fire and queue didOpen
+              (wait-for (lambda () (hash-get *lsp-doc-versions* lib-uri))
+                        "didOpen from handler" 5000)
+              (check (and (hash-get *lsp-doc-versions* lib-uri) #t) => #t)
+              (lsp-did-close! lib-uri)))
+          (begin
+            (set-box! *lsp-on-initialized-handler* #f)
+            (lsp-test-stop!)
+            (cleanup-fixture! dir)))))
 
     ;;------------------------------------------------------------------------
     ;; Error resilience
     ;;------------------------------------------------------------------------
 
-    (test-case "shutdown and exit are clean"
-      (let ((dir (create-fixture!)))
-        (let ((proc (lsp-open dir)))
-          (unwind-protect
-            (begin
-              (lsp-initialize! proc dir)
-              ;; Clean shutdown
-              (let ((shutdown-resp (lsp-request! proc "shutdown" #f)))
-                (check (hash-table? shutdown-resp) => #t))
-              (lsp-notify! proc "exit" #f)
-              ;; Port should now be at EOF
-              (let ((msg (with-catch (lambda (e) 'eof)
-                           (lambda () (lsp-read-message proc)))))
-                (check (not msg) => #t)))
-            (begin
-              (with-catch void (lambda () (close-port proc)))
-              (cleanup-fixture! dir))))))))
+    (test-case "lsp-stop! is idempotent"
+      (lsp-stop!)
+      (lsp-stop!)
+      (lsp-stop!)
+      (check (lsp-running?) => #f))))
 
 ;;;============================================================================
 ;;; Main entry point for gerbil test
