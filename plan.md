@@ -145,11 +145,28 @@ All changes span two repos:
 
 **Remote**: `github.com:ober/gerbil-emacs.git` (master branch)
 
-### 7. (Nice-to-have) Modeline visual indicator for active window
+### 7. ✅ DONE: Modeline visual indicator for active window
 
-**Status**: Future enhancement.
+**Status**: IMPLEMENTED for both TUI and Qt.
 
-Currently the modeline doesn't visually indicate which window is active. After other-window works, the user needs a visual cue (e.g. different modeline background color for active vs inactive windows).
+**TUI Implementation**:
+- Already had visual indicators built-in (discovered during review)
+- `modeline-draw!` takes `is-current` parameter
+- Active window: dark text (#x000000) on light gray (#xd8d8d8)
+- Inactive windows: gray text (#x808080) on dark gray (#x282828)
+- Called correctly from `draw-all-modelines!` in app.ss
+
+**Qt Implementation** (newly added):
+- Added `qt-frame-update-visual-indicators!` function
+- Active window: 2px solid blue border (#51afef)
+- Inactive windows: 1px subtle gray border (#3a3a3a)
+- Called automatically after:
+  - Frame initialization
+  - Window splits (split-below, split-right)
+  - Window deletion (delete-window, delete-other-windows)
+  - Window navigation (other-window)
+
+**Results**: All 230 Qt tests pass with visual indicators ✅
 
 ## File Change Summary
 

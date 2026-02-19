@@ -239,8 +239,11 @@
     (qt-stacked-widget-add-widget! container editor)
     (qt-splitter-add-widget! splitter container)
     (hash-put! *editor-window-map* editor win)
-    (let ((root (make-split-leaf win)))
-      (make-qt-frame splitter root (list win) 0 main-win))))
+    (let* ((root (make-split-leaf win))
+           (fr (make-qt-frame splitter root (list win) 0 main-win)))
+      ;; Set initial visual indicator for active window
+      (qt-frame-update-visual-indicators! fr)
+      fr)))
 
 ;;;============================================================================
 ;;; Window splitting — the core new architecture
@@ -338,6 +341,8 @@
         (qt-widget-resize! main-win saved-w saved-h))
       ;; Focus the new editor
       (when result (qt-widget-set-focus! result))
+      ;; Update visual indicators
+      (qt-frame-update-visual-indicators! fr)
       result)))
 
 (def (qt-frame-split! fr)
@@ -413,7 +418,9 @@
       ;; Update flat windows list and current-idx
       (set! (qt-frame-windows fr) (list-remove-idx (qt-frame-windows fr) idx))
       (when (>= (qt-frame-current-idx fr) (length (qt-frame-windows fr)))
-        (set! (qt-frame-current-idx fr) (- (length (qt-frame-windows fr)) 1))))))
+        (set! (qt-frame-current-idx fr) (- (length (qt-frame-windows fr)) 1))))
+      ;; Update visual indicators
+      (qt-frame-update-visual-indicators! fr)))
 
 (def (qt-frame-delete-other-windows! fr)
   "Keep only the current window, destroy all others and all sub-splitters."
@@ -437,11 +444,30 @@
     ;; 4. Update logical tree and flat list
     (set! (qt-frame-root fr) (make-split-leaf cur))
     (set! (qt-frame-windows fr) (list cur))
-    (set! (qt-frame-current-idx fr) 0)))
+    (set! (qt-frame-current-idx fr) 0)
+    ;; 5. Update visual indicators
+    (qt-frame-update-visual-indicators! fr)))
 
 ;;;============================================================================
 ;;; Window navigation
 ;;;============================================================================
+
+(def (qt-frame-update-visual-indicators! fr)
+  "Update container borders to show which window is active.
+   Active window: blue border; inactive windows: no border."
+  (let ((cur-idx (qt-frame-current-idx fr))
+        (windows (qt-frame-windows fr)))
+    (let loop ((wins windows) (i 0))
+      (when (pair? wins)
+        (let* ((win (car wins))
+               (container (qt-edit-window-container win))
+               (is-current (= i cur-idx))
+               ;; Active: 2px solid blue border; inactive: 1px subtle gray
+               (border-style (if is-current
+                               "border: 2px solid #51afef;"
+                               "border: 1px solid #3a3a3a;")))
+          (qt-widget-set-style-sheet! container border-style))
+        (loop (cdr wins) (+ i 1))))))
 
 (def (qt-frame-other-window! fr)
   "Switch to the next window (wraps around)."
@@ -450,7 +476,9 @@
           (modulo (+ (qt-frame-current-idx fr) 1) n))
     ;; Give keyboard focus to the new active editor
     (let ((win (list-ref (qt-frame-windows fr) (qt-frame-current-idx fr))))
-      (qt-widget-set-focus! (qt-edit-window-editor win)))))
+      (qt-widget-set-focus! (qt-edit-window-editor win)))
+    ;; Update visual indicators
+    (qt-frame-update-visual-indicators! fr)))
 
 ;;;============================================================================
 ;;; Helpers
