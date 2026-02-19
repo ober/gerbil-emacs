@@ -34,7 +34,8 @@
   (let* ((ed (create-scintilla-editor width: 80 height: 24))
          (buf (make-buffer name #f (send-message ed SCI_GETDOCPOINTER) #f #f #f #f))
          (win (make-edit-window ed buf 0 0 80 22 0))
-         (fr (make-frame [win] 0 80 24 'vertical))
+         (root (make-split-leaf win))
+         (fr (make-frame root [win] 0 80 24))
          (app (new-app-state fr)))
     (values ed app)))
 
@@ -45,7 +46,8 @@
          (name (path-strip-directory path))
          (buf  (make-buffer name path (send-message ed SCI_GETDOCPOINTER) #f #f #f #f))
          (win  (make-edit-window ed buf 0 0 80 22 0))
-         (fr   (make-frame [win] 0 80 24 'vertical))
+         (root (make-split-leaf win))
+         (fr   (make-frame root [win] 0 80 24))
          (app  (new-app-state fr)))
     (values ed app)))
 
@@ -1544,6 +1546,155 @@
             (execute-command! app 'magit-stage-file)
             (check #t => #t)))
         (cleanup-temp-git-repo! dir)))
+
+    ;;=========================================================================
+    ;; TUI Window Management Tests (Group 11 equivalent)
+    ;;=========================================================================
+
+    (test-case "window: split-window-below creates 2 windows"
+      (setup-default-bindings!)
+      (register-all-commands!)
+      (let-values (((ed app) (make-test-app "*scratch*")))
+        (execute-command! app 'split-window-below)
+        (let* ((fr (app-state-frame app))
+               (wins (frame-windows fr))
+               (root (frame-root fr)))
+          (check (length wins) => 2)
+          (check (split-node? root) => #t)
+          (check (split-node-orientation root) => 'vertical))))
+
+    (test-case "window: split-window-right creates 2 windows"
+      (setup-default-bindings!)
+      (register-all-commands!)
+      (let-values (((ed app) (make-test-app "*scratch*")))
+        (execute-command! app 'split-window-right)
+        (let* ((fr (app-state-frame app))
+               (wins (frame-windows fr))
+               (root (frame-root fr)))
+          (check (length wins) => 2)
+          (check (split-node? root) => #t)
+          (check (split-node-orientation root) => 'horizontal))))
+
+    (test-case "window: delete-window restores single pane"
+      (setup-default-bindings!)
+      (register-all-commands!)
+      (let-values (((ed app) (make-test-app "*scratch*")))
+        (execute-command! app 'split-window-below)
+        (execute-command! app 'delete-window)
+        (let* ((fr (app-state-frame app))
+               (wins (frame-windows fr))
+               (root (frame-root fr)))
+          (check (length wins) => 1)
+          (check (split-leaf? root) => #t))))
+
+    (test-case "window: delete-other-windows collapses to single pane"
+      (setup-default-bindings!)
+      (register-all-commands!)
+      (let-values (((ed app) (make-test-app "*scratch*")))
+        (execute-command! app 'split-window-right)
+        (execute-command! app 'split-window-below)
+        (execute-command! app 'delete-other-windows)
+        (let* ((fr (app-state-frame app))
+               (wins (frame-windows fr))
+               (root (frame-root fr)))
+          (check (length wins) => 1)
+          (check (split-leaf? root) => #t))))
+
+    (test-case "window: hsplit → other-window → vsplit (the reported bug)"
+      (setup-default-bindings!)
+      (register-all-commands!)
+      (let-values (((ed app) (make-test-app "*scratch*")))
+        ;; 1. Split right: A | B (cursor at B)
+        (execute-command! app 'split-window-right)
+        (let ((fr (app-state-frame app)))
+          (check (frame-current-idx fr) => 1))
+        ;; 2. other-window back to A
+        (execute-command! app 'other-window)
+        (let ((fr (app-state-frame app)))
+          (check (frame-current-idx fr) => 0))
+        ;; 3. Split below in A: (A1 over A2) | B
+        (execute-command! app 'split-window-below)
+        (let* ((fr (app-state-frame app))
+               (wins (frame-windows fr))
+               (root (frame-root fr)))
+          (check (length wins) => 3)
+          ;; Root should be horizontal, left child vertical, right leaf
+          (check (split-node? root) => #t)
+          (check (split-node-orientation root) => 'horizontal)
+          (let ((left (car (split-node-children root)))
+                (right (cadr (split-node-children root))))
+            (check (split-node? left) => #t)
+            (check (split-node-orientation left) => 'vertical)
+            (check (split-leaf? right) => #t)))))
+
+    (test-case "window: vsplit → other-window → hsplit"
+      (setup-default-bindings!)
+      (register-all-commands!)
+      (let-values (((ed app) (make-test-app "*scratch*")))
+        ;; 1. Split below: A over B (cursor at B)
+        (execute-command! app 'split-window-below)
+        (let ((fr (app-state-frame app)))
+          (check (frame-current-idx fr) => 1))
+        ;; 2. other-window back to A
+        (execute-command! app 'other-window)
+        (let ((fr (app-state-frame app)))
+          (check (frame-current-idx fr) => 0))
+        ;; 3. Split right in A: (A1 | A2) over B
+        (execute-command! app 'split-window-right)
+        (let* ((fr (app-state-frame app))
+               (wins (frame-windows fr))
+               (root (frame-root fr)))
+          (check (length wins) => 3)
+          ;; Root should be vertical, top child horizontal, bottom leaf
+          (check (split-node? root) => #t)
+          (check (split-node-orientation root) => 'vertical)
+          (let ((top (car (split-node-children root)))
+                (bottom (cadr (split-node-children root))))
+            (check (split-node? top) => #t)
+            (check (split-node-orientation top) => 'horizontal)
+            (check (split-leaf? bottom) => #t)))))
+
+    (test-case "window: four-pane grid (2x2)"
+      (setup-default-bindings!)
+      (register-all-commands!)
+      (let-values (((ed app) (make-test-app "*scratch*")))
+        ;; Build (A|B) over (C|D)
+        (execute-command! app 'split-window-right)   ; A|B, current=B
+        (execute-command! app 'other-window)         ; current=A
+        (execute-command! app 'split-window-below)   ; (A1|B) + A2, current=A2
+        (execute-command! app 'other-window)         ; current=B
+        (execute-command! app 'split-window-below)   ; (A1|B1) + (A2|B2)
+        (let* ((fr (app-state-frame app))
+               (wins (frame-windows fr)))
+          (check (length wins) => 4))))
+
+    (test-case "window: other-window cycles through all panes"
+      (setup-default-bindings!)
+      (register-all-commands!)
+      (let-values (((ed app) (make-test-app "*scratch*")))
+        (execute-command! app 'split-window-right)
+        (execute-command! app 'split-window-below)
+        (let* ((fr (app-state-frame app))
+               (start-idx (frame-current-idx fr)))
+          (execute-command! app 'other-window)
+          (execute-command! app 'other-window)
+          (execute-command! app 'other-window)
+          (let ((end-idx (frame-current-idx fr)))
+            (check end-idx => start-idx)))))
+
+    (test-case "window: three-way horizontal split uses flat siblings"
+      (setup-default-bindings!)
+      (register-all-commands!)
+      (let-values (((ed app) (make-test-app "*scratch*")))
+        (execute-command! app 'split-window-right)  ; A|B
+        (execute-command! app 'split-window-right)  ; A|B|C
+        (let* ((fr (app-state-frame app))
+               (wins (frame-windows fr))
+               (root (frame-root fr)))
+          (check (length wins) => 3)
+          (check (split-node? root) => #t)
+          (check (split-node-orientation root) => 'horizontal)
+          (check (length (split-node-children root)) => 3))))
 
 ))
 

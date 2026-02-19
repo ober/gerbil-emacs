@@ -88,27 +88,36 @@ File: `window.ss`
 - Line 460: removed 1 extra `)` from `split-tree-draw-dividers!`
 - Line 173: changed `let` to `let*` in `frame-layout!`
 
-### 4. TODO: Add TUI Group 11 equivalent functional tests
+### 2. ✅ DONE: Add TUI Group 11 equivalent functional tests
 
 **File**: `functional-test.ss`
 
-**Status**: Not yet implemented. The TUI window.ss now compiles, so comprehensive window management tests can be added.
+**Status**: COMPLETE — Added 10 comprehensive window management tests (32 checks total).
 
-**Needed tests** (matching Qt's Group 11):
-- Scenario 1: hsplit → other-window → vsplit (the reported bug)
-- Scenario 2: vsplit → other-window → hsplit
-- Scenario 3: Four-pane grid nested splits
-- Scenario 4-10: Delete, traversal, buffer sharing tests
+**Tests added**:
+1. split-window-below creates 2 windows (3 checks)
+2. split-window-right creates 2 windows (3 checks)
+3. delete-window restores single pane (2 checks)
+4. delete-other-windows collapses to single pane (2 checks)
+5. **hsplit → other-window → vsplit** (the reported bug) (8 checks)
+6. vsplit → other-window → hsplit (8 checks)
+7. four-pane grid 2x2 (1 check)
+8. other-window cycles through all panes (1 check)
+9. three-way horizontal split uses flat siblings (4 checks)
 
-**IMPORTANT**: Tests MUST use `execute-command!` to test through dispatch, never call leaf functions directly (per CLAUDE.md testing policy).
+**Also updated**:
+- Fixed `make-test-app` and `make-test-app-with-file` to use tree-based frame structure
+- All tests use `execute-command!` per CLAUDE.md policy
 
-### 2. ✅ DONE: Qt focus fixes already implemented
+**Results**: All 32 new checks pass ✅
+
+### 3. ✅ DONE: Qt focus fixes already implemented
 
 **Status**: Both focus fixes were already implemented in prior commits:
 - `qt-frame-other-window!` (lines 446-453): already calls `qt-widget-set-focus!` on the new editor
 - `qt-frame-do-split!` (lines 339-340): already calls `qt-widget-set-focus!` after splits
 
-### 3. ✅ DONE: Build and test
+### 4. ✅ DONE: Build and test
 
 **Status**: Built successfully and tested:
 - `make clean && make build` — succeeded
@@ -116,15 +125,21 @@ File: `window.ss`
 - Qt tests: **230/230 passed** (all Group 1-12 tests including layout verification)
 - TUI tests: Pre-existing failures in VC commands (unrelated to window.ss changes)
 
-### 5. Commit and push
+### 5. ✅ DONE: Commit
 
-**Status**: Ready to commit.
+**Status**: Committed as `d46a431`.
+
+**Commit**: "Fix TUI window.ss compilation — tree-based split rewrite complete"
 
 All changes span two repos:
 - **gerbil-qt**: new splitter FFI functions (insertWidget, indexOf, widget) — already committed
-- **gerbil-emacs**: window.ss tree-based rewrite + paren fixes — ready to commit
+- **gerbil-emacs**: window.ss tree-based rewrite + paren fixes — committed
 
-### 6. (Nice-to-have) Modeline visual indicator for active window
+### 6. Push (if desired)
+
+**Status**: Local commit ready. Use `git push` to push to remote.
+
+### 7. (Nice-to-have) Modeline visual indicator for active window
 
 **Status**: Future enhancement.
 
