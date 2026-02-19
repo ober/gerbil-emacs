@@ -135,9 +135,15 @@ All changes span two repos:
 - **gerbil-qt**: new splitter FFI functions (insertWidget, indexOf, widget) — already committed
 - **gerbil-emacs**: window.ss tree-based rewrite + paren fixes — committed
 
-### 6. Push (if desired)
+### 6. ✅ DONE: Push to remote
 
-**Status**: Local commit ready. Use `git push` to push to remote.
+**Status**: PUSHED successfully.
+
+**Commits pushed**:
+- `d46a431` - Fix TUI window.ss compilation (tree-based rewrite complete)
+- `fdd9c6f` - Add comprehensive TUI window management tests (32 checks pass)
+
+**Remote**: `github.com:ober/gerbil-emacs.git` (master branch)
 
 ### 7. (Nice-to-have) Modeline visual indicator for active window
 
