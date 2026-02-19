@@ -49,6 +49,13 @@
   theme-settings-save!
   theme-settings-load!
 
+  ;; Custom face persistence
+  *custom-faces-file*
+  *custom-faces*
+  custom-faces-save!
+  custom-faces-load!
+  record-face-customization!
+
   ;; Init file
   *init-file-path*
   init-file-load!
@@ -495,6 +502,100 @@
                   (let ((size-str (parse-line font-size-line "font-size:")))
                     (and size-str (string->number size-str)))))))
           (values #f #f #f))))))
+
+;;;============================================================================
+;;; Custom Face Persistence
+;;;============================================================================
+
+(def *custom-faces-file* ".gemacs-custom-faces")
+(def *custom-faces* (make-hash-table-eq))  ;; face-name -> customizations
+
+(def (custom-faces-save!)
+  "Save custom face overrides to disk.
+   Format: face-name	fg:#hex	bg:#hex	bold:true/false	italic:true/false
+   Only saves faces that have been customized (tracked in *custom-faces*)."
+  (with-catch
+    (lambda (e) #f)
+    (lambda ()
+      (call-with-output-file (persist-path *custom-faces-file*)
+        (lambda (port)
+          (hash-for-each
+            (lambda (face-name customizations)
+              (let ((line (string-append (symbol->string face-name))))
+                (when (hash-key? customizations 'fg)
+                  (set! line (string-append line "\tfg:" (hash-get customizations 'fg))))
+                (when (hash-key? customizations 'bg)
+                  (set! line (string-append line "\tbg:" (hash-get customizations 'bg))))
+                (when (hash-key? customizations 'bold)
+                  (set! line (string-append line "\tbold:"
+                                            (if (hash-get customizations 'bold) "true" "false"))))
+                (when (hash-key? customizations 'italic)
+                  (set! line (string-append line "\titalic:"
+                                            (if (hash-get customizations 'italic) "true" "false"))))
+                (displayln line port)))
+            *custom-faces*))))))
+
+(def (custom-faces-load!)
+  "Load custom face overrides from disk and apply them.
+   Custom faces overlay theme faces — theme provides defaults, user customizations override."
+  (with-catch
+    (lambda (e) #f)
+    (lambda ()
+      (let ((path (persist-path *custom-faces-file*)))
+        (when (file-exists? path)
+          (call-with-input-file path
+            (lambda (port)
+              (let loop ()
+                (let ((line (read-line port)))
+                  (unless (eof-object? line)
+                    (let* ((parts (string-split line #\tab))
+                           (face-name (and (pair? parts) (string->symbol (car parts))))
+                           (attrs (cdr parts)))
+                      (when face-name
+                        (let ((customizations (make-hash-table-eq)))
+                          (for-each
+                            (lambda (attr-str)
+                              (let ((colon-idx (string-index attr-str #\:)))
+                                (when colon-idx
+                                  (let ((key (string->symbol (substring attr-str 0 colon-idx)))
+                                        (val (substring attr-str (+ colon-idx 1) (string-length attr-str))))
+                                    (cond
+                                      ((eq? key 'fg) (hash-put! customizations 'fg val))
+                                      ((eq? key 'bg) (hash-put! customizations 'bg val))
+                                      ((eq? key 'bold) (hash-put! customizations 'bold (string=? val "true")))
+                                      ((eq? key 'italic) (hash-put! customizations 'italic (string=? val "true"))))))))
+                            attrs)
+                          ;; Store customizations for saving later
+                          (hash-put! *custom-faces* face-name customizations)
+                          ;; Apply customizations to the face
+                          (when (hash-key? customizations 'fg)
+                            (set-face-attribute! face-name fg: (hash-get customizations 'fg)))
+                          (when (hash-key? customizations 'bg)
+                            (set-face-attribute! face-name bg: (hash-get customizations 'bg)))
+                          (when (hash-key? customizations 'bold)
+                            (set-face-attribute! face-name bold: (hash-get customizations 'bold)))
+                          (when (hash-key? customizations 'italic)
+                            (set-face-attribute! face-name italic: (hash-get customizations 'italic))))))
+                    (loop)))))))))))
+
+(def (record-face-customization! face-name . attrs)
+  "Record that a face has been customized, so it can be saved to disk.
+   attrs are keyword pairs: fg: bg: bold: italic:"
+  (let ((customizations (or (hash-get *custom-faces* face-name)
+                            (let ((h (make-hash-table-eq)))
+                              (hash-put! *custom-faces* face-name h)
+                              h))))
+    (let loop ((attrs attrs))
+      (when (pair? attrs)
+        (let ((key (car attrs)))
+          (when (and (pair? (cdr attrs)) (keyword? key))
+            (let ((val (cadr attrs)))
+              (case key
+                ((fg:) (hash-put! customizations 'fg val))
+                ((bg:) (hash-put! customizations 'bg val))
+                ((bold:) (hash-put! customizations 'bold val))
+                ((italic:) (hash-put! customizations 'italic val))))
+            (loop (cddr attrs))))))))
 
 ;;;============================================================================
 ;;; Init file

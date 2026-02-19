@@ -179,6 +179,8 @@
         (set! *default-font-size* saved-font-size)))
     ;; Load theme (populates *faces* registry from theme definition)
     (load-theme! *current-theme*)
+    ;; Load custom face overrides (overlays on top of theme)
+    (custom-faces-load!)
     ;; Apply theme stylesheet
     (qt-app-set-style-sheet! qt-app (theme-stylesheet))
 

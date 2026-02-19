@@ -229,8 +229,77 @@
   (cmd-toggle-highlighting app))
 
 (def (cmd-customize-face app)
-  "Customize face."
-  (echo-message! (app-state-echo app) "Face customization not available in Qt backend"))
+  "Interactively customize a face's visual attributes.
+   Prompts for face name, then for each attribute (foreground, background, bold, italic).
+   Changes are saved to ~/.gemacs-custom-faces and persist across sessions."
+  (let* ((face-names (sort (hash-keys *faces*)
+                           (lambda (a b) (string<? (symbol->string a) (symbol->string b)))))
+         (face-name-strs (map symbol->string face-names))
+         (face-input (qt-echo-read-string-with-completion app
+                       "Customize face: " face-name-strs)))
+    (when (and face-input (not (string-empty? face-input)))
+      (let* ((face-sym (string->symbol face-input))
+             (face (face-get face-sym)))
+        (if (not face)
+          (echo-error! (app-state-echo app)
+            (string-append "Unknown face: " face-input))
+          (begin
+            ;; Show current properties
+            (let ((current-desc (string-append
+                                  "Current: "
+                                  (if (face-fg face) (string-append "fg:" (face-fg face) " ") "")
+                                  (if (face-bg face) (string-append "bg:" (face-bg face) " ") "")
+                                  (if (face-bold face) "bold " "")
+                                  (if (face-italic face) "italic " ""))))
+              (echo-message! (app-state-echo app) current-desc))
+
+            ;; Collect customizations
+            (let ((fg-input (app-read-string app "Foreground (#hex or empty to keep): "))
+                  (bg-input #f)
+                  (bold-input #f)
+                  (italic-input #f))
+
+              ;; Foreground
+              (when (and fg-input (not (string-empty? fg-input)))
+                (set-face-attribute! face-sym fg: fg-input)
+                (record-face-customization! face-sym fg: fg-input))
+
+              ;; Background
+              (set! bg-input (app-read-string app "Background (#hex or empty to keep): "))
+              (when (and bg-input (not (string-empty? bg-input)))
+                (set-face-attribute! face-sym bg: bg-input)
+                (record-face-customization! face-sym bg: bg-input))
+
+              ;; Bold
+              (set! bold-input (app-read-string app "Bold (y/n/empty to keep): "))
+              (when (and bold-input (not (string-empty? bold-input)))
+                (let ((bold-val (cond
+                                  ((or (string=? bold-input "y") (string=? bold-input "yes")) #t)
+                                  ((or (string=? bold-input "n") (string=? bold-input "no")) #f)
+                                  (else 'unset))))
+                  (unless (eq? bold-val 'unset)
+                    (set-face-attribute! face-sym bold: bold-val)
+                    (record-face-customization! face-sym bold: bold-val))))
+
+              ;; Italic
+              (set! italic-input (app-read-string app "Italic (y/n/empty to keep): "))
+              (when (and italic-input (not (string-empty? italic-input)))
+                (let ((italic-val (cond
+                                    ((or (string=? italic-input "y") (string=? italic-input "yes")) #t)
+                                    ((or (string=? italic-input "n") (string=? italic-input "no")) #f)
+                                    (else 'unset))))
+                  (unless (eq? italic-val 'unset)
+                    (set-face-attribute! face-sym italic: italic-val)
+                    (record-face-customization! face-sym italic: italic-val)))))
+
+            ;; Re-apply theme to update all buffers with new face
+            (apply-theme! app)
+
+            ;; Save customization to disk
+            (custom-faces-save!)
+
+            (echo-message! (app-state-echo app)
+              (string-append "Face customized: " face-input)))))))))
 
 (def (get-monospace-fonts)
   "Get list of available monospace fonts from the system.

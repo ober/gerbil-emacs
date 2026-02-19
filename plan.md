@@ -355,50 +355,58 @@ font-size:12
 
 ---
 
-### Phase 4: `customize-face` Interactive Command
+### Phase 4: `customize-face` Interactive Command ✅ COMPLETE
 
 **Goal**: Users can interactively modify individual face colors, like Emacs `M-x customize-face`.
 
-#### 4.1 Implement `cmd-customize-face` (Qt)
+#### 4.1 Implement `cmd-customize-face` (Qt) ✅ COMPLETE
 
-Replace the stub in `qt/commands-config.ss:231-233`.
+Replaced the stub in `qt/commands-config.ss`.
 
 Behavior:
-1. Prompt: "Customize face: " with completion from `(hash-keys *faces*)`
-2. Show current face properties in echo area
-3. Prompt: "Foreground (#hex or empty to keep): "
-4. Prompt: "Background (#hex or empty to keep): "
-5. Prompt: "Bold (y/n/empty): "
-6. Prompt: "Italic (y/n/empty): "
-7. Apply updated face to `*faces*`
-8. Re-apply theme (which re-applies all faces)
-9. Save customization to `~/.gemacs-custom-faces` for persistence
+1. ✅ Prompt: "Customize face: " with completion from `(hash-keys *faces*)` (sorted alphabetically)
+2. ✅ Show current face properties in echo area
+3. ✅ Prompt: "Foreground (#hex or empty to keep): "
+4. ✅ Prompt: "Background (#hex or empty to keep): "
+5. ✅ Prompt: "Bold (y/n/empty to keep): "
+6. ✅ Prompt: "Italic (y/n/empty to keep): "
+7. ✅ Apply updated face to `*faces*` via `set-face-attribute!`
+8. ✅ Re-apply theme via `apply-theme!` (which re-applies all faces to all buffers)
+9. ✅ Record customizations via `record-face-customization!`
+10. ✅ Save to `~/.gemacs-custom-faces` via `custom-faces-save!`
 
-#### 4.2 Custom face persistence
+#### 4.2 Custom face persistence ✅ COMPLETE
 
-**File**: `persist.ss` — add face customization save/load
+**File**: `persist.ss` — added face customization save/load
 
 Format in `~/.gemacs-custom-faces`:
 ```
 font-lock-keyword-face	fg:#ff79c6	bold:true
-font-lock-string-face	fg:#50fa7b
+font-lock-string-face	fg:#50fa7b	italic:false
 ```
 
-Custom faces overlay theme faces — theme provides defaults, user customizations override.
+Implementation:
+- ✅ `*custom-faces-file*` — file path constant
+- ✅ `*custom-faces*` — hash table tracking customizations (face-name -> customization-hash)
+- ✅ `custom-faces-save!` — writes tab-separated format to disk
+- ✅ `custom-faces-load!` — reads from disk and applies customizations via `set-face-attribute!`
+- ✅ `record-face-customization!` — tracks which faces have been customized
+- ✅ Custom faces overlay theme faces — theme provides defaults, user customizations override
 
-#### 4.3 Load order
+#### 4.3 Load order ✅ COMPLETE
 
-At startup:
-1. Load face defaults (from `face.ss`)
-2. Load theme (applies theme's face definitions)
-3. Load custom faces (overlays on top of theme)
-4. Load font settings
-5. Create editor widgets (which read from face system)
+At startup (qt/app.ss):
+1. ✅ Load face defaults via `define-standard-faces!` (from `face.ss`)
+2. ✅ Load saved theme/font settings via `theme-settings-load!`
+3. ✅ Load theme via `load-theme!` (applies theme's face definitions)
+4. ✅ Load custom faces via `custom-faces-load!` (overlays on top of theme)
+5. ✅ Apply theme stylesheet
+6. ✅ Create editor widgets (which read from face system)
 
 **Files modified**:
-- `qt/commands-config.ss` — implement customize-face
-- `persist.ss` — save/load custom faces
-- `qt/app.ss` — load custom faces at startup
+- `qt/commands-config.ss` — implemented full `cmd-customize-face` ✅
+- `persist.ss` — added save/load custom faces with tracking ✅
+- `qt/app.ss` — load custom faces at startup after theme ✅
 
 ---
 
@@ -532,8 +540,8 @@ New command: `M-x describe-theme` — opens a buffer showing all face definition
 5. **Phase 2.4 & 2.6** (TUI face-aware highlighting) — ✅ COMPLETE - TUI syntax highlighting, modeline, echo use face system
 6. **Phase 3.4-3.6** (font commands + persistence) — ✅ COMPLETE - global font commands, set-frame-font, set-font-size, persistence
 7. **Phase 2.7** (theme persistence) — ✅ COMPLETE - theme saved/loaded from ~/.gemacs-theme
-8. **Phase 4** (customize-face) — NEXT - interactive face customization command
-9. **Phase 5** (init file API) — depends on Phases 1-3
+8. **Phase 4** (customize-face) — ✅ COMPLETE - interactive face customization with persistence
+9. **Phase 5** (init file API) — NEXT - expose theme/font/face API for .gemacs-init.ss
 10. **Phase 6** (user theme files) — depends on Phase 5
 
 ---
