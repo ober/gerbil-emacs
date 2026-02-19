@@ -410,51 +410,63 @@ At startup (qt/app.ss):
 
 ---
 
-### Phase 5: Init File Theme/Font API
+### Phase 5: Init File Theme/Font API ✅ COMPLETE
 
 **Goal**: Users can configure themes and fonts from `.gemacs-init.ss` like Emacs.
 
-#### 5.1 Expose API for init files
+#### 5.1 Expose API for init files ✅ COMPLETE
 
-These symbols are already accessible via `eval` in `load-init-file!`, but ensure they're exported:
+Convenience functions are now available via `eval` in `load-init-file!` (qt/commands-modes.ss):
 
 ```scheme
 ;; In .gemacs-init.ss:
-(load-theme 'dracula)
-(set-frame-font "JetBrains Mono" 12)
+(load-theme 'dracula)               ;; Load a built-in theme
+(set-frame-font "JetBrains Mono" 12) ;; Set font family and size
 
 ;; Custom face override:
-(set-face-attribute 'font-lock-keyword-face fg: "#ff79c6" bold: #t)
+(set-face-attribute! 'font-lock-keyword-face fg: "#ff79c6" bold: #t)
 
 ;; Define a custom theme:
 (define-theme! 'my-theme
   '((default . (fg: "#e0e0e0" bg: "#1a1a2e"))
     (font-lock-keyword-face . (fg: "#e94560" bold: #t))
     ...))
-(load-theme 'my-theme)
+(load-theme 'my-theme)               ;; Load your custom theme
 ```
 
-#### 5.2 Convenience functions
+#### 5.2 Convenience functions ✅ COMPLETE
 
+Implemented and exported:
+
+**face.ss**:
 ```scheme
-(def (load-theme name)
-  "Switch to named theme, like Emacs load-theme."
-  (set! *current-theme* name)
-  (apply-faces-from-theme! name)
-  ...)
-
-(def (set-face-attribute face-name . props)
-  "Modify a face's properties, like Emacs set-face-attribute."
-  ...)
-
 (def (set-frame-font family size)
-  "Set the default font, like Emacs set-frame-font."
-  ...)
+  "Set the default font family and size for all editors."
+  (set! *default-font-family* family)
+  (set! *default-font-size* size))
 ```
+
+**qt/commands-core.ss**:
+```scheme
+(def (load-theme theme-name)
+  "Load a theme and apply its face definitions."
+  (load-theme! theme-name))
+
+(def (define-theme! theme-name face-alist)
+  "Define a custom theme."
+  (register-theme! theme-name face-alist))
+```
+
+**Already available from face.ss (via core.ss)**:
+- `set-face-attribute!` - Modify face properties
+- `define-face!` - Define new faces
+- `*faces*`, `*default-font-family*`, `*default-font-size*` - State access
 
 **Files modified**:
-- `face.ss` — export convenience functions
-- `qt/commands.ss` — ensure exports reach init file eval scope
+- `face.ss` — added `set-frame-font` convenience function ✅
+- `core.ss` — exported `set-frame-font` ✅
+- `qt/commands-core.ss` — added `load-theme` and `define-theme!` wrappers ✅
+- `qt/commands.ss` — exported init file API functions ✅
 
 ---
 
@@ -541,8 +553,8 @@ New command: `M-x describe-theme` — opens a buffer showing all face definition
 6. **Phase 3.4-3.6** (font commands + persistence) — ✅ COMPLETE - global font commands, set-frame-font, set-font-size, persistence
 7. **Phase 2.7** (theme persistence) — ✅ COMPLETE - theme saved/loaded from ~/.gemacs-theme
 8. **Phase 4** (customize-face) — ✅ COMPLETE - interactive face customization with persistence
-9. **Phase 5** (init file API) — NEXT - expose theme/font/face API for .gemacs-init.ss
-10. **Phase 6** (user theme files) — depends on Phase 5
+9. **Phase 5** (init file API) — ✅ COMPLETE - convenience functions for .gemacs-init.ss
+10. **Phase 6** (user theme files) — OPTIONAL - load themes from ~/.gemacs-themes/ directory
 
 ---
 

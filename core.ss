@@ -117,6 +117,8 @@
   parse-hex-color
   rgb->hex
   define-standard-faces!
+  ;; Init file convenience API
+  set-frame-font
 
   ;; Theme system (from :gemacs/themes)
   *themes*

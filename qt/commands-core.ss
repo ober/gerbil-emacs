@@ -217,6 +217,22 @@
     ;; Update current theme
     (set! *current-theme* theme-name)))
 
+;;; ============================================================================
+;;; Init File Convenience API
+;;; ============================================================================
+
+(def (load-theme theme-name)
+  "Load a theme and apply its face definitions (convenience wrapper for init files).
+   Example: (load-theme 'dracula)"
+  (load-theme! theme-name))
+
+(def (define-theme! theme-name face-alist)
+  "Define a custom theme (convenience wrapper for init files).
+   Example: (define-theme! 'my-theme
+              '((default . (fg: \"#e0e0e0\" bg: \"#1a1a2e\"))
+                (font-lock-keyword-face . (fg: \"#e94560\" bold: #t))))"
+  (register-theme! theme-name face-alist))
+
 (def (theme-stylesheet)
   "Generate a Qt stylesheet from the current theme."
   (let ((bg (or (theme-color 'bg) "#181818"))

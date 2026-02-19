@@ -271,3 +271,20 @@
 ;; Note: Commented out automatic initialization to avoid module loading issues
 ;; Call (define-standard-faces!) explicitly from application startup
 ;; (define-standard-faces!)
+
+;;; ============================================================================
+;;; Init File Convenience API
+;;; ============================================================================
+;;; These functions are designed for use in .gemacs-init.ss files to provide
+;;; an Emacs-like configuration experience.
+
+(def (set-frame-font family size)
+  "Set the default font family and size for all editors.
+   Convenience wrapper for use in init files.
+   Example: (set-frame-font \"JetBrains Mono\" 12)"
+  (set! *default-font-family* family)
+  (set! *default-font-size* size))
+
+;; Note: load-theme is backend-specific and defined in qt/commands-core.ss
+;; For init files, use (load-theme! 'theme-name) directly after importing :gemacs/core
+;; or the Qt backend will provide a load-theme wrapper that also applies the stylesheet.

@@ -30,6 +30,9 @@
         theme-stylesheet
         load-theme!
         apply-theme!
+        ;; Init file convenience API
+        load-theme
+        define-theme!
         buffer-touch!
         custom-keys-load!
         abbrevs-load!
