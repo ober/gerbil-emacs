@@ -267,7 +267,11 @@
                   (let-values (((r g b) (parse-color g-fg)))
                     (qt-line-number-area-set-fg-color! lna r g b)))))
             (qt-frame-windows fr)))))
-    ;; TODO: Re-apply syntax highlighting to all open buffers
+    ;; Re-apply syntax highlighting to all open buffers
+    (for-each
+      (lambda (buf)
+        (qt-setup-highlighting! app buf))
+      (buffer-list))
     ;; TODO: Update visual decorations (cursor-line, brace match, search highlight)
     ;; TODO: Update tab colors and window borders
     ;; Echo area label styling is handled by the Qt stylesheet above

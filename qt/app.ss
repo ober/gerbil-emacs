@@ -164,7 +164,11 @@
 
 (def (qt-main . args)
   (with-qt-app qt-app
-    ;; Apply theme stylesheet (uses *current-theme* from commands.ss)
+    ;; Initialize face system with standard faces
+    (define-standard-faces!)
+    ;; Load default theme (populates *faces* registry from theme definition)
+    (load-theme! *current-theme*)
+    ;; Apply theme stylesheet
     (qt-app-set-style-sheet! qt-app (theme-stylesheet))
 
     (let* ((win (qt-main-window-create))

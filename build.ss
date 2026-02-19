@@ -204,4 +204,4 @@
     (exe: "qt/main" bin: "gemacs-qt"
           "-cc-options" ,qt-cc-opts
           "-ld-options" ,qt-ld-opts))
-  parallelize: #t)
+  parallelize: (max 1 (quotient (##cpu-count) 2)))

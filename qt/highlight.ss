@@ -25,27 +25,26 @@
                  org-table-line? org-block-begin? org-block-end?))
 
 ;;;============================================================================
-;;; Color constants (dark theme)
+;;; Face-aware color helpers
 ;;;============================================================================
 
-;; Keywords: purple, bold
-(def kw-r #xcc) (def kw-g #x99) (def kw-b #xcc)
-;; Builtins: cyan
-(def bi-r #x66) (def bi-g #xcc) (def bi-b #xcc)
-;; Strings: green
-(def st-r #x99) (def st-g #xcc) (def st-b #x99)
-;; Comments: gray, italic
-(def cm-r #x99) (def cm-g #x99) (def cm-b #x99)
-;; Numbers: orange
-(def nm-r #xf9) (def nm-g #x91) (def nm-b #x57)
-;; Operators/special: light gray
-(def op-r #xb8) (def op-g #xb8) (def op-b #xb8)
-;; Headings: blue, bold
-(def hd-r #x66) (def hd-g #x99) (def hd-b #xcc)
-;; Preprocessor: orange
-(def pp-r #xf9) (def pp-g #x91) (def pp-b #x57)
-;; Types: yellow
-(def ty-r #xff) (def ty-g #xcc) (def ty-b #x66)
+(def (face-fg-rgb face-name)
+  "Get RGB values (0-255) from a face's foreground color.
+   Returns (values r g b). Falls back to gray (#d8d8d8) if face not found."
+  (let ((f (face-get face-name)))
+    (if (and f (face-fg f))
+      (parse-hex-color (face-fg f))
+      (values #xd8 #xd8 #xd8))))
+
+(def (face-has-bold? face-name)
+  "Check if a face has the bold attribute."
+  (let ((f (face-get face-name)))
+    (and f (face-bold f))))
+
+(def (face-has-italic? face-name)
+  "Check if a face has the italic attribute."
+  (let ((f (face-get face-name)))
+    (and f (face-italic f))))
 
 ;;;============================================================================
 ;;; File extension -> language detection
@@ -264,14 +263,25 @@
 ;;; Apply base dark theme and reset styles
 ;;;============================================================================
 
-(def (apply-base-dark-theme! ed)
-  "Reset all styles to dark theme defaults."
-  (sci-send ed SCI_STYLESETBACK STYLE_DEFAULT (rgb->sci #x1e #x1e #x2e))
-  (sci-send ed SCI_STYLESETFORE STYLE_DEFAULT (rgb->sci #xd4 #xd4 #xd4))
+(def (apply-base-theme! ed)
+  "Reset all styles to theme defaults from face system."
+  ;; Get colors from default and line-number faces
+  (let-values (((fg-r fg-g fg-b) (face-fg-rgb 'default)))
+    (sci-send ed SCI_STYLESETFORE STYLE_DEFAULT (rgb->sci fg-r fg-g fg-b)))
+  ;; Background color from default face (if present)
+  (let ((default-face (face-get 'default)))
+    (when (and default-face (face-bg default-face))
+      (let-values (((bg-r bg-g bg-b) (parse-hex-color (face-bg default-face))))
+        (sci-send ed SCI_STYLESETBACK STYLE_DEFAULT (rgb->sci bg-r bg-g bg-b)))))
+  ;; Apply to all styles
   (sci-send ed SCI_STYLECLEARALL)
   ;; Restore line number margin style (STYLECLEARALL resets it)
-  (sci-send ed SCI_STYLESETBACK STYLE_LINENUMBER (rgb->sci #x20 #x20 #x20))
-  (sci-send ed SCI_STYLESETFORE STYLE_LINENUMBER (rgb->sci #x8c #x8c #x8c)))
+  (let-values (((ln-r ln-g ln-b) (face-fg-rgb 'line-number)))
+    (sci-send ed SCI_STYLESETFORE STYLE_LINENUMBER (rgb->sci ln-r ln-g ln-b)))
+  (let ((ln-face (face-get 'line-number)))
+    (when (and ln-face (face-bg ln-face))
+      (let-values (((bg-r bg-g bg-b) (parse-hex-color (face-bg ln-face))))
+        (sci-send ed SCI_STYLESETBACK STYLE_LINENUMBER (rgb->sci bg-r bg-g bg-b))))))
 
 ;;;============================================================================
 ;;; Lexer-specific style setup
@@ -282,25 +292,34 @@
 ;;; 5=keyword, 6=string, 7=character, 9=preprocessor, 10=operator, 16=keyword2
 
 (def (setup-cpp-styles! ed keywords (types #f))
-  ;; Comments: gray, italic
-  (for-each (lambda (s)
-              (sci-send ed SCI_STYLESETFORE s (rgb->sci cm-r cm-g cm-b))
-              (sci-send ed SCI_STYLESETITALIC s 1))
-            '(1 2 3 15))
-  ;; Numbers: orange
-  (sci-send ed SCI_STYLESETFORE 4 (rgb->sci nm-r nm-g nm-b))
-  ;; Keywords: purple, bold
-  (sci-send ed SCI_STYLESETFORE 5 (rgb->sci kw-r kw-g kw-b))
-  (sci-send ed SCI_STYLESETBOLD 5 1)
-  ;; Strings: green
-  (sci-send ed SCI_STYLESETFORE 6 (rgb->sci st-r st-g st-b))
-  (sci-send ed SCI_STYLESETFORE 7 (rgb->sci st-r st-g st-b))
-  ;; Preprocessor: orange
-  (sci-send ed SCI_STYLESETFORE 9 (rgb->sci pp-r pp-g pp-b))
-  ;; Operator: light gray
-  (sci-send ed SCI_STYLESETFORE 10 (rgb->sci op-r op-g op-b))
-  ;; Types/keyword2: yellow
-  (sci-send ed SCI_STYLESETFORE 16 (rgb->sci ty-r ty-g ty-b))
+  ;; Comments: from font-lock-comment-face
+  (let-values (((r g b) (face-fg-rgb 'font-lock-comment-face)))
+    (for-each (lambda (s)
+                (sci-send ed SCI_STYLESETFORE s (rgb->sci r g b))
+                (when (face-has-italic? 'font-lock-comment-face)
+                  (sci-send ed SCI_STYLESETITALIC s 1)))
+              '(1 2 3 15)))
+  ;; Numbers: from font-lock-number-face
+  (let-values (((r g b) (face-fg-rgb 'font-lock-number-face)))
+    (sci-send ed SCI_STYLESETFORE 4 (rgb->sci r g b)))
+  ;; Keywords: from font-lock-keyword-face
+  (let-values (((r g b) (face-fg-rgb 'font-lock-keyword-face)))
+    (sci-send ed SCI_STYLESETFORE 5 (rgb->sci r g b))
+    (when (face-has-bold? 'font-lock-keyword-face)
+      (sci-send ed SCI_STYLESETBOLD 5 1)))
+  ;; Strings: from font-lock-string-face
+  (let-values (((r g b) (face-fg-rgb 'font-lock-string-face)))
+    (sci-send ed SCI_STYLESETFORE 6 (rgb->sci r g b))
+    (sci-send ed SCI_STYLESETFORE 7 (rgb->sci r g b)))
+  ;; Preprocessor: from font-lock-preprocessor-face
+  (let-values (((r g b) (face-fg-rgb 'font-lock-preprocessor-face)))
+    (sci-send ed SCI_STYLESETFORE 9 (rgb->sci r g b)))
+  ;; Operator: from font-lock-operator-face
+  (let-values (((r g b) (face-fg-rgb 'font-lock-operator-face)))
+    (sci-send ed SCI_STYLESETFORE 10 (rgb->sci r g b)))
+  ;; Types/keyword2: from font-lock-type-face
+  (let-values (((r g b) (face-fg-rgb 'font-lock-type-face)))
+    (sci-send ed SCI_STYLESETFORE 16 (rgb->sci r g b)))
   ;; Set keyword lists
   (sci-send/string ed SCI_SETKEYWORDS keywords 0)
   (when types
@@ -312,28 +331,39 @@
 ;;; 12=commentblock, 14=keyword2, 15=decorator
 
 (def (setup-python-styles! ed)
-  ;; Comments: gray, italic
-  (sci-send ed SCI_STYLESETFORE 1 (rgb->sci cm-r cm-g cm-b))
-  (sci-send ed SCI_STYLESETITALIC 1 1)
-  (sci-send ed SCI_STYLESETFORE 12 (rgb->sci cm-r cm-g cm-b))
-  (sci-send ed SCI_STYLESETITALIC 12 1)
-  ;; Numbers: orange
-  (sci-send ed SCI_STYLESETFORE 2 (rgb->sci nm-r nm-g nm-b))
-  ;; Strings: green (single, double, triple)
-  (for-each (lambda (s) (sci-send ed SCI_STYLESETFORE s (rgb->sci st-r st-g st-b)))
-            '(3 4 6 7))
-  ;; Keywords: purple, bold
-  (sci-send ed SCI_STYLESETFORE 5 (rgb->sci kw-r kw-g kw-b))
-  (sci-send ed SCI_STYLESETBOLD 5 1)
-  ;; Class/def names: yellow
-  (sci-send ed SCI_STYLESETFORE 8 (rgb->sci ty-r ty-g ty-b))
-  (sci-send ed SCI_STYLESETFORE 9 (rgb->sci ty-r ty-g ty-b))
-  ;; Operator: light gray
-  (sci-send ed SCI_STYLESETFORE 10 (rgb->sci op-r op-g op-b))
-  ;; Builtins/keyword2: cyan
-  (sci-send ed SCI_STYLESETFORE 14 (rgb->sci bi-r bi-g bi-b))
-  ;; Decorators: orange
-  (sci-send ed SCI_STYLESETFORE 15 (rgb->sci pp-r pp-g pp-b))
+  ;; Comments: from font-lock-comment-face
+  (let-values (((r g b) (face-fg-rgb 'font-lock-comment-face)))
+    (sci-send ed SCI_STYLESETFORE 1 (rgb->sci r g b))
+    (when (face-has-italic? 'font-lock-comment-face)
+      (sci-send ed SCI_STYLESETITALIC 1 1))
+    (sci-send ed SCI_STYLESETFORE 12 (rgb->sci r g b))
+    (when (face-has-italic? 'font-lock-comment-face)
+      (sci-send ed SCI_STYLESETITALIC 12 1)))
+  ;; Numbers: from font-lock-number-face
+  (let-values (((r g b) (face-fg-rgb 'font-lock-number-face)))
+    (sci-send ed SCI_STYLESETFORE 2 (rgb->sci r g b)))
+  ;; Strings: from font-lock-string-face (single, double, triple)
+  (let-values (((r g b) (face-fg-rgb 'font-lock-string-face)))
+    (for-each (lambda (s) (sci-send ed SCI_STYLESETFORE s (rgb->sci r g b)))
+              '(3 4 6 7)))
+  ;; Keywords: from font-lock-keyword-face
+  (let-values (((r g b) (face-fg-rgb 'font-lock-keyword-face)))
+    (sci-send ed SCI_STYLESETFORE 5 (rgb->sci r g b))
+    (when (face-has-bold? 'font-lock-keyword-face)
+      (sci-send ed SCI_STYLESETBOLD 5 1)))
+  ;; Class/def names: from font-lock-type-face
+  (let-values (((r g b) (face-fg-rgb 'font-lock-type-face)))
+    (sci-send ed SCI_STYLESETFORE 8 (rgb->sci r g b))
+    (sci-send ed SCI_STYLESETFORE 9 (rgb->sci r g b)))
+  ;; Operator: from font-lock-operator-face
+  (let-values (((r g b) (face-fg-rgb 'font-lock-operator-face)))
+    (sci-send ed SCI_STYLESETFORE 10 (rgb->sci r g b)))
+  ;; Builtins/keyword2: from font-lock-builtin-face
+  (let-values (((r g b) (face-fg-rgb 'font-lock-builtin-face)))
+    (sci-send ed SCI_STYLESETFORE 14 (rgb->sci r g b)))
+  ;; Decorators: from font-lock-preprocessor-face
+  (let-values (((r g b) (face-fg-rgb 'font-lock-preprocessor-face)))
+    (sci-send ed SCI_STYLESETFORE 15 (rgb->sci r g b)))
   ;; Set keyword lists
   (sci-send/string ed SCI_SETKEYWORDS *python-keywords* 0)
   (sci-send/string ed SCI_SETKEYWORDS *python-builtins* 1))
@@ -343,22 +373,31 @@
 ;;; 5=symbol, 6=string, 9=operator, 11=multi-comment
 
 (def (setup-lisp-styles! ed)
-  ;; Comments: gray, italic
-  (sci-send ed SCI_STYLESETFORE 1 (rgb->sci cm-r cm-g cm-b))
-  (sci-send ed SCI_STYLESETITALIC 1 1)
-  (sci-send ed SCI_STYLESETFORE 11 (rgb->sci cm-r cm-g cm-b))
-  (sci-send ed SCI_STYLESETITALIC 11 1)
-  ;; Numbers: orange
-  (sci-send ed SCI_STYLESETFORE 2 (rgb->sci nm-r nm-g nm-b))
-  ;; Keywords: purple, bold
-  (sci-send ed SCI_STYLESETFORE 3 (rgb->sci kw-r kw-g kw-b))
-  (sci-send ed SCI_STYLESETBOLD 3 1)
-  ;; Keyword-kw (builtins): cyan
-  (sci-send ed SCI_STYLESETFORE 4 (rgb->sci bi-r bi-g bi-b))
-  ;; Strings: green
-  (sci-send ed SCI_STYLESETFORE 6 (rgb->sci st-r st-g st-b))
-  ;; Operator: light gray
-  (sci-send ed SCI_STYLESETFORE 9 (rgb->sci op-r op-g op-b))
+  ;; Comments: from font-lock-comment-face
+  (let-values (((r g b) (face-fg-rgb 'font-lock-comment-face)))
+    (sci-send ed SCI_STYLESETFORE 1 (rgb->sci r g b))
+    (when (face-has-italic? 'font-lock-comment-face)
+      (sci-send ed SCI_STYLESETITALIC 1 1))
+    (sci-send ed SCI_STYLESETFORE 11 (rgb->sci r g b))
+    (when (face-has-italic? 'font-lock-comment-face)
+      (sci-send ed SCI_STYLESETITALIC 11 1)))
+  ;; Numbers: from font-lock-number-face
+  (let-values (((r g b) (face-fg-rgb 'font-lock-number-face)))
+    (sci-send ed SCI_STYLESETFORE 2 (rgb->sci r g b)))
+  ;; Keywords: from font-lock-keyword-face
+  (let-values (((r g b) (face-fg-rgb 'font-lock-keyword-face)))
+    (sci-send ed SCI_STYLESETFORE 3 (rgb->sci r g b))
+    (when (face-has-bold? 'font-lock-keyword-face)
+      (sci-send ed SCI_STYLESETBOLD 3 1)))
+  ;; Keyword-kw (builtins): from font-lock-builtin-face
+  (let-values (((r g b) (face-fg-rgb 'font-lock-builtin-face)))
+    (sci-send ed SCI_STYLESETFORE 4 (rgb->sci r g b)))
+  ;; Strings: from font-lock-string-face
+  (let-values (((r g b) (face-fg-rgb 'font-lock-string-face)))
+    (sci-send ed SCI_STYLESETFORE 6 (rgb->sci r g b)))
+  ;; Operator: from font-lock-operator-face
+  (let-values (((r g b) (face-fg-rgb 'font-lock-operator-face)))
+    (sci-send ed SCI_STYLESETFORE 9 (rgb->sci r g b)))
   ;; Set keyword lists
   (sci-send/string ed SCI_SETKEYWORDS *gerbil-keywords* 0)
   (sci-send/string ed SCI_SETKEYWORDS *gerbil-builtins* 1))
@@ -368,24 +407,31 @@
 ;;; 6=character(sq), 7=operator, 9=scalar($var), 10=param(${var}), 11=backticks
 
 (def (setup-bash-styles! ed)
-  ;; Comment: gray, italic
-  (sci-send ed SCI_STYLESETFORE 2 (rgb->sci cm-r cm-g cm-b))
-  (sci-send ed SCI_STYLESETITALIC 2 1)
-  ;; Number: orange
-  (sci-send ed SCI_STYLESETFORE 3 (rgb->sci nm-r nm-g nm-b))
-  ;; Keyword: purple, bold
-  (sci-send ed SCI_STYLESETFORE 4 (rgb->sci kw-r kw-g kw-b))
-  (sci-send ed SCI_STYLESETBOLD 4 1)
-  ;; Strings: green
-  (sci-send ed SCI_STYLESETFORE 5 (rgb->sci st-r st-g st-b))
-  (sci-send ed SCI_STYLESETFORE 6 (rgb->sci st-r st-g st-b))
-  ;; Operator: light gray
-  (sci-send ed SCI_STYLESETFORE 7 (rgb->sci op-r op-g op-b))
-  ;; Variables: cyan
-  (sci-send ed SCI_STYLESETFORE 9 (rgb->sci bi-r bi-g bi-b))
-  (sci-send ed SCI_STYLESETFORE 10 (rgb->sci bi-r bi-g bi-b))
-  ;; Backticks: green
-  (sci-send ed SCI_STYLESETFORE 11 (rgb->sci st-r st-g st-b))
+  ;; Comment: from font-lock-comment-face
+  (let-values (((r g b) (face-fg-rgb 'font-lock-comment-face)))
+    (sci-send ed SCI_STYLESETFORE 2 (rgb->sci r g b))
+    (when (face-has-italic? 'font-lock-comment-face)
+      (sci-send ed SCI_STYLESETITALIC 2 1)))
+  ;; Number: from font-lock-number-face
+  (let-values (((r g b) (face-fg-rgb 'font-lock-number-face)))
+    (sci-send ed SCI_STYLESETFORE 3 (rgb->sci r g b)))
+  ;; Keyword: from font-lock-keyword-face
+  (let-values (((r g b) (face-fg-rgb 'font-lock-keyword-face)))
+    (sci-send ed SCI_STYLESETFORE 4 (rgb->sci r g b))
+    (when (face-has-bold? 'font-lock-keyword-face)
+      (sci-send ed SCI_STYLESETBOLD 4 1)))
+  ;; Strings: from font-lock-string-face
+  (let-values (((r g b) (face-fg-rgb 'font-lock-string-face)))
+    (sci-send ed SCI_STYLESETFORE 5 (rgb->sci r g b))
+    (sci-send ed SCI_STYLESETFORE 6 (rgb->sci r g b))
+    (sci-send ed SCI_STYLESETFORE 11 (rgb->sci r g b)))
+  ;; Operator: from font-lock-operator-face
+  (let-values (((r g b) (face-fg-rgb 'font-lock-operator-face)))
+    (sci-send ed SCI_STYLESETFORE 7 (rgb->sci r g b)))
+  ;; Variables: from font-lock-builtin-face
+  (let-values (((r g b) (face-fg-rgb 'font-lock-builtin-face)))
+    (sci-send ed SCI_STYLESETFORE 9 (rgb->sci r g b))
+    (sci-send ed SCI_STYLESETFORE 10 (rgb->sci r g b)))
   ;; Set keyword list
   (sci-send/string ed SCI_SETKEYWORDS *shell-keywords* 0))
 
@@ -394,16 +440,23 @@
 ;;; 7=character(sq), 10=symbol, 11=classvar, 12=instancevar
 
 (def (setup-ruby-styles! ed)
-  (sci-send ed SCI_STYLESETFORE 2 (rgb->sci cm-r cm-g cm-b))
-  (sci-send ed SCI_STYLESETITALIC 2 1)
-  (sci-send ed SCI_STYLESETFORE 4 (rgb->sci nm-r nm-g nm-b))
-  (sci-send ed SCI_STYLESETFORE 5 (rgb->sci kw-r kw-g kw-b))
-  (sci-send ed SCI_STYLESETBOLD 5 1)
-  (sci-send ed SCI_STYLESETFORE 6 (rgb->sci st-r st-g st-b))
-  (sci-send ed SCI_STYLESETFORE 7 (rgb->sci st-r st-g st-b))
-  (sci-send ed SCI_STYLESETFORE 10 (rgb->sci bi-r bi-g bi-b))
-  (sci-send ed SCI_STYLESETFORE 11 (rgb->sci bi-r bi-g bi-b))
-  (sci-send ed SCI_STYLESETFORE 12 (rgb->sci bi-r bi-g bi-b))
+  (let-values (((r g b) (face-fg-rgb 'font-lock-comment-face)))
+    (sci-send ed SCI_STYLESETFORE 2 (rgb->sci r g b))
+    (when (face-has-italic? 'font-lock-comment-face)
+      (sci-send ed SCI_STYLESETITALIC 2 1)))
+  (let-values (((r g b) (face-fg-rgb 'font-lock-number-face)))
+    (sci-send ed SCI_STYLESETFORE 4 (rgb->sci r g b)))
+  (let-values (((r g b) (face-fg-rgb 'font-lock-keyword-face)))
+    (sci-send ed SCI_STYLESETFORE 5 (rgb->sci r g b))
+    (when (face-has-bold? 'font-lock-keyword-face)
+      (sci-send ed SCI_STYLESETBOLD 5 1)))
+  (let-values (((r g b) (face-fg-rgb 'font-lock-string-face)))
+    (sci-send ed SCI_STYLESETFORE 6 (rgb->sci r g b))
+    (sci-send ed SCI_STYLESETFORE 7 (rgb->sci r g b)))
+  (let-values (((r g b) (face-fg-rgb 'font-lock-builtin-face)))
+    (sci-send ed SCI_STYLESETFORE 10 (rgb->sci r g b))
+    (sci-send ed SCI_STYLESETFORE 11 (rgb->sci r g b))
+    (sci-send ed SCI_STYLESETFORE 12 (rgb->sci r g b)))
   (sci-send/string ed SCI_SETKEYWORDS *ruby-keywords* 0))
 
 ;;; --- Lua lexer ("lua") ---
@@ -411,16 +464,23 @@
 ;;; 5=keyword, 6=string, 7=character, 10=operator
 
 (def (setup-lua-styles! ed)
-  (for-each (lambda (s)
-              (sci-send ed SCI_STYLESETFORE s (rgb->sci cm-r cm-g cm-b))
-              (sci-send ed SCI_STYLESETITALIC s 1))
-            '(1 2 3))
-  (sci-send ed SCI_STYLESETFORE 4 (rgb->sci nm-r nm-g nm-b))
-  (sci-send ed SCI_STYLESETFORE 5 (rgb->sci kw-r kw-g kw-b))
-  (sci-send ed SCI_STYLESETBOLD 5 1)
-  (sci-send ed SCI_STYLESETFORE 6 (rgb->sci st-r st-g st-b))
-  (sci-send ed SCI_STYLESETFORE 7 (rgb->sci st-r st-g st-b))
-  (sci-send ed SCI_STYLESETFORE 10 (rgb->sci op-r op-g op-b))
+  (let-values (((r g b) (face-fg-rgb 'font-lock-comment-face)))
+    (for-each (lambda (s)
+                (sci-send ed SCI_STYLESETFORE s (rgb->sci r g b))
+                (when (face-has-italic? 'font-lock-comment-face)
+                  (sci-send ed SCI_STYLESETITALIC s 1)))
+              '(1 2 3)))
+  (let-values (((r g b) (face-fg-rgb 'font-lock-number-face)))
+    (sci-send ed SCI_STYLESETFORE 4 (rgb->sci r g b)))
+  (let-values (((r g b) (face-fg-rgb 'font-lock-keyword-face)))
+    (sci-send ed SCI_STYLESETFORE 5 (rgb->sci r g b))
+    (when (face-has-bold? 'font-lock-keyword-face)
+      (sci-send ed SCI_STYLESETBOLD 5 1)))
+  (let-values (((r g b) (face-fg-rgb 'font-lock-string-face)))
+    (sci-send ed SCI_STYLESETFORE 6 (rgb->sci r g b))
+    (sci-send ed SCI_STYLESETFORE 7 (rgb->sci r g b)))
+  (let-values (((r g b) (face-fg-rgb 'font-lock-operator-face)))
+    (sci-send ed SCI_STYLESETFORE 10 (rgb->sci r g b)))
   (sci-send/string ed SCI_SETKEYWORDS *lua-keywords* 0))
 
 ;;; --- SQL lexer ("sql") ---
@@ -428,16 +488,24 @@
 ;;; 6=string(dq), 7=string(sq), 10=operator, 11=identifier
 
 (def (setup-sql-styles! ed)
-  (sci-send ed SCI_STYLESETFORE 1 (rgb->sci cm-r cm-g cm-b))
-  (sci-send ed SCI_STYLESETITALIC 1 1)
-  (sci-send ed SCI_STYLESETFORE 2 (rgb->sci cm-r cm-g cm-b))
-  (sci-send ed SCI_STYLESETITALIC 2 1)
-  (sci-send ed SCI_STYLESETFORE 4 (rgb->sci nm-r nm-g nm-b))
-  (sci-send ed SCI_STYLESETFORE 5 (rgb->sci kw-r kw-g kw-b))
-  (sci-send ed SCI_STYLESETBOLD 5 1)
-  (sci-send ed SCI_STYLESETFORE 6 (rgb->sci st-r st-g st-b))
-  (sci-send ed SCI_STYLESETFORE 7 (rgb->sci st-r st-g st-b))
-  (sci-send ed SCI_STYLESETFORE 10 (rgb->sci op-r op-g op-b))
+  (let-values (((r g b) (face-fg-rgb 'font-lock-comment-face)))
+    (sci-send ed SCI_STYLESETFORE 1 (rgb->sci r g b))
+    (when (face-has-italic? 'font-lock-comment-face)
+      (sci-send ed SCI_STYLESETITALIC 1 1))
+    (sci-send ed SCI_STYLESETFORE 2 (rgb->sci r g b))
+    (when (face-has-italic? 'font-lock-comment-face)
+      (sci-send ed SCI_STYLESETITALIC 2 1)))
+  (let-values (((r g b) (face-fg-rgb 'font-lock-number-face)))
+    (sci-send ed SCI_STYLESETFORE 4 (rgb->sci r g b)))
+  (let-values (((r g b) (face-fg-rgb 'font-lock-keyword-face)))
+    (sci-send ed SCI_STYLESETFORE 5 (rgb->sci r g b))
+    (when (face-has-bold? 'font-lock-keyword-face)
+      (sci-send ed SCI_STYLESETBOLD 5 1)))
+  (let-values (((r g b) (face-fg-rgb 'font-lock-string-face)))
+    (sci-send ed SCI_STYLESETFORE 6 (rgb->sci r g b))
+    (sci-send ed SCI_STYLESETFORE 7 (rgb->sci r g b)))
+  (let-values (((r g b) (face-fg-rgb 'font-lock-operator-face)))
+    (sci-send ed SCI_STYLESETFORE 10 (rgb->sci r g b)))
   (sci-send/string ed SCI_SETKEYWORDS *sql-keywords* 0))
 
 ;;; --- Perl lexer ("perl") ---
@@ -445,16 +513,24 @@
 ;;; 6=string(dq), 7=string(sq), 10=operator, 11=identifier
 
 (def (setup-perl-styles! ed)
-  (sci-send ed SCI_STYLESETFORE 2 (rgb->sci cm-r cm-g cm-b))
-  (sci-send ed SCI_STYLESETITALIC 2 1)
-  (sci-send ed SCI_STYLESETFORE 3 (rgb->sci cm-r cm-g cm-b))
-  (sci-send ed SCI_STYLESETITALIC 3 1)
-  (sci-send ed SCI_STYLESETFORE 4 (rgb->sci nm-r nm-g nm-b))
-  (sci-send ed SCI_STYLESETFORE 5 (rgb->sci kw-r kw-g kw-b))
-  (sci-send ed SCI_STYLESETBOLD 5 1)
-  (sci-send ed SCI_STYLESETFORE 6 (rgb->sci st-r st-g st-b))
-  (sci-send ed SCI_STYLESETFORE 7 (rgb->sci st-r st-g st-b))
-  (sci-send ed SCI_STYLESETFORE 10 (rgb->sci op-r op-g op-b))
+  (let-values (((r g b) (face-fg-rgb 'font-lock-comment-face)))
+    (sci-send ed SCI_STYLESETFORE 2 (rgb->sci r g b))
+    (when (face-has-italic? 'font-lock-comment-face)
+      (sci-send ed SCI_STYLESETITALIC 2 1))
+    (sci-send ed SCI_STYLESETFORE 3 (rgb->sci r g b))
+    (when (face-has-italic? 'font-lock-comment-face)
+      (sci-send ed SCI_STYLESETITALIC 3 1)))
+  (let-values (((r g b) (face-fg-rgb 'font-lock-number-face)))
+    (sci-send ed SCI_STYLESETFORE 4 (rgb->sci r g b)))
+  (let-values (((r g b) (face-fg-rgb 'font-lock-keyword-face)))
+    (sci-send ed SCI_STYLESETFORE 5 (rgb->sci r g b))
+    (when (face-has-bold? 'font-lock-keyword-face)
+      (sci-send ed SCI_STYLESETBOLD 5 1)))
+  (let-values (((r g b) (face-fg-rgb 'font-lock-string-face)))
+    (sci-send ed SCI_STYLESETFORE 6 (rgb->sci r g b))
+    (sci-send ed SCI_STYLESETFORE 7 (rgb->sci r g b)))
+  (let-values (((r g b) (face-fg-rgb 'font-lock-operator-face)))
+    (sci-send ed SCI_STYLESETFORE 10 (rgb->sci r g b)))
   (sci-send/string ed SCI_SETKEYWORDS *perl-keywords* 0))
 
 ;;;============================================================================
@@ -480,7 +556,7 @@
     ;; Org mode: no QScintilla lexer — use manual styling
     (when (and ed (eq? lang 'org))
       (set! (buffer-lexer-lang buf) 'org)
-      (apply-base-dark-theme! ed)
+      (apply-base-theme! ed)
       ;; Disable any built-in lexer for manual styling (SCI_SETILEXER = 4033)
       (sci-send ed 4033 0)
       (qt-setup-org-styles! ed)
@@ -491,7 +567,7 @@
       ;; Store language in buffer
       (set! (buffer-lexer-lang buf) lang)
       ;; Reset to dark theme base
-      (apply-base-dark-theme! ed)
+      (apply-base-theme! ed)
       ;; Set lexer language — QScintilla has wrapper classes for common languages,
       ;; but not for lisp, rust, diff, perl, haskell, props.
       ;; For those, use SCI_SETLEXERLANGUAGE to invoke Lexilla directly.
@@ -533,18 +609,24 @@
         ;; The lexer handles tokenization; we just set basic comment/string colors
         ((json yaml xml css markdown makefile diff toml)
          ;; Comments: styles 1-3 for most lexers
-         (for-each (lambda (s)
-                     (sci-send ed SCI_STYLESETFORE s (rgb->sci cm-r cm-g cm-b))
-                     (sci-send ed SCI_STYLESETITALIC s 1))
-                   '(1 2 3))
+         (let-values (((r g b) (face-fg-rgb 'font-lock-comment-face)))
+           (for-each (lambda (s)
+                       (sci-send ed SCI_STYLESETFORE s (rgb->sci r g b))
+                       (when (face-has-italic? 'font-lock-comment-face)
+                         (sci-send ed SCI_STYLESETITALIC s 1)))
+                     '(1 2 3)))
          ;; Keywords: style 5
-         (sci-send ed SCI_STYLESETFORE 5 (rgb->sci kw-r kw-g kw-b))
-         (sci-send ed SCI_STYLESETBOLD 5 1)
+         (let-values (((r g b) (face-fg-rgb 'font-lock-keyword-face)))
+           (sci-send ed SCI_STYLESETFORE 5 (rgb->sci r g b))
+           (when (face-has-bold? 'font-lock-keyword-face)
+             (sci-send ed SCI_STYLESETBOLD 5 1)))
          ;; Strings: styles 6-7
-         (sci-send ed SCI_STYLESETFORE 6 (rgb->sci st-r st-g st-b))
-         (sci-send ed SCI_STYLESETFORE 7 (rgb->sci st-r st-g st-b))
+         (let-values (((r g b) (face-fg-rgb 'font-lock-string-face)))
+           (sci-send ed SCI_STYLESETFORE 6 (rgb->sci r g b))
+           (sci-send ed SCI_STYLESETFORE 7 (rgb->sci r g b)))
          ;; Numbers: style 4
-         (sci-send ed SCI_STYLESETFORE 4 (rgb->sci nm-r nm-g nm-b)))
+         (let-values (((r g b) (face-fg-rgb 'font-lock-number-face)))
+           (sci-send ed SCI_STYLESETFORE 4 (rgb->sci r g b))))
         (else (void))))))
 
 ;;;============================================================================
@@ -553,63 +635,86 @@
 
 ;; Org style IDs (32-58, same as TUI org-highlight.ss)
 (def (qt-setup-org-styles! ed)
-  "Configure org-mode style colors for QScintilla editor."
-  ;; Heading colors (style 33-40)
-  (let ((colors (list (rgb->sci #x50 #x78 #xDC)    ; heading 1 blue
-                      (rgb->sci #xD2 #x8C #x32)    ; heading 2 orange
-                      (rgb->sci #x3C #xA0 #x3C)    ; heading 3 green
-                      (rgb->sci #x32 #xB4 #xB4)    ; heading 4 cyan
-                      (rgb->sci #x96 #x50 #xB4)    ; heading 5 purple
-                      (rgb->sci #xB4 #xA0 #x28)    ; heading 6 yellow
-                      (rgb->sci #x78 #x78 #x78)    ; heading 7 gray
-                      (rgb->sci #x64 #x64 #x64)))) ; heading 8 dark gray
-    (let loop ((i 0) (cs colors))
-      (when (and (< i 8) (pair? cs))
-        (let ((style (+ 33 i)))
-          (sci-send ed SCI_STYLESETFORE style (car cs))
-          (sci-send ed SCI_STYLESETBOLD style 1))
-        (loop (+ i 1) (cdr cs)))))
-  ;; TODO (41) / DONE (42)
-  (sci-send ed SCI_STYLESETFORE 41 (rgb->sci #xDC #x32 #x32))
-  (sci-send ed SCI_STYLESETBOLD 41 1)
-  (sci-send ed SCI_STYLESETFORE 42 (rgb->sci #x32 #xB4 #x32))
-  (sci-send ed SCI_STYLESETBOLD 42 1)
-  ;; Tags (43)
-  (sci-send ed SCI_STYLESETFORE 43 (rgb->sci #x96 #x50 #xB4))
-  ;; Comment (44)
-  (sci-send ed SCI_STYLESETFORE 44 (rgb->sci #x82 #x82 #x82))
-  (sci-send ed SCI_STYLESETITALIC 44 1)
-  ;; Keyword #+TITLE: (45)
-  (sci-send ed SCI_STYLESETFORE 45 (rgb->sci #xD2 #x8C #x32))
-  ;; Bold (46) / Italic (47) / Underline (48)
+  "Configure org-mode style colors for QScintilla editor using org-mode faces."
+  ;; Heading colors (style 33-40) from org-heading-1 through org-heading-8
+  (for-each
+    (lambda (i)
+      (let* ((face-name (string->symbol (string-append "org-heading-" (number->string (+ i 1)))))
+             (style (+ 33 i)))
+        (let-values (((r g b) (face-fg-rgb face-name)))
+          (sci-send ed SCI_STYLESETFORE style (rgb->sci r g b))
+          (when (face-has-bold? face-name)
+            (sci-send ed SCI_STYLESETBOLD style 1)))))
+    '(0 1 2 3 4 5 6 7))
+  ;; TODO (41) from org-todo face
+  (let-values (((r g b) (face-fg-rgb 'org-todo)))
+    (sci-send ed SCI_STYLESETFORE 41 (rgb->sci r g b))
+    (when (face-has-bold? 'org-todo)
+      (sci-send ed SCI_STYLESETBOLD 41 1)))
+  ;; DONE (42) from org-done face
+  (let-values (((r g b) (face-fg-rgb 'org-done)))
+    (sci-send ed SCI_STYLESETFORE 42 (rgb->sci r g b))
+    (when (face-has-bold? 'org-done)
+      (sci-send ed SCI_STYLESETBOLD 42 1)))
+  ;; Tags (43) from org-tag face
+  (let-values (((r g b) (face-fg-rgb 'org-tag)))
+    (sci-send ed SCI_STYLESETFORE 43 (rgb->sci r g b)))
+  ;; Comment (44) from org-comment face
+  (let-values (((r g b) (face-fg-rgb 'org-comment)))
+    (sci-send ed SCI_STYLESETFORE 44 (rgb->sci r g b))
+    (when (face-has-italic? 'org-comment)
+      (sci-send ed SCI_STYLESETITALIC 44 1)))
+  ;; Keyword #+TITLE: (45) from org-block-delimiter face
+  (let-values (((r g b) (face-fg-rgb 'org-block-delimiter)))
+    (sci-send ed SCI_STYLESETFORE 45 (rgb->sci r g b)))
+  ;; Bold (46) / Italic (47) / Underline (48) — use default face attributes
   (sci-send ed SCI_STYLESETBOLD 46 1)
   (sci-send ed SCI_STYLESETITALIC 47 1)
   (sci-send ed SCI_STYLESETUNDERLINE 48 1)
-  ;; Verbatim (49) / Code (50)
-  (sci-send ed SCI_STYLESETFORE 49 (rgb->sci #x32 #xB4 #xB4))
-  (sci-send ed SCI_STYLESETFORE 50 (rgb->sci #x3C #xA0 #x3C))
-  ;; Link (51)
-  (sci-send ed SCI_STYLESETFORE 51 (rgb->sci #x50 #x78 #xDC))
-  (sci-send ed SCI_STYLESETUNDERLINE 51 1)
-  ;; Date (52)
-  (sci-send ed SCI_STYLESETFORE 52 (rgb->sci #xB4 #x50 #xB4))
-  ;; Property (53)
-  (sci-send ed SCI_STYLESETFORE 53 (rgb->sci #x64 #x64 #x64))
-  ;; Block delimiters (54) / Block body (55)
-  (sci-send ed SCI_STYLESETFORE 54 (rgb->sci #xD2 #x8C #x32))
-  (sci-send ed SCI_STYLESETFORE 55 (rgb->sci #x64 #x64 #x64))
-  ;; Checkbox on (56) / off (57)
-  (sci-send ed SCI_STYLESETFORE 56 (rgb->sci #x32 #xB4 #x32))
-  (sci-send ed SCI_STYLESETFORE 57 (rgb->sci #xDC #x32 #x32))
-  ;; Table (58)
-  (sci-send ed SCI_STYLESETFORE 58 (rgb->sci #x32 #xB4 #xB4))
-  ;; Source block inline highlighting (59-62)
-  (sci-send ed SCI_STYLESETFORE 59 (rgb->sci kw-r kw-g kw-b))   ; keyword — purple bold
-  (sci-send ed SCI_STYLESETBOLD 59 1)
-  (sci-send ed SCI_STYLESETFORE 60 (rgb->sci st-r st-g st-b))   ; string — green
-  (sci-send ed SCI_STYLESETFORE 61 (rgb->sci cm-r cm-g cm-b))   ; comment — gray italic
-  (sci-send ed SCI_STYLESETITALIC 61 1)
-  (sci-send ed SCI_STYLESETFORE 62 (rgb->sci nm-r nm-g nm-b)))  ; number — orange
+  ;; Verbatim (49) from org-verbatim face
+  (let-values (((r g b) (face-fg-rgb 'org-verbatim)))
+    (sci-send ed SCI_STYLESETFORE 49 (rgb->sci r g b)))
+  ;; Code (50) from org-code face
+  (let-values (((r g b) (face-fg-rgb 'org-code)))
+    (sci-send ed SCI_STYLESETFORE 50 (rgb->sci r g b)))
+  ;; Link (51) from org-link face
+  (let-values (((r g b) (face-fg-rgb 'org-link)))
+    (sci-send ed SCI_STYLESETFORE 51 (rgb->sci r g b))
+    (when (face-has-italic? 'org-link)
+      (sci-send ed SCI_STYLESETUNDERLINE 51 1)))
+  ;; Date (52) from org-date face
+  (let-values (((r g b) (face-fg-rgb 'org-date)))
+    (sci-send ed SCI_STYLESETFORE 52 (rgb->sci r g b)))
+  ;; Property (53) from org-property face
+  (let-values (((r g b) (face-fg-rgb 'org-property)))
+    (sci-send ed SCI_STYLESETFORE 53 (rgb->sci r g b)))
+  ;; Block delimiters (54) from org-block-delimiter face
+  (let-values (((r g b) (face-fg-rgb 'org-block-delimiter)))
+    (sci-send ed SCI_STYLESETFORE 54 (rgb->sci r g b)))
+  ;; Block body (55) from org-block-body face
+  (let-values (((r g b) (face-fg-rgb 'org-block-body)))
+    (sci-send ed SCI_STYLESETFORE 55 (rgb->sci r g b)))
+  ;; Checkbox on (56) from org-done face / off (57) from org-todo face
+  (let-values (((r g b) (face-fg-rgb 'org-done)))
+    (sci-send ed SCI_STYLESETFORE 56 (rgb->sci r g b)))
+  (let-values (((r g b) (face-fg-rgb 'org-todo)))
+    (sci-send ed SCI_STYLESETFORE 57 (rgb->sci r g b)))
+  ;; Table (58) from org-table face
+  (let-values (((r g b) (face-fg-rgb 'org-table)))
+    (sci-send ed SCI_STYLESETFORE 58 (rgb->sci r g b)))
+  ;; Source block inline highlighting (59-62) use generic syntax faces
+  (let-values (((r g b) (face-fg-rgb 'font-lock-keyword-face)))
+    (sci-send ed SCI_STYLESETFORE 59 (rgb->sci r g b))
+    (when (face-has-bold? 'font-lock-keyword-face)
+      (sci-send ed SCI_STYLESETBOLD 59 1)))
+  (let-values (((r g b) (face-fg-rgb 'font-lock-string-face)))
+    (sci-send ed SCI_STYLESETFORE 60 (rgb->sci r g b)))
+  (let-values (((r g b) (face-fg-rgb 'font-lock-comment-face)))
+    (sci-send ed SCI_STYLESETFORE 61 (rgb->sci r g b))
+    (when (face-has-italic? 'font-lock-comment-face)
+      (sci-send ed SCI_STYLESETITALIC 61 1)))
+  (let-values (((r g b) (face-fg-rgb 'font-lock-number-face)))
+    (sci-send ed SCI_STYLESETFORE 62 (rgb->sci r g b))))
 
 ;;;============================================================================
 ;;; Qt Org full-buffer highlighting (mirrors org-highlight.ss for Qt editors)
@@ -954,7 +1059,7 @@
          (ed (and doc (hash-get *doc-editor-map* doc))))
     (when ed
       (sci-send ed SCI_SETLEXER 0)  ;; SCLEX_NULL
-      (apply-base-dark-theme! ed))))
+      (apply-base-theme! ed))))
 
 ;;;============================================================================
 ;;; Visual decorations (current line + brace matching)

@@ -28,6 +28,7 @@
         *current-theme*
         *themes*
         theme-stylesheet
+        load-theme!
         apply-theme!
         buffer-touch!
         custom-keys-load!
