@@ -238,16 +238,15 @@
 
 (def (cmd-load-theme app)
   "Switch to a different color theme."
-  (let* ((available (hash-keys *themes*))
+  (let* ((available (theme-names))
          (names (map symbol->string available))
          (input (qt-echo-read-string-with-completion app
                   "Load theme: " names)))
     (when (and input (> (string-length input) 0))
       (let ((sym (string->symbol input)))
-        (if (hash-key? *themes* sym)
+        (if (theme-get sym)
           (begin
-            (set! *current-theme* sym)
-            (apply-theme! app)
+            (apply-theme! app theme-name: sym)
             (echo-message! (app-state-echo app)
               (string-append "Theme: " input)))
           (echo-error! (app-state-echo app)

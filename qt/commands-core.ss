@@ -186,56 +186,36 @@
 ;;; Theme system
 ;;;============================================================================
 
-;; Theme: an alist of named colors
-(def *themes* (make-hash-table))
+;; Current theme name (themes themselves live in :gemacs/themes)
 (def *current-theme* 'dark)
 
-(def (define-theme! name colors)
-  "Register a theme. COLORS is an alist of (key . value) pairs."
-  (hash-put! *themes* name colors))
-
 (def (theme-color key)
-  "Get a color value from the current theme."
-  (let ((theme (hash-get *themes* *current-theme*)))
+  "Get a color value from the current theme (legacy UI chrome keys).
+   Reads from the theme's face-alist for backward compatibility."
+  (let ((theme (theme-get *current-theme*)))
     (and theme (let ((pair (assoc key theme)))
                  (and pair (cdr pair))))))
 
-;; Built-in themes
-(define-theme! 'dark
-  '((bg . "#181818") (fg . "#d8d8d8") (selection . "#404060")
-    (modeline-bg . "#282828") (modeline-fg . "#d8d8d8")
-    (echo-bg . "#282828") (echo-fg . "#d8d8d8")
-    (gutter-bg . "#202020") (gutter-fg . "#8c8c8c")
-    (split . "#383838") (tab-bg . "#1e1e1e") (tab-border . "#383838")
-    (tab-active-bg . "#404060") (tab-active-fg . "#ffffff")
-    (tab-inactive-bg . "#252525") (tab-inactive-fg . "#a0a0a0")))
-
-(define-theme! 'solarized-dark
-  '((bg . "#002b36") (fg . "#839496") (selection . "#073642")
-    (modeline-bg . "#073642") (modeline-fg . "#93a1a1")
-    (echo-bg . "#073642") (echo-fg . "#93a1a1")
-    (gutter-bg . "#002b36") (gutter-fg . "#586e75")
-    (split . "#073642") (tab-bg . "#002b36") (tab-border . "#073642")
-    (tab-active-bg . "#073642") (tab-active-fg . "#fdf6e3")
-    (tab-inactive-bg . "#002b36") (tab-inactive-fg . "#586e75")))
-
-(define-theme! 'light
-  '((bg . "#fafafa") (fg . "#383838") (selection . "#c0d0e8")
-    (modeline-bg . "#e8e8e8") (modeline-fg . "#383838")
-    (echo-bg . "#e8e8e8") (echo-fg . "#383838")
-    (gutter-bg . "#f0f0f0") (gutter-fg . "#a0a0a0")
-    (split . "#d0d0d0") (tab-bg . "#f0f0f0") (tab-border . "#d0d0d0")
-    (tab-active-bg . "#c0d0e8") (tab-active-fg . "#000000")
-    (tab-inactive-bg . "#f0f0f0") (tab-inactive-fg . "#808080")))
-
-(define-theme! 'monokai
-  '((bg . "#272822") (fg . "#f8f8f2") (selection . "#49483e")
-    (modeline-bg . "#3e3d32") (modeline-fg . "#f8f8f2")
-    (echo-bg . "#3e3d32") (echo-fg . "#f8f8f2")
-    (gutter-bg . "#272822") (gutter-fg . "#75715e")
-    (split . "#3e3d32") (tab-bg . "#272822") (tab-border . "#3e3d32")
-    (tab-active-bg . "#49483e") (tab-active-fg . "#f8f8f2")
-    (tab-inactive-bg . "#272822") (tab-inactive-fg . "#75715e")))
+(def (load-theme! theme-name)
+  "Load a theme by applying its face definitions to the global *faces* registry."
+  (let ((theme (theme-get theme-name)))
+    (unless theme
+      (error "Unknown theme" theme-name))
+    ;; Clear existing faces
+    (face-clear!)
+    ;; Apply each face from the theme
+    (for-each
+      (lambda (entry)
+        (let ((face-name (car entry))
+              (props (cdr entry)))
+          ;; Only process entries that look like face definitions (have keyword args)
+          ;; Skip legacy UI chrome keys like 'bg, 'fg, 'selection
+          (when (and (pair? props)
+                     (keyword? (car props)))
+            (apply define-face! face-name props))))
+      theme)
+    ;; Update current theme
+    (set! *current-theme* theme-name)))
 
 (def (theme-stylesheet)
   "Generate a Qt stylesheet from the current theme."
@@ -246,22 +226,26 @@
         (ml-fg (or (theme-color 'modeline-fg) "#d8d8d8"))
         (echo-bg (or (theme-color 'echo-bg) "#282828"))
         (echo-fg (or (theme-color 'echo-fg) "#d8d8d8"))
-        (split (or (theme-color 'split) "#383838")))
+        (split (or (theme-color 'split) "#383838"))
+        (font-css (string-append " font-family: " *default-font-family*
+                                 "; font-size: " (number->string *default-font-size*) "pt;")))
     (string-append
       "QPlainTextEdit { background-color: " bg "; color: " fg ";"
-      " font-family: monospace; font-size: 10pt;"
+      font-css
       " selection-background-color: " sel "; }"
       " QLabel { color: " echo-fg "; background: " echo-bg ";"
-      " font-family: monospace; font-size: 10pt; }"
+      font-css " }"
       " QMainWindow { background: " bg "; }"
       " QStatusBar { color: " ml-fg "; background: " ml-bg ";"
-      " font-family: monospace; font-size: 10pt; }"
+      font-css " }"
       " QLineEdit { background: " bg "; color: " fg "; border: none;"
-      " font-family: monospace; font-size: 10pt; }"
+      font-css " }"
       " QSplitter::handle { background: " split "; }")))
 
-(def (apply-theme! app)
-  "Apply the current theme to the Qt application."
+(def (apply-theme! app theme-name: (theme-name #f))
+  "Apply a theme to the Qt application. If theme-name provided, load that theme first."
+  (when theme-name
+    (load-theme! theme-name))
   (when *qt-app-ptr*
     (qt-app-set-style-sheet! *qt-app-ptr* (theme-stylesheet))
     ;; Update line number area colors
@@ -282,9 +266,12 @@
                     (qt-line-number-area-set-bg-color! lna r g b))
                   (let-values (((r g b) (parse-color g-fg)))
                     (qt-line-number-area-set-fg-color! lna r g b)))))
-            (qt-frame-windows fr))))
+            (qt-frame-windows fr)))))
+    ;; TODO: Re-apply syntax highlighting to all open buffers
+    ;; TODO: Update visual decorations (cursor-line, brace match, search highlight)
+    ;; TODO: Update tab colors and window borders
     ;; Echo area label styling is handled by the Qt stylesheet above
-    )))
+    ))
 
 ;; Auto-save path: #filename# (Emacs convention)
 (def (make-auto-save-path path)

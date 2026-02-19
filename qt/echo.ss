@@ -28,11 +28,13 @@
       (begin
         (qt-label-set-text! label msg)
         ;; Red text for errors, normal for messages
-        (if (echo-state-error? echo)
-          (qt-widget-set-style-sheet!
-            label "color: #ff4040; background: #282828; font-family: monospace; font-size: 10pt; padding: 2px 4px;")
-          (qt-widget-set-style-sheet!
-            label "color: #d8d8d8; background: #282828; font-family: monospace; font-size: 10pt; padding: 2px 4px;")))
+        (let ((font-css (string-append " font-family: " *default-font-family*
+                                       "; font-size: " (number->string *default-font-size*) "pt;")))
+          (if (echo-state-error? echo)
+            (qt-widget-set-style-sheet!
+              label (string-append "color: #ff4040; background: #282828;" font-css " padding: 2px 4px;"))
+            (qt-widget-set-style-sheet!
+              label (string-append "color: #d8d8d8; background: #282828;" font-css " padding: 2px 4px;")))))
       (qt-label-set-text! label ""))))
 
 ;;;============================================================================
@@ -52,11 +54,15 @@
 (def *mb-file-mode* #f)   ; When #t, Tab does directory-aware file completion
 (def *mb-last-tab-input* "")  ; Track input at last Tab press (for cycle vs new-match detection)
 
-(def *mb-style*
-  "QWidget { background: #1e1e1e; border-top: 1px solid #484848; }
-   QLabel { color: #b0b0b0; background: transparent; font-family: monospace; font-size: 10pt; padding: 0 4px; }
-   QLineEdit { color: #d8d8d8; background: #1e1e1e; border: none; font-family: monospace; font-size: 10pt; padding: 2px 4px; }
-   QListView { color: #d8d8d8; background: #282828; border: 1px solid #484848; font-family: monospace; font-size: 10pt; }")
+(def (mb-style)
+  "Generate minibuffer Qt stylesheet with current font settings."
+  (let ((font-css (string-append " font-family: " *default-font-family*
+                                 "; font-size: " (number->string *default-font-size*) "pt;")))
+    (string-append
+      "QWidget { background: #1e1e1e; border-top: 1px solid #484848; }\n"
+      "   QLabel { color: #b0b0b0; background: transparent;" font-css " padding: 0 4px; }\n"
+      "   QLineEdit { color: #d8d8d8; background: #1e1e1e; border: none;" font-css " padding: 2px 4px; }\n"
+      "   QListView { color: #d8d8d8; background: #282828; border: 1px solid #484848;" font-css " }")))
 
 ;;;============================================================================
 ;;; Fuzzy matching and Tab completion logic
@@ -204,7 +210,7 @@
          (hlayout (qt-hbox-layout-create container))
          (prompt (qt-label-create ""))
          (input (qt-line-edit-create)))
-    (qt-widget-set-style-sheet! container *mb-style*)
+    (qt-widget-set-style-sheet! container (mb-style))
     (qt-widget-set-minimum-height! container 28)
     (qt-widget-set-size-policy! container QT_SIZE_PREFERRED QT_SIZE_FIXED)
     (qt-layout-set-margins! hlayout 0 0 0 0)

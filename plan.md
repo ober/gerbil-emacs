@@ -1,181 +1,550 @@
-# Qt Window Management Fix — Status & Remaining Work
+# Comprehensive Theme & Font Support for Gemacs
 
-## What Was Done
+## Current State
 
-### 1. Added `insertWidget`, `indexOf`, `widget` to gerbil-qt FFI
+### Theme System (Qt)
+- **4 built-in themes** (`dark`, `solarized-dark`, `light`, `monokai`) in `qt/commands-core.ss:204-238`
+- Themes are alists of UI chrome colors: `bg`, `fg`, `selection`, `modeline-*`, `echo-*`, `gutter-*`, `split`, `tab-*`
+- `theme-stylesheet` generates Qt CSS for QPlainTextEdit, QLabel, QStatusBar, QLineEdit, QSplitter
+- `apply-theme!` updates Qt stylesheet + gutter line-number-area colors
+- **Gap**: Syntax highlighting colors are hardcoded in `qt/highlight.ss:31-48` — switching themes does NOT update syntax colors
 
-Files modified in `/home/jafourni/mine/gerbil-qt/`:
-- `vendor/qt_shim.cpp` — Added `qt_splitter_insert_widget`, `qt_splitter_index_of`, `qt_splitter_widget`
-- `libqt.ss` — Added c-lambda declarations AND added them to the `begin-ffi` export list (lines ~215)
-- `qt.ss` — Added Gerbil wrappers `qt-splitter-insert-widget!`, `qt-splitter-index-of`, `qt-splitter-widget` + exports
+### Theme System (TUI)
+- Only `dark` and `light` in `editor-cmds-c.ss:1480-1500` — sets STYLE_DEFAULT fg/bg, nothing else
+- Modeline colors hardcoded in `modeline.ss:167-169`
+- Echo area colors hardcoded in `echo.ss:67-77`
+- Terminal ANSI colors hardcoded in `terminal.ss:47-67`
 
-gerbil-qt was rebuilt and artifacts synced to `~/.gerbil/lib/`.
+### Font Handling (Qt)
+- **Hardcoded** `"Monospace"` at size 11 in `qt/window.ss:184-185` (Scintilla STYLE_DEFAULT)
+- **Hardcoded** `font-family: monospace; font-size: 10pt` in Qt CSS (~10 places across `commands-core.ss`, `app.ss`, `echo.ss`)
+- `cmd-increase/decrease/reset-font-size` in `qt/commands-shell.ss:40-59` — uses `qt-widget-set-font-size!` on current editor only
+- Zoom commands in `qt/commands-edit.ss:879-892` — uses `qt-widget-set-font-size!` (widget-level, not Scintilla-level)
 
-### 2. Fixed Qt split ordering bug (Case C in `qt-frame-do-split!`)
+### Font Handling (TUI)
+- `cmd-increase/decrease/reset-font-size` in `editor-cmds-b.ss:1119-1127` — stubs ("not yet implemented")
+- No font family or size configuration
 
-File: `qt/window.ss`
+### Configuration
+- `.gemacs-init.ss` — full Scheme eval, loaded at startup (`qt/commands-modes.ss:589`)
+- `.gemacs-init` — plaintext settings, loaded at startup (`persist.ss:460`)
+- `.gemacs-config` — dir-locals, per-project (`qt/commands-core.ss:341`)
+- No persistence of theme or font choices across sessions
 
-**Root cause**: Case C created a nested QSplitter with `parent: parent-spl`, relying on Qt's implicit childEvent to position it. This was unreliable — the new splitter could end up at the wrong index.
+---
 
-**Fix**:
-- Get `cur-idx-in-spl = qt-splitter-index-of parent-spl cur-container` BEFORE the split
-- Create `new-spl` WITHOUT a parent (no `parent:` arg)
-- After reparenting cur-container into new-spl, use `qt-splitter-insert-widget! parent-spl cur-idx-in-spl new-spl` to place it at the exact position
+## Implementation Plan
 
-### 3. Fixed Qt delete-window unwrap ordering
+### Phase 1: Face System — The Foundation ✅ COMPLETE
 
-File: `qt/window.ss`, in `qt-frame-delete-window!`
+**Goal**: Introduce an Emacs-like "face" abstraction that maps semantic names to visual properties, enabling theme-aware syntax highlighting.
 
-Same issue: when unwrapping a single-child node, `addWidget` appended to end. Fixed to use:
+**New file**: `face.ss` (~300 lines, shared between TUI and Qt)
+
+#### 1.1 Define the face data structure ✅
+
 ```scheme
-(let ((spl-idx (qt-splitter-index-of dest-spl parent-spl)))
-  (qt-splitter-insert-widget! dest-spl spl-idx only-qt-w))
+;; A face is a hash-table with keys: :fg :bg :bold :italic :underline
+(defstruct face (fg bg bold italic underline))
 ```
 
-### 4. Added Group 12 layout verification tests
+#### 1.2 Define the global face registry ✅
 
-File: `qt-functional-test.ss`
+```scheme
+(def *faces* (make-hash-table-eq))  ;; symbol -> face
 
-Added 8 layout tests (L1-L8) that verify the ACTUAL Qt widget hierarchy using `qt-splitter-index-of` and `qt-splitter-count`. These catch bugs where the logical tree is correct but Qt widgets are in the wrong position.
+(def (define-face! name . props)
+  "Register a face. Props are keyword args: fg: bg: bold: italic: underline:"
+  ...)
 
-Key tests:
-- **L3**: split-below then split-right in bottom pane (the exact reported bug)
-- **L4**: split-below + 3× split-right in bottom (user's full scenario)
-- **L6**: 3-way vertical then horizontal nest in middle
-- **L7/L8**: full recursive layout verification
+(def (face-get name)
+  "Look up a face by name. Returns the face struct or #f."
+  ...)
+```
 
-All 230 tests pass (185 existing + 45 new).
+#### 1.3 Define the standard face names ✅
 
-### 5. TUI window.ss tree-based rewrite (IN PROGRESS)
+These mirror Emacs face names for familiarity:
 
-File: `window.ss`
+| Face Name | Purpose | Dark Default |
+|-----------|---------|-------------|
+| `default` | Base text | fg:#d8d8d8 bg:#181818 |
+| `font-lock-keyword-face` | Language keywords | fg:#cc99cc bold |
+| `font-lock-builtin-face` | Built-in functions | fg:#66cccc |
+| `font-lock-string-face` | String literals | fg:#99cc99 |
+| `font-lock-comment-face` | Comments | fg:#999999 italic |
+| `font-lock-number-face` | Numbers | fg:#f99157 |
+| `font-lock-operator-face` | Operators | fg:#b8b8b8 |
+| `font-lock-type-face` | Type names | fg:#ffcc66 |
+| `font-lock-preprocessor-face` | Preprocessor | fg:#f99157 |
+| `font-lock-heading-face` | Headings | fg:#6699cc bold |
+| `modeline` | Active modeline | fg:#d8d8d8 bg:#282828 |
+| `modeline-inactive` | Inactive modeline | fg:#808080 bg:#282828 |
+| `region` | Selection | bg:#404060 |
+| `line-number` | Gutter | fg:#8c8c8c bg:#202020 |
+| `cursor-line` | Current line highlight | bg:#222228 |
+| `match` | Brace match | fg:#ffff00 bg:#404060 bold |
+| `mismatch` | Brace mismatch | fg:#ff4040 bg:#602020 bold |
+| `isearch` | Search highlight | fg:#000000 bg:#ffcc00 |
+| `error` | Error text | fg:#ff4040 |
+| `org-heading-1` through `org-heading-8` | Org headings | (existing colors) |
+| `org-todo` | TODO keyword | fg:#dc3232 bold |
+| `org-done` | DONE keyword | fg:#32b432 bold |
+| `org-link` | Org links | fg:#5078dc underline |
+| `org-code` | Org code | fg:#3ca03c |
+| `org-verbatim` | Org verbatim | fg:#32b4b4 |
+| `org-table` | Org tables | fg:#32b4b4 |
+| `org-comment` | Org comments | fg:#828282 italic |
+| `org-tag` | Org tags | fg:#9650b4 |
+| `org-date` | Org timestamps | fg:#b450b4 |
+| `org-property` | Org properties | fg:#646464 |
+| `org-block-delimiter` | Org block begin/end | fg:#d28c32 |
+| `org-block-body` | Org block content | fg:#646464 |
+| `tab-active` | Active tab | fg:#ffffff bg:#404060 |
+| `tab-inactive` | Inactive tab | fg:#a0a0a0 bg:#252525 |
+| `window-border-active` | Active window | border:#51afef |
+| `window-border-inactive` | Inactive window | border:#3a3a3a |
 
-**COMPLETE ARCHITECTURAL REWRITE** to match Qt's tree-based model:
+**Files modified**: ✅
+- Create `face.ss` ✅
+- `core.ss` — import and re-export face.ss ✅
 
-**What was implemented**:
-- ✅ Added `split-leaf` and `split-node` structures (matching Qt)
-- ✅ Changed `frame` structure: removed `split-direction`, added `root` tree
-- ✅ Implemented tree helper functions: `split-tree-flatten`, `split-tree-find-parent`, `split-tree-find-leaf`, `split-tree-find-parent-of-node`, `split-tree-replace-child!`, `split-tree-remove-child!`
-- ✅ Rewrote `frame-do-split!` with Cases A/B/C (same logic as Qt's `qt-frame-do-split!`)
-- ✅ Rewrote `frame-delete-window!` and `frame-delete-other-windows!` for tree model
-- ✅ Implemented recursive `split-tree-layout!` to compute x/y/w/h from tree
-- ✅ Updated `frame-draw-dividers!` for recursive tree traversal
-- ✅ Added helper functions: `list-index`, `last`
+---
 
-**Current status**: Code is architecturally complete but has **parenthesis balancing issues** preventing compilation.
+### Phase 2: Theme System Overhaul
 
-**What needs to be done**:
-1. Fix remaining paren balance errors in `split-tree-layout!` function
-2. Build and verify compilation succeeds
-3. Add comprehensive functional tests (equivalent to Qt Group 11)
-4. Test that nested splits work correctly (hsplit → vsplit, vsplit → hsplit, etc.)
+**Goal**: Themes define faces, not just UI chrome colors. Switching themes updates everything — syntax highlighting, UI chrome, org mode, terminal, decorations.
 
-**Known issues**:
-- Compilation error: "Bad syntax; empty body" in `split-tree-layout!`
-- Likely cause: Missing or extra closing parens in nested let*/if/loop structures
-- Recommendation: Use editor with paren-matching (Emacs paredit, VS Code Rainbow Brackets) or provide clean rewrite
+#### 2.1 Extend theme structure to include faces ✅ COMPLETE
 
-## What Still Needs To Be Done
+Each theme is now an alist mapping face names to face property lists. The `*themes*` registry lives in `themes.ss`.
 
-### 1. ✅ DONE: Fix TUI window.ss compilation errors
+**File**: `qt/commands-core.ss` — rewrote theme system:
+- Removed local `*themes*` hash table (now from themes.ss)
+- Kept `*current-theme*` variable
+- Removed old `define-theme!` and built-in theme definitions
+- Kept `theme-color` for backward compatibility with legacy UI chrome keys
+- Added `load-theme!` function that applies face definitions to global `*faces*` registry
+- Updated `apply-theme!` to accept optional `theme-name:` parameter and call `load-theme!`
 
-**File**: `window.ss`
+**File**: `qt/commands-config.ss` — updated `cmd-load-theme`:
+- Changed to use `(theme-names)` instead of `(hash-keys *themes*)`
+- Changed to use `(theme-get sym)` instead of `(hash-key? *themes* sym)`
+- Now calls `(apply-theme! app theme-name: sym)` which loads faces first
 
-**Status**: FIXED — used `gerbil_check_balance` to find two extra closing parens at lines 253 and 460. Removed both. Also changed `let` to `let*` in `frame-layout!` to allow binding references. File now compiles successfully.
+#### 2.2 Expand built-in themes with syntax colors ✅ COMPLETE
 
-**Changes**:
-- Line 253: removed 1 extra `)` from `split-tree-layout!` horizontal branch
-- Line 460: removed 1 extra `)` from `split-tree-draw-dividers!`
-- Line 173: changed `let` to `let*` in `frame-layout!`
+Created 10 comprehensive themes with full face definitions:
 
-### 2. ✅ DONE: Add TUI Group 11 equivalent functional tests
+- **dark** — Default dark theme (current hardcoded colors)
+- **light** — Default light theme
+- **solarized-dark** — Solarized dark palette
+- **solarized-light** — Solarized light palette (NEW)
+- **monokai** — Monokai palette
+- **gruvbox-dark** — Popular warm dark theme (NEW)
+- **gruvbox-light** — Warm light variant (NEW)
+- **dracula** — Popular purple-based dark theme (NEW)
+- **nord** — Arctic, north-bluish color palette (NEW)
+- **zenburn** — Low-contrast dark theme (NEW)
 
-**File**: `functional-test.ss`
+**New file**: `themes.ss` (~1160 lines) — all built-in theme definitions with:
+- Full face definitions for each theme (syntax, UI, org-mode, tabs, window borders)
+- Legacy UI chrome keys for backward compatibility
+- Theme registry functions: `register-theme!`, `theme-get`, `theme-names`
 
-**Status**: COMPLETE — Added 10 comprehensive window management tests (32 checks total).
+**Files modified**:
+- Created `themes.ss` ✅
+- `build.ss` — added "themes" to build order (after face, before core) ✅
+- `core.ss` — import and export themes.ss ✅
+- `qt/commands-core.ss` — rewrote theme system to use face-based structure ✅
+- `qt/commands-config.ss` — updated cmd-load-theme ✅
 
-**Tests added**:
-1. split-window-below creates 2 windows (3 checks)
-2. split-window-right creates 2 windows (3 checks)
-3. delete-window restores single pane (2 checks)
-4. delete-other-windows collapses to single pane (2 checks)
-5. **hsplit → other-window → vsplit** (the reported bug) (8 checks)
-6. vsplit → other-window → hsplit (8 checks)
-7. four-pane grid 2x2 (1 check)
-8. other-window cycles through all panes (1 check)
-9. three-way horizontal split uses flat siblings (4 checks)
+#### 2.3 Make `apply-theme!` comprehensive (Qt)
 
-**Also updated**:
-- Fixed `make-test-app` and `make-test-app-with-file` to use tree-based frame structure
-- All tests use `execute-command!` per CLAUDE.md policy
+Update `apply-theme!` in `qt/commands-core.ss` to:
+1. Update Qt stylesheet (from face `default`, `modeline`, `region`, etc.)
+2. Re-apply syntax highlighting to all open buffers (via face lookups)
+3. Update visual decorations (cursor-line, brace match, search highlight)
+4. Update gutter colors
+5. Update tab colors
+6. Update active/inactive window borders
+7. Update terminal ANSI colors (if theme defines them)
 
-**Results**: All 32 new checks pass ✅
+#### 2.4 Make `apply-theme!` work for TUI
 
-### 3. ✅ DONE: Qt focus fixes already implemented
+Update `editor-cmds-c.ss:cmd-load-theme` to:
+1. Set STYLE_DEFAULT from `default` face
+2. Re-apply syntax highlighting for current buffer
+3. Update modeline colors
+4. Update echo area colors
 
-**Status**: Both focus fixes were already implemented in prior commits:
-- `qt-frame-other-window!` (lines 446-453): already calls `qt-widget-set-focus!` on the new editor
-- `qt-frame-do-split!` (lines 339-340): already calls `qt-widget-set-focus!` after splits
+#### 2.5 Wire syntax highlighting to face system (Qt)
 
-### 4. ✅ DONE: Build and test
+Modify `qt/highlight.ss`:
+- Replace hardcoded color constants (`kw-r`, `kw-g`, etc.) with face lookups
+- `apply-base-dark-theme!` → `apply-theme-to-editor!` (reads from `*faces*`)
+- Each `setup-*-styles!` function reads face colors instead of constants
+- Org style setup reads from `org-*` faces
 
-**Status**: Built successfully and tested:
-- `make clean && make build` — succeeded
-- Both binaries work: `gemacs --version` and `gemacs-qt --version`
-- Qt tests: **230/230 passed** (all Group 1-12 tests including layout verification)
-- TUI tests: Pre-existing failures in VC commands (unrelated to window.ss changes)
+**Key change**: The top-level `def kw-r #xcc` etc. become functions:
+```scheme
+(def (syntax-fg face-name)
+  "Get foreground RGB for a face as (values r g b)."
+  (let ((f (face-get face-name)))
+    (if f (parse-hex-color (face-fg f))
+        (values #xd8 #xd8 #xd8))))
+```
 
-### 5. ✅ DONE: Commit
+#### 2.6 Wire syntax highlighting to face system (TUI)
 
-**Status**: Committed as `d46a431`.
+Modify `highlight.ss`:
+- Replace hardcoded Scintilla style colors with face lookups
+- All `editor-style-set-*` calls use faces
 
-**Commit**: "Fix TUI window.ss compilation — tree-based split rewrite complete"
+#### 2.7 Persist theme choice
 
-All changes span two repos:
-- **gerbil-qt**: new splitter FFI functions (insertWidget, indexOf, widget) — already committed
-- **gerbil-emacs**: window.ss tree-based rewrite + paren fixes — committed
+- Save current theme name to `~/.gemacs-settings` (or add to `.gemacs-init`)
+- Load theme at startup before opening buffers
+- `apply-theme!` writes the choice to disk
 
-### 6. ✅ DONE: Push to remote
+**Files modified**:
+- `qt/commands-core.ss` — rewrite theme system
+- `qt/highlight.ss` — face-aware syntax colors
+- `qt/window.ss` — face-aware editor setup
+- `qt/echo.ss` — face-aware echo/minibuffer styling
+- `qt/app.ss` — face-aware tab bar styling
+- `qt/modeline.ss` — face-aware modeline
+- `qt/commands-config.ss` — update `cmd-load-theme` to re-highlight all buffers
+- `highlight.ss` — face-aware TUI highlighting
+- `editor-cmds-c.ss` — face-aware TUI theme switching
+- `terminal.ss` — theme-aware terminal colors
+- `modeline.ss` — face-aware TUI modeline
+- `echo.ss` — face-aware TUI echo area
+- `persist.ss` — save/load theme preference
+- Create `themes.ss` — all built-in theme definitions
+- Create `face.ss` — face system
 
-**Status**: PUSHED successfully.
+---
 
-**Commits pushed**:
-- `d46a431` - Fix TUI window.ss compilation (tree-based rewrite complete)
-- `fdd9c6f` - Add comprehensive TUI window management tests (32 checks pass)
+### Phase 3: Font Configuration (3.1-3.3 COMPLETE ✅)
 
-**Remote**: `github.com:ober/gerbil-emacs.git` (master branch)
+**Goal**: Users can set font family and size like Emacs (`set-frame-font`, `M-x customize-face RET default`).
 
-### 7. ✅ DONE: Modeline visual indicator for active window
+#### 3.1 Global font state ✅
 
-**Status**: IMPLEMENTED for both TUI and Qt.
+**File**: `face.ss` (extend)
 
-**TUI Implementation**:
-- Already had visual indicators built-in (discovered during review)
-- `modeline-draw!` takes `is-current` parameter
-- Active window: dark text (#x000000) on light gray (#xd8d8d8)
-- Inactive windows: gray text (#x808080) on dark gray (#x282828)
-- Called correctly from `draw-all-modelines!` in app.ss
+```scheme
+(def *default-font-family* "Monospace")
+(def *default-font-size* 11)
 
-**Qt Implementation** (newly added):
-- Added `qt-frame-update-visual-indicators!` function
-- Active window: 2px solid blue border (#51afef)
-- Inactive windows: 1px subtle gray border (#3a3a3a)
-- Called automatically after:
-  - Frame initialization
-  - Window splits (split-below, split-right)
-  - Window deletion (delete-window, delete-other-windows)
-  - Window navigation (other-window)
+(def (set-default-font! family size)
+  "Set the default font for all editors."
+  ...)
+```
 
-**Results**: All 230 Qt tests pass with visual indicators ✅
+#### 3.2 Apply font to all Scintilla editors (Qt) ✅
 
-## File Change Summary
+**File**: `qt/window.ss` — modified `qt-scintilla-setup-editor!`
 
-### gerbil-qt (already built and synced)
-- `vendor/qt_shim.cpp` — 3 new C++ functions
-- `libqt.ss` — 3 c-lambda declarations + begin-ffi exports
-- `qt.ss` — 3 Gerbil wrappers + exports
+Replaced hardcoded:
+```scheme
+(sci-send/string ed SCI_STYLESETFONT "Monospace" STYLE_DEFAULT)
+(sci-send ed SCI_STYLESETSIZE STYLE_DEFAULT 11)
+```
 
-### gerbil-emacs
-- `qt/window.ss` — Case C fix (insertWidget), delete-window fix, focus already implemented
-- `qt-functional-test.ss` — Group 12 layout tests (8 tests, ~45 checks), updated imports
-- `window.ss` — ✅ TUI tree-based architecture rewrite + paren fixes (lines 253, 460, 173)
+With:
+```scheme
+(sci-send/string ed SCI_STYLESETFONT *default-font-family* STYLE_DEFAULT)
+(sci-send ed SCI_STYLESETSIZE STYLE_DEFAULT *default-font-size*)
+```
+
+#### 3.3 Apply font to all Qt widgets ✅
+
+**File**: `qt/commands-core.ss` — modified `theme-stylesheet` to use dynamic font CSS
+
+Replaced hardcoded `font-family: monospace; font-size: 10pt;` with values from `*default-font-family*` and `*default-font-size*`.
+
+Also updated hardcoded styles in:
+- `qt/echo.ss:33-35` (echo label styles) ✅
+- `qt/echo.ss:55-59` (minibuffer style converted to function `mb-style`) ✅
+- `qt/app.ss:142-144` (tab bar button styles, with font size -2pt) ✅
+- `qt/app.ss:203` (echo label initial style) ✅
+
+#### 3.4 Font size commands — fix existing stubs
+
+**File**: `qt/commands-shell.ss:40-59` — already implemented, but only updates current editor widget.
+
+Enhance to:
+1. Update `*default-font-size*`
+2. Apply to ALL open editors (all windows, not just current)
+3. Update Scintilla STYLE_DEFAULT size on each editor
+4. Update Qt stylesheet (so chrome widgets match)
+5. Persist to settings file
+
+**File**: `editor-cmds-b.ss:1119-1127` — implement TUI font size stubs:
+- TUI terminal font size is controlled by the terminal emulator, not the application
+- These should echo a message explaining this: "Font size is controlled by your terminal emulator"
+- Or, if using Scintilla TUI widget, use SCI_ZOOMIN/SCI_ZOOMOUT
+
+#### 3.5 New commands: `set-frame-font` and `set-font-size`
+
+**File**: `qt/commands-config.ss` — add new commands
+
+```
+M-x set-frame-font    → prompts for font family with completion from system fonts
+M-x set-font-size     → prompts for size (number)
+```
+
+Implementation:
+- `cmd-set-frame-font`: Prompt with completion from available monospace fonts
+  - Use `fc-list :spacing=mono family` to enumerate available monospace fonts (Linux/macOS)
+  - Set `*default-font-family*`
+  - Apply to all editors via `SCI_STYLESETFONT` + `SCI_STYLECLEARALL`
+  - Update Qt stylesheet
+  - Persist choice
+- `cmd-set-font-size`: Prompt for size number
+  - Validate range (6-72)
+  - Apply to all editors
+  - Update Qt stylesheet
+  - Persist choice
+
+Register in `qt/commands.ss` (facade):
+```scheme
+(register-command! 'set-frame-font cmd-set-frame-font)
+(register-command! 'set-font-size cmd-set-font-size)
+```
+
+#### 3.6 Font persistence
+
+Add to `~/.gemacs-settings` or persist alongside theme:
+```
+font-family: JetBrains Mono
+font-size: 12
+```
+
+Load at startup before creating editor widgets.
+
+**Files modified**:
+- `face.ss` — font state variables ✅
+- `qt/window.ss` — use font variables in editor setup ✅
+- `qt/commands-core.ss` — use font variables in stylesheet ✅
+- `qt/echo.ss` — use font variables in echo/minibuffer styles ✅
+- `qt/app.ss` — use font variables in tab bar styles ✅
+- `qt/commands-shell.ss` — enhance font size commands (TODO)
+- `qt/commands-config.ss` — new set-frame-font, set-font-size commands (TODO)
+- `qt/commands.ss` — register new commands (TODO)
+- `editor-cmds-b.ss` — implement/fix TUI font stubs (TODO)
+- `persist.ss` — save/load font preferences (TODO)
+
+---
+
+### Phase 4: `customize-face` Interactive Command
+
+**Goal**: Users can interactively modify individual face colors, like Emacs `M-x customize-face`.
+
+#### 4.1 Implement `cmd-customize-face` (Qt)
+
+Replace the stub in `qt/commands-config.ss:231-233`.
+
+Behavior:
+1. Prompt: "Customize face: " with completion from `(hash-keys *faces*)`
+2. Show current face properties in echo area
+3. Prompt: "Foreground (#hex or empty to keep): "
+4. Prompt: "Background (#hex or empty to keep): "
+5. Prompt: "Bold (y/n/empty): "
+6. Prompt: "Italic (y/n/empty): "
+7. Apply updated face to `*faces*`
+8. Re-apply theme (which re-applies all faces)
+9. Save customization to `~/.gemacs-custom-faces` for persistence
+
+#### 4.2 Custom face persistence
+
+**File**: `persist.ss` — add face customization save/load
+
+Format in `~/.gemacs-custom-faces`:
+```
+font-lock-keyword-face	fg:#ff79c6	bold:true
+font-lock-string-face	fg:#50fa7b
+```
+
+Custom faces overlay theme faces — theme provides defaults, user customizations override.
+
+#### 4.3 Load order
+
+At startup:
+1. Load face defaults (from `face.ss`)
+2. Load theme (applies theme's face definitions)
+3. Load custom faces (overlays on top of theme)
+4. Load font settings
+5. Create editor widgets (which read from face system)
+
+**Files modified**:
+- `qt/commands-config.ss` — implement customize-face
+- `persist.ss` — save/load custom faces
+- `qt/app.ss` — load custom faces at startup
+
+---
+
+### Phase 5: Init File Theme/Font API
+
+**Goal**: Users can configure themes and fonts from `.gemacs-init.ss` like Emacs.
+
+#### 5.1 Expose API for init files
+
+These symbols are already accessible via `eval` in `load-init-file!`, but ensure they're exported:
+
+```scheme
+;; In .gemacs-init.ss:
+(load-theme 'dracula)
+(set-frame-font "JetBrains Mono" 12)
+
+;; Custom face override:
+(set-face-attribute 'font-lock-keyword-face fg: "#ff79c6" bold: #t)
+
+;; Define a custom theme:
+(define-theme! 'my-theme
+  '((default . (fg: "#e0e0e0" bg: "#1a1a2e"))
+    (font-lock-keyword-face . (fg: "#e94560" bold: #t))
+    ...))
+(load-theme 'my-theme)
+```
+
+#### 5.2 Convenience functions
+
+```scheme
+(def (load-theme name)
+  "Switch to named theme, like Emacs load-theme."
+  (set! *current-theme* name)
+  (apply-faces-from-theme! name)
+  ...)
+
+(def (set-face-attribute face-name . props)
+  "Modify a face's properties, like Emacs set-face-attribute."
+  ...)
+
+(def (set-frame-font family size)
+  "Set the default font, like Emacs set-frame-font."
+  ...)
+```
+
+**Files modified**:
+- `face.ss` — export convenience functions
+- `qt/commands.ss` — ensure exports reach init file eval scope
+
+---
+
+### Phase 6: User-Defined Themes from Files
+
+**Goal**: Users can create theme files and load them, like Emacs `~/.emacs.d/themes/`.
+
+#### 6.1 Theme file format
+
+Theme files live in `~/.gemacs-themes/` and are plain Scheme:
+
+```scheme
+;; ~/.gemacs-themes/my-dark-theme.ss
+(define-theme! 'my-dark
+  '((default        . (fg: "#c0c0c0" bg: "#0d0d0d"))
+    (font-lock-keyword-face . (fg: "#ff6ac1" bold: #t))
+    (font-lock-string-face  . (fg: "#5af78e"))
+    (font-lock-comment-face . (fg: "#6272a4" italic: #t))
+    ;; ... etc
+    ))
+```
+
+#### 6.2 Theme discovery
+
+`cmd-load-theme` enhanced to:
+1. List built-in themes
+2. Scan `~/.gemacs-themes/*.ss` for user themes
+3. Show all in completion list
+4. Load selected theme file if it's a user theme
+
+#### 6.3 `describe-theme` command
+
+New command: `M-x describe-theme` — opens a buffer showing all face definitions for the current (or named) theme.
+
+**Files modified**:
+- `qt/commands-config.ss` — enhance cmd-load-theme, add describe-theme
+- `qt/commands.ss` — register describe-theme
+
+---
+
+## File Impact Summary
+
+### New Files
+| File | Lines (est.) | Purpose |
+|------|-------------|---------|
+| `face.ss` | ~250 | Face struct, registry, standard faces, font state |
+| `themes.ss` | ~600 | All built-in theme definitions (face alists) |
+
+### Modified Files (Major Changes)
+| File | Current Lines | Changes |
+|------|--------------|---------|
+| `qt/highlight.ss` | 1079 | Replace hardcoded colors with face lookups |
+| `qt/commands-core.ss` | 1438 | Rewrite theme system, face-aware stylesheet |
+| `qt/commands-config.ss` | ~1817 | Implement customize-face, set-frame-font, set-font-size, describe-theme |
+| `qt/window.ss` | 500 | Face-aware editor setup, font variables |
+| `persist.ss` | 632 | Save/load theme, font, custom faces |
+| `highlight.ss` | 1103 | Face-aware TUI highlighting |
+
+### Modified Files (Minor Changes)
+| File | Changes |
+|------|---------|
+| `qt/app.ss` | Font variables in tab styles, load custom faces at startup |
+| `qt/echo.ss` | Font variables in echo/minibuffer styles |
+| `qt/commands.ss` | Register new commands, export face/theme API |
+| `qt/commands-shell.ss` | Enhance font size commands to apply globally |
+| `qt/commands-edit.ss` | Zoom uses face-system default size for reset |
+| `qt/modeline.ss` | Face-aware modeline colors |
+| `terminal.ss` | Theme-aware ANSI colors |
+| `core.ss` | Import/export face.ss |
+| `editor-cmds-c.ss` | Face-aware TUI theme switching |
+| `editor-cmds-b.ss` | Implement TUI font stubs |
+| `modeline.ss` | Face-aware TUI modeline |
+| `echo.ss` | Face-aware TUI echo |
+
+---
+
+## Implementation Order
+
+1. **Phase 1** (face.ss) — ✅ COMPLETE - face system foundation in place
+2. **Phase 3.1-3.3** (font state + wiring) — ✅ COMPLETE - all Qt components use dynamic fonts
+3. **Phase 2.1-2.2** (theme structure + built-in themes) — ✅ COMPLETE - 10 comprehensive themes in themes.ss
+4. **Phase 2.3-2.6** (apply-theme wiring) — NEXT - wire face application to Qt/TUI highlighting
+5. **Phase 3.4-3.6** (font commands + persistence) — depends on 3.1
+6. **Phase 2.7** (theme persistence) — depends on 2.3
+7. **Phase 4** (customize-face) — depends on Phases 1-2
+8. **Phase 5** (init file API) — depends on Phases 1-3
+9. **Phase 6** (user theme files) — depends on Phase 5
+
+---
+
+## Testing Plan
+
+### Unit tests (extend `emacs-test.ss`)
+- Face creation and lookup
+- Theme switching updates faces
+- Font state management
+- Hex color parsing
+
+### Functional tests (extend `functional-test.ss`)
+- `(execute-command! app 'load-theme)` with theme name
+- `(execute-command! app 'set-font-size)` with size
+- `(execute-command! app 'increase-font-size)` / `(execute-command! app 'decrease-font-size)`
+- Theme persistence round-trip
+
+### Qt functional tests (extend `qt-functional-test.ss`)
+- `(execute-command! app 'load-theme)` changes Scintilla styles
+- `(execute-command! app 'set-frame-font)` changes Scintilla font
+- Font size commands update all editors
+- Theme switch re-highlights all buffers
+- Custom face override persists through theme switch
+
+### Manual verification
+- Visual inspection of each built-in theme
+- Font rendering with various families (Monospace, JetBrains Mono, Fira Code, etc.)
+- Org-mode highlighting correctness per theme
+- Terminal ANSI color correctness per theme
+- Tab bar, modeline, echo area styling consistency

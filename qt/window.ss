@@ -181,8 +181,9 @@
   ;; Set monospace font on STYLE_DEFAULT before STYLECLEARALL so all styles inherit it.
   ;; This is critical for org-table column alignment — CSS font-family alone doesn't
   ;; affect Scintilla's internal text renderer.
-  (sci-send/string ed SCI_STYLESETFONT "Monospace" STYLE_DEFAULT)
-  (sci-send ed SCI_STYLESETSIZE STYLE_DEFAULT 11)
+  ;; Font family and size come from the face system (*default-font-family*, *default-font-size*)
+  (sci-send/string ed SCI_STYLESETFONT *default-font-family* STYLE_DEFAULT)
+  (sci-send ed SCI_STYLESETSIZE STYLE_DEFAULT *default-font-size*)
   (sci-send ed SCI_STYLECLEARALL)
   ;; Line number margin
   (sci-send ed SCI_SETMARGINTYPEN 0 SC_MARGIN_NUMBER)

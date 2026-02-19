@@ -137,12 +137,14 @@
                    (label (if mod? (string-append name " *") name))
                    (btn (qt-push-button-create label)))
               ;; Style: current buffer gets highlighted
-              (if (eq? buf current-buf)
-                (qt-widget-set-style-sheet! btn
-                  "QPushButton { color: #ffffff; background: #404060; border: 1px solid #606080; border-radius: 3px; padding: 2px 8px; font-family: monospace; font-size: 9pt; }")
-                (qt-widget-set-style-sheet! btn
-                  "QPushButton { color: #a0a0a0; background: #252525; border: 1px solid #383838; border-radius: 3px; padding: 2px 8px; font-family: monospace; font-size: 9pt; }
-                   QPushButton:hover { color: #d8d8d8; background: #353535; }"))
+              (let ((font-css (string-append " font-family: " *default-font-family*
+                                             "; font-size: " (number->string (max 1 (- *default-font-size* 2))) "pt;")))
+                (if (eq? buf current-buf)
+                  (qt-widget-set-style-sheet! btn
+                    (string-append "QPushButton { color: #ffffff; background: #404060; border: 1px solid #606080; border-radius: 3px; padding: 2px 8px;" font-css " }"))
+                  (qt-widget-set-style-sheet! btn
+                    (string-append "QPushButton { color: #a0a0a0; background: #252525; border: 1px solid #383838; border-radius: 3px; padding: 2px 8px;" font-css " }\n"
+                                   "                   QPushButton:hover { color: #d8d8d8; background: #353535; }"))))
               ;; Click handler: switch to this buffer
               (qt-on-clicked! btn
                 (lambda ()
@@ -199,8 +201,10 @@
       ;; Echo label: ensure visible with minimum height and distinct style
       ;; Must be tall enough to display text clearly (not clipped)
       (qt-widget-set-minimum-height! echo-label 28)
-      (qt-widget-set-style-sheet! echo-label
-        "color: #d8d8d8; background: #1e1e1e; font-family: monospace; font-size: 10pt; padding: 4px 6px; border-top: 1px solid #484848;")
+      (let ((font-css (string-append " font-family: " *default-font-family*
+                                     "; font-size: " (number->string *default-font-size*) "pt;")))
+        (qt-widget-set-style-sheet! echo-label
+          (string-append "color: #d8d8d8; background: #1e1e1e;" font-css " padding: 4px 6px; border-top: 1px solid #484848;")))
 
       ;; Layout: tab-bar at top, splitter takes remaining space, echo-label at bottom
       (qt-layout-add-widget! layout tab-bar)

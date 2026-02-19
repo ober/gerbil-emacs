@@ -99,11 +99,46 @@
   ;; Image buffer support
   *editor-window-map*
   *image-buffer-state*
-  image-buffer?)
+  image-buffer?
+
+  ;; Face system (from :gemacs/face)
+  (struct-out face)
+  new-face
+  *faces*
+  define-face!
+  face-get
+  face-ref
+  set-face-attribute!
+  face-clear!
+  *default-font-family*
+  *default-font-size*
+  set-default-font!
+  get-default-font
+  parse-hex-color
+  rgb->hex
+  define-standard-faces!
+
+  ;; Theme system (from :gemacs/themes)
+  *themes*
+  register-theme!
+  theme-get
+  theme-names
+  theme-dark
+  theme-light
+  theme-solarized-dark
+  theme-solarized-light
+  theme-monokai
+  theme-gruvbox-dark
+  theme-gruvbox-light
+  theme-dracula
+  theme-nord
+  theme-zenburn)
 
 (import :std/sugar
         :std/sort
-        :std/srfi/13)
+        :std/srfi/13
+        :gemacs/face
+        :gemacs/themes)
 
 ;;;============================================================================
 ;;; Keymap data structure

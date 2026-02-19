@@ -95,7 +95,11 @@
    "-lstdc++ -lpthread"))
 
 (defbuild-script
-  `(;; Shared core (no backend dependencies)
+  `(;; Face system (no dependencies)
+    "face"
+    ;; Built-in themes (depends on face)
+    "themes"
+    ;; Shared core (no backend dependencies)
     "core"
     "persist"
     "repl"
