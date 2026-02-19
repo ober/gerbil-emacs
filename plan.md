@@ -470,11 +470,11 @@ Implemented and exported:
 
 ---
 
-### Phase 6: User-Defined Themes from Files
+### Phase 6: User-Defined Themes from Files ✅ COMPLETE
 
 **Goal**: Users can create theme files and load them, like Emacs `~/.emacs.d/themes/`.
 
-#### 6.1 Theme file format
+#### 6.1 Theme file format ✅ COMPLETE
 
 Theme files live in `~/.gemacs-themes/` and are plain Scheme:
 
@@ -489,21 +489,36 @@ Theme files live in `~/.gemacs-themes/` and are plain Scheme:
     ))
 ```
 
-#### 6.2 Theme discovery
+Users create `.ss` files in `~/.gemacs-themes/` with standard `(define-theme! 'name '((face . (props))))` syntax.
+
+#### 6.2 Theme discovery ✅ COMPLETE
 
 `cmd-load-theme` enhanced to:
-1. List built-in themes
-2. Scan `~/.gemacs-themes/*.ss` for user themes
-3. Show all in completion list
-4. Load selected theme file if it's a user theme
+1. ✅ List built-in themes via `theme-names`
+2. ✅ Scan `~/.gemacs-themes/*.ss` for user themes via `discover-user-themes`
+3. ✅ Show all in completion list (built-in + user)
+4. ✅ Load selected theme file via `load-user-theme-file!` if it's a user theme
+5. ✅ Eval theme file contents to register theme via `define-theme!`
 
-#### 6.3 `describe-theme` command
+Implementation:
+- `*user-themes-dir*` - path to `~/.gemacs-themes/`
+- `discover-user-themes` - scans directory, returns list of theme symbols
+- `load-user-theme-file!` - reads and evals theme file, returns #t/#f
+
+#### 6.3 `describe-theme` command ✅ COMPLETE
 
 New command: `M-x describe-theme` — opens a buffer showing all face definitions for the current (or named) theme.
 
+Behavior:
+- ✅ Prompts for theme name with completion (defaults to current theme)
+- ✅ Creates a `*theme: NAME*` buffer
+- ✅ Shows all face definitions with their properties
+- ✅ Auto-loads user themes if not yet loaded
+- ✅ Formats output with face name, properties (fg, bg, bold, italic)
+
 **Files modified**:
-- `qt/commands-config.ss` — enhance cmd-load-theme, add describe-theme
-- `qt/commands.ss` — register describe-theme
+- `qt/commands-config.ss` — added theme discovery, enhanced cmd-load-theme, added cmd-describe-theme ✅
+- `qt/commands.ss` — registered describe-theme command ✅
 
 ---
 
@@ -554,7 +569,9 @@ New command: `M-x describe-theme` — opens a buffer showing all face definition
 7. **Phase 2.7** (theme persistence) — ✅ COMPLETE - theme saved/loaded from ~/.gemacs-theme
 8. **Phase 4** (customize-face) — ✅ COMPLETE - interactive face customization with persistence
 9. **Phase 5** (init file API) — ✅ COMPLETE - convenience functions for .gemacs-init.ss
-10. **Phase 6** (user theme files) — OPTIONAL - load themes from ~/.gemacs-themes/ directory
+10. **Phase 6** (user theme files) — ✅ COMPLETE - load themes from ~/.gemacs-themes/ directory, M-x describe-theme
+
+**ALL PHASES COMPLETE!** ✅ Comprehensive theme and font system fully implemented.
 
 ---
 

@@ -389,22 +389,157 @@
   "List available colors."
   (echo-message! (app-state-echo app) "Color list not available"))
 
+;;; ============================================================================
+;;; User Theme Discovery
+;;; ============================================================================
+
+(def *user-themes-dir*
+  (path-expand ".gemacs-themes" (user-info-home (user-info (user-name)))))
+
+(def (discover-user-themes)
+  "Scan ~/.gemacs-themes/*.ss for user-defined theme files.
+   Returns a list of theme names (symbols)."
+  (with-catch
+    (lambda (e) [])
+    (lambda ()
+      (if (file-exists? *user-themes-dir*)
+        (let* ((files (directory-files *user-themes-dir*))
+               (theme-files (filter (lambda (f)
+                                     (and (string-suffix? ".ss" f)
+                                          (not (string-prefix? "." f))))
+                                   files)))
+          (map (lambda (f)
+                 ;; Convert "my-theme.ss" -> 'my-theme
+                 (string->symbol (substring f 0 (- (string-length f) 3))))
+               theme-files))
+        []))))
+
+(def (load-user-theme-file! theme-name)
+  "Load a user theme file from ~/.gemacs-themes/THEME-NAME.ss
+   Returns #t on success, #f on failure."
+  (with-catch
+    (lambda (e) #f)
+    (lambda ()
+      (let ((theme-path (path-expand (string-append (symbol->string theme-name) ".ss")
+                                     *user-themes-dir*)))
+        (when (file-exists? theme-path)
+          (let ((text (read-file-as-string theme-path)))
+            (when text
+              (let ((port (open-input-string text)))
+                (let loop ()
+                  (let ((form (read port)))
+                    (unless (eof-object? form)
+                      (eval form)
+                      (loop))))
+                #t))))))))
+
 (def (cmd-load-theme app)
-  "Switch to a different color theme."
-  (let* ((available (theme-names))
-         (names (map symbol->string available))
+  "Switch to a different color theme (built-in or user-defined from ~/.gemacs-themes/)."
+  (let* ((builtin-themes (theme-names))
+         (user-themes (discover-user-themes))
+         (all-themes (append builtin-themes user-themes))
+         (names (map symbol->string all-themes))
          (input (qt-echo-read-string-with-completion app
                   "Load theme: " names)))
     (when (and input (> (string-length input) 0))
       (let ((sym (string->symbol input)))
-        (if (theme-get sym)
-          (begin
-            (apply-theme! app theme-name: sym)
-            (theme-settings-save! *current-theme* *default-font-family* *default-font-size*)
-            (echo-message! (app-state-echo app)
-              (string-append "Theme: " input)))
-          (echo-error! (app-state-echo app)
-            (string-append "Unknown theme: " input)))))))
+        (cond
+          ;; Built-in theme already registered
+          ((theme-get sym)
+           (apply-theme! app theme-name: sym)
+           (theme-settings-save! *current-theme* *default-font-family* *default-font-size*)
+           (echo-message! (app-state-echo app)
+             (string-append "Theme: " input)))
+          ;; User theme - try to load from file
+          ((member sym user-themes)
+           (if (load-user-theme-file! sym)
+             ;; Successfully loaded and registered via define-theme! in the file
+             (if (theme-get sym)
+               (begin
+                 (apply-theme! app theme-name: sym)
+                 (theme-settings-save! *current-theme* *default-font-family* *default-font-size*)
+                 (echo-message! (app-state-echo app)
+                   (string-append "Theme: " input " (from ~/.gemacs-themes/)")))
+               (echo-error! (app-state-echo app)
+                 (string-append "Theme file loaded but no theme defined: " input)))
+             (echo-error! (app-state-echo app)
+               (string-append "Failed to load theme file: " input))))
+          ;; Unknown theme
+          (else
+           (echo-error! (app-state-echo app)
+             (string-append "Unknown theme: " input))))))))
+
+(def (cmd-describe-theme app)
+  "Show all face definitions for a theme.
+   Opens a buffer showing the complete theme definition with all faces."
+  (let* ((builtin-themes (theme-names))
+         (user-themes (discover-user-themes))
+         (all-themes (append builtin-themes user-themes))
+         (names (map symbol->string all-themes))
+         (input (qt-echo-read-string-with-completion app
+                  (string-append "Describe theme (default: " (symbol->string *current-theme*) "): ")
+                  names)))
+    (let* ((theme-name (if (or (not input) (string-empty? input))
+                         *current-theme*
+                         (string->symbol input)))
+           (theme (theme-get theme-name)))
+      (cond
+        (theme
+         ;; Create a buffer with theme description
+         (let* ((fr (app-state-frame app))
+                (ed (current-qt-editor app))
+                (buf-name (string-append "*theme: " (symbol->string theme-name) "*"))
+                (buf (or (buffer-by-name buf-name)
+                        (qt-buffer-create! buf-name ed #f))))
+           ;; Build theme description
+           (let ((desc (string-append
+                         "Theme: " (symbol->string theme-name) "\n"
+                         (make-string 60 #\=) "\n\n"
+                         (let loop ((entries theme) (acc ""))
+                           (if (null? entries)
+                             acc
+                             (let* ((entry (car entries))
+                                    (face-name (car entry))
+                                    (props (cdr entry)))
+                               (if (and (pair? props) (keyword? (car props)))
+                                 ;; Face definition
+                                 (let ((face-line (string-append
+                                                    (symbol->string face-name) ":\n"
+                                                    "  " (let prop-loop ((ps props) (pacc ""))
+                                                           (if (null? ps)
+                                                             pacc
+                                                             (if (and (pair? ps) (keyword? (car ps)) (pair? (cdr ps)))
+                                                               (let ((k (keyword->string (car ps)))
+                                                                     (v (cadr ps)))
+                                                                 (prop-loop (cddr ps)
+                                                                   (string-append pacc
+                                                                     k " "
+                                                                     (cond
+                                                                       ((string? v) v)
+                                                                       ((boolean? v) (if v "true" "false"))
+                                                                       (else "?"))
+                                                                     "  ")))
+                                                               pacc)))
+                                                    "\n\n")))
+                                   (loop (cdr entries) (string-append acc face-line)))
+                                 ;; Legacy UI chrome key - skip
+                                 (loop (cdr entries) acc))))))))
+             ;; Attach buffer and set text
+             (qt-buffer-attach! ed buf)
+             (set! (qt-edit-window-buffer (qt-current-window fr)) buf)
+             (qt-plain-text-edit-set-text! ed desc)
+             (qt-plain-text-edit-set-cursor-position! ed 0)
+             (echo-message! (app-state-echo app)
+               (string-append "Describing theme: " (symbol->string theme-name))))))
+        ;; User theme not yet loaded
+        ((member theme-name user-themes)
+         (if (load-user-theme-file! theme-name)
+           (cmd-describe-theme app)  ;; Retry after loading
+           (echo-error! (app-state-echo app)
+             (string-append "Failed to load theme file: " (symbol->string theme-name)))))
+        (else
+         (echo-error! (app-state-echo app)
+           (string-append "Unknown theme: " (symbol->string theme-name))))))))
 
 (def (cmd-fold-level app)
   "Set fold level."

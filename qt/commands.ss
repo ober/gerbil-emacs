@@ -1775,6 +1775,7 @@
   (register-command! 'set-font-size cmd-set-font-size)
   (register-command! 'list-colors cmd-list-colors)
   (register-command! 'load-theme cmd-load-theme)
+  (register-command! 'describe-theme cmd-describe-theme)
   (register-command! 'fold-level cmd-fold-level)
   (register-command! 'ansi-term cmd-ansi-term)
   (register-command! 'diff-backup cmd-diff-backup)
