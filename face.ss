@@ -6,7 +6,8 @@
 ;;; Themes define collections of faces, enabling theme-aware syntax highlighting.
 
 (export #t)
-(import :std/sugar)
+(import :std/sugar
+        :gemacs/themes)
 
 ;;; ============================================================================
 ;;; Face Data Structure
@@ -68,6 +69,30 @@
 (def (face-clear!)
   "Clear all registered faces. Useful for theme switching."
   (hash-clear! *faces*))
+
+;; Current active theme name
+(def *current-theme* 'dark)
+
+(def (load-theme! theme-name)
+  "Load a theme by applying its face definitions to the global *faces* registry."
+  (let ((theme (theme-get theme-name)))
+    (unless theme
+      (error "Unknown theme" theme-name))
+    ;; Clear existing faces
+    (face-clear!)
+    ;; Apply each face from the theme
+    (for-each
+      (lambda (entry)
+        (let ((face-name (car entry))
+              (props (cdr entry)))
+          ;; Only process entries that look like face definitions (have keyword args)
+          ;; Skip legacy UI chrome keys like 'bg, 'fg, 'selection
+          (when (and (pair? props)
+                     (keyword? (car props)))
+            (apply define-face! face-name props))))
+      theme)
+    ;; Update current theme
+    (set! *current-theme* theme-name)))
 
 ;;; ============================================================================
 ;;; Font State

@@ -10,6 +10,7 @@
         :std/text/base64
         :gemacs/qt/sci-shim
         :gemacs/core
+        (only-in :gemacs/persist theme-settings-save! theme-settings-load!)
         :gemacs/editor
         :gemacs/repl
         :gemacs/eshell

@@ -10,6 +10,10 @@
         :std/text/base64
         :gemacs/qt/sci-shim
         :gemacs/core
+        (only-in :gemacs/persist
+                 record-face-customization!
+                 custom-faces-save!
+                 theme-settings-save!)
         :gemacs/editor
         :gemacs/repl
         :gemacs/eshell
@@ -254,7 +258,7 @@
               (echo-message! (app-state-echo app) current-desc))
 
             ;; Collect customizations
-            (let ((fg-input (app-read-string app "Foreground (#hex or empty to keep): "))
+            (let ((fg-input (qt-echo-read-string app "Foreground (#hex or empty to keep): "))
                   (bg-input #f)
                   (bold-input #f)
                   (italic-input #f))
@@ -265,13 +269,13 @@
                 (record-face-customization! face-sym fg: fg-input))
 
               ;; Background
-              (set! bg-input (app-read-string app "Background (#hex or empty to keep): "))
+              (set! bg-input (qt-echo-read-string app "Background (#hex or empty to keep): "))
               (when (and bg-input (not (string-empty? bg-input)))
                 (set-face-attribute! face-sym bg: bg-input)
                 (record-face-customization! face-sym bg: bg-input))
 
               ;; Bold
-              (set! bold-input (app-read-string app "Bold (y/n/empty to keep): "))
+              (set! bold-input (qt-echo-read-string app "Bold (y/n/empty to keep): "))
               (when (and bold-input (not (string-empty? bold-input)))
                 (let ((bold-val (cond
                                   ((or (string=? bold-input "y") (string=? bold-input "yes")) #t)
@@ -282,7 +286,7 @@
                     (record-face-customization! face-sym bold: bold-val))))
 
               ;; Italic
-              (set! italic-input (app-read-string app "Italic (y/n/empty to keep): "))
+              (set! italic-input (qt-echo-read-string app "Italic (y/n/empty to keep): "))
               (when (and italic-input (not (string-empty? italic-input)))
                 (let ((italic-val (cond
                                     ((or (string=? italic-input "y") (string=? italic-input "yes")) #t)
@@ -299,7 +303,7 @@
             (custom-faces-save!)
 
             (echo-message! (app-state-echo app)
-              (string-append "Face customized: " face-input)))))))))
+              (string-append "Face customized: " face-input))))))))
 
 (def (get-monospace-fonts)
   "Get list of available monospace fonts from the system.
@@ -357,11 +361,7 @@
   "Set the default font family for all editors.
    Prompts with completion from available monospace fonts."
   (let* ((fonts (get-monospace-fonts))
-         (input (app-read-string app "Font family: "
-                  completion: (lambda (prefix)
-                                (filter (lambda (f)
-                                          (string-prefix? prefix f))
-                                        fonts)))))
+         (input (qt-echo-read-string-with-completion app "Font family: " fonts)))
     (when (and input (not (string-empty? input)))
       (set! *default-font-family* input)
       (apply-font-to-all-editors! app)
@@ -372,7 +372,7 @@
 (def (cmd-set-font-size app)
   "Set the default font size for all editors.
    Prompts for a numeric size (6-72)."
-  (let ((input (app-read-string app "Font size (6-72): ")))
+  (let ((input (qt-echo-read-string app "Font size (6-72): ")))
     (when (and input (not (string-empty? input)))
       (let ((size (string->number input)))
         (if (and size (>= size 6) (<= size 72))

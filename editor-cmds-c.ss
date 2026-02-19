@@ -15,6 +15,9 @@
         :gerbil-scintilla/style
         :gerbil-scintilla/tui
         :gemacs/core
+        :gemacs/face
+        :gemacs/themes
+        :gemacs/persist
         :gemacs/repl
         :gemacs/eshell
         :gemacs/shell

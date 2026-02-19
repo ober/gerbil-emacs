@@ -69,7 +69,7 @@
       (let ((color-str (if (eq? attr 'fg) (face-fg f) (face-bg f))))
         (if color-str
           (let-values (((r g b) (parse-hex-color color-str)))
-            (+ (<< r 16) (<< g 8) b))
+            (+ (arithmetic-shift r 16) (arithmetic-shift g 8) b))
           ;; Default: light gray for fg, dark gray for bg
           (if (eq? attr 'fg) #xd8d8d8 #x181818)))
       ;; Face not found: use defaults

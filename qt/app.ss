@@ -9,7 +9,8 @@
         :gemacs/core
         :gemacs/editor
         (only-in :gemacs/persist init-file-load!
-                 detect-major-mode buffer-local-set!)
+                 detect-major-mode buffer-local-set!
+                 theme-settings-load! custom-faces-load!)
         :gemacs/repl
         :gemacs/eshell
         :gemacs/shell
