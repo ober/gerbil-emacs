@@ -703,6 +703,7 @@
   (register-command! 'toggle-flyspell cmd-toggle-flyspell)
   (register-command! 'toggle-flymake cmd-toggle-flymake)
   (register-command! 'toggle-lsp cmd-toggle-lsp)
+  (register-command! 'lsp cmd-toggle-lsp)   ; alias: M-x lsp
   (register-command! 'toggle-auto-revert-global cmd-toggle-auto-revert-global)
   ;; Buffer info
   (register-command! 'count-buffers cmd-count-buffers)

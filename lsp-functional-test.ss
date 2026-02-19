@@ -120,7 +120,9 @@
       (if (find-command cmd)
         (pass! (string-append (symbol->string cmd) " registered"))
         (fail! (string-append (symbol->string cmd) " registered") #f "procedure")))
-    '(toggle-lsp lsp-goto-definition lsp-hover lsp-completion lsp-rename
+    '(toggle-lsp lsp
+      lsp-goto-definition lsp-declaration lsp-type-definition lsp-implementation
+      lsp-hover lsp-completion lsp-rename
       lsp-code-actions lsp-find-references lsp-document-symbols
       lsp-workspace-symbol lsp-format-buffer lsp-restart lsp-stop
       lsp-smart-goto-definition)))
@@ -216,46 +218,63 @@
   (let-values (((ed app buf) (make-lsp-test-app "/tmp/test-resilience.ss")))
     (buffer-list-add! buf)
 
-    ;; 10.1: Commands fail gracefully when LSP not running
-    (displayln "  Test: LSP commands fail gracefully when not running")
-
+    ;; Helper: call command by name and return echo message.
     ;; Use find-command + direct call instead of execute-command!
     ;; (execute-command! has a known issue in compiled exes where find-command
-    ;; returns #f internally despite the command being registered — likely a
-    ;; Gambit closure/hash-table identity issue in compiled executables)
-    (let ((cmd (find-command 'lsp-goto-definition)))
-      (when cmd (cmd app)))
-    (let ((msg (lsp-get-echo app)))
-      (check-string-contains! "lsp-goto-definition shows 'not running' error" msg "not running"))
+    ;; returns #f internally — likely a Gambit closure/hash-table identity issue).
+    (def (call-cmd! name)
+      (let ((cmd (find-command name)))
+        (if cmd
+          (cmd app)
+          (fail! (string-append (symbol->string name) " found via find-command") #f "procedure")))
+      (lsp-get-echo app))
 
-    (let ((cmd (find-command 'lsp-hover)))
-      (when cmd (cmd app)))
-    (let ((msg (lsp-get-echo app)))
-      (check-string-contains! "lsp-hover shows 'not running' error" msg "not running"))
+    ;; 10.1: Every command that guards on lsp-running? must echo "not running"
+    ;; when called with no server active. This catches runtime unbound-variable
+    ;; crashes (silent before the guard is reached) as well as missing guards.
+    (displayln "  Test: all LSP commands produce 'not running' error when server is off")
+    (for-each
+      (lambda (name)
+        (let ((msg (call-cmd! name)))
+          (check-string-contains!
+            (string-append (symbol->string name) " shows 'not running' error")
+            msg "not running")))
+      '(lsp-goto-definition lsp-declaration lsp-type-definition lsp-implementation
+        lsp-hover lsp-completion lsp-rename lsp-code-actions
+        lsp-find-references lsp-document-symbols lsp-workspace-symbol
+        lsp-format-buffer))
 
-    (let ((cmd (find-command 'lsp-find-references)))
-      (when cmd (cmd app)))
-    (let ((msg (lsp-get-echo app)))
-      (check-string-contains! "lsp-find-references shows 'not running' error" msg "not running"))
+    ;; 10.2: lsp-stop command echoes "stopped" even when already stopped (idempotent)
+    (displayln "  Test: lsp-stop command echoes and is idempotent")
+    (let ((msg (call-cmd! 'lsp-stop)))
+      (check-string-contains! "lsp-stop echoes 'stopped'" msg "stopped"))
+    (let ((msg (call-cmd! 'lsp-stop)))
+      (check-string-contains! "lsp-stop idempotent second call" msg "stopped"))
+    (check-false! "lsp-running? after lsp-stop commands" (lsp-running?))
 
-    (let ((cmd (find-command 'lsp-format-buffer)))
-      (when cmd (cmd app)))
-    (let ((msg (lsp-get-echo app)))
-      (check-string-contains! "lsp-format-buffer shows 'not running' error" msg "not running"))
+    ;; 10.3: lsp-restart echoes something visible (project root or restart message)
+    (displayln "  Test: lsp-restart command echoes a visible message")
+    (let ((msg (call-cmd! 'lsp-restart)))
+      (check-true! "lsp-restart produces a non-empty echo message"
+        (and (string? msg) (> (string-length msg) 0))))
 
-    ;; 10.2: lsp-stop! is idempotent
-    (displayln "  Test: lsp-stop! is idempotent")
-    (lsp-stop!)
-    (lsp-stop!)
-    (lsp-stop!)
-    (check-false! "lsp-running? after triple stop" (lsp-running?))
-    (pass! "lsp-stop! is idempotent (no crash)")
+    ;; 10.4: lsp-smart-goto-definition falls back and echoes something
+    (displayln "  Test: lsp-smart-goto-definition fallback echoes something")
+    (let ((msg (call-cmd! 'lsp-smart-goto-definition)))
+      (check-true! "lsp-smart-goto-definition produces a non-empty echo message"
+        (and (string? msg) (> (string-length msg) 0))))
 
-    ;; 10.3: smart-goto-definition falls back to text search when not running
-    (displayln "  Test: lsp-smart-goto-definition falls back when not running")
-    (let ((cmd (find-command 'lsp-smart-goto-definition)))
-      (when cmd (cmd app)))
-    (pass! "lsp-smart-goto-definition fallback executed without crash")
+    ;; 10.5: toggle-lsp and lsp alias execute and produce visible echo messages.
+    ;; This is the regression test for the bug where cmd-toggle-lsp called
+    ;; lsp-find-project-root/lsp-install-handlers! from the wrong module scope,
+    ;; silently crashing before any echo-message! was reached.
+    (displayln "  Test: toggle-lsp and lsp alias execute (not silent no-ops)")
+    (let ((msg (call-cmd! 'toggle-lsp)))
+      (check-true! "toggle-lsp produces a non-empty echo message"
+        (and (string? msg) (> (string-length msg) 0))))
+    (let ((msg (call-cmd! 'lsp)))
+      (check-true! "'lsp' alias produces a non-empty echo message"
+        (and (string? msg) (> (string-length msg) 0))))
 
     (buffer-list-remove! buf)))
 
@@ -272,15 +291,19 @@
     ;; Register all commands (required for execute-command! dispatch)
     (qt-register-all-commands!)
 
-    ;; Run test groups (none need a live LSP server)
-    (with-catch
-      (lambda (e)
-        (displayln "  ERROR in tests: " e)
-        (force-output (current-output-port)))
-      (lambda ()
-        (run-group-1-command-registration)
-        (run-group-9-workspace-edit)
-        (run-group-10-resilience)))
+    ;; Run test groups with per-group error isolation so one crashed group
+    ;; does not prevent the remaining groups from running.
+    (def (run-group! name thunk)
+      (with-catch
+        (lambda (e)
+          (set! *failures* (+ *failures* 1))
+          (displayln "  CRASH in " name ": " e)
+          (force-output (current-output-port)))
+        thunk))
+
+    (run-group! "Group 1" run-group-1-command-registration)
+    (run-group! "Group 9" run-group-9-workspace-edit)
+    (run-group! "Group 10" run-group-10-resilience)
 
     ;; Report results
     (displayln "")

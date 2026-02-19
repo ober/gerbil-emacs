@@ -956,6 +956,21 @@
   (lsp-stop!)
   (echo-message! (app-state-echo app) "LSP: stopped"))
 
+(def (cmd-toggle-lsp app)
+  "Toggle LSP server on/off. Start if not running, stop if running."
+  (if (lsp-running?)
+    (begin (lsp-stop!)
+           (echo-message! (app-state-echo app) "LSP: stopped"))
+    (let* ((buf (current-qt-buffer app))
+           (path (buffer-file-path buf))
+           (root (and path (lsp-find-project-root path))))
+      (if root
+        (begin
+          (lsp-start! root)
+          (lsp-install-handlers! app)
+          (echo-message! (app-state-echo app) "LSP: starting gerbil-lsp..."))
+        (echo-error! (app-state-echo app) "LSP: no project root found")))))
+
 ;;;============================================================================
 ;;; Smart M-. dispatch
 ;;;============================================================================

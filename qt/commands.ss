@@ -1980,6 +1980,7 @@
   (register-command! 'image-zoom-fit cmd-image-zoom-fit)
   (register-command! 'image-zoom-reset cmd-image-zoom-reset)
   ;; LSP commands
+  (register-command! 'lsp cmd-toggle-lsp)   ; alias: M-x lsp
   (register-command! 'lsp-goto-definition cmd-lsp-goto-definition)
   (register-command! 'lsp-declaration cmd-lsp-declaration)
   (register-command! 'lsp-type-definition cmd-lsp-type-definition)

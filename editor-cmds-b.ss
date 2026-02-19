@@ -1860,10 +1860,8 @@
     (if *flymake-mode* "Syntax check: on" "Syntax check: off")))
 
 (def (cmd-toggle-lsp app)
-  "Toggle LSP support."
-  (set! *lsp-mode* (not *lsp-mode*))
-  (echo-message! (app-state-echo app)
-    (if *lsp-mode* "LSP: on" "LSP: off")))
+  "LSP is only supported in the Qt binary (gemacs-qt)."
+  (echo-error! (app-state-echo app) "LSP not supported in TUI mode — use gemacs-qt"))
 
 (def (cmd-toggle-auto-revert-global app)
   "Toggle global auto-revert mode."

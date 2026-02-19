@@ -43,8 +43,8 @@ make test-all # Build + run all tests (TUI + Qt)
 
 Individual test file:
 ```bash
-HOME=/home/jafourni LD_LIBRARY_PATH=/home/linuxbrew/.linuxbrew/opt/openssl@3/lib \
-  GERBIL_LOADPATH=/home/jafourni/.gerbil/lib gxi functional-test.ss
+HOME=/home/user LD_LIBRARY_PATH=/home/linuxbrew/.linuxbrew/opt/openssl@3/lib \
+  GERBIL_LOADPATH=/home/user/.gerbil/lib gxi functional-test.ss
 ```
 
 ## File size limit

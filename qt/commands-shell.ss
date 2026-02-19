@@ -669,21 +669,6 @@ S=sort by name, z=sort by size, q=quit."
   "Toggle flyspell mode."
   (echo-message! (app-state-echo app) "Flyspell not available"))
 
-(def (cmd-toggle-lsp app)
-  "Toggle LSP mode — start or stop gerbil-lsp."
-  (if (lsp-running?)
-    (begin (lsp-stop!)
-           (echo-message! (app-state-echo app) "LSP: stopped"))
-    (let* ((buf (current-qt-buffer app))
-           (path (buffer-file-path buf))
-           (root (and path (lsp-find-project-root path))))
-      (if root
-        (begin
-          (lsp-start! root)
-          (lsp-install-handlers! app)
-          (echo-message! (app-state-echo app) "LSP: starting gerbil-lsp..."))
-        (echo-error! (app-state-echo app) "LSP: no project root found")))))
-
 (def (cmd-toggle-global-hl-line app)
   "Toggle global highlight line."
   (cmd-toggle-hl-line app))
