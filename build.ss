@@ -188,6 +188,15 @@
     (exe: "lsp-functional-test" bin: "lsp-functional-test"
           "-cc-options" ,qt-cc-opts
           "-ld-options" ,qt-ld-opts)
+    ;; (exe: "qt-split-comprehensive-test" bin: "qt-split-comprehensive-test"
+    ;;       "-cc-options" ,qt-cc-opts
+    ;;       "-ld-options" ,qt-ld-opts)
+    ;; (exe: "qt-split-debug-test" bin: "qt-split-debug-test"
+    ;;       "-cc-options" ,qt-cc-opts
+    ;;       "-ld-options" ,qt-ld-opts)
+    (exe: "qt-split-simple-test" bin: "qt-split-simple-test"
+          "-cc-options" ,qt-cc-opts
+          "-ld-options" ,qt-ld-opts)
     (exe: "qt/main" bin: "gemacs-qt"
           "-cc-options" ,qt-cc-opts
           "-ld-options" ,qt-ld-opts)))

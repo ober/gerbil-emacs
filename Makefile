@@ -1,4 +1,4 @@
-.PHONY: all build clean test test-qt test-lsp test-lsp-protocol test-all install install-qt
+.PHONY: all build clean test test-qt test-lsp test-lsp-protocol test-split-comprehensive test-all install install-qt
 
 export GERBIL_LOADPATH := $(HOME)/.gerbil/lib
 
@@ -19,6 +19,9 @@ build:
 	-patchelf --set-rpath $(OPENSSL_RPATH):$(SCI_RPATH):$(QT_SHIM_RPATH) .gerbil/bin/qt-highlight-test
 	-patchelf --set-rpath $(OPENSSL_RPATH):$(SCI_RPATH):$(QT_SHIM_RPATH) .gerbil/bin/qt-functional-test
 	-patchelf --set-rpath $(OPENSSL_RPATH):$(SCI_RPATH):$(QT_SHIM_RPATH) .gerbil/bin/lsp-functional-test
+	-patchelf --set-rpath $(OPENSSL_RPATH):$(SCI_RPATH):$(QT_SHIM_RPATH) .gerbil/bin/qt-split-comprehensive-test
+	-patchelf --set-rpath $(OPENSSL_RPATH):$(SCI_RPATH):$(QT_SHIM_RPATH) .gerbil/bin/qt-split-debug-test
+	-patchelf --set-rpath $(OPENSSL_RPATH):$(SCI_RPATH):$(QT_SHIM_RPATH) .gerbil/bin/qt-split-simple-test
 
 clean:
 	gerbil clean
@@ -49,7 +52,11 @@ test-lsp-protocol: build
 	LD_LIBRARY_PATH=$(OPENSSL_RPATH) timeout $(QT_TEST_TIMEOUT) gerbil test ./lsp-protocol-test.ss; \
 	EXIT=$$?; if [ $$EXIT -eq 139 ]; then exit 0; else exit $$EXIT; fi
 
-test-all: build test test-qt test-lsp test-lsp-protocol
+test-split-comprehensive: build
+	@echo "Running COMPREHENSIVE window split tests..."
+	$(QT_TEST_ENV) timeout $(QT_TEST_TIMEOUT) .gerbil/bin/qt-split-comprehensive-test
+
+test-all: build test test-qt test-lsp test-lsp-protocol test-split-comprehensive
 
 PREFIX ?= $(HOME)/.local
 

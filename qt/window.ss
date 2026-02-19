@@ -258,71 +258,81 @@
          (root-spl  (qt-frame-splitter fr))
          (cur-leaf  (split-tree-find-leaf (qt-frame-root fr) cur-win))
          (parent    (split-tree-find-parent (qt-frame-root fr) cur-win))
-         (cur-buf   (qt-edit-window-buffer cur-win)))
+         (cur-buf   (qt-edit-window-buffer cur-win))
+         ;; Save main window geometry — adding widgets to a QSplitter can cause
+         ;; Qt to resize the QMainWindow via sizeHint propagation.
+         (main-win  (qt-frame-main-win fr))
+         (saved-w   (and main-win (qt-widget-width main-win)))
+         (saved-h   (and main-win (qt-widget-height main-win))))
 
-    (cond
-      ;; ── Case A: parent has same orientation — add sibling ─────────────────
-      ((and parent (= (split-node-orientation parent) orientation))
-       (let* ((parent-spl (split-node-splitter parent))
-              (new-win    (qt-make-new-window! parent-spl cur-buf))
-              (new-leaf   (make-split-leaf new-win)))
-         ;; Insert new-leaf after cur-leaf in parent's children
-         (set! (split-node-children parent)
-               (let loop ((cs (split-node-children parent)) (acc []))
-                 (cond
-                   ((null? cs) (reverse (cons new-leaf acc)))
-                   ((eq? (car cs) cur-leaf)
-                    (append (reverse (cons new-leaf (cons cur-leaf acc))) (cdr cs)))
-                   (else (loop (cdr cs) (cons (car cs) acc))))))
-         ;; Rebuild flat list from tree to maintain depth-first order
-         (set! (qt-frame-windows fr) (split-tree-flatten (qt-frame-root fr)))
-         ;; Find new window's index in the rebuilt list
-         (let ((new-idx (list-index (lambda (w) (eq? w new-win)) (qt-frame-windows fr))))
-           (set! (qt-frame-current-idx fr) (or new-idx 0)))
-         (qt-edit-window-editor new-win)))
+    (let ((result
+      (cond
+        ;; ── Case A: parent has same orientation — add sibling ─────────────────
+        ((and parent (= (split-node-orientation parent) orientation))
+         (let* ((parent-spl (split-node-splitter parent))
+                (new-win    (qt-make-new-window! parent-spl cur-buf))
+                (new-leaf   (make-split-leaf new-win)))
+           ;; Insert new-leaf after cur-leaf in parent's children
+           (set! (split-node-children parent)
+                 (let loop ((cs (split-node-children parent)) (acc []))
+                   (cond
+                     ((null? cs) (reverse (cons new-leaf acc)))
+                     ((eq? (car cs) cur-leaf)
+                      (append (reverse (cons new-leaf (cons cur-leaf acc))) (cdr cs)))
+                     (else (loop (cdr cs) (cons (car cs) acc))))))
+           ;; Rebuild flat list from tree to maintain depth-first order
+           (set! (qt-frame-windows fr) (split-tree-flatten (qt-frame-root fr)))
+           ;; Find new window's index in the rebuilt list
+           (let ((new-idx (list-index (lambda (w) (eq? w new-win)) (qt-frame-windows fr))))
+             (set! (qt-frame-current-idx fr) (or new-idx 0)))
+           (qt-edit-window-editor new-win)))
 
-      ;; ── Case B: root is a leaf (very first split) ─────────────────────────
-      ((split-leaf? (qt-frame-root fr))
-       (qt-splitter-set-orientation! root-spl orientation)
-       (let* ((new-win  (qt-make-new-window! root-spl cur-buf))
-              (new-leaf (make-split-leaf new-win))
-              (new-node (make-split-node orientation root-spl (list cur-leaf new-leaf))))
-         (set! (qt-frame-root fr) new-node)
-         ;; Rebuild flat list from tree to maintain depth-first order
-         (set! (qt-frame-windows fr) (split-tree-flatten (qt-frame-root fr)))
-         ;; Find new window's index in the rebuilt list
-         (let ((new-idx (list-index (lambda (w) (eq? w new-win)) (qt-frame-windows fr))))
-           (set! (qt-frame-current-idx fr) (or new-idx 0)))
-         (qt-edit-window-editor new-win)))
+        ;; ── Case B: root is a leaf (very first split) ─────────────────────────
+        ((split-leaf? (qt-frame-root fr))
+         (qt-splitter-set-orientation! root-spl orientation)
+         (let* ((new-win  (qt-make-new-window! root-spl cur-buf))
+                (new-leaf (make-split-leaf new-win))
+                (new-node (make-split-node orientation root-spl (list cur-leaf new-leaf))))
+           (set! (qt-frame-root fr) new-node)
+           ;; Rebuild flat list from tree to maintain depth-first order
+           (set! (qt-frame-windows fr) (split-tree-flatten (qt-frame-root fr)))
+           ;; Find new window's index in the rebuilt list
+           (let ((new-idx (list-index (lambda (w) (eq? w new-win)) (qt-frame-windows fr))))
+             (set! (qt-frame-current-idx fr) (or new-idx 0)))
+           (qt-edit-window-editor new-win)))
 
-      ;; ── Case C: no parent or different orientation — nest with new splitter ─
-      (else
-       (let* ((parent-spl   (if parent
-                              (split-node-splitter parent)
-                              root-spl))
-              ;; Create sub-splitter with the desired orientation
-              (new-spl      (qt-splitter-create orientation parent: parent-spl))
-              (_ (qt-splitter-set-handle-width! new-spl 3))
-              (_ (qt-widget-set-style-sheet! new-spl
-                   "QSplitter::handle { background: #51afef; }"))
-              ;; Reparent cur-win's container into the new splitter
-              (cur-container (qt-edit-window-container cur-win))
-              (_ (qt-splitter-add-widget! new-spl cur-container))
-              ;; Create new window in the new splitter
-              (new-win      (qt-make-new-window! new-spl cur-buf))
-              (new-leaf     (make-split-leaf new-win))
-              (new-node     (make-split-node orientation new-spl
-                                             (list cur-leaf new-leaf))))
-         ;; Replace cur-leaf with new-node in the parent (or set as root)
-         (cond
-           (parent (split-tree-replace-child! parent cur-leaf new-node))
-           (else   (set! (qt-frame-root fr) new-node)))
-         ;; Rebuild flat list from tree to maintain depth-first order
-         (set! (qt-frame-windows fr) (split-tree-flatten (qt-frame-root fr)))
-         ;; Find new window's index in the rebuilt list
-         (let ((new-idx (list-index (lambda (w) (eq? w new-win)) (qt-frame-windows fr))))
-           (set! (qt-frame-current-idx fr) (or new-idx 0)))
-         (qt-edit-window-editor new-win))))))
+        ;; ── Case C: no parent or different orientation — nest with new splitter ─
+        (else
+         (let* ((parent-spl   (if parent
+                                (split-node-splitter parent)
+                                root-spl))
+                ;; Create sub-splitter with the desired orientation
+                (new-spl      (qt-splitter-create orientation parent: parent-spl))
+                (_ (qt-splitter-set-handle-width! new-spl 3))
+                (_ (qt-widget-set-style-sheet! new-spl
+                     "QSplitter::handle { background: #51afef; }"))
+                ;; Reparent cur-win's container into the new splitter
+                (cur-container (qt-edit-window-container cur-win))
+                (_ (qt-splitter-add-widget! new-spl cur-container))
+                ;; Create new window in the new splitter
+                (new-win      (qt-make-new-window! new-spl cur-buf))
+                (new-leaf     (make-split-leaf new-win))
+                (new-node     (make-split-node orientation new-spl
+                                               (list cur-leaf new-leaf))))
+           ;; Replace cur-leaf with new-node in the parent (or set as root)
+           (cond
+             (parent (split-tree-replace-child! parent cur-leaf new-node))
+             (else   (set! (qt-frame-root fr) new-node)))
+           ;; Rebuild flat list from tree to maintain depth-first order
+           (set! (qt-frame-windows fr) (split-tree-flatten (qt-frame-root fr)))
+           ;; Find new window's index in the rebuilt list
+           (let ((new-idx (list-index (lambda (w) (eq? w new-win)) (qt-frame-windows fr))))
+             (set! (qt-frame-current-idx fr) (or new-idx 0)))
+           (qt-edit-window-editor new-win))))))
+      ;; Restore main window size — prevent Qt from growing the window
+      (when (and main-win saved-w saved-h)
+        (qt-widget-resize! main-win saved-w saved-h))
+      result)))
 
 (def (qt-frame-split! fr)
   "Split vertically: add a new window below. Returns the new editor."
