@@ -159,16 +159,16 @@ Created 10 comprehensive themes with full face definitions:
 - `qt/commands-core.ss` — rewrote theme system to use face-based structure ✅
 - `qt/commands-config.ss` — updated cmd-load-theme ✅
 
-#### 2.3 Make `apply-theme!` comprehensive (Qt)
+#### 2.3 Make `apply-theme!` comprehensive (Qt) ✅ COMPLETE
 
-Update `apply-theme!` in `qt/commands-core.ss` to:
-1. Update Qt stylesheet (from face `default`, `modeline`, `region`, etc.)
-2. Re-apply syntax highlighting to all open buffers (via face lookups)
-3. Update visual decorations (cursor-line, brace match, search highlight)
-4. Update gutter colors
-5. Update tab colors
-6. Update active/inactive window borders
-7. Update terminal ANSI colors (if theme defines them)
+Updated `apply-theme!` in `qt/commands-core.ss` to:
+1. ✅ Load theme faces first (via `load-theme!` if `theme-name:` provided)
+2. ✅ Update Qt stylesheet (from legacy UI chrome keys for backward compat)
+3. ✅ Update gutter colors (line number area)
+4. ✅ Re-apply syntax highlighting to all open buffers
+5. TODO: Update visual decorations (cursor-line, brace match, search highlight)
+6. TODO: Update tab colors and window borders
+7. TODO: Update terminal ANSI colors (if theme defines them)
 
 #### 2.4 Make `apply-theme!` work for TUI
 
@@ -178,22 +178,26 @@ Update `editor-cmds-c.ss:cmd-load-theme` to:
 3. Update modeline colors
 4. Update echo area colors
 
-#### 2.5 Wire syntax highlighting to face system (Qt)
+#### 2.5 Wire syntax highlighting to face system (Qt) ✅ COMPLETE
 
-Modify `qt/highlight.ss`:
-- Replace hardcoded color constants (`kw-r`, `kw-g`, etc.) with face lookups
-- `apply-base-dark-theme!` → `apply-theme-to-editor!` (reads from `*faces*`)
-- Each `setup-*-styles!` function reads face colors instead of constants
-- Org style setup reads from `org-*` faces
-
-**Key change**: The top-level `def kw-r #xcc` etc. become functions:
-```scheme
-(def (syntax-fg face-name)
-  "Get foreground RGB for a face as (values r g b)."
-  (let ((f (face-get face-name)))
-    (if f (parse-hex-color (face-fg f))
-        (values #xd8 #xd8 #xd8))))
-```
+Modified `qt/highlight.ss`:
+- ✅ Replaced hardcoded color constants with face-aware helper functions:
+  - `(face-fg-rgb face-name)` → returns `(values r g b)` from face foreground
+  - `(face-has-bold? face-name)` → checks if face has bold attribute
+  - `(face-has-italic? face-name)` → checks if face has italic attribute
+- ✅ Renamed `apply-base-dark-theme!` → `apply-base-theme!` (reads from `default` and `line-number` faces)
+- ✅ Updated all `setup-*-styles!` functions to use face lookups:
+  - `setup-cpp-styles!` (C/C++/Java/JS/Go/Rust/etc.)
+  - `setup-python-styles!`
+  - `setup-lisp-styles!` (Scheme/Lisp)
+  - `setup-bash-styles!`
+  - `setup-ruby-styles!`
+  - `setup-lua-styles!`
+  - `setup-sql-styles!`
+  - `setup-perl-styles!`
+  - Generic lexers (JSON, YAML, XML, CSS, Markdown, etc.)
+- ✅ Updated `qt-setup-org-styles!` to read from org-mode faces (`org-heading-1` through `org-heading-8`, `org-todo`, `org-done`, `org-link`, `org-code`, `org-verbatim`, `org-table`, etc.)
+- ✅ Initialize face system at startup (`qt/app.ss:qt-main` calls `define-standard-faces!` and `load-theme!`)
 
 #### 2.6 Wire syntax highlighting to face system (TUI)
 
@@ -512,12 +516,13 @@ New command: `M-x describe-theme` — opens a buffer showing all face definition
 1. **Phase 1** (face.ss) — ✅ COMPLETE - face system foundation in place
 2. **Phase 3.1-3.3** (font state + wiring) — ✅ COMPLETE - all Qt components use dynamic fonts
 3. **Phase 2.1-2.2** (theme structure + built-in themes) — ✅ COMPLETE - 10 comprehensive themes in themes.ss
-4. **Phase 2.3-2.6** (apply-theme wiring) — NEXT - wire face application to Qt/TUI highlighting
-5. **Phase 3.4-3.6** (font commands + persistence) — depends on 3.1
-6. **Phase 2.7** (theme persistence) — depends on 2.3
-7. **Phase 4** (customize-face) — depends on Phases 1-2
-8. **Phase 5** (init file API) — depends on Phases 1-3
-9. **Phase 6** (user theme files) — depends on Phase 5
+4. **Phase 2.3 & 2.5** (Qt face-aware highlighting) — ✅ COMPLETE - Qt syntax highlighting uses face system
+5. **Phase 2.4 & 2.6** (TUI face-aware highlighting) — NEXT - wire TUI highlighting to faces
+6. **Phase 3.4-3.6** (font commands + persistence) — depends on 3.1
+7. **Phase 2.7** (theme persistence) — depends on 2.3
+8. **Phase 4** (customize-face) — depends on Phases 1-2
+9. **Phase 5** (init file API) — depends on Phases 1-3
+10. **Phase 6** (user theme files) — depends on Phase 5
 
 ---
 
