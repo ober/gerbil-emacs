@@ -1,6 +1,7 @@
 .PHONY: all build clean test test-qt test-lsp test-lsp-protocol test-split-comprehensive test-all install install-qt
 
 export GERBIL_LOADPATH := $(HOME)/.gerbil/lib
+export GERBIL_BUILD_CORES := $(shell echo $$(( $$(nproc) / 2 )))
 
 OPENSSL_RPATH = /home/linuxbrew/.linuxbrew/opt/openssl@3/lib
 SCI_RPATH = $(HOME)/.gerbil/lib/gerbil-scintilla

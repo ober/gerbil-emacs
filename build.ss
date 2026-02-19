@@ -199,4 +199,5 @@
           "-ld-options" ,qt-ld-opts)
     (exe: "qt/main" bin: "gemacs-qt"
           "-cc-options" ,qt-cc-opts
-          "-ld-options" ,qt-ld-opts)))
+          "-ld-options" ,qt-ld-opts))
+  parallelize: #t)
