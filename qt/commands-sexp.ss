@@ -342,33 +342,39 @@
 ;;;============================================================================
 
 (def (adjust-window-size! app delta)
-  "Adjust current window size by DELTA pixels in the splitter."
-  (let* ((fr (app-state-frame app))
-         (wins (qt-frame-windows fr))
-         (n (length wins)))
-    (when (> n 1)
-      (let* ((splitter (qt-frame-splitter fr))
-             (idx (qt-frame-current-idx fr))
-             ;; Get current sizes
-             (sizes (let loop ((i 0) (acc []))
-                      (if (>= i n) (reverse acc)
-                        (loop (+ i 1) (cons (qt-splitter-size-at splitter i) acc)))))
-             ;; Find a neighbor to take/give from
+  "Adjust current window size by DELTA pixels in its parent splitter."
+  (let* ((fr  (app-state-frame app))
+         (cur (qt-current-window fr))
+         ;; Find the parent node in the split tree
+         (parent (split-tree-find-parent (qt-frame-root fr) cur)))
+    (when parent
+      (let* ((splitter (split-node-splitter parent))
+             (children (split-node-children parent))
+             (n        (length children))
+             ;; Find index of cur within parent's children
+             (idx      (let loop ((cs children) (i 0))
+                         (cond
+                           ((null? cs) 0)
+                           ((and (split-leaf? (car cs))
+                                 (eq? (split-leaf-edit-window (car cs)) cur)) i)
+                           (else (loop (cdr cs) (+ i 1))))))
+             (sizes    (let loop ((i 0) (acc []))
+                         (if (>= i n) (reverse acc)
+                           (loop (+ i 1) (cons (qt-splitter-size-at splitter i) acc)))))
              (neighbor (if (< idx (- n 1)) (+ idx 1) (- idx 1)))
              (cur-size (list-ref sizes idx))
              (nbr-size (list-ref sizes neighbor))
-             (new-cur (max 50 (+ cur-size delta)))
-             (new-nbr (max 50 (- nbr-size delta))))
-        ;; Build new sizes list
-        (let ((new-sizes (let loop ((i 0) (s sizes) (acc []))
-                           (if (null? s) (reverse acc)
-                             (loop (+ i 1) (cdr s)
-                                   (cons (cond
-                                           ((= i idx) new-cur)
-                                           ((= i neighbor) new-nbr)
-                                           (else (car s)))
-                                         acc))))))
-          (qt-splitter-set-sizes! splitter new-sizes))))))
+             (new-cur  (max 50 (+ cur-size delta)))
+             (new-nbr  (max 50 (- nbr-size delta))))
+        (qt-splitter-set-sizes! splitter
+          (let loop ((i 0) (s sizes) (acc []))
+            (if (null? s) (reverse acc)
+              (loop (+ i 1) (cdr s)
+                    (cons (cond
+                            ((= i idx) new-cur)
+                            ((= i neighbor) new-nbr)
+                            (else (car s)))
+                          acc)))))))))
 
 (def (cmd-enlarge-window app)
   "Enlarge the current window by 50 pixels."
@@ -381,18 +387,18 @@
   (echo-message! (app-state-echo app) "Window shrunk"))
 
 (def (cmd-balance-windows app)
-  "Make all windows the same size."
-  (let* ((fr (app-state-frame app))
-         (wins (qt-frame-windows fr))
-         (n (length wins)))
-    (when (> n 1)
-      (let ((splitter (qt-frame-splitter fr))
-            (equal-size 500)) ; Each panel gets same size hint
+  "Make all windows in the current splitter the same size."
+  (let* ((fr  (app-state-frame app))
+         (cur (qt-current-window fr))
+         (parent (split-tree-find-parent (qt-frame-root fr) cur)))
+    (when parent
+      (let* ((splitter (split-node-splitter parent))
+             (n        (length (split-node-children parent))))
         (qt-splitter-set-sizes! splitter
           (let loop ((i 0) (acc '()))
             (if (>= i n) (reverse acc)
-              (loop (+ i 1) (cons equal-size acc))))))))
-  (echo-message! (app-state-echo app) "Windows balanced"))
+              (loop (+ i 1) (cons 500 acc)))))))
+    (echo-message! (app-state-echo app) "Windows balanced")))
 
 ;;;============================================================================
 ;;; Move to window line (M-r: cycle top/center/bottom)

@@ -26,15 +26,40 @@
 ;;; Winner mode — undo/redo window configuration changes
 ;;; ========================================================================
 
-(def *winner-history* [])   ; list of (buffer-names . current-idx)
+(def *winner-history* [])   ; list of (tree-snapshot . cur-buf-name)
 (def *winner-future* [])    ; redo stack
 (def *winner-max-history* 50)
 
+(def (winner-snapshot-tree node)
+  "Serialize split tree as an s-expr with buffer names for snapshot."
+  (cond
+    ((split-leaf? node)
+     `(leaf ,(buffer-name (qt-edit-window-buffer (split-leaf-edit-window node)))))
+    ((split-node? node)
+     `(node ,(split-node-orientation node)
+            ,@(map winner-snapshot-tree (split-node-children node))))))
+
+(def (winner-snapshot-count node)
+  "Count leaf nodes (windows) in a snapshot s-expr."
+  (cond
+    ((and (pair? node) (eq? (car node) 'leaf)) 1)
+    ((and (pair? node) (eq? (car node) 'node))
+     (apply + (map winner-snapshot-count (cddr node))))
+    (else 0)))
+
+(def (winner-snapshot-leaf-names snapshot)
+  "Return ordered list of buffer names from snapshot leaves."
+  (cond
+    ((and (pair? snapshot) (eq? (car snapshot) 'leaf)) (list (cadr snapshot)))
+    ((and (pair? snapshot) (eq? (car snapshot) 'node))
+     (apply append (map winner-snapshot-leaf-names (cddr snapshot))))
+    (else [])))
+
 (def (winner-current-config fr)
-  "Capture current window configuration as list of buffer names + index."
-  (cons (map (lambda (w) (buffer-name (qt-edit-window-buffer w)))
-             (qt-frame-windows fr))
-        (qt-frame-current-idx fr)))
+  "Capture current window configuration as (tree-snapshot . cur-buf-name)."
+  (let ((cur-buf (buffer-name (qt-edit-window-buffer (qt-current-window fr)))))
+    (cons (winner-snapshot-tree (qt-frame-root fr))
+          cur-buf)))
 
 (def (winner-save! fr)
   "Save current window configuration to history."
@@ -45,27 +70,60 @@
     (set! *winner-future* [])))
 
 (def (winner-restore-config! app config)
-  "Restore a saved window configuration by switching buffers in windows."
-  (let* ((fr (app-state-frame app))
-         (wins (qt-frame-windows fr))
-         (names (car config))
-         (saved-idx (cdr config))
-         (n (min (length wins) (length names))))
-    ;; Restore buffer assignments for existing windows
-    (let loop ((ws wins) (ns names) (i 0))
-      (when (and (pair? ws) (pair? ns))
-        (let* ((w (car ws))
-               (target-name (car ns))
-               (target-buf (buffer-by-name target-name)))
-          (when (and target-buf
-                     (not (string=? (buffer-name (qt-edit-window-buffer w))
-                                    target-name)))
-            (qt-buffer-attach! (qt-edit-window-editor w) target-buf)
-            (set! (qt-edit-window-buffer w) target-buf)))
-        (loop (cdr ws) (cdr ns) (+ i 1))))
-    ;; Restore active window index
-    (when (< saved-idx (length wins))
-      (set! (qt-frame-current-idx fr) saved-idx))))
+  "Restore a saved window configuration.
+
+   Strategy for UNDO (fewer windows): delete last windows. Since splits always
+   append to the end of the flat list, deleting from the end naturally restores
+   the correct tree structure — the delete logic handles tree cleanup itself.
+
+   Strategy for REDO (more windows): split to create extra windows."
+  (let* ((fr            (app-state-frame app))
+         (snapshot      (car config))
+         (cur-buf-name  (cdr config))
+         (desired-count (winner-snapshot-count snapshot))
+         (current-count (length (qt-frame-windows fr))))
+    ;; Phase 1: Adjust window count
+    (cond
+      ;; Need to delete windows (undo path)
+      ((> current-count desired-count)
+       (let loop ((n (- current-count desired-count)))
+         (when (> n 0)
+           ;; Point current-idx at last window so qt-frame-delete-window! deletes it
+           (set! (qt-frame-current-idx fr) (- (length (qt-frame-windows fr)) 1))
+           (qt-frame-delete-window! fr)
+           (loop (- n 1)))))
+      ;; Need to create windows (redo path)
+      ((< current-count desired-count)
+       (let loop ((n (- desired-count current-count)))
+         (when (> n 0)
+           ;; Split to add a window (use vertical as default)
+           (qt-frame-split! fr)
+           (loop (- n 1))))))
+    ;; Phase 2: Assign buffers from snapshot leaf list (in order)
+    (let* ((leaf-names (winner-snapshot-leaf-names snapshot))
+           (wins       (qt-frame-windows fr)))
+      (let loop ((ws wins) (ns leaf-names))
+        (when (and (pair? ws) (pair? ns))
+          (let* ((w          (car ws))
+                 (target-name (car ns))
+                 (target-buf  (buffer-by-name target-name)))
+            (when (and target-buf
+                       (not (string=? (buffer-name (qt-edit-window-buffer w))
+                                      target-name)))
+              (qt-buffer-attach! (qt-edit-window-editor w) target-buf)
+              (set! (qt-edit-window-buffer w) target-buf)))
+          (loop (cdr ws) (cdr ns)))))
+    ;; Phase 3: Restore active window (find by buffer name)
+    (let* ((wins (qt-frame-windows fr))
+           (idx  (let find-idx ((ws wins) (i 0))
+                   (cond
+                     ((null? ws) 0)
+                     ((string=? (buffer-name (qt-edit-window-buffer (car ws)))
+                                cur-buf-name)
+                      i)
+                     (else (find-idx (cdr ws) (+ i 1)))))))
+      (when (< idx (length wins))
+        (set! (qt-frame-current-idx fr) idx)))))
 
 (def (cmd-winner-undo app)
   "Undo the last window configuration change."

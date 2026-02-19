@@ -25,6 +25,7 @@
         (only-in :gemacs/qt/window
                  make-qt-edit-window
                  make-qt-frame
+                 make-split-leaf
                  qt-edit-window-buffer)
         (only-in :gemacs/qt/commands
                  qt-register-all-commands!)
@@ -101,7 +102,7 @@
          (name (if path (path-strip-directory path) "*lsp-test*"))
          (buf (make-buffer name path doc #f #f #f #f))
          (win (make-qt-edit-window ed #f buf #f #f #f))
-         (fr  (make-qt-frame #f (list win) 0 #f))
+         (fr  (make-qt-frame #f (make-split-leaf win) (list win) 0 #f))
          (app (new-app-state fr)))
     (values ed app buf)))
 
