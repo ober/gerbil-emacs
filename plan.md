@@ -46,61 +46,87 @@ Key tests:
 
 All 230 tests pass (185 existing + 45 new).
 
-### 5. TUI window.ss partial fix
+### 5. TUI window.ss tree-based rewrite (IN PROGRESS)
 
 File: `window.ss`
 
-Fixed `frame-split!` and `frame-split-right!` to:
-- Only set global `split-direction` on the FIRST split (not override on subsequent splits)
-- Insert new window after current window (not append to end)
-- Update `current-idx` to point to the new window
+**COMPLETE ARCHITECTURAL REWRITE** to match Qt's tree-based model:
 
-**Note**: TUI still has no nested split support — it's a flat model. Mixed h/v splits aren't possible.
+**What was implemented**:
+- ✅ Added `split-leaf` and `split-node` structures (matching Qt)
+- ✅ Changed `frame` structure: removed `split-direction`, added `root` tree
+- ✅ Implemented tree helper functions: `split-tree-flatten`, `split-tree-find-parent`, `split-tree-find-leaf`, `split-tree-find-parent-of-node`, `split-tree-replace-child!`, `split-tree-remove-child!`
+- ✅ Rewrote `frame-do-split!` with Cases A/B/C (same logic as Qt's `qt-frame-do-split!`)
+- ✅ Rewrote `frame-delete-window!` and `frame-delete-other-windows!` for tree model
+- ✅ Implemented recursive `split-tree-layout!` to compute x/y/w/h from tree
+- ✅ Updated `frame-draw-dividers!` for recursive tree traversal
+- ✅ Added helper functions: `list-index`, `last`
+
+**Current status**: Code is architecturally complete but has **parenthesis balancing issues** preventing compilation.
+
+**What needs to be done**:
+1. Fix remaining paren balance errors in `split-tree-layout!` function
+2. Build and verify compilation succeeds
+3. Add comprehensive functional tests (equivalent to Qt Group 11)
+4. Test that nested splits work correctly (hsplit → vsplit, vsplit → hsplit, etc.)
+
+**Known issues**:
+- Compilation error: "Bad syntax; empty body" in `split-tree-layout!`
+- Likely cause: Missing or extra closing parens in nested let*/if/loop structures
+- Recommendation: Use editor with paren-matching (Emacs paredit, VS Code Rainbow Brackets) or provide clean rewrite
 
 ## What Still Needs To Be Done
 
-### 1. Fix `other-window` (C-x o) not working in Qt — CRITICAL
+### 1. ✅ DONE: Fix TUI window.ss compilation errors
 
-**Problem**: `qt-frame-other-window!` in `qt/window.ss` line 444 only updates `current-idx` but does NOT give keyboard focus to the new editor widget. So pressing C-x o updates the internal state but keystrokes still go to the old editor.
+**File**: `window.ss`
 
-**Fix needed** in `qt/window.ss`, replace the current `qt-frame-other-window!`:
-```scheme
-(def (qt-frame-other-window! fr)
-  "Switch to the next window (wraps around)."
-  (let ((n (length (qt-frame-windows fr))))
-    (set! (qt-frame-current-idx fr)
-          (modulo (+ (qt-frame-current-idx fr) 1) n))
-    ;; Give keyboard focus to the new active editor
-    (let ((win (list-ref (qt-frame-windows fr) (qt-frame-current-idx fr))))
-      (qt-widget-set-focus! (qt-edit-window-editor win)))))
-```
+**Status**: FIXED — used `gerbil_check_balance` to find two extra closing parens at lines 253 and 460. Removed both. Also changed `let` to `let*` in `frame-layout!` to allow binding references. File now compiles successfully.
 
-**Also**: Add focus after splits in `qt-frame-do-split!`. After the `qt-widget-resize!` restore block (~line 338), add:
-```scheme
-;; Focus the new editor
-(when result (qt-widget-set-focus! result))
-```
+**Changes**:
+- Line 253: removed 1 extra `)` from `split-tree-layout!` horizontal branch
+- Line 460: removed 1 extra `)` from `split-tree-draw-dividers!`
+- Line 173: changed `let` to `let*` in `frame-layout!`
 
-`qt-widget-set-focus!` is already exported from `:gerbil-qt/qt` and available via `:gemacs/qt/sci-shim` (which is already imported in `qt/window.ss`).
+### 4. TODO: Add TUI Group 11 equivalent functional tests
 
-### 2. Build and test after focus fix
+**File**: `functional-test.ss`
 
-```bash
-HOME=/home/jafourni GERBIL_LOADPATH=/home/jafourni/.gerbil/lib gerbil build
-# Then run Qt tests:
-QT_QPA_PLATFORM=offscreen .gerbil/bin/qt-functional-test
-# Then test binaries:
-QT_QPA_PLATFORM=offscreen .gerbil/bin/gemacs-qt --version
-.gerbil/bin/gemacs --version
-```
+**Status**: Not yet implemented. The TUI window.ss now compiles, so comprehensive window management tests can be added.
 
-### 3. Commit and push
+**Needed tests** (matching Qt's Group 11):
+- Scenario 1: hsplit → other-window → vsplit (the reported bug)
+- Scenario 2: vsplit → other-window → hsplit
+- Scenario 3: Four-pane grid nested splits
+- Scenario 4-10: Delete, traversal, buffer sharing tests
+
+**IMPORTANT**: Tests MUST use `execute-command!` to test through dispatch, never call leaf functions directly (per CLAUDE.md testing policy).
+
+### 2. ✅ DONE: Qt focus fixes already implemented
+
+**Status**: Both focus fixes were already implemented in prior commits:
+- `qt-frame-other-window!` (lines 446-453): already calls `qt-widget-set-focus!` on the new editor
+- `qt-frame-do-split!` (lines 339-340): already calls `qt-widget-set-focus!` after splits
+
+### 3. ✅ DONE: Build and test
+
+**Status**: Built successfully and tested:
+- `make clean && make build` — succeeded
+- Both binaries work: `gemacs --version` and `gemacs-qt --version`
+- Qt tests: **230/230 passed** (all Group 1-12 tests including layout verification)
+- TUI tests: Pre-existing failures in VC commands (unrelated to window.ss changes)
+
+### 5. Commit and push
+
+**Status**: Ready to commit.
 
 All changes span two repos:
-- **gerbil-qt**: new splitter FFI functions (insertWidget, indexOf, widget)
-- **gerbil-emacs**: Qt split fix, delete-window fix, layout tests, TUI split fix, focus fix
+- **gerbil-qt**: new splitter FFI functions (insertWidget, indexOf, widget) — already committed
+- **gerbil-emacs**: window.ss tree-based rewrite + paren fixes — ready to commit
 
-### 4. (Nice-to-have) Modeline visual indicator for active window
+### 6. (Nice-to-have) Modeline visual indicator for active window
+
+**Status**: Future enhancement.
 
 Currently the modeline doesn't visually indicate which window is active. After other-window works, the user needs a visual cue (e.g. different modeline background color for active vs inactive windows).
 
@@ -112,6 +138,6 @@ Currently the modeline doesn't visually indicate which window is active. After o
 - `qt.ss` — 3 Gerbil wrappers + exports
 
 ### gerbil-emacs
-- `qt/window.ss` — Case C fix (insertWidget), delete-window fix, focus fix needed (see above)
+- `qt/window.ss` — Case C fix (insertWidget), delete-window fix, focus already implemented
 - `qt-functional-test.ss` — Group 12 layout tests (8 tests, ~45 checks), updated imports
-- `window.ss` — TUI split-direction fix, insert-after-current fix
+- `window.ss` — ✅ TUI tree-based architecture rewrite + paren fixes (lines 253, 460, 173)
