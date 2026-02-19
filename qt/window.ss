@@ -306,19 +306,23 @@
          (let* ((parent-spl   (if parent
                                 (split-node-splitter parent)
                                 root-spl))
-                ;; Create sub-splitter with the desired orientation
-                (new-spl      (qt-splitter-create orientation parent: parent-spl))
+                ;; Remember where cur-container sits in parent-spl
+                (cur-container (qt-edit-window-container cur-win))
+                (cur-idx-in-spl (qt-splitter-index-of parent-spl cur-container))
+                ;; Create sub-splitter WITHOUT parent — we'll insert it explicitly
+                (new-spl      (qt-splitter-create orientation))
                 (_ (qt-splitter-set-handle-width! new-spl 3))
                 (_ (qt-widget-set-style-sheet! new-spl
                      "QSplitter::handle { background: #51afef; }"))
                 ;; Reparent cur-win's container into the new splitter
-                (cur-container (qt-edit-window-container cur-win))
                 (_ (qt-splitter-add-widget! new-spl cur-container))
                 ;; Create new window in the new splitter
                 (new-win      (qt-make-new-window! new-spl cur-buf))
                 (new-leaf     (make-split-leaf new-win))
                 (new-node     (make-split-node orientation new-spl
                                                (list cur-leaf new-leaf))))
+           ;; Insert new-spl at the exact position cur-container occupied
+           (qt-splitter-insert-widget! parent-spl cur-idx-in-spl new-spl)
            ;; Replace cur-leaf with new-node in the parent (or set as root)
            (cond
              (parent (split-tree-replace-child! parent cur-leaf new-node))
@@ -332,6 +336,8 @@
       ;; Restore main window size — prevent Qt from growing the window
       (when (and main-win saved-w saved-h)
         (qt-widget-resize! main-win saved-w saved-h))
+      ;; Focus the new editor
+      (when result (qt-widget-set-focus! result))
       result)))
 
 (def (qt-frame-split! fr)
@@ -388,8 +394,9 @@
                 (error "qt-frame-delete-window!: only-qt-w is null"))
               (unless dest-spl
                 (error "qt-frame-delete-window!: dest-spl is null"))
-              ;; Move only-child's Qt widget to dest-spl (reparents it)
-              (qt-splitter-add-widget! dest-spl only-qt-w)
+              ;; Insert only-child's widget at parent-spl's position in dest-spl
+              (let ((spl-idx (qt-splitter-index-of dest-spl parent-spl)))
+                (qt-splitter-insert-widget! dest-spl spl-idx only-qt-w))
               ;; Update tree: replace parent with only-child
               (if grandparent
                 (split-tree-replace-child! grandparent parent only-child)
@@ -440,7 +447,10 @@
   "Switch to the next window (wraps around)."
   (let ((n (length (qt-frame-windows fr))))
     (set! (qt-frame-current-idx fr)
-          (modulo (+ (qt-frame-current-idx fr) 1) n))))
+          (modulo (+ (qt-frame-current-idx fr) 1) n))
+    ;; Give keyboard focus to the new active editor
+    (let ((win (list-ref (qt-frame-windows fr) (qt-frame-current-idx fr))))
+      (qt-widget-set-focus! (qt-edit-window-editor win)))))
 
 ;;;============================================================================
 ;;; Helpers

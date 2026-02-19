@@ -14,6 +14,9 @@
                  qt-widget-destroy!
                  qt-scintilla-create
                  qt-splitter-create
+                 qt-splitter-count
+                 qt-splitter-index-of
+                 qt-splitter-widget
                  QT_VERTICAL
                  QT_HORIZONTAL)
         :gerbil-scintilla/constants
@@ -47,11 +50,14 @@
                  split-node?
                  split-leaf-edit-window
                  split-node-orientation
+                 split-node-splitter
                  split-node-children
                  qt-edit-window-buffer
                  qt-edit-window-editor
+                 qt-edit-window-container
                  qt-frame-windows
                  qt-frame-root
+                 qt-frame-splitter
                  qt-frame-current-idx
                  qt-current-window
                  qt-frame-init!)
@@ -1944,6 +1950,258 @@
   (displayln "Group 11 complete"))
 
 ;;;============================================================================
+;;; Group 12: Qt widget layout verification — ACTUAL Qt splitter hierarchy
+;;;============================================================================
+
+;;; Helper: verify a splitter has exactly N children
+(def (check-splitter-count! label spl expected)
+  (let ((actual (qt-splitter-count spl)))
+    (if (= actual expected)
+      (pass! label)
+      (fail! label actual expected))))
+
+;;; Helper: verify widget is at expected index in splitter
+;;; Uses qt-splitter-index-of (avoids FFI pointer eq? issues)
+(def (check-widget-at! label spl widget expected-idx)
+  (let ((actual-idx (qt-splitter-index-of spl widget)))
+    (if (= actual-idx expected-idx)
+      (pass! label)
+      (fail! label (string-append "index " (number->string actual-idx))
+                   (string-append "index " (number->string expected-idx))))))
+
+;;; Helper: get the Qt widget for a tree node (container for leaf, splitter for node)
+(def (tree-node-qt-widget node)
+  (cond
+    ((split-leaf? node) (qt-edit-window-container (split-leaf-edit-window node)))
+    ((split-node? node) (split-node-splitter node))))
+
+;;; Helper: recursively verify Qt widget tree matches logical tree
+(def (verify-qt-layout! prefix spl tree-children)
+  (check-splitter-count! (string-append prefix " child count")
+                         spl (length tree-children))
+  (let loop ((children tree-children) (i 0))
+    (when (pair? children)
+      (let ((child (car children)))
+        (check-widget-at!
+          (string-append prefix " child[" (number->string i) "]")
+          spl (tree-node-qt-widget child) i)
+        ;; Recurse into sub-nodes
+        (when (split-node? child)
+          (verify-qt-layout!
+            (string-append prefix ".child[" (number->string i) "]")
+            (split-node-splitter child)
+            (split-node-children child))))
+      (loop (cdr children) (+ i 1)))))
+
+(def (run-group-12-layout-verification)
+  (displayln "\n=== Group 12: Qt widget layout verification ===")
+
+  ;; ── L1: split-below — root splitter has [A, B] in correct order ──────────
+  (displayln "Layout L1: split-below widget order")
+  (let-values (((fr app) (make-qt-split-test-frame!)))
+    (let ((win-a (qt-current-window fr)))
+      (execute-command! app 'split-window-below)
+      (let* ((root (qt-frame-root fr))
+             (root-spl (qt-frame-splitter fr))
+             (children (split-node-children root)))
+        ;; Tree should be: node(VERT, root-spl, [leaf(A), leaf(B)])
+        (check-splitter-count! "L1.1: root has 2 widgets" root-spl 2)
+        ;; A's container should be at index 0 (top)
+        (check-widget-at! "L1.2: A is at top (index 0)"
+          root-spl (qt-edit-window-container win-a) 0)
+        ;; B's container should be at index 1 (bottom)
+        (let ((win-b (qt-current-window fr)))
+          (check-widget-at! "L1.3: B is at bottom (index 1)"
+            root-spl (qt-edit-window-container win-b) 1)))))
+
+  ;; ── L2: split-right — root splitter has [A, B] in correct order ──────────
+  (displayln "Layout L2: split-right widget order")
+  (let-values (((fr app) (make-qt-split-test-frame!)))
+    (let ((win-a (qt-current-window fr)))
+      (execute-command! app 'split-window-right)
+      (let ((root-spl (qt-frame-splitter fr)))
+        (check-splitter-count! "L2.1: root has 2 widgets" root-spl 2)
+        (check-widget-at! "L2.2: A is at left (index 0)"
+          root-spl (qt-edit-window-container win-a) 0)
+        (let ((win-b (qt-current-window fr)))
+          (check-widget-at! "L2.3: B is at right (index 1)"
+            root-spl (qt-edit-window-container win-b) 1)))))
+
+  ;; ── L3: THE BUG — split-below then split-right in bottom pane ────────────
+  ;; This is the exact user scenario that was broken:
+  ;; C-x 2 (split-below) → C-x 3 (split-right in B)
+  ;; Expected: A on top, B|C on bottom
+  ;; Bug was: nested splitter ended up at wrong position
+  (displayln "Layout L3: split-below then split-right in bottom pane")
+  (let-values (((fr app) (make-qt-split-test-frame!)))
+    (let ((win-a (qt-current-window fr)))
+      ;; Split below: A over B, focus on B
+      (execute-command! app 'split-window-below)
+      (let ((win-b (qt-current-window fr)))
+        ;; Split right in B: should nest B|C below A
+        (execute-command! app 'split-window-right)
+        (let* ((root-spl (qt-frame-splitter fr))
+               (root (qt-frame-root fr))
+               (root-children (split-node-children root)))
+          ;; Root should have 2 children: leaf(A) and node(HORIZ, [B, C])
+          (check-splitter-count! "L3.1: root has 2 Qt widgets" root-spl 2)
+          ;; A's container at index 0 (top)
+          (check-widget-at! "L3.2: A is at top (index 0)"
+            root-spl (qt-edit-window-container win-a) 0)
+          ;; Nested horizontal splitter at index 1 (bottom)
+          (let ((nested-node (cadr root-children)))
+            (if (split-node? nested-node)
+              (begin
+                (check-widget-at! "L3.3: nested splitter at bottom (index 1)"
+                  root-spl (split-node-splitter nested-node) 1)
+                ;; Inside nested: B at left (0), C at right (1)
+                (let ((nested-spl (split-node-splitter nested-node)))
+                  (check-splitter-count! "L3.4: nested has 2 widgets" nested-spl 2)
+                  (check-widget-at! "L3.5: B at left in nested"
+                    nested-spl (qt-edit-window-container win-b) 0)
+                  (let ((win-c (qt-current-window fr)))
+                    (check-widget-at! "L3.6: C at right in nested"
+                      nested-spl (qt-edit-window-container win-c) 1))))
+              (fail! "L3.3: second child should be split-node" nested-node "split-node")))))))
+
+  ;; ── L4: THE FULL BUG — split-below, navigate to bottom, split-right ×3 ──
+  ;; User scenario: C-x 2, C-x o (to bottom), C-x 3, C-x 3, C-x 3
+  ;; Expected: A on top, B|C|D|E on bottom
+  (displayln "Layout L4: split-below + 3× split-right in bottom")
+  (let-values (((fr app) (make-qt-split-test-frame!)))
+    (let ((win-a (qt-current-window fr)))
+      ;; Split below: A over B, focus on B
+      (execute-command! app 'split-window-below)
+      ;; 3× split-right in B's area
+      (execute-command! app 'split-window-right)
+      (execute-command! app 'split-window-right)
+      (execute-command! app 'split-window-right)
+      (let* ((root-spl (qt-frame-splitter fr))
+             (root (qt-frame-root fr))
+             (wins (qt-frame-windows fr)))
+        ;; Should have 5 windows total
+        (if (= (length wins) 5)
+          (pass! "L4.1: 5 windows total")
+          (fail! "L4.1: window count" (length wins) 5))
+        ;; Root should still have 2 Qt children: A's container and nested splitter
+        (check-splitter-count! "L4.2: root has 2 Qt widgets" root-spl 2)
+        ;; A's container must be at index 0 (top) — the critical check
+        (check-widget-at! "L4.3: A stays at top (index 0)"
+          root-spl (qt-edit-window-container win-a) 0)
+        ;; Nested horizontal splitter at index 1 must contain 4 panes
+        (let ((nested-node (cadr (split-node-children root))))
+          (when (split-node? nested-node)
+            (let ((nested-spl (split-node-splitter nested-node)))
+              (check-splitter-count! "L4.4: nested has 4 Qt widgets"
+                nested-spl 4)
+              ;; Verify each window's container is at the correct index
+              ;; Windows list: [A, B, C, D, E]
+              ;; Nested should contain [B, C, D, E] containers at indices 0-3
+              (let loop ((i 0) (ws (cdr wins)))
+                (when (pair? ws)
+                  (let ((w (car ws)))
+                    (check-widget-at!
+                      (string-append "L4.5: win["
+                        (number->string (+ i 1))
+                        "] at nested index "
+                        (number->string i))
+                      nested-spl (qt-edit-window-container w) i))
+                  (loop (+ i 1) (cdr ws))))))))))
+
+  ;; ── L5: split-right then split-below in right pane ───────────────────────
+  ;; Opposite direction: C-x 3 (A|B), then C-x 2 in B
+  ;; Expected: A on left, B-over-C on right
+  (displayln "Layout L5: split-right then split-below in right pane")
+  (let-values (((fr app) (make-qt-split-test-frame!)))
+    (let ((win-a (qt-current-window fr)))
+      (execute-command! app 'split-window-right)
+      (let ((win-b (qt-current-window fr)))
+        (execute-command! app 'split-window-below)
+        (let* ((root-spl (qt-frame-splitter fr))
+               (root (qt-frame-root fr))
+               (root-children (split-node-children root)))
+          (check-splitter-count! "L5.1: root has 2 Qt widgets" root-spl 2)
+          (check-widget-at! "L5.2: A at left (index 0)"
+            root-spl (qt-edit-window-container win-a) 0)
+          (let ((nested-node (cadr root-children)))
+            (when (split-node? nested-node)
+              (check-widget-at! "L5.3: nested splitter at right (index 1)"
+                root-spl (split-node-splitter nested-node) 1)
+              (let ((nested-spl (split-node-splitter nested-node)))
+                (check-splitter-count! "L5.4: nested has 2 widgets" nested-spl 2)
+                (check-widget-at! "L5.5: B at top in nested"
+                  nested-spl (qt-edit-window-container win-b) 0))))))))
+
+  ;; ── L6: three-way vertical then nest horizontal in middle ────────────────
+  ;; C-x 2, C-x 2 → A/B/C stacked, focus on C. Navigate to B, then C-x 3.
+  ;; Expected: A on top, B|D in middle, C at bottom
+  (displayln "Layout L6: 3-way vertical then horizontal nest in middle")
+  (let-values (((fr app) (make-qt-split-test-frame!)))
+    (let ((win-a (qt-current-window fr)))
+      (execute-command! app 'split-window-below)
+      (let ((win-b (qt-current-window fr)))
+        (execute-command! app 'split-window-below)
+        (let ((win-c (qt-current-window fr)))
+          ;; Now: [A, B, C] stacked, focus on C (idx=2). Navigate to B (idx=1).
+          ;; other-window: (2+1)%3=0 → A, then (0+1)%3=1 → B
+          (execute-command! app 'other-window)
+          (execute-command! app 'other-window)
+          ;; Now focus on B. Split right in B.
+          (execute-command! app 'split-window-right)
+          (let* ((root-spl (qt-frame-splitter fr))
+                 (root (qt-frame-root fr))
+                 (root-children (split-node-children root)))
+            ;; Root should have 3 Qt children: A, nested(B|D), C
+            (check-splitter-count! "L6.1: root has 3 Qt widgets" root-spl 3)
+            (check-widget-at! "L6.2: A at top (index 0)"
+              root-spl (qt-edit-window-container win-a) 0)
+            ;; Middle should be nested horizontal splitter
+            (let ((middle-node (cadr root-children)))
+              (when (split-node? middle-node)
+                (check-widget-at! "L6.3: nested at middle (index 1)"
+                  root-spl (split-node-splitter middle-node) 1)))
+            ;; C at bottom
+            (check-widget-at! "L6.4: C at bottom (index 2)"
+              root-spl (qt-edit-window-container win-c) 2))))))
+
+  ;; ── L7: full recursive layout verification ───────────────────────────────
+  ;; Build a complex layout and verify entire Qt widget tree matches logical tree
+  (displayln "Layout L7: full recursive layout verification")
+  (let-values (((fr app) (make-qt-split-test-frame!)))
+    ;; C-x 2 (A over B)
+    (execute-command! app 'split-window-below)
+    ;; C-x 3 in B (B|C at bottom)
+    (execute-command! app 'split-window-right)
+    ;; Navigate to A: other-window cycles through B,C → A
+    (execute-command! app 'other-window)  ;; → to next (C already current after split)
+    (execute-command! app 'other-window)  ;; → wrap around
+    ;; If we're at idx 0, split-right in A
+    ;; Actually just verify the full tree at this point
+    (let* ((root (qt-frame-root fr))
+           (root-spl (qt-frame-splitter fr)))
+      (when (split-node? root)
+        (verify-qt-layout! "L7" root-spl (split-node-children root)))))
+
+  ;; ── L8: alternating split directions ─────────────────────────────────────
+  ;; C-x 2, C-x 3, C-x 2 — each nesting deeper
+  (displayln "Layout L8: alternating split directions nest correctly")
+  (let-values (((fr app) (make-qt-split-test-frame!)))
+    (execute-command! app 'split-window-below)   ;; A over B
+    (execute-command! app 'split-window-right)    ;; B → B|C
+    (execute-command! app 'split-window-below)    ;; C → C over D
+    (let* ((root (qt-frame-root fr))
+           (root-spl (qt-frame-splitter fr))
+           (wins (qt-frame-windows fr)))
+      (if (= (length wins) 4)
+        (pass! "L8.1: 4 windows")
+        (fail! "L8.1: window count" (length wins) 4))
+      ;; Full recursive verification
+      (when (split-node? root)
+        (verify-qt-layout! "L8.2" root-spl (split-node-children root)))))
+
+  (displayln "Group 12 complete"))
+
+;;;============================================================================
 ;;; Main
 ;;;============================================================================
 
@@ -1963,6 +2221,7 @@
     (run-group-9-magit-ops)
     (run-group-10-split-operations)
     (run-group-11-window-scenarios)
+    (run-group-12-layout-verification)
 
     (displayln "---")
     (displayln "Results: " *passes* " passed, " *failures* " failed")

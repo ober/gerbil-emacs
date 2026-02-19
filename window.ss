@@ -196,27 +196,45 @@
 
 (def (frame-split! fr)
   "Split vertically: add a new window below. Returns the new editor."
-  (set! (frame-split-direction fr) 'vertical)
+  ;; Only set direction to vertical if this is the first split
+  (when (= (length (frame-windows fr)) 1)
+    (set! (frame-split-direction fr) 'vertical))
   (let* ((cur (current-window fr))
+         (idx (frame-current-idx fr))
          (buf (edit-window-buffer cur))
          (new-ed (create-scintilla-editor))
          (new-win (make-edit-window new-ed buf 0 0 0 0 0)))
     (buffer-attach! new-ed buf)
+    ;; Insert after current window, not at end
     (set! (frame-windows fr)
-          (append (frame-windows fr) (list new-win)))
+          (let loop ((ws (frame-windows fr)) (i 0) (acc []))
+            (cond
+              ((null? ws) (reverse (cons new-win acc)))
+              ((= i idx) (loop (cdr ws) (+ i 1) (cons new-win (cons (car ws) acc))))
+              (else (loop (cdr ws) (+ i 1) (cons (car ws) acc))))))
+    (set! (frame-current-idx fr) (+ idx 1))
     (frame-layout! fr)
     new-ed))
 
 (def (frame-split-right! fr)
   "Split horizontally: add a new window to the right. Returns the new editor."
-  (set! (frame-split-direction fr) 'horizontal)
+  ;; Only set direction to horizontal if this is the first split
+  (when (= (length (frame-windows fr)) 1)
+    (set! (frame-split-direction fr) 'horizontal))
   (let* ((cur (current-window fr))
+         (idx (frame-current-idx fr))
          (buf (edit-window-buffer cur))
          (new-ed (create-scintilla-editor))
          (new-win (make-edit-window new-ed buf 0 0 0 0 0)))
     (buffer-attach! new-ed buf)
+    ;; Insert after current window, not at end
     (set! (frame-windows fr)
-          (append (frame-windows fr) (list new-win)))
+          (let loop ((ws (frame-windows fr)) (i 0) (acc []))
+            (cond
+              ((null? ws) (reverse (cons new-win acc)))
+              ((= i idx) (loop (cdr ws) (+ i 1) (cons new-win (cons (car ws) acc))))
+              (else (loop (cdr ws) (+ i 1) (cons (car ws) acc))))))
+    (set! (frame-current-idx fr) (+ idx 1))
     (frame-layout! fr)
     new-ed))
 
