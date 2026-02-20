@@ -95,7 +95,9 @@
    "-lstdc++ -lpthread"))
 
 (defbuild-script
-  `(;; Face system (no dependencies)
+  `(;; Macros (must be compiled first - no dependencies)
+    "macros"
+    ;; Face system (no dependencies)
     "face"
     ;; Built-in themes (depends on face)
     "themes"
