@@ -8,7 +8,7 @@
         (only-in :std/srfi/13
                  string-trim string-contains string-prefix? string-join
                  string-pad-right string-suffix?)
-        :std/pregexp
+        ./pregexp-compat
         :std/misc/string
         :gemacs/org-parse)
 

@@ -15,7 +15,7 @@
 
 (import :std/sugar
         :std/srfi/13
-        :std/pregexp
+        ../pregexp-compat
         :std/misc/string
         :gemacs/qt/sci-shim
         :gemacs/core

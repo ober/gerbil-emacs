@@ -9,7 +9,7 @@
                  string-trim string-trim-both string-pad string-pad-right string-join
                  string-prefix? string-contains string<?)
         :std/sort
-        :std/pregexp
+        ./pregexp-compat
         :std/misc/string
         :gerbil-scintilla/scintilla
         :gerbil-scintilla/constants

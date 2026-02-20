@@ -17,7 +17,7 @@
         :std/sort
         :std/srfi/13
         :std/misc/process
-        :std/pregexp
+        ./pregexp-compat
         :gemacs/core)
 
 ;;;============================================================================

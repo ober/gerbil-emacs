@@ -7,7 +7,7 @@
 (import :std/sugar
         (only-in :std/srfi/13
                  string-trim string-contains string-prefix? string-index)
-        :std/pregexp
+        ./pregexp-compat
         :std/misc/string
         :gerbil-scintilla/scintilla
         :gerbil-scintilla/constants

@@ -10,7 +10,7 @@
                  string-pad-right)
         (only-in :std/srfi/19
                  date->time-utc time-difference time-second)
-        :std/pregexp
+        ./pregexp-compat
         :std/misc/string
         :std/sort
         :gerbil-scintilla/scintilla

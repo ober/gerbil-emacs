@@ -8,7 +8,7 @@
         (only-in :std/srfi/13
                  string-trim string-contains string-prefix? string-join
                  string-pad-right string-index)
-        :std/pregexp
+        ./pregexp-compat
         :std/misc/string
         (only-in :std/misc/ports read-all-as-string)
         :std/misc/process

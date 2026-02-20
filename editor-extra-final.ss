@@ -10,7 +10,7 @@
         :std/misc/process
         :std/misc/ports
         :std/srfi/19
-        :std/pregexp
+        ./pregexp-compat
         :gerbil-scintilla/constants
         :gerbil-scintilla/scintilla
         :gerbil-scintilla/tui
@@ -1048,10 +1048,13 @@
       (with-catch
         (lambda (e) (echo-message! echo "Invalid regex pattern"))
         (lambda ()
-          (let* ((rx (pregexp pattern))
+          ;; Validate pattern and cache it
+          (pregexp pattern)
+          (let* (
                  (text (editor-get-text ed))
                  (count (let loop ((start 0) (n 0))
-                          (let ((m (pregexp-match-positions rx text start)))
+                          ;; Use pattern string directly for caching
+                          (let ((m (pregexp-match-positions pattern text start)))
                             (if (and m (car m))
                               (let* ((mstart (caar m))
                                      (mend (cdar m)))

@@ -10,7 +10,7 @@
                  string-pad-right string-index)
         (only-in :std/srfi/19
                  current-date date->string)
-        :std/pregexp
+        ./pregexp-compat
         :std/misc/string
         :gerbil-scintilla/scintilla
         :gerbil-scintilla/constants

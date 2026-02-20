@@ -1,1 +1,2 @@
 (package: gemacs)
+(depend: ("github.com/ober/gerbil-pcre2"))

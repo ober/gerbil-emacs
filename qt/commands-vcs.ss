@@ -8,7 +8,7 @@
         :std/sort
         :std/srfi/13
         :std/text/base64
-        :std/pregexp
+        ../pregexp-compat
         :gemacs/qt/sci-shim
         :gemacs/core
         :gemacs/editor

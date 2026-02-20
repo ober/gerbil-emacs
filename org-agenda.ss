@@ -15,7 +15,7 @@
                  date->time-utc time-utc->date
                  make-time time-type time-second time-nanosecond
                  add-duration time-duration)
-        :std/pregexp
+        ./pregexp-compat
         :std/misc/string
         :gemacs/core
         :gemacs/org-parse)

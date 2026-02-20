@@ -26,7 +26,7 @@
    (path-expand "bin/scintilla.a" sci-dir) " "
    (path-expand "bin/liblexilla.a" lexilla-dir) " "
    (path-expand "bin/termbox.a" termbox-dir) " "
-   "-lstdc++ -lpthread"))
+   "-lstdc++ -lpthread -lpcre2-8"))
 
 ;; gerbil-qt FFI paths (needed for Qt exe linking)
 (def qt-base (path-expand "mine/gerbil-qt" (getenv "HOME")))
@@ -92,11 +92,13 @@
    (path-expand "bin/scintilla.a" sci-dir) " "
    (path-expand "bin/liblexilla.a" lexilla-dir) " "
    (path-expand "bin/termbox.a" termbox-dir) " "
-   "-lstdc++ -lpthread"))
+   "-lstdc++ -lpthread -lpcre2-8"))
 
 (defbuild-script
   `(;; Macros (must be compiled first - no dependencies)
     "macros"
+    ;; PCRE2 compatibility wrapper (no dependencies)
+    "pregexp-compat"
     ;; Face system (no dependencies)
     "face"
     ;; Built-in themes (depends on face)

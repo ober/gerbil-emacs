@@ -13,7 +13,7 @@
                  date-hour date-minute date-second
                  date->time-utc time-difference time-second
                  date-week-day make-time time-utc)
-        :std/pregexp
+        ./pregexp-compat
         :std/misc/string)
 
 ;;;============================================================================
