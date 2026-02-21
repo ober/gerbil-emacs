@@ -257,4 +257,9 @@
   "Sort lines in region by regex match."
   (echo-message! (app-state-echo app) "sort-regexp-fields: use M-x sort-lines for basic sorting"))
 
+;;; Batch 15: insert-tab (TUI)
+(def (cmd-insert-tab app)
+  "Insert a literal tab character at point."
+  (let ((ed (current-editor app)))
+    (editor-replace-selection ed "\t")))
 

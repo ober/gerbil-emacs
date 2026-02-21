@@ -928,5 +928,8 @@
   (register-command! 'beginning-of-visual-line cmd-beginning-of-line)
   (register-command! 'end-of-visual-line cmd-end-of-line)
   (register-command! 'kill-visual-line cmd-kill-line)
+  ;; Batch 15: more standard aliases
+  (register-command! 'keep-matching-lines cmd-keep-lines)
+  (register-command! 'calc-dispatch cmd-calc)
   ;; Task #46+ (in editor-extra.ss)
   (register-extra-commands!))

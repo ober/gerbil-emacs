@@ -1977,4 +1977,6 @@
   (register-command! 'sort-columns cmd-sort-columns)
   (register-command! 'sort-regexp-fields cmd-sort-regexp-fields)
   ;; Batch 14: address mode alias (editor-extra scope)
-  (register-command! 'goto-address-mode cmd-toggle-global-goto-address))
+  (register-command! 'goto-address-mode cmd-toggle-global-goto-address)
+  ;; Batch 15: insert-tab
+  (register-command! 'insert-tab cmd-insert-tab))

@@ -1367,7 +1367,11 @@
   (register-command! 'backward-list cmd-backward-sexp)
   (register-command! 'beginning-of-visual-line cmd-beginning-of-line)
   (register-command! 'end-of-visual-line cmd-end-of-line)
-  (register-command! 'kill-visual-line cmd-kill-line))
+  (register-command! 'kill-visual-line cmd-kill-line)
+  ;; Batch 15: more standard aliases
+  (register-command! 'keep-matching-lines cmd-keep-lines)
+  (register-command! 'calc-dispatch cmd-calc)
+  (register-command! 'insert-tab cmd-insert-tab))
 
 ;;;============================================================================
 ;;; Batch 13: New Qt commands
@@ -1395,5 +1399,11 @@
 (def (cmd-sort-regexp-fields app)
   "Sort lines in region by regex match."
   (echo-message! (app-state-echo app) "sort-regexp-fields: use M-x sort-lines for basic sorting"))
+
+;;; Batch 15: insert-tab (Qt)
+(def (cmd-insert-tab app)
+  "Insert a literal tab character at point."
+  (let ((ed (qt-current-editor (app-state-frame app))))
+    (sci-send/string ed SCI_REPLACESEL "\t")))
 
 
