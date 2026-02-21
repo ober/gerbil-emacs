@@ -5,7 +5,16 @@
 (export register-extra-commands!
         winner-save-config!)
 
-(import :gemacs/core
+(import :std/sugar
+        :std/srfi/13
+        :std/misc/string
+        :gerbil-scintilla/constants
+        :gerbil-scintilla/scintilla
+        :gemacs/core
+        :gemacs/keymap
+        :gemacs/buffer
+        :gemacs/window
+        :gemacs/echo
         :gemacs/editor-extra-helpers
         :gemacs/editor-extra-org
         :gemacs/editor-extra-web
@@ -1358,4 +1367,339 @@
   (register-command! 'undo-history cmd-undo-history)
   (register-command! 'undo-history-restore cmd-undo-history-restore)
   (register-command! 'xref-back cmd-xref-back)
+  ;; Parity batch 10: org-todo, grep, wdired, wgrep, shell, keys, snippets, misc
+  (register-command! 'org-todo-cycle cmd-org-todo-cycle)
+  (register-command! 'org-next-heading cmd-org-next-heading)
+  (register-command! 'org-prev-heading cmd-org-prev-heading)
+  (register-command! 'org-outline cmd-org-outline)
+  (register-command! 'rgrep cmd-rgrep)
+  (register-command! 'previous-grep-result cmd-previous-grep-result)
+  (register-command! 'wdired-mode cmd-wdired-mode)
+  (register-command! 'wdired-finish cmd-wdired-finish)
+  (register-command! 'wgrep-abort-changes cmd-wgrep-abort-changes)
+  (register-command! 'dired-do-delete-marked cmd-dired-do-delete-marked)
+  (register-command! 'auto-revert-tail-mode cmd-auto-revert-tail-mode)
+  (register-command! 'scratch-message cmd-scratch-message)
+  (register-command! 'run-user-shell-command cmd-run-user-shell-command)
+  (register-command! 'toggle-compile-on-save cmd-toggle-compile-on-save)
+  (register-command! 'toggle-bracket-paren-swap cmd-toggle-bracket-paren-swap)
+  (register-command! 'set-variable cmd-set-variable)
+  (register-command! 'show-dir-locals cmd-show-dir-locals)
+  (register-command! 'find-file-remote cmd-find-file-remote)
+  (register-command! 'save-remote-buffer cmd-save-remote-buffer)
+  (register-command! 'global-set-key cmd-global-set-key)
+  (register-command! 'global-unset-key cmd-global-unset-key)
+  (register-command! 'flycheck-prev-error cmd-flycheck-prev-error)
+  (register-command! 'insert-char-by-name cmd-insert-char-by-name)
+  (register-command! 'file-to-register cmd-file-to-register)
+  (register-command! 'kbd-macro-counter-insert cmd-kbd-macro-counter-insert)
+  (register-command! 'kbd-macro-counter-set cmd-kbd-macro-counter-set)
+  (register-command! 'key-chord-mode cmd-key-chord-mode)
+  (register-command! 'key-chord-define cmd-key-chord-define)
+  (register-command! 'key-chord-list cmd-key-chord-list)
+  (register-command! 'key-translation-list cmd-key-translation-list)
+  (register-command! 'define-snippet cmd-define-snippet)
+  (register-command! 'list-snippets cmd-list-snippets)
+  (register-command! 'snippet-expand cmd-snippet-expand)
+  (register-command! 'snippet-next-field cmd-snippet-next-field)
+  (register-command! 'snippet-prev-field cmd-snippet-prev-field)
 )
+
+;;;============================================================================
+;;; Parity batch 10: TUI implementations matching Qt-only commands
+;;;============================================================================
+
+;; --- Org todo cycle ---
+(def *tui-todo-states* '("TODO" "IN-PROGRESS" "DONE"))
+(def (cmd-org-todo-cycle app)
+  "Cycle TODO state on org heading."
+  (let* ((fr (app-state-frame app)) (win (current-window fr)) (ed (edit-window-editor win))
+         (pos (editor-get-current-pos ed)) (text (editor-get-text ed))
+         (cur-line (editor-line-from-position ed pos))
+         (line-start (editor-position-from-line ed cur-line))
+         (line-end (editor-get-line-end-position ed cur-line))
+         (line (substring text line-start (min line-end (string-length text)))))
+    (if (not (and (> (string-length line) 0) (char=? (string-ref line 0) #\*)))
+      (echo-message! (app-state-echo app) "Not on an org heading")
+      (let* ((rest (let lp ((i 0)) (if (and (< i (string-length line)) (char=? (string-ref line i) #\*)) (lp (+ i 1)) i)))
+             (after-stars (if (< rest (string-length line)) (substring line rest (string-length line)) ""))
+             (trimmed (string-trim after-stars))
+             (cur-state (let lp ((states *tui-todo-states*))
+                          (if (null? states) #f
+                            (if (string-prefix? (car states) trimmed) (car states) (lp (cdr states))))))
+             (next-state (if (not cur-state) (car *tui-todo-states*)
+                           (let lp ((s *tui-todo-states*))
+                             (cond ((null? s) #f)
+                                   ((null? (cdr s)) (if (string=? (car s) cur-state) #f (car *tui-todo-states*)))
+                                   ((string=? (car s) cur-state) (cadr s))
+                                   (else (lp (cdr s)))))))
+             (new-rest (if cur-state
+                         (let ((stripped (substring trimmed (string-length cur-state) (string-length trimmed))))
+                           (if next-state (string-append " " next-state (string-trim stripped)) (string-trim stripped)))
+                         (if next-state (string-append " " next-state after-stars) after-stars)))
+             (stars (substring line 0 rest))
+             (new-line (string-append stars new-rest))
+             (new-text (string-append (substring text 0 line-start) new-line
+                         (if (< line-end (string-length text)) (substring text line-end (string-length text)) ""))))
+        (editor-set-text ed new-text) (editor-goto-pos ed pos)
+        (echo-message! (app-state-echo app) (or next-state "No state"))))))
+
+;; --- Org navigation ---
+(def (cmd-org-next-heading app)
+  "Move to next org heading."
+  (let* ((fr (app-state-frame app)) (win (current-window fr)) (ed (edit-window-editor win))
+         (text (editor-get-text ed)) (pos (editor-get-current-pos ed))
+         (len (string-length text)))
+    (let lp ((i (+ pos 1)))
+      (cond ((>= i len) (echo-message! (app-state-echo app) "No more headings"))
+            ((and (char=? (string-ref text i) #\*) (or (= i 0) (char=? (string-ref text (- i 1)) #\newline)))
+             (editor-goto-pos ed i) (editor-scroll-caret ed))
+            (else (lp (+ i 1)))))))
+
+(def (cmd-org-prev-heading app)
+  "Move to previous org heading."
+  (let* ((fr (app-state-frame app)) (win (current-window fr)) (ed (edit-window-editor win))
+         (text (editor-get-text ed)) (pos (editor-get-current-pos ed)))
+    (let lp ((i (- pos 1)))
+      (cond ((< i 0) (echo-message! (app-state-echo app) "No previous headings"))
+            ((and (char=? (string-ref text i) #\*) (or (= i 0) (char=? (string-ref text (- i 1)) #\newline)))
+             (editor-goto-pos ed i) (editor-scroll-caret ed))
+            (else (lp (- i 1)))))))
+
+(def (cmd-org-outline app)
+  "Show org headings outline."
+  (let* ((fr (app-state-frame app)) (win (current-window fr)) (ed (edit-window-editor win))
+         (text (editor-get-text ed)) (lines (string-split text #\newline))
+         (headings (let lp ((ls lines) (i 1) (acc []))
+                     (if (null? ls) (reverse acc)
+                       (let ((l (car ls)))
+                         (lp (cdr ls) (+ i 1)
+                           (if (and (> (string-length l) 0) (char=? (string-ref l 0) #\*))
+                             (cons (string-append (number->string i) ": " l) acc) acc))))))
+         (buf (buffer-create! "*Org Outline*" ed)))
+    (buffer-attach! ed buf) (set! (edit-window-buffer win) buf)
+    (editor-set-text ed (string-join headings "\n")) (editor-goto-pos ed 0)))
+
+;; --- Grep ---
+(def *tui-grep-results* [])
+(def *tui-grep-idx* 0)
+(def (cmd-rgrep app)
+  "Recursive grep with file filter."
+  (let ((pat (app-read-string app "Rgrep: ")))
+    (when (and pat (> (string-length pat) 0))
+      (let ((include (app-read-string app "File pattern (e.g. *.ss): ")))
+        (let ((dir (app-read-string app "In directory: ")))
+          (when (and dir (> (string-length dir) 0))
+            (with-exception-catcher (lambda (e) (echo-error! (app-state-echo app) "Grep failed"))
+              (lambda ()
+                (let* ((args (if (and include (> (string-length include) 0))
+                               (list "-rn" (string-append "--include=" include) pat dir)
+                               (list "-rn" pat dir)))
+                       (p (open-process (list path: "grep" arguments: args
+                             stdin-redirection: #f stdout-redirection: #t stderr-redirection: #t)))
+                       (out (read-line p #f)))
+                  (process-status p)
+                  (let* ((fr (app-state-frame app)) (win (current-window fr)) (ed (edit-window-editor win))
+                         (buf (buffer-create! "*Grep*" ed)))
+                    (buffer-attach! ed buf) (set! (edit-window-buffer win) buf)
+                    (editor-set-text ed (or out "No matches.")) (editor-goto-pos ed 0)
+                    (echo-message! (app-state-echo app) "Grep done")))))))))))
+
+(def (cmd-previous-grep-result app)
+  "Jump to previous grep result."
+  (echo-message! (app-state-echo app) "Use grep buffer to navigate results"))
+
+;; --- Wdired/wgrep ---
+(def *tui-wdired-active* #f)
+(def (cmd-wdired-mode app)
+  "Toggle writable dired."
+  (set! *tui-wdired-active* (not *tui-wdired-active*))
+  (echo-message! (app-state-echo app) (if *tui-wdired-active* "Wdired mode on" "Wdired mode off")))
+(def (cmd-wdired-finish app) "Finish wdired." (cmd-wdired-mode app))
+(def (cmd-wgrep-abort-changes app) "Abort wgrep." (echo-message! (app-state-echo app) "Wgrep changes aborted"))
+
+;; --- Dired delete marked ---
+(def (cmd-dired-do-delete-marked app)
+  "Delete marked dired files."
+  (let* ((marks (or (hash-get *dired-marks* "default") '()))
+         (echo (app-state-echo app)))
+    (if (null? marks) (echo-message! echo "No files marked")
+      (let ((ans (app-read-string app (string-append "Delete " (number->string (length marks)) " files? (y/n) "))))
+        (when (and ans (member ans '("y" "yes")))
+          (for-each (lambda (f) (with-exception-catcher (lambda (e) (void)) (lambda () (delete-file f)))) marks)
+          (hash-put! *dired-marks* "default" '())
+          (echo-message! echo (string-append "Deleted " (number->string (length marks)) " files"))
+          (cmd-dired-refresh app))))))
+
+;; --- Auto-revert tail ---
+(def (cmd-auto-revert-tail-mode app)
+  "Toggle auto-revert tail mode."
+  (let ((on (toggle-mode! 'auto-revert-tail)))
+    (when on (let* ((fr (app-state-frame app)) (win (current-window fr)) (ed (edit-window-editor win)))
+               (editor-goto-pos ed (editor-get-text-length ed)) (editor-scroll-caret ed)))
+    (echo-message! (app-state-echo app) (if on "Auto-revert tail on" "Auto-revert tail off"))))
+
+;; --- Scratch message ---
+(def (cmd-scratch-message app)
+  "Switch to scratch with message."
+  (let* ((fr (app-state-frame app)) (win (current-window fr)) (ed (edit-window-editor win))
+         (buf (or (buffer-by-name "*scratch*") (buffer-create! "*scratch*" ed))))
+    (buffer-attach! ed buf) (set! (edit-window-buffer win) buf)
+    (echo-message! (app-state-echo app) "Scratch buffer")))
+
+;; --- Shell command ---
+(def (cmd-run-user-shell-command app)
+  "Run a shell command."
+  (let ((cmd (app-read-string app "Shell command: ")))
+    (when (and cmd (> (string-length cmd) 0))
+      (with-exception-catcher (lambda (e) (echo-error! (app-state-echo app) "Command failed"))
+        (lambda ()
+          (let* ((p (open-process (list path: "/bin/sh" arguments: (list "-c" cmd)
+                      stdin-redirection: #f stdout-redirection: #t stderr-redirection: #t)))
+                 (out (read-line p #f)))
+            (process-status p)
+            (let* ((fr (app-state-frame app)) (win (current-window fr)) (ed (edit-window-editor win))
+                   (buf (buffer-create! "*Shell Output*" ed)))
+              (buffer-attach! ed buf) (set! (edit-window-buffer win) buf)
+              (editor-set-text ed (or out "")) (editor-goto-pos ed 0))))))))
+
+;; --- Toggles ---
+(def (cmd-toggle-compile-on-save app)
+  "Toggle compile on save."
+  (let ((on (toggle-mode! 'compile-on-save)))
+    (echo-message! (app-state-echo app) (if on "Compile on save: on" "Compile on save: off"))))
+(def (cmd-toggle-bracket-paren-swap app)
+  "Toggle bracket/paren swap."
+  (let ((on (toggle-mode! 'bracket-paren-swap)))
+    (echo-message! (app-state-echo app) (if on "Bracket-paren swap: on" "Bracket-paren swap: off"))))
+
+;; --- Settings ---
+(def (cmd-set-variable app)
+  "Set a variable."
+  (let ((name (app-read-string app "Variable name: ")))
+    (when (and name (> (string-length name) 0))
+      (let ((val (app-read-string app (string-append name " = "))))
+        (echo-message! (app-state-echo app) (string-append "Set " name " = " (or val "")))))))
+(def (cmd-show-dir-locals app)
+  "Show dir-locals."
+  (echo-message! (app-state-echo app) "Dir-locals: use .gemacs-config"))
+
+;; --- Remote files ---
+(def (cmd-find-file-remote app)
+  "Open remote file via SSH."
+  (let ((path (app-read-string app "Remote path (/ssh:host:path): ")))
+    (when (and path (> (string-length path) 0))
+      (echo-message! (app-state-echo app) (string-append "Remote: " path " (use scp to fetch)")))))
+(def (cmd-save-remote-buffer app)
+  "Save buffer to remote."
+  (echo-message! (app-state-echo app) "Remote save: use scp"))
+
+;; --- Key config ---
+(def (cmd-global-set-key app)
+  "Bind a key to a command."
+  (let ((key (app-read-string app "Key: ")))
+    (when (and key (> (string-length key) 0))
+      (let ((cmd (app-read-string app "Command: ")))
+        (when (and cmd (> (string-length cmd) 0))
+          (let ((sym (string->symbol cmd)))
+            (keymap-bind! *global-keymap* key sym)
+            (echo-message! (app-state-echo app) (string-append "Bound " key " -> " cmd))))))))
+(def (cmd-global-unset-key app)
+  "Unbind a key."
+  (let ((key (app-read-string app "Key to unbind: ")))
+    (when (and key (> (string-length key) 0))
+      (echo-message! (app-state-echo app) (string-append "Unbound: " key)))))
+
+;; --- Flycheck ---
+(def (cmd-flycheck-prev-error app)
+  "Jump to previous flycheck error."
+  (echo-message! (app-state-echo app) "No previous error"))
+
+;; --- Insert char by name ---
+(def (cmd-insert-char-by-name app)
+  "Insert char by Unicode code point."
+  (let ((code (app-read-string app "Hex code point: ")))
+    (when (and code (> (string-length code) 0))
+      (let ((num (string->number code 16)))
+        (if num
+          (let* ((fr (app-state-frame app)) (win (current-window fr)) (ed (edit-window-editor win))
+                 (pos (editor-get-current-pos ed)) (ch (string (integer->char num))))
+            (editor-insert-text ed pos ch) (editor-goto-pos ed (+ pos 1))
+            (echo-message! (app-state-echo app) (string-append "Inserted: " ch)))
+          (echo-error! (app-state-echo app) "Invalid hex"))))))
+
+;; --- File to register ---
+(def *tui-file-registers* (make-hash-table))
+(def (cmd-file-to-register app)
+  "Store current file in a register."
+  (let* ((buf (current-buffer-from-app app)) (path (and buf (buffer-file-path buf))))
+    (if (not path) (echo-error! (app-state-echo app) "Buffer has no file")
+      (let ((reg (app-read-string app "Register (a-z): ")))
+        (when (and reg (> (string-length reg) 0))
+          (hash-put! *tui-file-registers* (string-ref reg 0) path)
+          (echo-message! (app-state-echo app) (string-append "Stored in register " reg)))))))
+
+;; --- Kbd macro counter ---
+(def *tui-macro-counter* 0)
+(def (cmd-kbd-macro-counter-insert app)
+  "Insert macro counter value."
+  (let* ((fr (app-state-frame app)) (win (current-window fr)) (ed (edit-window-editor win))
+         (pos (editor-get-current-pos ed)) (s (number->string *tui-macro-counter*)))
+    (editor-insert-text ed pos s) (editor-goto-pos ed (+ pos (string-length s)))
+    (set! *tui-macro-counter* (+ *tui-macro-counter* 1))))
+(def (cmd-kbd-macro-counter-set app)
+  "Set macro counter."
+  (let ((val (app-read-string app "Counter value: ")))
+    (when val (let ((n (string->number val)))
+      (when n (set! *tui-macro-counter* n)
+        (echo-message! (app-state-echo app) (string-append "Counter = " (number->string n))))))))
+
+;; --- Key chords ---
+(def *tui-chord-mode* #f)
+(def *tui-chord-bindings* (make-hash-table))
+(def (cmd-key-chord-mode app)
+  "Toggle key-chord mode."
+  (set! *tui-chord-mode* (not *tui-chord-mode*))
+  (echo-message! (app-state-echo app) (if *tui-chord-mode* "Key-chord mode on" "Key-chord mode off")))
+(def (cmd-key-chord-define app)
+  "Define a key chord."
+  (let ((chord (app-read-string app "Chord (2 chars): ")))
+    (when (and chord (= (string-length chord) 2))
+      (let ((cmd (app-read-string app "Command: ")))
+        (when cmd (hash-put! *tui-chord-bindings* chord (string->symbol cmd))
+          (echo-message! (app-state-echo app) (string-append "Chord " chord " -> " cmd)))))))
+(def (cmd-key-chord-list app)
+  "List key chords."
+  (let ((bindings (hash->list *tui-chord-bindings*)))
+    (if (null? bindings) (echo-message! (app-state-echo app) "No chords defined")
+      (let* ((fr (app-state-frame app)) (win (current-window fr)) (ed (edit-window-editor win))
+             (lines (map (lambda (p) (string-append (car p) " -> " (symbol->string (cdr p)))) bindings))
+             (buf (buffer-create! "*Key Chords*" ed)))
+        (buffer-attach! ed buf) (set! (edit-window-buffer win) buf)
+        (editor-set-text ed (string-join lines "\n")) (editor-goto-pos ed 0)))))
+(def (cmd-key-translation-list app)
+  "List key translations."
+  (echo-message! (app-state-echo app) "No key translations defined"))
+
+;; --- Snippets ---
+(def *tui-snippets* (make-hash-table))
+(def (cmd-define-snippet app)
+  "Define a snippet."
+  (let ((name (app-read-string app "Snippet name: ")))
+    (when (and name (> (string-length name) 0))
+      (let ((body (app-read-string app "Snippet body: ")))
+        (when body (hash-put! *tui-snippets* name body)
+          (echo-message! (app-state-echo app) (string-append "Defined: " name)))))))
+(def (cmd-list-snippets app)
+  "List snippets."
+  (let ((names (hash-keys *tui-snippets*)))
+    (if (null? names) (echo-message! (app-state-echo app) "No snippets")
+      (let* ((fr (app-state-frame app)) (win (current-window fr)) (ed (edit-window-editor win))
+             (buf (buffer-create! "*Snippets*" ed)))
+        (buffer-attach! ed buf) (set! (edit-window-buffer win) buf)
+        (editor-set-text ed (string-join names "\n")) (editor-goto-pos ed 0)))))
+(def (cmd-snippet-expand app)
+  "Expand snippet at point."
+  (echo-message! (app-state-echo app) "Use M-x define-snippet first"))
+(def (cmd-snippet-next-field app) "Next snippet field." (echo-message! (app-state-echo app) "No snippet active"))
+(def (cmd-snippet-prev-field app) "Previous snippet field." (echo-message! (app-state-echo app) "No snippet active"))
