@@ -919,5 +919,7 @@
   (register-command! 'project-any-command cmd-execute-extended-command)
   ;; Batch 11: helm alias (needs editor-ui scope)
   (register-command! 'helm-occur cmd-occur)
+  ;; Batch 13: aliases needing editor.ss scope
+  (register-command! 'apropos-variable cmd-apropos-command)
   ;; Task #46+ (in editor-extra.ss)
   (register-extra-commands!))

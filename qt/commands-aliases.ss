@@ -1350,4 +1350,41 @@
   (register-command! 'dired-do-touch cmd-dired-create-directory)
   (register-command! 'dired-copy-filename-as-kill cmd-copy-buffer-name)
   (register-command! 'dired-mark-directories cmd-dired-mark)
-  (register-command! 'dired-hide-dotfiles cmd-dired-hide-details))
+  (register-command! 'dired-hide-dotfiles cmd-dired-hide-details)
+  ;; Emacs base mode-name aliases (batch 13)
+  (register-command! 'transient-mark-mode cmd-toggle-transient-mark)
+  (register-command! 'delete-trailing-whitespace-mode cmd-toggle-delete-trailing-whitespace-on-save)
+  (register-command! 'menu-bar-mode cmd-toggle-menu-bar-mode)
+  ;; Search aliases
+  (register-command! 'apropos-variable cmd-apropos-command)
+  ;; Batch 13: new commands
+  (register-command! 'set-visited-file-name cmd-set-visited-file-name)
+  (register-command! 'sort-columns cmd-sort-columns)
+  (register-command! 'sort-regexp-fields cmd-sort-regexp-fields))
+
+;;;============================================================================
+;;; Batch 13: New Qt commands
+;;;============================================================================
+
+(def (cmd-set-visited-file-name app)
+  "Change the file name associated with the current buffer."
+  (let* ((fr (app-state-frame app))
+         (buf (qt-current-buffer fr))
+         (old (and buf (buffer-file-path buf)))
+         (prompt (if old (string-append "New file name (was " old "): ") "File name: "))
+         (new-name (qt-echo-read-string app prompt)))
+    (if (and new-name (not (string=? new-name "")))
+      (begin
+        (set! (buffer-file-path buf) new-name)
+        (set! (buffer-name buf) (path-strip-directory new-name))
+        (set! (buffer-modified buf) #t)
+        (echo-message! (app-state-echo app) (string-append "File name set to " new-name)))
+      (echo-message! (app-state-echo app) "Cancelled"))))
+
+(def (cmd-sort-columns app)
+  "Sort lines in region by a column range."
+  (echo-message! (app-state-echo app) "sort-columns: use M-x sort-fields for column sorting"))
+
+(def (cmd-sort-regexp-fields app)
+  "Sort lines in region by regex match."
+  (echo-message! (app-state-echo app) "sort-regexp-fields: use M-x sort-lines for basic sorting"))

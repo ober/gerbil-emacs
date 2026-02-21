@@ -1967,4 +1967,12 @@
   (register-command! 'flymake-start cmd-flycheck-mode)
   (register-command! 'flymake-stop cmd-flycheck-mode)
   ;; Dired aliases
-  (register-command! 'dired-mark-directories cmd-dired-mark))
+  (register-command! 'dired-mark-directories cmd-dired-mark)
+  ;; Emacs base mode-name aliases → toggle commands (editor-extra scope)
+  (register-command! 'transient-mark-mode cmd-toggle-transient-mark-mode)
+  (register-command! 'highlight-changes-mode cmd-toggle-highlight-changes)
+  (register-command! 'tool-bar-mode cmd-toggle-tool-bar-mode)
+  ;; Batch 13: new commands
+  (register-command! 'set-visited-file-name cmd-set-visited-file-name)
+  (register-command! 'sort-columns cmd-sort-columns)
+  (register-command! 'sort-regexp-fields cmd-sort-regexp-fields))

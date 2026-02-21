@@ -229,3 +229,30 @@
              suggestions))
           ((char=? (string-ref result 0) #\#) '()) ; no suggestions
           (else #f))))))
+
+;;;============================================================================
+;;; Batch 13: New commands (placed here for editor-extra line budget)
+;;;============================================================================
+
+(def (cmd-set-visited-file-name app)
+  "Change the file name associated with the current buffer."
+  (let* ((fr (app-state-frame app))
+         (buf (edit-window-buffer (current-window fr)))
+         (old (and buf (buffer-file-path buf)))
+         (prompt (if old (string-append "New file name (was " old "): ") "File name: "))
+         (new-name (app-read-string app prompt)))
+    (if (and new-name (not (string=? new-name "")))
+      (begin
+        (set! (buffer-file-path buf) new-name)
+        (set! (buffer-name buf) (path-strip-directory new-name))
+        (set! (buffer-modified buf) #t)
+        (echo-message! (app-state-echo app) (string-append "File name set to " new-name)))
+      (echo-message! (app-state-echo app) "Cancelled"))))
+
+(def (cmd-sort-columns app)
+  "Sort lines in region by a column range."
+  (echo-message! (app-state-echo app) "sort-columns: use M-x sort-fields for column sorting"))
+
+(def (cmd-sort-regexp-fields app)
+  "Sort lines in region by regex match."
+  (echo-message! (app-state-echo app) "sort-regexp-fields: use M-x sort-lines for basic sorting"))

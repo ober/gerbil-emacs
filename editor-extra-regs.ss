@@ -1470,4 +1470,7 @@
   ;; Dired aliases
   (register-command! 'dired-do-touch cmd-dired-create-directory)
   (register-command! 'dired-copy-filename-as-kill cmd-copy-buffer-name)
-  (register-command! 'dired-hide-dotfiles cmd-dired-hide-details))
+  (register-command! 'dired-hide-dotfiles cmd-dired-hide-details)
+  ;; Emacs base mode-name aliases → toggle commands (editor-cmds scope)
+  (register-command! 'delete-trailing-whitespace-mode cmd-toggle-delete-trailing-whitespace-on-save)
+  (register-command! 'menu-bar-mode cmd-toggle-menu-bar-mode))
