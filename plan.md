@@ -1,116 +1,63 @@
-# Pending Work: Bug Fixes for Themes, Splits, LSP Visuals
+# Gemacs Feature Parity Plan
 
-## Status: Code Written, Needs Clean Build + Test + Commit
+## Status: Batches 1–15 Complete (Committed & Pushed)
 
-All code changes are DONE. `make clean` was run (all artifacts removed). Need `make build` then test.
-
----
-
-## What Was Changed
-
-### Bug 1: Erratic Frame Splitting → FIXED
-**File: `qt/window.ss`**
-- Added `qt-splitter-set-sizes!` calls after each split case in `qt-frame-do-split!`
-- Case A (same orientation): equalizes all children with `(cons 500 acc)` loop
-- Case B (first split): `(list 500 500)` for 50/50
-- Case C (nested splitter): `(list 500 500)` for 50/50
-- All calls wrapped in `(with-catch void ...)` for resilience against headless mode quirks
-
-### Bug 2: Theme Switching Broken → FIXED
-**File: `qt/window.ss`**
-- Added import: `:gemacs/face`
-- Added new function `qt-apply-editor-theme!` that reads ALL colors from the face system:
-  - `'default` face → editor bg/fg + caret color
-  - `'line-number` face → gutter bg/fg
-  - `'cursor-line` face → caret line highlight bg
-  - `'region` face → selection background (SCI_SETSELBACK = 2068)
-  - Includes fallback hardcoded values when face system not yet initialized
-- Modified `qt-scintilla-setup-editor!` to call `qt-apply-editor-theme!` instead of hardcoded hex colors
-- Exported `qt-apply-editor-theme!`
-
-**File: `qt/commands-core.ss`**
-- Modified `apply-theme!` to iterate ALL visible editor windows and call `qt-apply-editor-theme!` on each
-- This applies Scintilla base colors (bg, fg, caret, selection, line numbers) directly via SCI_* API
-- Removed the TODO comments about updating visual decorations (now done)
-- Kept existing: stylesheet for non-editor widgets, line-number-area widget colors, syntax re-highlighting
-
-### Bug 3: LSP Visual Integration → IMPROVED
-**File: `qt/commands-lsp.ss`**
-- Added `lsp-clear-all-indicators!` function: clears all diagnostic underlines + margin markers from current editor
-- Modified `cmd-toggle-lsp`:
-  - When LSP starts: proactively calls `lsp-ensure-diagnostic-margin!` so indicators are visible immediately when diagnostics arrive
-  - When LSP stops: calls `lsp-clear-all-indicators!` to remove stale visual markers
-
-### Tests Added
-**File: `qt-functional-test.ss`**
-- Added Group 21: Theme Switching, Split Sizing, LSP Indicators (11 tests)
-- Added imports: `qt-splitter-size-at`, `qt-apply-editor-theme!`, face system functions (`face-get`, `face-bg`, `face-fg`, `define-face!`, `define-standard-faces!`, `parse-hex-color`)
-- Theme tests: verify `qt-apply-editor-theme!` sets bg/fg/cursor-line/line-number/selection from face system
-- Split tests: verify first horizontal and vertical splits produce equal sizes
-- LSP tests: verify toggle-lsp, lsp-restart, lsp-find-references commands registered
-- Group 21 is called from `main` after Group 20
+All alias/parity batches through Batch 15 are committed and pushed to master.
 
 ---
 
-## To Complete This Work
+## Completed Work
 
-```bash
-# 1. Full build (make clean was already run, artifacts are gone)
-make build
+### Alias Batches (all committed & pushed)
+- **Batch 1–11**: Core Emacs command aliases (undo, redo, kill, yank, mark, search, replace, window, buffer, file, dired, org, magit, paredit, help, project, bookmarks, rectangles, registers, macros, completion, flycheck, treesit, mc, helm, etc.)
+- **Batch 12** (`5be60a0`): undo-redo, outline, flymake, dired, text-scale, tab-bar, mode toggles
+- **Batch 13** (`e83078e`): mode-name aliases (transient-mark, highlight-changes, delete-trailing-whitespace, menu-bar, tool-bar), set-visited-file-name, sort stubs, apropos-variable
+- **Batch 14** (`2b90666`): visual-line commands, kill-emacs, forward-list/backward-list, goto-address-mode
+- **Batch 15** (`0bab81a`): insert-tab, keep-matching-lines, calc-dispatch
 
-# 2. Verify both binaries
-.gerbil/bin/gemacs --version
-QT_QPA_PLATFORM=offscreen .gerbil/bin/gemacs-qt --version
+### Qt Module Split (committed)
+- **`11fcaf9`**: Split `qt/commands.ss` — extracted registrations + utilities into `qt/commands-aliases.ss`
 
-# 3. Run TUI tests
-HOME=/home/jafourni LD_LIBRARY_PATH=/home/linuxbrew/.linuxbrew/opt/openssl@3/lib \
-  GERBIL_LOADPATH=/home/jafourni/.gerbil/lib timeout 120 gerbil test 2>&1
-
-# 4. Run Qt tests (should now be 289+ tests with Group 21)
-QT_QPA_PLATFORM=offscreen .gerbil/bin/qt-functional-test
-
-# 5. If all pass, commit and push
-git add qt/window.ss qt/commands-core.ss qt/commands-lsp.ss qt-functional-test.ss
-git commit -m "Fix theme switching, 50/50 splits, and LSP visual integration
-
-- Theme: qt-apply-editor-theme! reads all Scintilla colors from face system
-  instead of hardcoded hex values. apply-theme! now updates all visible editors.
-- Splits: qt-frame-do-split! calls qt-splitter-set-sizes! after each case
-  to enforce equal sizing (fixes erratic 90/10 splits).
-- LSP: proactive margin setup on start, indicator cleanup on stop.
-- 11 new Group 21 functional tests covering all three fixes.
-
-Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>"
-git push
-```
+### Earlier Work (committed)
+- Theme switching fix (`qt-apply-editor-theme!` reads from face system)
+- 50/50 split sizing fix
+- LSP visual integration (margin setup on start, cleanup on stop)
+- Multiple cursors (Group 20 tests)
+- Qt functional test Groups 1–21
 
 ---
 
-## Files Modified (Summary)
+## Architecture Notes
 
-| File | Changes |
-|------|---------|
-| `qt/window.ss` | +`qt-apply-editor-theme!`, face-based `qt-scintilla-setup-editor!`, split sizing, `:gemacs/face` import |
-| `qt/commands-core.ss` | `apply-theme!` now calls `qt-apply-editor-theme!` on all editors |
-| `qt/commands-lsp.ss` | +`lsp-clear-all-indicators!`, improved `cmd-toggle-lsp` |
-| `qt-functional-test.ss` | +Group 21 (11 tests), new imports for face system + splitter sizes |
+### TUI Registration Scopes (3-tier)
+1. **`editor.ss`** (facade) — has access to all modules; for cross-chain aliases
+2. **`editor-extra.ss`** — editor-extra chain scope
+3. **`editor-extra-regs.ss`** — editor-cmds chain scope
+
+### Qt Registration Scopes (2-tier)
+1. **`qt/commands-aliases.ss`** — chain scope (after commands-parity, before facade)
+2. **`qt/commands.ss`** (facade) — for forward-ref functions like `cmd-quit`
+
+### File Size Status
+| File | Lines | Status |
+|------|-------|--------|
+| `editor-extra-media.ss` | ~2013 | Over limit (pre-existing) |
+| `editor-extra-editing.ss` | ~2075 | Over limit (pre-existing) |
+| `editor-extra.ss` | ~1982 | Near limit |
+| `qt/commands-edit.ss` | ~1984 | Near limit |
+| `qt/commands-vcs.ss` | ~1899 | Near limit |
 
 ---
 
-## Known Build Issue
-- Previous build attempt hit GCC OOM during exe linking (transient resource issue)
-- `modules_only` build confirmed all modules compile successfully (no code errors)
-- The exe linking just needs enough memory; retry `make build` should work
+## Next Steps (Not Yet Started)
 
----
-
-## After These Bugs: Continue Feature Parity (User Request)
-
-The user said: "commit and push once tests pass, and then continue making this the best alternative for emacs users who want to use gerbil have the best emacs experience possible!"
-
-Previous analysis identified high-impact gaps:
+### High-Impact Gaps to Investigate
 - Fuzzy command/completion UI improvements
 - Which-key display improvements
-- Dired improvements (currently broken)
+- Dired improvements
 - Read-only occur mode
 - Async command execution
+- More missing standard Emacs commands (to be audited)
+
+### Maintenance
+- Split over-limit files (`editor-extra-media.ss`, `editor-extra-editing.ss`)
