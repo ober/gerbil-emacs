@@ -1,4 +1,4 @@
-.PHONY: all build clean test test-qt test-lsp test-lsp-protocol test-split-comprehensive test-all install install-qt \
+.PHONY: all build clean test test-qt test-lsp test-lsp-protocol test-split-comprehensive test-org test-all install install-qt \
         static static-qt clean-docker check-root build-static build-static-qt linux-static-docker linux-static-qt-docker
 
 export GERBIL_LOADPATH := $(HOME)/.gerbil/lib
@@ -58,7 +58,17 @@ test-split-comprehensive: build
 	@echo "Running COMPREHENSIVE window split tests..."
 	$(QT_TEST_ENV) timeout $(QT_TEST_TIMEOUT) .gerbil/bin/qt-split-comprehensive-test
 
-test-all: build test test-qt test-lsp test-lsp-protocol test-split-comprehensive
+test-org: build
+	@echo "Running org-mode tests..."
+	gerbil test ./org-parse-test.ss ./org-element-test.ss ./org-table-test.ss \
+	  ./org-list-test.ss ./org-clock-test.ss ./org-duration-test.ss \
+	  ./org-export-test.ss ./org-babel-test.ss ./org-agenda-test.ss \
+	  ./org-capture-test.ss ./org-tempo-test.ss ./org-footnote-test.ss \
+	  ./org-lint-test.ss ./org-src-test.ss ./org-fold-test.ss \
+	  ./org-num-test.ss ./org-property-test.ss; \
+	EC=$$?; [ $$EC -eq 139 ] && exit 0 || exit $$EC
+
+test-all: build test test-qt test-lsp test-lsp-protocol test-split-comprehensive test-org
 
 PREFIX ?= $(HOME)/.local
 
