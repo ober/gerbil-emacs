@@ -542,8 +542,22 @@
            (string-append "Unknown theme: " (symbol->string theme-name))))))))
 
 (def (cmd-fold-level app)
-  "Set fold level."
-  (echo-message! (app-state-echo app) "Folding not supported in QPlainTextEdit"))
+  "Set fold level — fold all blocks at or above the specified depth."
+  (let* ((ed (current-qt-editor app))
+         (total (sci-send ed SCI_GETLINECOUNT))
+         ;; Default: fold at level 1 (top-level blocks)
+         (target-level 1))
+    ;; First expand all, then contract at target level
+    (sci-send ed SCI_FOLDALL SC_FOLDACTION_EXPAND 0)
+    (let loop ((i 0))
+      (when (< i total)
+        (let ((fl (sci-send ed SCI_GETFOLDLEVEL i 0)))
+          (when (and (not (zero? (bitwise-and fl SC_FOLDLEVELHEADERFLAG)))
+                     (<= (bitwise-and fl #xFFF) (+ #x400 target-level)))
+            (sci-send ed SCI_FOLDLINE i SC_FOLDACTION_CONTRACT)))
+        (loop (+ i 1))))
+    (echo-message! (app-state-echo app)
+      (string-append "Folded to level " (number->string target-level)))))
 
 (def (cmd-ansi-term app)
   "Open an ANSI terminal."

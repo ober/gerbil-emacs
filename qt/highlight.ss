@@ -11,6 +11,7 @@
         qt-update-visual-decorations!
         qt-highlight-search-matches!
         qt-clear-search-highlights!
+        qt-enable-code-folding!
         *search-highlight-active*)
 
 (import :std/sugar
@@ -627,7 +628,67 @@
          ;; Numbers: style 4
          (let-values (((r g b) (face-fg-rgb 'font-lock-number-face)))
            (sci-send ed SCI_STYLESETFORE 4 (rgb->sci r g b))))
-        (else (void))))))
+        (else (void)))
+      ;; Enable code folding margin for all code files
+      (qt-enable-code-folding! ed))))
+
+;;;============================================================================
+;;; Code folding margin setup
+;;;============================================================================
+
+;; Scintilla folding constants
+(def SCI_SETMARGINTYPEN     2240)
+(def SCI_SETMARGINWIDTHN    2242)
+(def SCI_SETMARGINMASKN     2244)
+(def SCI_SETMARGINSENSITIVEN 2246)
+(def SCI_MARKERDEFINE       2040)
+(def SCI_MARKERSETFORE      2041)
+(def SCI_MARKERSETBACK      2042)
+(def SCI_SETAUTOMATICFOLD   2663)
+(def SCI_SETINDENTATIONGUIDES 2126)
+(def SC_MARGIN_SYMBOL       0)
+(def SC_MASK_FOLDERS        #xFE000000)
+(def SC_MARKNUM_FOLDEROPEN  31)
+(def SC_MARKNUM_FOLDER      30)
+(def SC_MARKNUM_FOLDERSUB   29)
+(def SC_MARKNUM_FOLDERTAIL  28)
+(def SC_MARKNUM_FOLDERMIDTAIL 27)
+(def SC_MARKNUM_FOLDEROPENMID 26)
+(def SC_MARKNUM_FOLDEREND   25)
+(def SC_MARK_BOXMINUS       14)
+(def SC_MARK_BOXPLUS        12)
+(def SC_MARK_VLINE          9)
+(def SC_MARK_LCORNER        10)
+(def SC_MARK_TCORNER        11)
+(def SC_MARK_BOXPLUSCONNECTED  13)
+(def SC_MARK_BOXMINUSCONNECTED 15)
+
+(def (qt-enable-code-folding! ed)
+  "Enable code folding margin and markers for QScintilla editor.
+   Sets up margin 2 as fold margin with box-tree style markers.
+   QScintilla lexers compute fold levels automatically."
+  ;; Set up fold margin (margin 2, symbol type)
+  (sci-send ed SCI_SETMARGINTYPEN 2 SC_MARGIN_SYMBOL)
+  (sci-send ed SCI_SETMARGINWIDTHN 2 14)
+  (sci-send ed SCI_SETMARGINMASKN 2 SC_MASK_FOLDERS)
+  (sci-send ed SCI_SETMARGINSENSITIVEN 2 1)
+  ;; Fold markers: box tree style
+  (sci-send ed SCI_MARKERDEFINE SC_MARKNUM_FOLDEROPEN SC_MARK_BOXMINUS)
+  (sci-send ed SCI_MARKERDEFINE SC_MARKNUM_FOLDER SC_MARK_BOXPLUS)
+  (sci-send ed SCI_MARKERDEFINE SC_MARKNUM_FOLDERSUB SC_MARK_VLINE)
+  (sci-send ed SCI_MARKERDEFINE SC_MARKNUM_FOLDERTAIL SC_MARK_LCORNER)
+  (sci-send ed SCI_MARKERDEFINE SC_MARKNUM_FOLDEREND SC_MARK_BOXPLUSCONNECTED)
+  (sci-send ed SCI_MARKERDEFINE SC_MARKNUM_FOLDEROPENMID SC_MARK_BOXMINUSCONNECTED)
+  (sci-send ed SCI_MARKERDEFINE SC_MARKNUM_FOLDERMIDTAIL SC_MARK_TCORNER)
+  ;; Fold marker colors (dark theme)
+  (sci-send ed SCI_MARKERSETFORE SC_MARKNUM_FOLDER #x808080)
+  (sci-send ed SCI_MARKERSETBACK SC_MARKNUM_FOLDER #x282828)
+  (sci-send ed SCI_MARKERSETFORE SC_MARKNUM_FOLDEROPEN #x808080)
+  (sci-send ed SCI_MARKERSETBACK SC_MARKNUM_FOLDEROPEN #x282828)
+  ;; Auto-fold on margin clicks
+  (sci-send ed SCI_SETAUTOMATICFOLD 7 0)  ;; SC_AUTOMATICFOLD_SHOW|CLICK|CHANGE
+  ;; Indent guides (SC_IV_LOOKBOTH = 3)
+  (sci-send ed SCI_SETINDENTATIONGUIDES 3 0))
 
 ;;;============================================================================
 ;;; Org-mode manual styles (no QScintilla lexer — uses SCI style messages)

@@ -293,9 +293,21 @@
   (echo-message! (app-state-echo app)
     (if *debug-on-error* "Debug on error ON" "Debug on error OFF")))
 
+;;; Scintilla folding message constants
+(def SCI_TOGGLEFOLD  2231)
+(def SCI_FOLDALL     2662)
+(def SCI_FOLDLINE    2237)
+(def SCI_GETFOLDLEVEL 2223)
+(def SC_FOLDACTION_CONTRACT 0)
+(def SC_FOLDACTION_EXPAND   1)
+(def SC_FOLDLEVELHEADERFLAG #x2000)
+
 (def (cmd-toggle-fold app)
-  "Toggle code folding at point (placeholder)."
-  (echo-message! (app-state-echo app) "Code folding not supported in Qt plain text mode"))
+  "Toggle code folding at current line."
+  (let* ((ed (current-qt-editor app))
+         (line (sci-send ed SCI_LINEFROMPOSITION
+                         (sci-send ed SCI_GETCURRENTPOS))))
+    (sci-send ed SCI_TOGGLEFOLD line 0)))
 
 ;;;============================================================================
 ;;; Info/describe commands

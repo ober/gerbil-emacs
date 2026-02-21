@@ -407,12 +407,16 @@
 ;; cmd-narrow-to-defun is defined earlier (near narrowing section)
 
 (def (cmd-fold-all app)
-  "Fold all top-level forms."
-  (echo-message! (app-state-echo app) "Fold all (not supported in QPlainTextEdit)"))
+  "Fold all foldable regions."
+  (let ((ed (current-qt-editor app)))
+    (sci-send ed SCI_FOLDALL SC_FOLDACTION_CONTRACT 0)
+    (echo-message! (app-state-echo app) "All folds collapsed")))
 
 (def (cmd-unfold-all app)
-  "Unfold all forms."
-  (echo-message! (app-state-echo app) "Unfold all (not supported in QPlainTextEdit)"))
+  "Unfold all foldable regions."
+  (let ((ed (current-qt-editor app)))
+    (sci-send ed SCI_FOLDALL SC_FOLDACTION_EXPAND 0)
+    (echo-message! (app-state-echo app) "All folds expanded")))
 
 (def (cmd-toggle-auto-pair-mode app)
   "Toggle automatic pairing of brackets/quotes."

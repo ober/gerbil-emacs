@@ -68,7 +68,9 @@
                  magit-format-status
                  magit-file-at-point)
         (only-in :gemacs/qt/modeline
-                 *lsp-modeline-provider*))
+                 *lsp-modeline-provider*)
+        (only-in :gemacs/qt/highlight
+                 qt-enable-code-folding!))
 
 (export main)
 
@@ -2475,6 +2477,71 @@
     (displayln "Group 14 complete")))
 
 ;;;============================================================================
+;;; Group 15: Code folding
+;;;============================================================================
+
+(def (run-group-15-code-folding)
+  (displayln "\n=== Group 15: Code Folding ===")
+
+  ;; Test 1: Folding commands are registered
+  (let ((toggle-fold (find-command 'toggle-fold))
+        (fold-all    (find-command 'fold-all))
+        (unfold-all  (find-command 'unfold-all))
+        (fold-level  (find-command 'fold-level)))
+    (if (and toggle-fold fold-all unfold-all fold-level)
+      (pass! "fold commands registered (toggle-fold, fold-all, unfold-all, fold-level)")
+      (fail! "fold commands registered" "missing" "all 4 present")))
+
+  ;; Test 2: toggle-fold executes without error through dispatch
+  (let-values (((ed _w app) (make-qt-test-app "fold-test")))
+    (qt-plain-text-edit-set-text! ed "(def (foo x)\n  (+ x 1))\n\n(def (bar y)\n  (* y 2))\n")
+    ;; Set up lexer and folding for the test
+    (qt-enable-code-folding! ed)
+    (sci-send ed SCI_GOTOPOS 0)
+    ;; Execute through dispatch chain
+    (with-catch
+      (lambda (e)
+        (fail! "toggle-fold dispatch" (with-output-to-string "" (lambda () (display-exception e))) "no error"))
+      (lambda ()
+        (execute-command! app 'toggle-fold)
+        (pass! "toggle-fold dispatch executes without error"))))
+
+  ;; Test 3: fold-all executes without error
+  (let-values (((ed _w app) (make-qt-test-app "fold-all-test")))
+    (qt-plain-text-edit-set-text! ed "(def (foo x)\n  (+ x 1))\n\n(def (bar y)\n  (* y 2))\n")
+    (qt-enable-code-folding! ed)
+    (with-catch
+      (lambda (e)
+        (fail! "fold-all dispatch" (with-output-to-string "" (lambda () (display-exception e))) "no error"))
+      (lambda ()
+        (execute-command! app 'fold-all)
+        (pass! "fold-all dispatch executes without error"))))
+
+  ;; Test 4: unfold-all executes without error
+  (let-values (((ed _w app) (make-qt-test-app "unfold-all-test")))
+    (qt-plain-text-edit-set-text! ed "(def (foo x)\n  (+ x 1))\n\n(def (bar y)\n  (* y 2))\n")
+    (qt-enable-code-folding! ed)
+    (with-catch
+      (lambda (e)
+        (fail! "unfold-all dispatch" (with-output-to-string "" (lambda () (display-exception e))) "no error"))
+      (lambda ()
+        (execute-command! app 'unfold-all)
+        (pass! "unfold-all dispatch executes without error"))))
+
+  ;; Test 5: fold-level executes without error
+  (let-values (((ed _w app) (make-qt-test-app "fold-level-test")))
+    (qt-plain-text-edit-set-text! ed "(def (foo x)\n  (+ x 1))\n\n(def (bar y)\n  (* y 2))\n")
+    (qt-enable-code-folding! ed)
+    (with-catch
+      (lambda (e)
+        (fail! "fold-level dispatch" (with-output-to-string "" (lambda () (display-exception e))) "no error"))
+      (lambda ()
+        (execute-command! app 'fold-level)
+        (pass! "fold-level dispatch executes without error"))))
+
+  (displayln "Group 15 complete"))
+
+;;;============================================================================
 ;;; Main
 ;;;============================================================================
 
@@ -2497,6 +2564,7 @@
     (run-group-12-layout-verification)
     (run-group-13-org-table)
     (run-group-14-lsp-visuals)
+    (run-group-15-code-folding)
 
     (displayln "---")
     (displayln "Results: " *passes* " passed, " *failures* " failed")

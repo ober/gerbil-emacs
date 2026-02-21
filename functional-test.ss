@@ -1856,6 +1856,38 @@
       (register-all-commands!)
       (check (procedure? (find-command 'toggle-electric-pair)) => #t))
 
+    ;;; Code Folding commands
+    (test-case "code-folding: commands registered"
+      (register-all-commands!)
+      (check (procedure? (find-command 'toggle-fold)) => #t)
+      (check (procedure? (find-command 'fold-all)) => #t)
+      (check (procedure? (find-command 'unfold-all)) => #t)
+      (check (procedure? (find-command 'fold-level)) => #t))
+
+    (test-case "code-folding: fold-all dispatch"
+      (let-values (((ed app) (make-test-app "fold-test")))
+        (editor-set-text ed "(def (foo x)\n  (+ x 1))\n")
+        (execute-command! app 'fold-all)
+        (check (app-state-last-command app) => 'fold-all)))
+
+    (test-case "code-folding: unfold-all dispatch"
+      (let-values (((ed app) (make-test-app "unfold-test")))
+        (editor-set-text ed "(def (bar y)\n  (* y 2))\n")
+        (execute-command! app 'unfold-all)
+        (check (app-state-last-command app) => 'unfold-all)))
+
+    (test-case "code-folding: toggle-fold dispatch"
+      (let-values (((ed app) (make-test-app "toggle-fold-test")))
+        (editor-set-text ed "(def (baz z)\n  (- z 1))\n")
+        (execute-command! app 'toggle-fold)
+        (check (app-state-last-command app) => 'toggle-fold)))
+
+    (test-case "code-folding: keybindings"
+      (setup-default-bindings!)
+      (check (keymap-lookup *meta-g-map* "F") => 'toggle-fold)
+      (check (keymap-lookup *meta-g-map* "C") => 'fold-all)
+      (check (keymap-lookup *meta-g-map* "E") => 'unfold-all))
+
 ))
 
 (def main
