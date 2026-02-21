@@ -24,7 +24,8 @@
         :gemacs/editor-extra-tools2
         :gemacs/editor-extra-media
         :gemacs/editor-extra-modes
-        :gemacs/editor-extra-final)
+        :gemacs/editor-extra-final
+        :gemacs/editor-extra-regs)
 
 ;;;============================================================================
 ;;; Register extra commands
@@ -1436,6 +1437,8 @@
   (register-command! 'lsp-workspace-symbol cmd-lsp-workspace-symbol)
   (register-command! 'lsp-restart cmd-lsp-restart)
   (register-command! 'lsp-stop cmd-lsp-stop)
+  ;; Register 545 parity commands (existing implementations, new registrations)
+  (register-parity-commands!)
 )
 
 ;;;============================================================================

@@ -150,6 +150,7 @@
     "editor-extra-media"
     "editor-extra-modes"
     "editor-extra-final"
+    "editor-extra-regs"
     "editor-extra"
     ;; editor sub-modules (must compile before facade)
     "editor-core"
