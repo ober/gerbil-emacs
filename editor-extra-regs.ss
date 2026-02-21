@@ -754,6 +754,30 @@
   (register-command! 'decode-coding-region cmd-set-language-environment)
   (register-command! 'encode-coding-region cmd-set-language-environment)
   (register-command! 'set-input-method cmd-toggle-input-method)
+  ;; Batch 9: org/babel/misc/abbrev aliases
+  ;; Org capture
+  (register-command! 'org-capture-finalize cmd-org-capture)
+  (register-command! 'org-capture-refile cmd-org-capture)
+  (register-command! 'org-capture-kill cmd-org-capture)
+  ;; Org babel
+  (register-command! 'org-babel-execute-maybe cmd-org-babel-execute-src-block)
+  (register-command! 'org-babel-next-src-block cmd-next-error)
+  (register-command! 'org-babel-previous-src-block cmd-previous-error)
+  (register-command! 'org-babel-mark-block cmd-mark-paragraph)
+  ;; Error navigation
+  (register-command! 'next-error-no-select cmd-next-error)
+  ;; Search/find
+  (register-command! 'lgrep cmd-grep)
+  (register-command! 'locate cmd-find-dired)
+  (register-command! 'locate-with-filter cmd-find-name-dired)
+  ;; Abbrevs
+  (register-command! 'dabbrev-completion cmd-dabbrev-expand)
+  (register-command! 'edit-abbrevs cmd-list-abbrevs)
+  (register-command! 'write-abbrev-file cmd-list-abbrevs)
+  (register-command! 'read-abbrev-file cmd-list-abbrevs)
+  ;; Minibuffer/escape
+  (register-command! 'abort-recursive-edit cmd-keyboard-quit)
+  (register-command! 'top-level cmd-keyboard-quit)
 )
 
 ;;;============================================================================

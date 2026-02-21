@@ -912,5 +912,7 @@
   ;; Batch 7: kmacro aliases (need editor-cmds scope)
   (register-command! 'kmacro-name-last-macro cmd-name-last-kbd-macro)
   (register-command! 'kmacro-edit-macro cmd-name-last-kbd-macro)
+  ;; Batch 9: compilation alias (needs editor-ui scope)
+  (register-command! 'compilation-minor-mode cmd-compile)
   ;; Task #46+ (in editor-extra.ss)
   (register-extra-commands!))

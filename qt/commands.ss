@@ -2445,6 +2445,51 @@
   (register-command! 'decode-coding-region cmd-set-language-environment)
   (register-command! 'encode-coding-region cmd-set-language-environment)
   (register-command! 'set-input-method cmd-toggle-input-method)
+  ;; Batch 9: org/babel/misc/abbrev aliases
+  ;; Org capture
+  (register-command! 'org-capture-finalize cmd-org-capture)
+  (register-command! 'org-capture-refile cmd-org-capture)
+  (register-command! 'org-capture-kill cmd-org-capture)
+  ;; Org clock
+  (register-command! 'org-clock-goto cmd-org-clock-in)
+  (register-command! 'org-clock-report cmd-org-clock-in)
+  (register-command! 'org-clock-cancel cmd-org-clock-in)
+  ;; Org agenda
+  (register-command! 'org-agenda-list cmd-org-agenda)
+  (register-command! 'org-agenda-day-view cmd-org-agenda)
+  (register-command! 'org-agenda-week-view cmd-org-agenda)
+  ;; Org heading
+  (register-command! 'org-insert-heading-respect-content cmd-org-insert-heading)
+  (register-command! 'org-insert-subheading cmd-org-insert-heading)
+  (register-command! 'org-insert-todo-heading cmd-org-insert-heading)
+  (register-command! 'org-insert-todo-subheading cmd-org-insert-heading)
+  ;; Org structure
+  (register-command! 'org-do-promote cmd-org-promote)
+  (register-command! 'org-do-demote cmd-org-demote)
+  (register-command! 'org-metaup cmd-org-promote)
+  (register-command! 'org-metadown cmd-org-demote)
+  (register-command! 'org-shiftmetaup cmd-org-promote)
+  (register-command! 'org-shiftmetadown cmd-org-demote)
+  ;; Org babel
+  (register-command! 'org-babel-execute-maybe cmd-org-babel-execute-src-block)
+  (register-command! 'org-babel-next-src-block cmd-next-error)
+  (register-command! 'org-babel-previous-src-block cmd-previous-error)
+  (register-command! 'org-babel-mark-block cmd-mark-paragraph)
+  ;; Error navigation
+  (register-command! 'next-error-no-select cmd-next-error)
+  (register-command! 'compilation-minor-mode cmd-compile)
+  ;; Search/find
+  (register-command! 'lgrep cmd-grep)
+  (register-command! 'locate cmd-find-dired)
+  (register-command! 'locate-with-filter cmd-find-name-dired)
+  ;; Abbrevs
+  (register-command! 'dabbrev-completion cmd-dabbrev-expand)
+  (register-command! 'edit-abbrevs cmd-list-abbrevs)
+  (register-command! 'write-abbrev-file cmd-list-abbrevs)
+  (register-command! 'read-abbrev-file cmd-list-abbrevs)
+  ;; Minibuffer/escape
+  (register-command! 'abort-recursive-edit cmd-keyboard-quit)
+  (register-command! 'top-level cmd-keyboard-quit)
   )
 
 ;;;============================================================================
