@@ -2179,6 +2179,23 @@
   (register-command! 'insert-date-formatted cmd-insert-date-formatted)
   (register-command! 'insert-date-time-stamp cmd-insert-date-time-stamp)
   (register-command! 'insert-char-by-code cmd-insert-char-by-code)
+  ;; Parity batch 9: git-gutter, goto-last-edit, highlight, org, misc
+  (register-command! 'git-gutter-mode cmd-git-gutter-mode)
+  (register-command! 'git-gutter-next-hunk cmd-git-gutter-next-hunk)
+  (register-command! 'git-gutter-previous-hunk cmd-git-gutter-previous-hunk)
+  (register-command! 'git-gutter-revert-hunk cmd-git-gutter-revert-hunk)
+  (register-command! 'git-gutter-stage-hunk cmd-git-gutter-stage-hunk)
+  (register-command! 'goto-last-edit cmd-goto-last-edit)
+  (register-command! 'highlight-regexp cmd-highlight-regexp)
+  (register-command! 'describe-char-at-point cmd-describe-char-at-point)
+  (register-command! 'org-link cmd-org-link)
+  (register-command! 'org-open-at-point cmd-org-open-at-point)
+  (register-command! 'org-cycle cmd-org-cycle)
+  (register-command! 'org-shift-tab cmd-org-shift-tab)
+  (register-command! 'revert-buffer-no-confirm cmd-revert-buffer-no-confirm)
+  (register-command! 'save-buffers-kill-emacs cmd-save-buffers-kill-emacs)
+  (register-command! 'kill-compilation cmd-kill-compilation)
+  (register-command! 'dired-refresh cmd-dired-refresh)
   )
 
 ;;;============================================================================
