@@ -1821,3 +1821,93 @@
               (string-join rect-lines "\n"))
             (echo-message! echo
               (string-append "Rectangle copied to register " (string reg)))))))))
+
+;;;============================================================================
+;;; insert-buffer (TUI) — insert another buffer's text at point
+;;;============================================================================
+
+(def (cmd-insert-buffer app)
+  "Insert the contents of another buffer at point."
+  (let* ((echo (app-state-echo app))
+         (target-name (app-read-string app "Insert buffer: ")))
+    (when (and target-name (> (string-length target-name) 0))
+      (let ((target-buf (find (lambda (b) (string=? (buffer-name b) target-name))
+                              *buffer-list*)))
+        (if (not target-buf)
+          (echo-error! echo (string-append "No buffer: " target-name))
+          (let* ((path (buffer-file-path target-buf))
+                 (ed (current-editor app))
+                 (pos (editor-get-current-pos ed)))
+            (if path
+              (let ((text (with-catch (lambda (e) #f)
+                            (lambda () (call-with-input-file path
+                                         (lambda (port) (read-string 1000000 port)))))))
+                (if text
+                  (begin
+                    (editor-insert-text ed pos text)
+                    (echo-message! echo (string-append "Inserted buffer " target-name)))
+                  (echo-error! echo "Could not read buffer contents")))
+              (echo-error! echo "Buffer has no file path"))))))))
+
+;;;============================================================================
+;;; Session save/restore (TUI)
+;;;============================================================================
+
+(def *tui-session-path*
+  (path-expand ".gemacs-session" (user-info-home (user-info (user-name)))))
+
+(def (cmd-session-save app)
+  "Save current session (open file buffers + positions) to disk."
+  (with-catch
+    (lambda (e) (echo-error! (app-state-echo app) "Session save failed"))
+    (lambda ()
+      (let* ((ed (current-editor app))
+             (current-buf (current-buffer-from-app app))
+             (entries
+               (filter-map
+                 (lambda (buf)
+                   (let ((path (buffer-file-path buf)))
+                     (and path (cons path 0))))
+                 *buffer-list*)))
+        (call-with-output-file *tui-session-path*
+          (lambda (port)
+            (display (or (buffer-file-path current-buf) "") port)
+            (newline port)
+            (for-each
+              (lambda (entry)
+                (display (car entry) port)
+                (display "\t" port)
+                (display (number->string (cdr entry)) port)
+                (newline port))
+              entries)))
+        (echo-message! (app-state-echo app) "Session saved")))))
+
+(def (cmd-session-restore app)
+  "Restore saved session (list of files to reopen)."
+  (if (not (file-exists? *tui-session-path*))
+    (echo-message! (app-state-echo app) "No session file found")
+    (with-catch
+      (lambda (e) (echo-error! (app-state-echo app) "Session restore failed"))
+      (lambda ()
+        (let* ((lines (call-with-input-file *tui-session-path*
+                         (lambda (port)
+                           (let loop ((acc []))
+                             (let ((line (read-line port)))
+                               (if (eof-object? line) (reverse acc)
+                                 (loop (cons line acc))))))))
+               (file-count 0))
+          (when (pair? (cdr lines))
+            (for-each
+              (lambda (line)
+                (let ((tab-pos (let loop ((i 0))
+                                 (cond ((>= i (string-length line)) #f)
+                                       ((char=? (string-ref line i) #\tab) i)
+                                       (else (loop (+ i 1)))))))
+                  (when tab-pos
+                    (let ((path (substring line 0 tab-pos)))
+                      (when (and (> (string-length path) 0) (file-exists? path))
+                        (set! file-count (+ file-count 1)))))))
+              (cdr lines)))
+          (echo-message! (app-state-echo app)
+            (string-append "Session: " (number->string file-count)
+              " files available. Use M-x find-file to open them.")))))))

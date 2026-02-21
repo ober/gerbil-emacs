@@ -1282,4 +1282,8 @@
   ;; fill-region, copy-rectangle-to-register (defined in editor-extra-tools2.ss)
   (register-command! 'fill-region cmd-fill-region)
   (register-command! 'copy-rectangle-to-register cmd-copy-rectangle-to-register)
+  ;; insert-buffer, session save/restore (defined in editor-extra-tools2.ss)
+  (register-command! 'insert-buffer cmd-insert-buffer)
+  (register-command! 'session-save cmd-session-save)
+  (register-command! 'session-restore cmd-session-restore)
 )
