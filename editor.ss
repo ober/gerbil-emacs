@@ -909,5 +909,8 @@
   (register-command! 'select-window-2 cmd-other-window)
   (register-command! 'emmet-mode cmd-complete-at-point)
   (register-command! 'emmet-expand-line cmd-complete-at-point)
+  ;; Batch 7: kmacro aliases (need editor-cmds scope)
+  (register-command! 'kmacro-name-last-macro cmd-name-last-kbd-macro)
+  (register-command! 'kmacro-edit-macro cmd-name-last-kbd-macro)
   ;; Task #46+ (in editor-extra.ss)
   (register-extra-commands!))

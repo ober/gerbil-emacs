@@ -22,7 +22,9 @@
         ;; Batch 4
         cmd-check-parens cmd-count-lines-page cmd-how-many
         ;; Batch 5
-        cmd-delete-directory cmd-set-file-modes cmd-dired-do-chown cmd-butterfly)
+        cmd-delete-directory cmd-set-file-modes cmd-dired-do-chown cmd-butterfly
+        ;; Batch 7
+        cmd-debug-on-entry cmd-cancel-debug-on-entry)
 
 (import :std/sugar
         :std/srfi/13
@@ -686,6 +688,17 @@
   (register-command! 'set-file-modes cmd-set-file-modes)
   (register-command! 'dired-do-chown cmd-dired-do-chown)
   (register-command! 'butterfly cmd-butterfly)
+  ;; Batch 7: isearch/case/kmacro/debug aliases
+  (register-command! 'isearch-forward-symbol-at-point cmd-isearch-forward-symbol)
+  (register-command! 'isearch-yank-word-or-char cmd-search-forward)
+  (register-command! 'isearch-query-replace cmd-query-replace)
+  (register-command! 'capitalize-dwim cmd-capitalize-word)
+  (register-command! 'upcase-dwim cmd-upcase-word)
+  (register-command! 'downcase-dwim cmd-downcase-word)
+  (register-command! 'describe-personal-keybindings cmd-describe-bindings)
+  (register-command! 'whitespace-newline-mode cmd-whitespace-mode)
+  (register-command! 'debug-on-entry cmd-debug-on-entry)
+  (register-command! 'cancel-debug-on-entry cmd-cancel-debug-on-entry)
 )
 
 ;;;============================================================================
@@ -1335,4 +1348,16 @@
 (def (cmd-butterfly app)
   "A butterfly flapping its wings causes a gentle breeze..."
   (echo-message! (app-state-echo app)
-    "The strstrstrstr butterflies have set the strstrstrstr universe in motion."))
+    "The butterflies have set the universe in motion."))
+
+;;;============================================================================
+;;; Batch 7: debug stubs
+;;;============================================================================
+
+(def (cmd-debug-on-entry app)
+  "Set debug-on-entry for a function (stub)."
+  (echo-message! (app-state-echo app) "debug-on-entry: not yet implemented"))
+
+(def (cmd-cancel-debug-on-entry app)
+  "Cancel debug-on-entry (stub)."
+  (echo-message! (app-state-echo app) "cancel-debug-on-entry: not yet implemented"))

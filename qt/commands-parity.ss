@@ -965,3 +965,34 @@
   "A butterfly flapping its wings causes a gentle breeze..."
   (echo-message! (app-state-echo app)
     "The butterflies have set the universe in motion."))
+
+;;; ========================================================================
+;;; Batch 7: Debug stubs
+;;; ========================================================================
+
+(def *qt-debug-on-entry-list* [])
+
+(def (cmd-debug-on-entry app)
+  "Mark a function for debug-on-entry (stub)."
+  (let ((name (qt-echo-read-string (app-state-echo app) "Debug on entry to: ")))
+    (when (and name (not (string=? name "")))
+      (let ((sym (string->symbol name)))
+        (unless (member sym *qt-debug-on-entry-list*)
+          (set! *qt-debug-on-entry-list* (cons sym *qt-debug-on-entry-list*)))
+        (echo-message! (app-state-echo app)
+          (string-append "debug-on-entry: " name))))))
+
+(def (cmd-cancel-debug-on-entry app)
+  "Remove a function from debug-on-entry list (stub)."
+  (if (null? *qt-debug-on-entry-list*)
+    (echo-message! (app-state-echo app) "No functions marked for debug-on-entry")
+    (let ((name (qt-echo-read-string (app-state-echo app)
+                  (string-append "Cancel debug on entry to ["
+                    (symbol->string (car *qt-debug-on-entry-list*)) "]: "))))
+      (let ((sym (if (or (not name) (string=? name ""))
+                   (car *qt-debug-on-entry-list*)
+                   (string->symbol name))))
+        (set! *qt-debug-on-entry-list*
+          (filter (lambda (s) (not (eq? s sym))) *qt-debug-on-entry-list*))
+        (echo-message! (app-state-echo app)
+          (string-append "Cancelled debug-on-entry for " (symbol->string sym)))))))

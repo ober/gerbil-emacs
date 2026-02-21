@@ -1506,6 +1506,11 @@
   (register-command! 'kotlin-mode cmd-text-mode)
   (register-command! 'swift-mode cmd-text-mode)
   (register-command! 'zig-mode cmd-text-mode)
+  ;; Batch 7: highlight/key aliases
+  (register-command! 'highlight-phrase cmd-highlight-regexp)
+  (register-command! 'highlight-lines-matching-regexp cmd-highlight-regexp)
+  (register-command! 'local-set-key cmd-global-set-key)
+  (register-command! 'kmacro-bind-to-key cmd-global-set-key)
 )
 
 ;;;============================================================================

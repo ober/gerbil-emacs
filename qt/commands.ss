@@ -2350,6 +2350,23 @@
   (register-command! 'kotlin-mode cmd-text-mode)
   (register-command! 'swift-mode cmd-text-mode)
   (register-command! 'zig-mode cmd-text-mode)
+  ;; Batch 7: isearch/case/kmacro/debug aliases
+  (register-command! 'isearch-forward-symbol-at-point cmd-isearch-forward-symbol)
+  (register-command! 'isearch-yank-word-or-char cmd-search-forward)
+  (register-command! 'isearch-query-replace cmd-query-replace)
+  (register-command! 'capitalize-dwim cmd-capitalize-word)
+  (register-command! 'upcase-dwim cmd-upcase-word)
+  (register-command! 'downcase-dwim cmd-downcase-word)
+  (register-command! 'kmacro-name-last-macro cmd-name-last-kbd-macro)
+  (register-command! 'kmacro-edit-macro cmd-name-last-kbd-macro)
+  (register-command! 'describe-personal-keybindings cmd-describe-bindings)
+  (register-command! 'whitespace-newline-mode cmd-whitespace-mode)
+  (register-command! 'highlight-phrase cmd-highlight-regexp)
+  (register-command! 'highlight-lines-matching-regexp cmd-highlight-regexp)
+  (register-command! 'local-set-key cmd-global-set-key)
+  (register-command! 'kmacro-bind-to-key cmd-global-set-key)
+  (register-command! 'debug-on-entry cmd-debug-on-entry)
+  (register-command! 'cancel-debug-on-entry cmd-cancel-debug-on-entry)
   )
 
 ;;;============================================================================
