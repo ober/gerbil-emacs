@@ -1363,6 +1363,11 @@
   (register-command! 'string-insert-file cmd-string-insert-file)
   ;; Rename file and buffer
   (register-command! 'rename-file-and-buffer cmd-rename-file-and-buffer)
+  (register-command! 'copy-buffer-file-name cmd-copy-buffer-file-name)
+  (register-command! 'new-empty-buffer cmd-new-empty-buffer)
+  (register-command! 'git-log-file cmd-git-log-file)
+  (register-command! 'switch-buffer-mru cmd-switch-buffer-mru)
+  (register-command! 'find-file-ssh cmd-find-file-ssh)
   ;; Sort numeric / sort fields
   (register-command! 'sort-numeric cmd-sort-numeric)
   (register-command! 'sort-fields cmd-sort-fields)

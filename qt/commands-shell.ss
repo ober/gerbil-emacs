@@ -1869,3 +1869,95 @@ S=sort by name, z=sort by size, q=quit."
                 (loop (length lines) acc)
                 (loop (+ i 1) (cons line acc))))))))))
 
+;;;============================================================================
+;;; File/buffer utilities
+
+(def *qt-new-buffer-counter* 0)
+
+(def (cmd-copy-buffer-file-name app)
+  "Copy the full file path of the current buffer to kill ring."
+  (let* ((buf (current-qt-buffer app))
+         (filepath (buffer-file-path buf)))
+    (if (not filepath)
+      (echo-message! (app-state-echo app) "Buffer has no file")
+      (begin
+        (qt-kill-ring-push! app filepath)
+        (echo-message! (app-state-echo app) (string-append "Copied: " filepath))))))
+
+(def (cmd-new-empty-buffer app)
+  "Create a new empty buffer with a unique name."
+  (set! *qt-new-buffer-counter* (+ *qt-new-buffer-counter* 1))
+  (let* ((name (string-append "*new-" (number->string *qt-new-buffer-counter*) "*"))
+         (ed (current-qt-editor app))
+         (fr (app-state-frame app))
+         (buf (qt-buffer-create! name ed #f)))
+    (qt-buffer-attach! ed buf)
+    (set! (qt-edit-window-buffer (qt-current-window fr)) buf)
+    (qt-plain-text-edit-set-text! ed "")
+    (echo-message! (app-state-echo app) (string-append "New buffer: " name))))
+
+(def (cmd-git-log-file app)
+  "Show git log for the current file."
+  (let* ((buf (current-qt-buffer app))
+         (path (buffer-file-path buf)))
+    (if (not path)
+      (echo-error! (app-state-echo app) "Buffer has no file")
+      (let* ((dir (path-directory path))
+             (output (magit-run-git (list "log" "--oneline" "--follow" "-30" path) dir))
+             (ed (current-qt-editor app))
+             (fr (app-state-frame app))
+             (log-buf (or (buffer-by-name (string-append "*Log: " (path-strip-directory path) "*"))
+                          (qt-buffer-create! (string-append "*Log: " (path-strip-directory path) "*") ed #f))))
+        (qt-buffer-attach! ed log-buf)
+        (set! (qt-edit-window-buffer (qt-current-window fr)) log-buf)
+        (qt-plain-text-edit-set-text! ed
+          (string-append "File: " path "\n\n" (if (string=? output "") "Not tracked\n" output)))
+        (qt-text-document-set-modified! (buffer-doc-pointer log-buf) #f)
+        (qt-plain-text-edit-set-cursor-position! ed 0)))))
+
+(def (cmd-switch-buffer-mru app)
+  "Switch to most recently used buffer (excluding current)."
+  (let* ((cur-buf (current-qt-buffer app))
+         (cur-name (buffer-name cur-buf))
+         (bufs (filter (lambda (b) (not (string=? (buffer-name b) cur-name))) *buffer-list*)))
+    (if (null? bufs)
+      (echo-message! (app-state-echo app) "No other buffers")
+      (let* ((target (car bufs))
+             (ed (current-qt-editor app))
+             (fr (app-state-frame app)))
+        (qt-buffer-attach! ed target)
+        (set! (qt-edit-window-buffer (qt-current-window fr)) target)
+        (echo-message! (app-state-echo app) (string-append "Buffer: " (buffer-name target)))))))
+
+(def (cmd-find-file-ssh app)
+  "Open file via SSH using scp."
+  (let ((path (qt-echo-read-string app "SSH path (user@host:/path): ")))
+    (when (and path (> (string-length path) 0))
+      (echo-message! (app-state-echo app) (string-append "Fetching: " path))
+      (with-catch
+        (lambda (e) (echo-error! (app-state-echo app) "SSH fetch failed"))
+        (lambda ()
+          (let* ((tmp (string-append "/tmp/gemacs-ssh-" (number->string (random-integer 99999))))
+                 (proc (open-process
+                         (list path: "scp"
+                               arguments: (list path tmp)
+                               stdout-redirection: #t
+                               stderr-redirection: #t)))
+                 (output (read-line proc #f))
+                 (status (process-status proc)))
+            (close-port proc)
+            (if (and (= status 0) (file-exists? tmp))
+              (let* ((content (read-file-as-string tmp))
+                     (buf-name (string-append "[SSH] " path))
+                     (ed (current-qt-editor app))
+                     (fr (app-state-frame app))
+                     (buf (qt-buffer-create! buf-name ed #f)))
+                (qt-buffer-attach! ed buf)
+                (set! (qt-edit-window-buffer (qt-current-window fr)) buf)
+                (qt-plain-text-edit-set-text! ed content)
+                (qt-text-document-set-modified! (buffer-doc-pointer buf) #f)
+                (qt-plain-text-edit-set-cursor-position! ed 0)
+                (qt-setup-highlighting! app buf)
+                (echo-message! (app-state-echo app) (string-append "Loaded: " path)))
+              (echo-error! (app-state-echo app) "SCP failed or file empty"))))))))
+
