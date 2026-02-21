@@ -58,6 +58,7 @@
   (register-command! 'scroll-down cmd-scroll-down)
   (register-command! 'scroll-up cmd-scroll-up)
   (register-command! 'recenter cmd-recenter)
+  (register-command! 'recenter-top-bottom cmd-recenter-top-bottom)
   ;; Editing
   (register-command! 'delete-char cmd-delete-char)
   (register-command! 'backward-delete-char cmd-backward-delete-char)

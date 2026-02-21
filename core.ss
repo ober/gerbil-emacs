@@ -199,7 +199,7 @@
   (keymap-bind! *global-keymap* "C-a" 'beginning-of-line)
   (keymap-bind! *global-keymap* "C-e" 'end-of-line)
   (keymap-bind! *global-keymap* "C-v" 'scroll-down)
-  (keymap-bind! *global-keymap* "C-l" 'recenter)
+  (keymap-bind! *global-keymap* "C-l" 'recenter-top-bottom)
 
   ;; Arrow keys and navigation
   (keymap-bind! *global-keymap* "<up>"     'previous-line)

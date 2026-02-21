@@ -2609,6 +2609,33 @@
   (displayln "Group 16 complete"))
 
 ;;;============================================================================
+;;; Group 17: Recenter-top-bottom
+;;;============================================================================
+
+(def (run-group-17-recenter)
+  (displayln "\n=== Group 17: Recenter-Top-Bottom ===")
+
+  ;; Test 1: recenter-top-bottom is registered
+  (let-values (((ed _w app) (make-qt-test-app "recenter-reg-test")))
+    (if (find-command 'recenter-top-bottom)
+      (pass! "recenter-top-bottom command registered")
+      (fail! "recenter-top-bottom" "not found" "registered")))
+
+  ;; Test 2: recenter-top-bottom dispatches without error
+  (let-values (((ed _w app) (make-qt-test-app "recenter-dispatch-test")))
+    (qt-plain-text-edit-set-text! ed "line one\nline two\nline three\n")
+    (with-catch
+      (lambda (e)
+        (fail! "recenter-top-bottom dispatch"
+               (with-output-to-string "" (lambda () (display-exception e)))
+               "no error"))
+      (lambda ()
+        (execute-command! app 'recenter-top-bottom)
+        (pass! "recenter-top-bottom dispatch executes without error"))))
+
+  (displayln "Group 17 complete"))
+
+;;;============================================================================
 ;;; Main
 ;;;============================================================================
 
@@ -2633,6 +2660,7 @@
     (run-group-14-lsp-visuals)
     (run-group-15-code-folding)
     (run-group-16-ui-toggles)
+    (run-group-17-recenter)
 
     (displayln "---")
     (displayln "Results: " *passes* " passed, " *failures* " failed")

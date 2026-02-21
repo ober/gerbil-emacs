@@ -1888,6 +1888,16 @@
       (check (keymap-lookup *meta-g-map* "C") => 'fold-all)
       (check (keymap-lookup *meta-g-map* "E") => 'unfold-all))
 
+    (test-case "recenter-top-bottom: registered and dispatches"
+      (let-values (((ed app) (make-test-app "recenter-test")))
+        (editor-set-text ed "line one\nline two\nline three\n")
+        (execute-command! app 'recenter-top-bottom)
+        (check (app-state-last-command app) => 'recenter-top-bottom)))
+
+    (test-case "recenter-top-bottom: C-l binding"
+      (setup-default-bindings!)
+      (check (keymap-lookup *global-keymap* "C-l") => 'recenter-top-bottom))
+
 ))
 
 (def main
