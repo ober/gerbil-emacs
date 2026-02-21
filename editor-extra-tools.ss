@@ -1926,3 +1926,53 @@
         (editor-goto-pos ed line-end)
         (editor-insert-text ed line-end (string-append "\n" line-text))))))
 
+;;;============================================================================
+;;; Markdown outline & project search (parity with Qt)
+;;;============================================================================
+
+(def (cmd-markdown-outline app)
+  "Show outline of markdown headings."
+  (let* ((ed (current-editor app))
+         (text (editor-get-text ed))
+         (lines (string-split text #\newline))
+         (headings (let lp ((ls lines) (n 0) (acc []))
+                     (if (null? ls) (reverse acc)
+                       (let ((l (car ls)))
+                         (if (and (> (string-length l) 0) (char=? (string-ref l 0) #\#))
+                           (lp (cdr ls) (+ n 1) (cons (cons n l) acc))
+                           (lp (cdr ls) (+ n 1) acc)))))))
+    (if (null? headings)
+      (echo-message! (app-state-echo app) "No headings found")
+      (open-output-buffer app "*Markdown Outline*"
+        (string-append "Headings\n\n"
+          (string-join (map (lambda (h) (string-append (number->string (+ (car h) 1)) ": " (cdr h)))
+                            headings) "\n") "\n")))))
+
+(def (cmd-project-search app)
+  "Search for pattern across project files."
+  (let* ((echo (app-state-echo app))
+         (pattern (app-read-string app "Project search: ")))
+    (when (and pattern (> (string-length pattern) 0))
+      (with-catch (lambda (e) (echo-error! echo "Search failed"))
+        (lambda ()
+          (let* ((root (current-directory))
+                 (proc (open-process
+                         [path: "/usr/bin/grep" arguments: ["-rn" "--include=*.ss" "--include=*.scm"
+                           "--include=*.py" "--include=*.js" "--include=*.ts" "--include=*.c"
+                           "--include=*.h" "--include=*.md" "--include=*.txt" pattern root]
+                          stdout-redirection: #t stderr-redirection: #t]))
+                 (output (let lp ((acc '()))
+                           (let ((line (read-line proc)))
+                             (if (eof-object? line) (reverse acc) (lp (cons line acc)))))))
+            (close-port proc)
+            (if (null? output)
+              (echo-message! echo (string-append "No matches for: " pattern))
+              (open-output-buffer app "*Project Search*"
+                (string-append "=== Search: " pattern " ===\n\n"
+                  (string-join output "\n") "\n\n"
+                  (number->string (length output)) " match(es)")))))))))
+
+(def (cmd-project-run-shell app)
+  "Set shell to project root directory."
+  (echo-message! (app-state-echo app) (string-append "Shell directory: " (current-directory))))
+

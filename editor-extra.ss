@@ -1338,4 +1338,13 @@
   (register-command! 'markdown-promote cmd-markdown-promote)
   (register-command! 'markdown-demote cmd-markdown-demote)
   (register-command! 'markdown-insert-heading cmd-markdown-insert-heading)
+  ;; Parity batch 7: markdown toggle/nav, outline, project search
+  (register-command! 'markdown-toggle-bold cmd-markdown-toggle-bold)
+  (register-command! 'markdown-toggle-italic cmd-markdown-toggle-italic)
+  (register-command! 'markdown-toggle-code cmd-markdown-toggle-code)
+  (register-command! 'markdown-next-heading cmd-markdown-next-heading)
+  (register-command! 'markdown-prev-heading cmd-markdown-prev-heading)
+  (register-command! 'markdown-outline cmd-markdown-outline)
+  (register-command! 'project-search cmd-project-search)
+  (register-command! 'project-run-shell cmd-project-run-shell)
 )
