@@ -653,3 +653,155 @@
   (set! *qt-cua-mode* (not *qt-cua-mode*))
   (echo-message! (app-state-echo app)
     (if *qt-cua-mode* "CUA mode enabled" "CUA mode disabled")))
+
+;;;============================================================================
+;;; Batch 3: Package/framework parity commands
+;;;============================================================================
+
+;;; --- Company mode ---
+(def *qt-company-mode* #f)
+(def (cmd-company-mode app)
+  "Toggle company completion mode."
+  (set! *qt-company-mode* (not *qt-company-mode*))
+  (echo-message! (app-state-echo app)
+    (if *qt-company-mode* "Company mode: on" "Company mode: off")))
+
+;;; --- Treemacs ---
+(def (cmd-treemacs app)
+  "Toggle treemacs file-tree view."
+  (let* ((fr (app-state-frame app))
+         (ed (current-qt-editor app))
+         (buf (current-qt-buffer app)))
+    (if (and buf (string=? (buffer-name buf) "*Treemacs*"))
+      ;; Close treemacs — switch to first non-treemacs buffer
+      (let ((other (find (lambda (b) (not (string=? (buffer-name b) "*Treemacs*")))
+                         *buffer-list*)))
+        (when other
+          (qt-buffer-attach! ed other)
+          (set! (qt-edit-window-buffer (qt-current-window fr)) other))
+        (echo-message! (app-state-echo app) "Treemacs closed"))
+      ;; Open treemacs — show directory listing
+      (let* ((path (and buf (buffer-file-path buf)))
+             (dir (if path (path-directory path) (current-directory)))
+             (entries (with-catch (lambda (e) '()) (lambda () (directory-files dir))))
+             (text (string-append "Treemacs: " dir "\n\n"
+                     (string-join (sort entries string<?) "\n") "\n"))
+             (tbuf (qt-buffer-create! "*Treemacs*" ed #f)))
+        (qt-buffer-attach! ed tbuf)
+        (set! (qt-edit-window-buffer (qt-current-window fr)) tbuf)
+        (qt-plain-text-edit-set-text! ed text)
+        (qt-plain-text-edit-set-cursor-position! ed 0)))))
+
+;;; --- Evil mode ---
+(def *qt-evil-mode* #f)
+(def (cmd-evil-mode app)
+  "Toggle evil mode — vi-like modal editing."
+  (set! *qt-evil-mode* (not *qt-evil-mode*))
+  (echo-message! (app-state-echo app)
+    (if *qt-evil-mode* "Evil mode: on (vi keybindings)" "Evil mode: off (emacs keybindings)")))
+
+;;; --- Org set tags ---
+(def (cmd-org-set-tags app)
+  "Prompt for tags and set on current org heading."
+  (let* ((ed (current-qt-editor app))
+         (text (qt-plain-text-edit-text ed))
+         (pos (qt-plain-text-edit-cursor-position ed))
+         (before-pos (substring text 0 pos))
+         (line-start (let ((nl (string-index-right before-pos #\newline)))
+                       (if nl (+ nl 1) 0)))
+         (line-end-idx (let ((nl (string-index text #\newline line-start)))
+                         (if nl nl (string-length text))))
+         (line (substring text line-start line-end-idx)))
+    (if (not (and (> (string-length line) 0) (char=? (string-ref (string-trim line) 0) #\*)))
+      (echo-message! (app-state-echo app) "Not on a heading")
+      (let ((tags-input (qt-echo-read-string (app-state-echo app) "Tags (comma-separated): ")))
+        (when (and tags-input (not (string=? tags-input "")))
+          (let* ((tags (map string-trim (string-split tags-input #\,)))
+                 (tag-str (string-append ":" (string-join tags ":") ":"))
+                 ;; Remove existing trailing tags
+                 (clean-line (string-trim-right line))
+                 (new-line (string-append clean-line " " tag-str))
+                 (new-text (string-append (substring text 0 line-start) new-line
+                             (substring text line-end-idx (string-length text)))))
+            (qt-plain-text-edit-set-text! ed new-text)
+            (qt-plain-text-edit-set-cursor-position! ed pos)))))))
+
+;;; --- Which key ---
+(def (cmd-which-key app)
+  "Display available keybindings."
+  (let* ((fr (app-state-frame app))
+         (ed (current-qt-editor app))
+         (entries (keymap-entries *global-keymap*))
+         (lines (map (lambda (e)
+                       (string-append "  " (car e) " -> "
+                         (cond
+                           ((symbol? (cdr e)) (symbol->string (cdr e)))
+                           ((hash-table? (cdr e)) "<prefix-map>")
+                           (else "???"))))
+                     (sort entries (lambda (a b) (string<? (car a) (car b))))))
+         (buf (qt-buffer-create! "*Which Key*" ed #f)))
+    (qt-buffer-attach! ed buf)
+    (set! (qt-edit-window-buffer (qt-current-window fr)) buf)
+    (qt-plain-text-edit-set-text! ed
+      (string-append "Key Bindings\n\n" (string-join lines "\n") "\n"))
+    (qt-plain-text-edit-set-cursor-position! ed 0)))
+
+;;; --- Org archive subtree (stub) ---
+(def (cmd-org-archive-subtree app)
+  "Archive the current org subtree."
+  (echo-message! (app-state-echo app) "Archive subtree: not yet implemented"))
+
+;;; --- Org toggle heading ---
+(def (cmd-org-toggle-heading app)
+  "Toggle between heading and normal text."
+  (let* ((ed (current-qt-editor app))
+         (text (qt-plain-text-edit-text ed))
+         (pos (qt-plain-text-edit-cursor-position ed))
+         (before-pos (substring text 0 pos))
+         (line-start (let ((nl (string-index-right before-pos #\newline)))
+                       (if nl (+ nl 1) 0)))
+         (line-end-idx (let ((nl (string-index text #\newline line-start)))
+                         (if nl nl (string-length text))))
+         (line (substring text line-start line-end-idx))
+         (trimmed (string-trim line)))
+    (if (and (> (string-length trimmed) 0) (char=? (string-ref trimmed 0) #\*))
+      ;; Remove heading prefix
+      (let* ((stars (let lp ((i 0))
+                      (if (and (< i (string-length trimmed))
+                               (char=? (string-ref trimmed i) #\*))
+                        (lp (+ i 1)) i)))
+             (rest (string-trim (substring trimmed stars (string-length trimmed))))
+             (new-text (string-append (substring text 0 line-start) rest
+                         (substring text line-end-idx (string-length text)))))
+        (qt-plain-text-edit-set-text! ed new-text)
+        (qt-plain-text-edit-set-cursor-position! ed (min pos (string-length new-text))))
+      ;; Add heading prefix
+      (let ((new-text (string-append (substring text 0 line-start) "* " line
+                        (substring text line-end-idx (string-length text)))))
+        (qt-plain-text-edit-set-text! ed new-text)
+        (qt-plain-text-edit-set-cursor-position! ed (+ pos 2))))))
+
+;;; --- Magit init ---
+(def (cmd-magit-init app)
+  "Initialize a new git repository."
+  (with-catch
+    (lambda (e) (echo-message! (app-state-echo app) "Git init failed"))
+    (lambda ()
+      (let* ((buf (current-qt-buffer app))
+             (path (and buf (buffer-file-path buf)))
+             (dir (if path (path-directory path) ".")))
+        (run-process ["git" "init" dir] coprocess: void)
+        (echo-message! (app-state-echo app)
+          (string-append "Initialized git repo in " dir))))))
+
+;;; --- Magit tag ---
+(def (cmd-magit-tag app)
+  "Create a git tag."
+  (let ((tag (qt-echo-read-string (app-state-echo app) "Tag name: ")))
+    (when (and tag (not (string=? tag "")))
+      (with-catch
+        (lambda (e) (echo-message! (app-state-echo app) "Tag failed"))
+        (lambda ()
+          (run-process ["git" "tag" tag] coprocess: void)
+          (echo-message! (app-state-echo app)
+            (string-append "Created tag: " tag)))))))

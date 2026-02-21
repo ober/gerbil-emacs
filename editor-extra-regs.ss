@@ -17,7 +17,8 @@
         cmd-dired-hide-details cmd-desktop-save-mode
         cmd-org-babel-execute-src-block cmd-org-babel-tangle
         cmd-other-frame cmd-winum-mode cmd-help-with-tutorial
-        cmd-cua-mode)
+        cmd-cua-mode cmd-org-archive-subtree cmd-org-toggle-heading
+        cmd-magit-init cmd-magit-tag)
 
 (import :std/sugar
         :std/srfi/13
@@ -1111,3 +1112,58 @@
   (set! *cua-mode* (not *cua-mode*))
   (echo-message! (app-state-echo app)
     (if *cua-mode* "CUA mode enabled" "CUA mode disabled")))
+
+;;; --- Org archive subtree ---
+(def (cmd-org-archive-subtree app)
+  "Archive the current org subtree."
+  (echo-message! (app-state-echo app) "Archive subtree: not yet implemented"))
+
+;;; --- Org toggle heading ---
+(def (cmd-org-toggle-heading app)
+  "Toggle between heading and normal text."
+  (let* ((ed (current-editor app))
+         (pos (editor-get-current-pos ed))
+         (line-num (editor-line-from-position ed pos))
+         (line-text (editor-get-line ed line-num))
+         (trimmed (string-trim line-text)))
+    (if (and (> (string-length trimmed) 0) (char=? (string-ref trimmed 0) #\*))
+      ;; Remove heading prefix
+      (let* ((stars (let lp ((i 0))
+                      (if (and (< i (string-length trimmed))
+                               (char=? (string-ref trimmed i) #\*))
+                        (lp (+ i 1)) i)))
+             (rest (string-trim (substring trimmed stars (string-length trimmed))))
+             (start (editor-position-from-line ed line-num))
+             (line-len (string-length line-text)))
+        ;; Delete the line content and insert replacement
+        (editor-delete-range ed start line-len)
+        (editor-insert-text ed start rest))
+      ;; Add heading prefix
+      (let* ((start (editor-position-from-line ed line-num)))
+        (editor-insert-text ed start "* ")))))
+
+;;; --- Magit init ---
+(def (cmd-magit-init app)
+  "Initialize a new git repository."
+  (with-catch
+    (lambda (e) (echo-message! (app-state-echo app) "Git init failed"))
+    (lambda ()
+      (let* ((fr (app-state-frame app))
+             (buf (edit-window-buffer (current-window fr)))
+             (path (and buf (buffer-file-path buf)))
+             (dir (if path (path-directory path) ".")))
+        (run-process ["git" "init" dir] coprocess: void)
+        (echo-message! (app-state-echo app)
+          (string-append "Initialized git repo in " dir))))))
+
+;;; --- Magit tag ---
+(def (cmd-magit-tag app)
+  "Create a git tag."
+  (let ((tag (app-read-string app "Tag name: ")))
+    (when (and tag (not (string-empty? tag)))
+      (with-catch
+        (lambda (e) (echo-message! (app-state-echo app) "Tag failed"))
+        (lambda ()
+          (run-process ["git" "tag" tag] coprocess: void)
+          (echo-message! (app-state-echo app)
+            (string-append "Created tag: " tag)))))))
