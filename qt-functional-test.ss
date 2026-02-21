@@ -2747,6 +2747,100 @@
   (displayln "Group 19 complete"))
 
 ;;;============================================================================
+;;; Group 20: Multiple Cursors
+;;;============================================================================
+
+(def (run-group-20-multiple-cursors)
+  (displayln "\n=== Group 20: Multiple Cursors ===")
+
+  ;; Test 1: mc-mark-next registered
+  (if (find-command 'mc-mark-next)
+    (pass! "mc-mark-next registered")
+    (fail! "mc-mark-next" "not found" "registered"))
+
+  ;; Test 2: mc-mark-all registered
+  (if (find-command 'mc-mark-all)
+    (pass! "mc-mark-all registered")
+    (fail! "mc-mark-all" "not found" "registered"))
+
+  ;; Test 3: mc-edit-lines registered
+  (if (find-command 'mc-edit-lines)
+    (pass! "mc-edit-lines registered")
+    (fail! "mc-edit-lines" "not found" "registered"))
+
+  ;; Test 4: mc-mark-next dispatches without error with selection
+  (let-values (((ed _w app) (make-qt-test-app "mc-test")))
+    (set-qt-text! ed "foo bar foo baz foo" 0)
+    ;; Select first "foo" (positions 0..3)
+    (sci-send ed SCI_SETSEL 0 3)
+    (with-catch
+      (lambda (e)
+        (fail! "mc-mark-next dispatch"
+               (with-output-to-string "" (lambda () (display-exception e)))
+               "no error"))
+      (lambda ()
+        (execute-command! app 'mc-mark-next)
+        (pass! "mc-mark-next dispatches with selection"))))
+
+  ;; Test 5: mc-mark-all dispatches without error with selection
+  (let-values (((ed _w app) (make-qt-test-app "mc-all-test")))
+    (set-qt-text! ed "abc xyz abc xyz abc" 0)
+    (sci-send ed SCI_SETSEL 0 3)
+    (with-catch
+      (lambda (e)
+        (fail! "mc-mark-all dispatch"
+               (with-output-to-string "" (lambda () (display-exception e)))
+               "no error"))
+      (lambda ()
+        (execute-command! app 'mc-mark-all)
+        (pass! "mc-mark-all dispatches with selection"))))
+
+  ;; Test 6: mc-unmark-last dispatches without error
+  (let-values (((ed _w app) (make-qt-test-app "mc-unmark-test")))
+    (set-qt-text! ed "test text" 0)
+    (with-catch
+      (lambda (e)
+        (fail! "mc-unmark-last dispatch"
+               (with-output-to-string "" (lambda () (display-exception e)))
+               "no error"))
+      (lambda ()
+        (execute-command! app 'mc-unmark-last)
+        (pass! "mc-unmark-last dispatches (single cursor case)"))))
+
+  ;; Test 7: mc-rotate dispatches without error
+  (let-values (((ed _w app) (make-qt-test-app "mc-rotate-test")))
+    (set-qt-text! ed "test test test" 0)
+    (with-catch
+      (lambda (e)
+        (fail! "mc-rotate dispatch"
+               (with-output-to-string "" (lambda () (display-exception e)))
+               "no error"))
+      (lambda ()
+        (execute-command! app 'mc-rotate)
+        (pass! "mc-rotate dispatches without error"))))
+
+  ;; Test 9: mc-edit-lines dispatches with multi-line selection
+  (let-values (((ed _w app) (make-qt-test-app "mc-lines-test")))
+    (set-qt-text! ed "line 1\nline 2\nline 3\n" 0)
+    ;; Select all 3 lines
+    (sci-send ed SCI_SETSEL 0 20)
+    (with-catch
+      (lambda (e)
+        (fail! "mc-edit-lines dispatch"
+               (with-output-to-string "" (lambda () (display-exception e)))
+               "no error"))
+      (lambda ()
+        (execute-command! app 'mc-edit-lines)
+        (pass! "mc-edit-lines dispatches with multi-line selection"))))
+
+  ;; Test 8: mc-skip-and-mark-next registered
+  (if (find-command 'mc-skip-and-mark-next)
+    (pass! "mc-skip-and-mark-next registered")
+    (fail! "mc-skip-and-mark-next" "not found" "registered"))
+
+  (displayln "Group 20 complete"))
+
+;;;============================================================================
 ;;; Main
 ;;;============================================================================
 
@@ -2774,6 +2868,7 @@
     (run-group-17-recenter)
     (run-group-18-stub-replacements)
     (run-group-19-new-features)
+    (run-group-20-multiple-cursors)
 
     (displayln "---")
     (displayln "Results: " *passes* " passed, " *failures* " failed")

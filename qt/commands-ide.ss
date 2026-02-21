@@ -1549,5 +1549,108 @@
       (string-append "Current: " *current-workspace*))))
 
 ;;;============================================================================
+;;; Multiple Cursors (Scintilla multi-selection API)
+;;;============================================================================
+
+;; Enable multiple selection mode (needed once)
+(def (qt-enable-multiple-selection! ed)
+  "Enable Scintilla multiple-selection and additional-selection-typing."
+  ;; SCI_SETMULTIPLESELECTION=2563, SCI_SETADDITIONALSELECTIONTYPING=2565
+  (sci-send ed 2563 1 0)
+  (sci-send ed 2565 1 0))
+
+(def (cmd-mc-mark-next app)
+  "Add a cursor at the next occurrence of the current selection."
+  (let* ((ed (current-qt-editor app))
+         (echo (app-state-echo app)))
+    (qt-enable-multiple-selection! ed)
+    (let* ((sel-start (sci-send ed SCI_GETSELECTIONSTART 0 0))
+           (sel-end (sci-send ed SCI_GETSELECTIONEND 0 0)))
+      (if (= sel-start sel-end)
+        (echo-error! echo "Select text first, then mark next")
+        (begin
+          (sci-send ed SCI_MULTIPLESELECTADDNEXT 0 0)
+          (let ((n (sci-send ed SCI_GETSELECTIONS 0 0)))
+            (echo-message! echo
+              (string-append (number->string n) " cursors"))))))))
+
+(def (cmd-mc-mark-all app)
+  "Add cursors at all occurrences of the current selection."
+  (let* ((ed (current-qt-editor app))
+         (echo (app-state-echo app)))
+    (qt-enable-multiple-selection! ed)
+    (let* ((sel-start (sci-send ed SCI_GETSELECTIONSTART 0 0))
+           (sel-end (sci-send ed SCI_GETSELECTIONEND 0 0)))
+      (if (= sel-start sel-end)
+        (echo-error! echo "Select text first, then mark all")
+        (begin
+          (sci-send ed SCI_MULTIPLESELECTADDEACH 0 0)
+          (let ((n (sci-send ed SCI_GETSELECTIONS 0 0)))
+            (echo-message! echo
+              (string-append (number->string n) " cursors"))))))))
+
+(def (cmd-mc-skip-and-mark-next app)
+  "Skip the current selection and add next occurrence."
+  (let* ((ed (current-qt-editor app))
+         (echo (app-state-echo app))
+         (sel-start (sci-send ed SCI_GETSELECTIONSTART 0 0))
+         (sel-end (sci-send ed SCI_GETSELECTIONEND 0 0)))
+    (if (= sel-start sel-end)
+      (echo-error! echo "Select text first")
+      (begin
+        (qt-enable-multiple-selection! ed)
+        (let ((n (sci-send ed SCI_GETSELECTIONS 0 0)))
+          (when (> n 1)
+            (let ((main (sci-send ed SCI_GETMAINSELECTION 0 0)))
+              (sci-send ed SCI_DROPSELECTIONN main 0))))
+        (sci-send ed SCI_MULTIPLESELECTADDNEXT 0 0)
+        (let ((n2 (sci-send ed SCI_GETSELECTIONS 0 0)))
+          (echo-message! echo
+            (string-append (number->string n2) " cursors")))))))
+
+(def (cmd-mc-edit-lines app)
+  "Add a cursor at the end of each line in the current selection."
+  (let* ((ed (current-qt-editor app))
+         (echo (app-state-echo app))
+         (sel-start (sci-send ed SCI_GETSELECTIONSTART 0 0))
+         (sel-end (sci-send ed SCI_GETSELECTIONEND 0 0)))
+    (if (= sel-start sel-end)
+      (echo-error! echo "Select a region first")
+      (begin
+        (qt-enable-multiple-selection! ed)
+        (let* ((start-line (sci-send ed SCI_LINEFROMPOSITION sel-start 0))
+               (end-line (sci-send ed SCI_LINEFROMPOSITION sel-end 0))
+               (num-lines (+ 1 (- end-line start-line))))
+          (when (> num-lines 1)
+            ;; Set first selection at end of first line
+            (let ((eol0 (sci-send ed SCI_GETLINEENDPOSITION start-line 0)))
+              (sci-send ed SCI_SETSELECTION eol0 eol0)
+              (let loop ((line (+ start-line 1)))
+                (when (<= line end-line)
+                  (let ((eol (sci-send ed SCI_GETLINEENDPOSITION line 0)))
+                    (sci-send ed SCI_ADDSELECTION eol eol)
+                    (loop (+ line 1)))))))
+          (echo-message! echo
+            (string-append (number->string num-lines)
+                           " cursors on " (number->string num-lines) " lines")))))))
+
+(def (cmd-mc-unmark-last app)
+  "Remove the most recently added cursor."
+  (let* ((ed (current-qt-editor app))
+         (echo (app-state-echo app))
+         (n (sci-send ed SCI_GETSELECTIONS 0 0)))
+    (if (<= n 1)
+      (echo-message! echo "Only one cursor")
+      (begin
+        (sci-send ed SCI_DROPSELECTIONN (- n 1) 0)
+        (echo-message! echo
+          (string-append (number->string (- n 1)) " cursors"))))))
+
+(def (cmd-mc-rotate app)
+  "Cycle to the next selection as the main cursor."
+  (let ((ed (current-qt-editor app)))
+    (sci-send ed SCI_ROTATESELECTION 0 0)))
+
+;;;============================================================================
 ;;; Batch 7: More missing commands
 

@@ -1547,6 +1547,13 @@
   (register-command! 'workspace-delete cmd-workspace-delete)
   (register-command! 'workspace-add-buffer cmd-workspace-add-buffer)
   (register-command! 'workspace-list cmd-workspace-list)
+  ;; Multiple cursors
+  (register-command! 'mc-mark-next cmd-mc-mark-next)
+  (register-command! 'mc-mark-all cmd-mc-mark-all)
+  (register-command! 'mc-skip-and-mark-next cmd-mc-skip-and-mark-next)
+  (register-command! 'mc-edit-lines cmd-mc-edit-lines)
+  (register-command! 'mc-unmark-last cmd-mc-unmark-last)
+  (register-command! 'mc-rotate cmd-mc-rotate)
   ;; Batch 7: More commands
   (register-command! 'transpose-sexps cmd-transpose-sexps)
   (register-command! 'transpose-paragraphs cmd-transpose-paragraphs)
@@ -2036,7 +2043,15 @@
   (keymap-bind! *ctrl-c-l-map* "=" 'lsp-restart)
   (keymap-bind! *ctrl-c-l-map* "q" 'lsp-stop)
   ;; M-. smart dispatch: LSP when running, else text search
-  (keymap-bind! *global-keymap* "M-." 'lsp-smart-goto-definition))
+  (keymap-bind! *global-keymap* "M-." 'lsp-smart-goto-definition)
+  ;; Multiple cursor keybindings in C-c m prefix map
+  (keymap-bind! *ctrl-c-map* "m" *ctrl-c-m-map*)
+  (keymap-bind! *ctrl-c-m-map* "n" 'mc-mark-next)
+  (keymap-bind! *ctrl-c-m-map* "a" 'mc-mark-all)
+  (keymap-bind! *ctrl-c-m-map* "s" 'mc-skip-and-mark-next)
+  (keymap-bind! *ctrl-c-m-map* "l" 'mc-edit-lines)
+  (keymap-bind! *ctrl-c-m-map* "u" 'mc-unmark-last)
+  (keymap-bind! *ctrl-c-m-map* "r" 'mc-rotate))
 
 ;;;============================================================================
 ;;; Key-chord commands

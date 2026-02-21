@@ -20,6 +20,7 @@
   *ctrl-x-r-map*
   *ctrl-c-map*
   *ctrl-c-l-map*
+  *ctrl-c-m-map*
   *lsp-server-command*
   *meta-s-map*
   *ctrl-x-4-map*
@@ -174,6 +175,7 @@
 (def *ctrl-x-r-map* (make-keymap))
 (def *ctrl-c-map*   (make-keymap))
 (def *ctrl-c-l-map* (make-keymap))
+(def *ctrl-c-m-map* (make-keymap))
 (def *lsp-server-command* "gerbil-lsp")  ;; overridable via ~/.gemacs-init
 (def *meta-g-map*   (make-keymap))
 (def *help-map*     (make-keymap))
