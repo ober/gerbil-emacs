@@ -1835,4 +1835,117 @@
     (echo-message! echo (if *global-ob-http*
                           "Ob-http ON" "Ob-http OFF"))))
 
+;;;============================================================================
+;;; Parity: subword navigation, goto-last-change, file utilities
+
+(def (subword-boundary? text i direction)
+  "Check if position i is a subword boundary."
+  (let ((len (string-length text)))
+    (and (> i 0) (< i len)
+         (let ((prev (string-ref text (- i 1)))
+               (cur (string-ref text i)))
+           (or (and (= direction 1) (or (char=? cur #\_) (char=? cur #\-)))
+               (and (= direction -1) (or (char=? prev #\_) (char=? prev #\-)))
+               (and (char-lower-case? prev) (char-upper-case? cur))
+               (and (char-alphabetic? prev) (not (or (char-alphabetic? cur) (char-numeric? cur))))
+               (and (not (or (char-alphabetic? prev) (char-numeric? prev))) (char-alphabetic? cur)))))))
+
+(def (cmd-forward-subword app)
+  "Move forward by subword (camelCase/snake_case boundary)."
+  (let* ((ed (current-editor app))
+         (text (editor-get-text ed))
+         (pos (editor-get-current-pos ed))
+         (len (string-length text)))
+    (let loop ((i (+ pos 1)))
+      (cond
+        ((>= i len) (editor-goto-pos ed len))
+        ((subword-boundary? text i 1) (editor-goto-pos ed i))
+        (else (loop (+ i 1)))))))
+
+(def (cmd-backward-subword app)
+  "Move backward by subword (camelCase/snake_case boundary)."
+  (let* ((ed (current-editor app))
+         (text (editor-get-text ed))
+         (pos (editor-get-current-pos ed)))
+    (let loop ((i (- pos 1)))
+      (cond
+        ((<= i 0) (editor-goto-pos ed 0))
+        ((subword-boundary? text i -1) (editor-goto-pos ed i))
+        (else (loop (- i 1)))))))
+
+(def *tui-last-change-positions* (make-hash-table))
+
+(def (cmd-goto-last-change app)
+  "Jump to position of last edit in current buffer."
+  (let* ((buf (current-buffer-from-app app))
+         (ed (current-editor app))
+         (name (and buf (buffer-name buf)))
+         (pos (and name (hash-get *tui-last-change-positions* name))))
+    (if pos
+      (editor-goto-pos ed pos)
+      (echo-message! (app-state-echo app) "No recorded change position"))))
+
+(def (cmd-find-file-at-line app)
+  "Open a file and jump to a specific line (file:line format)."
+  (let ((input (app-read-string app "File:line: ")))
+    (when (and input (not (string-empty? input)))
+      (let* ((colon (let loop ((i 0))
+                      (cond ((>= i (string-length input)) #f)
+                            ((char=? (string-ref input i) #\:) i)
+                            (else (loop (+ i 1))))))
+             (file (if colon (substring input 0 colon) input))
+             (line (and colon (< (+ colon 1) (string-length input))
+                       (string->number (substring input (+ colon 1) (string-length input))))))
+        (when (file-exists? file)
+          (let* ((content (read-file-as-string file))
+                 (fr (app-state-frame app))
+                 (win (current-window fr))
+                 (ed (edit-window-editor win))
+                 (buf (buffer-create! (path-strip-directory file) ed file)))
+            (buffer-attach! ed buf)
+            (set! (edit-window-buffer win) buf)
+            (editor-set-text ed (or content ""))
+            (when (and line (> line 0))
+              (editor-goto-line ed (- line 1)))
+            (echo-message! (app-state-echo app) (string-append "Opened: " file))))))))
+
+(def (cmd-find-file-read-only app)
+  "Open a file in read-only mode."
+  (let ((path (app-read-string app "Find file read-only: ")))
+    (when (and path (not (string-empty? path)))
+      (if (not (file-exists? path))
+        (echo-error! (app-state-echo app) (string-append "File not found: " path))
+        (let* ((content (read-file-as-string path))
+               (fr (app-state-frame app))
+               (win (current-window fr))
+               (ed (edit-window-editor win))
+               (buf (buffer-create! (path-strip-directory path) ed path)))
+          (buffer-attach! ed buf)
+          (set! (edit-window-buffer win) buf)
+          (editor-set-text ed (or content ""))
+          (editor-set-read-only ed #t)
+          (echo-message! (app-state-echo app) (string-append "Read-only: " path)))))))
+
+(def (cmd-view-file app)
+  "Open a file in read-only view mode."
+  (cmd-find-file-read-only app))
+
+(def (cmd-append-to-file app)
+  "Append the selected region to a file."
+  (let* ((ed (current-editor app))
+         (text (editor-get-text ed))
+         (buf (current-buffer-from-app app))
+         (mark (and buf (buffer-mark buf))))
+    (if (not mark)
+      (echo-error! (app-state-echo app) "No region")
+      (let* ((pos (editor-get-current-pos ed))
+             (start (min mark pos))
+             (end (max mark pos))
+             (region (substring text start end))
+             (path (app-read-string app "Append to file: ")))
+        (when (and path (not (string-empty? path)))
+          (call-with-output-file [path: path append: #t]
+            (lambda (p) (display region p)))
+          (echo-message! (app-state-echo app)
+            (string-append "Appended " (number->string (- end start)) " chars to " path)))))))
 
