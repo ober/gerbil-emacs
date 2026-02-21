@@ -106,7 +106,8 @@
         :gemacs/qt/commands-lsp
         :gemacs/qt/commands-shell
         :gemacs/qt/commands-modes
-        :gemacs/qt/commands-config)
+        :gemacs/qt/commands-config
+        :gemacs/qt/commands-parity)
 
 ;;;============================================================================
 ;;; Cross-cutting functions (moved to facade due to forward references)
@@ -2196,6 +2197,36 @@
   (register-command! 'save-buffers-kill-emacs cmd-save-buffers-kill-emacs)
   (register-command! 'kill-compilation cmd-kill-compilation)
   (register-command! 'dired-refresh cmd-dired-refresh)
+  ;; Parity: new feature commands (from commands-parity.ss)
+  (register-command! 'dired-jump cmd-dired-jump)
+  (register-command! 'dired-up-directory cmd-dired-up-directory)
+  (register-command! 'dired-do-shell-command cmd-dired-do-shell-command)
+  (register-command! 'apropos cmd-apropos-emacs)
+  (register-command! 'indent-new-comment-line cmd-indent-new-comment-line)
+  (register-command! 'isearch-backward-regexp cmd-isearch-backward-regexp)
+  (register-command! 'replace-regexp cmd-replace-regexp)
+  (register-command! 'org-capture cmd-org-capture)
+  (register-command! 'org-refile cmd-org-refile)
+  (register-command! 'org-time-stamp cmd-org-time-stamp)
+  (register-command! 'org-insert-link cmd-org-insert-link)
+  (register-command! 'org-narrow-to-subtree cmd-org-narrow-to-subtree)
+  (register-command! 'org-sort cmd-org-sort)
+  (register-command! 'project-switch-to-buffer cmd-project-switch-to-buffer)
+  (register-command! 'project-kill-buffers cmd-project-kill-buffers)
+  (register-command! 'vc-next-action cmd-vc-next-action)
+  ;; Parity: canonical Emacs aliases
+  (register-command! 'electric-pair-mode cmd-toggle-electric-pair)
+  (register-command! 'visual-line-mode cmd-toggle-visual-line-mode)
+  (register-command! 'flyspell-mode cmd-toggle-flyspell)
+  (register-command! 'read-only-mode cmd-toggle-read-only)
+  (register-command! 'overwrite-mode cmd-toggle-overwrite-mode)
+  (register-command! 'hl-line-mode cmd-toggle-hl-line)
+  (register-command! 'whitespace-cleanup-mode cmd-whitespace-cleanup)
+  (register-command! 'line-number-mode cmd-display-line-numbers-mode)
+  (register-command! 'column-number-mode cmd-display-line-numbers-mode)
+  (register-command! 'comment-or-uncomment-region cmd-toggle-comment)
+  (register-command! 'isearch-forward cmd-search-forward)
+  (register-command! 'isearch-backward cmd-search-backward)
   )
 
 ;;;============================================================================

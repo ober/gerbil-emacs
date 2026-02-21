@@ -194,6 +194,7 @@
           (gxc: "qt/commands-shell"  "-cc-options" ,qt-cc-opts "-ld-options" ,qt-ld-opts)
           (gxc: "qt/commands-modes"  "-cc-options" ,qt-cc-opts "-ld-options" ,qt-ld-opts)
           (gxc: "qt/commands-config" "-cc-options" ,qt-cc-opts "-ld-options" ,qt-ld-opts)
+          (gxc: "qt/commands-parity" "-cc-options" ,qt-cc-opts "-ld-options" ,qt-ld-opts)
           (gxc: "qt/commands"        "-cc-options" ,qt-cc-opts "-ld-options" ,qt-ld-opts)
           (gxc: "qt/menubar"  "-cc-options" ,qt-cc-opts "-ld-options" ,qt-ld-opts)
           (gxc: "qt/app"      "-cc-options" ,qt-cc-opts "-ld-options" ,qt-ld-opts)
