@@ -1580,6 +1580,35 @@
   (register-command! 'calendar-mark-holidays cmd-calendar)
   (register-command! 'calendar-list-holidays cmd-calendar)
   (register-command! 'calendar-sunrise-sunset cmd-calendar)
+  ;; Batch 11: package/treesit/flymake/mc/helm aliases
+  ;; Package
+  (register-command! 'use-package cmd-package-install)
+  (register-command! 'package-autoremove cmd-package-delete)
+  (register-command! 'package-initialize cmd-package-refresh-contents)
+  ;; Treesitter/eglot
+  (register-command! 'treesit-explore-mode cmd-lsp-restart)
+  (register-command! 'treesit-inspect-node-at-point cmd-lsp-restart)
+  (register-command! 'eglot-ensure cmd-lsp-restart)
+  (register-command! 'eglot-shutdown cmd-lsp-restart)
+  (register-command! 'eglot-reconnect cmd-lsp-restart)
+  ;; Flymake → flycheck
+  (register-command! 'flymake-mode cmd-flycheck-mode)
+  (register-command! 'flymake-goto-next-error cmd-flycheck-next-error)
+  (register-command! 'flymake-goto-prev-error cmd-flycheck-previous-error)
+  (register-command! 'flymake-show-diagnostics-buffer cmd-flycheck-list-errors)
+  (register-command! 'flymake-show-project-diagnostics cmd-flycheck-list-errors)
+  ;; Multiple cursors
+  (register-command! 'mc/mark-next-like-this cmd-mc-mark-next)
+  (register-command! 'mc/mark-all-like-this cmd-mc-mark-all)
+  (register-command! 'mc/edit-lines cmd-mc-edit-lines)
+  ;; Expand region
+  (register-command! 'er/expand-region cmd-expand-region)
+  (register-command! 'er/contract-region cmd-contract-region)
+  ;; Avy/ace/swiper/helm
+  (register-command! 'avy-goto-word-1 cmd-avy-goto-char)
+  (register-command! 'ace-jump-mode cmd-avy-goto-char)
+  (register-command! 'swiper cmd-isearch-occur)
+  (register-command! 'helm-ag cmd-rgrep)
 )
 
 ;;;============================================================================

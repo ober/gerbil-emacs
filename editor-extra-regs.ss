@@ -784,6 +784,10 @@
   (register-command! 'ediff-merge-buffers cmd-ediff-buffers)
   (register-command! 'ediff-revision cmd-vc-diff-head)
   (register-command! 'emerge-buffers cmd-ediff-buffers)
+  ;; Batch 11: package/treesit/flymake/mc aliases
+  (register-command! 'customize-option cmd-customize-face)
+  (register-command! 'customize-save-customized cmd-customize-face)
+  (register-command! 'helm-projectile cmd-project-find-file)
 )
 
 ;;;============================================================================
