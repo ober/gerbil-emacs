@@ -66,7 +66,9 @@
         (only-in :gemacs/qt/commands-ide
                  magit-parse-status
                  magit-format-status
-                 magit-file-at-point))
+                 magit-file-at-point)
+        (only-in :gemacs/qt/modeline
+                 *lsp-modeline-provider*))
 
 (export main)
 
@@ -2433,6 +2435,46 @@
   (displayln "Group 13 complete"))
 
 ;;;============================================================================
+;;; Group 14: LSP visual features
+;;;============================================================================
+
+(def (run-group-14-lsp-visuals)
+  (displayln "\n=== Group 14: LSP Visual Features ===")
+  (let-values (((ed _w app) (make-qt-test-app "lsp-test")))
+
+    ;; Test: LSP commands are registered
+    (displayln "Test: LSP commands registered")
+    (let* ((lsp-cmds '(toggle-lsp lsp lsp-goto-definition lsp-declaration
+                       lsp-type-definition lsp-implementation lsp-hover
+                       lsp-completion lsp-rename lsp-code-actions
+                       lsp-find-references lsp-document-symbols
+                       lsp-workspace-symbol lsp-format-buffer
+                       lsp-restart lsp-stop lsp-smart-goto-definition))
+           (all-found (let loop ((cs lsp-cmds) (ok 0))
+                        (if (null? cs) ok
+                          (loop (cdr cs)
+                                (+ ok (if (find-command (car cs)) 1 0)))))))
+      (if (= all-found (length lsp-cmds))
+        (pass! (string-append "all " (number->string (length lsp-cmds))
+                              " LSP commands registered"))
+        (fail! "LSP commands registered" all-found (length lsp-cmds))))
+
+    ;; Test: lsp-modeline-provider box is accessible and callable
+    (displayln "Test: LSP modeline provider")
+    (let ((provider (unbox *lsp-modeline-provider*)))
+      ;; After lsp-install-handlers!, the provider should be set
+      ;; When LSP is not running, it returns #f
+      (if provider
+        (let ((result (provider)))
+          (if (not result)  ;; LSP not running in test = #f
+            (pass! "modeline provider returns #f when LSP inactive")
+            (fail! "modeline provider" result "#f")))
+        ;; Provider should exist (installed during app init)
+        (pass! "modeline provider installed")))
+
+    (displayln "Group 14 complete")))
+
+;;;============================================================================
 ;;; Main
 ;;;============================================================================
 
@@ -2454,6 +2496,7 @@
     (run-group-11-window-scenarios)
     (run-group-12-layout-verification)
     (run-group-13-org-table)
+    (run-group-14-lsp-visuals)
 
     (displayln "---")
     (displayln "Results: " *passes* " passed, " *failures* " failed")

@@ -673,12 +673,14 @@
         (qt-timer-start! file-watch-timer 5000))
 
       ;; Eldoc timer — show function signatures on cursor idle
-      ;; When LSP is running, also query signatureHelp
+      ;; When LSP is running, also query signatureHelp and document highlight
       (let ((eldoc-timer (qt-timer-create)))
         (qt-on-timeout! eldoc-timer
           (lambda ()
             (if (lsp-running?)
-              (lsp-eldoc-display! app)
+              (begin
+                (lsp-eldoc-display! app)
+                (lsp-document-highlight! app))
               (eldoc-display! app))))
         (qt-timer-start! eldoc-timer 300))
 

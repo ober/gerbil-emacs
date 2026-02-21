@@ -6,7 +6,8 @@
 
 (export qt-modeline-update!
         detect-eol-from-text
-        *buffer-eol-cache*)
+        *buffer-eol-cache*
+        *lsp-modeline-provider*)
 
 (import :std/sugar
         :gemacs/qt/sci-shim
@@ -112,6 +113,13 @@
   (or (hash-get *buffer-eol-cache* (buffer-name buf)) "LF"))
 
 ;;;============================================================================
+;;; LSP status provider (set by commands-lsp to avoid circular import)
+;;;============================================================================
+
+;; Box holding a thunk: (lambda () "LSP string") or #f
+(def *lsp-modeline-provider* (box #f))
+
+;;;============================================================================
 ;;; Modeline rendering
 ;;;============================================================================
 
@@ -148,6 +156,9 @@
          (eol (buffer-eol-indicator buf))
          ;; Git branch
          (branch (git-branch-for-file (buffer-file-path buf)))
+         ;; LSP status
+         (lsp-provider (unbox *lsp-modeline-provider*))
+         (lsp-str (if lsp-provider (lsp-provider) #f))
          ;; Build the modeline string
          (info (string-append
                  "-U:" state-str "-  "
@@ -158,5 +169,8 @@
                  "  (" mode " " eol ")"
                  (if branch
                    (string-append "  " branch)
+                   "")
+                 (if lsp-str
+                   (string-append "  " lsp-str)
                    ""))))
     (qt-main-window-set-status-bar-text! (qt-frame-main-win fr) info)))

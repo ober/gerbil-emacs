@@ -48,6 +48,30 @@
 (def INDIC_ROUNDBOX  7)
 
 ;;;============================================================================
+;;; Margin marker IDs for diagnostic gutter icons
+;;;============================================================================
+
+;; Marker numbers 0-7 are used by folding. We use 8-11 for diagnostics.
+(def *marker-lsp-error*   8)
+(def *marker-lsp-warning* 9)
+(def *marker-lsp-info*    10)
+(def *marker-lsp-hint*    11)
+
+;; Scintilla message constants for markers
+(def SCI_MARKERDEFINE    2040)
+(def SCI_MARKERSETFORE   2041)
+(def SCI_MARKERSETBACK   2042)
+(def SCI_MARKERADD       2043)
+(def SCI_MARKERDELETEALL 2045)
+(def SCI_SETMARGINWIDTHN 2242)
+(def SCI_SETMARGINTYPEN  2240)
+(def SCI_SETMARGINMASKN  2244)
+;; SC_MARK_CIRCLE = 0, SC_MARK_LEFTRECT = 27
+(def SC_MARK_CIRCLE      0)
+(def SC_MARK_LEFTRECT    27)
+(def SC_MARGIN_SYMBOL    0)
+
+;;;============================================================================
 ;;; Auto-start
 ;;;============================================================================
 
@@ -87,6 +111,47 @@
       path)))
 
 ;;;============================================================================
+;;; Diagnostic margin setup (gutter markers)
+;;;============================================================================
+
+(def (lsp-setup-diagnostic-margin! ed)
+  "Configure margin 1 as a symbol margin for diagnostic markers."
+  ;; Margin 1: symbol margin for diagnostic markers
+  (sci-send ed SCI_SETMARGINTYPEN 1 SC_MARGIN_SYMBOL)
+  (sci-send ed SCI_SETMARGINWIDTHN 1 16)
+  ;; Mask: allow only our diagnostic markers (bits 8-11)
+  (sci-send ed SCI_SETMARGINMASKN 1
+    (+ (arithmetic-shift 1 *marker-lsp-error*)
+       (arithmetic-shift 1 *marker-lsp-warning*)
+       (arithmetic-shift 1 *marker-lsp-info*)
+       (arithmetic-shift 1 *marker-lsp-hint*)))
+  ;; Define marker styles: colored left rectangles
+  ;; Error: red left bar
+  (sci-send ed SCI_MARKERDEFINE *marker-lsp-error* SC_MARK_LEFTRECT)
+  (sci-send ed SCI_MARKERSETFORE *marker-lsp-error* (rgb->sci 255 60 60))
+  (sci-send ed SCI_MARKERSETBACK *marker-lsp-error* (rgb->sci 255 60 60))
+  ;; Warning: yellow left bar
+  (sci-send ed SCI_MARKERDEFINE *marker-lsp-warning* SC_MARK_LEFTRECT)
+  (sci-send ed SCI_MARKERSETFORE *marker-lsp-warning* (rgb->sci 255 200 0))
+  (sci-send ed SCI_MARKERSETBACK *marker-lsp-warning* (rgb->sci 255 200 0))
+  ;; Info: blue left bar
+  (sci-send ed SCI_MARKERDEFINE *marker-lsp-info* SC_MARK_LEFTRECT)
+  (sci-send ed SCI_MARKERSETFORE *marker-lsp-info* (rgb->sci 100 150 255))
+  (sci-send ed SCI_MARKERSETBACK *marker-lsp-info* (rgb->sci 100 150 255))
+  ;; Hint: grey left bar
+  (sci-send ed SCI_MARKERDEFINE *marker-lsp-hint* SC_MARK_LEFTRECT)
+  (sci-send ed SCI_MARKERSETFORE *marker-lsp-hint* (rgb->sci 150 150 150))
+  (sci-send ed SCI_MARKERSETBACK *marker-lsp-hint* (rgb->sci 150 150 150)))
+
+(def *lsp-margin-setup-done* (make-hash-table)) ;; ed -> #t
+
+(def (lsp-ensure-diagnostic-margin! ed)
+  "Ensure diagnostic margin is set up for this editor (idempotent)."
+  (unless (hash-get *lsp-margin-setup-done* ed)
+    (lsp-setup-diagnostic-margin! ed)
+    (hash-put! *lsp-margin-setup-done* ed #t)))
+
+;;;============================================================================
 ;;; Diagnostics handler (installed into lsp-client callbacks)
 ;;;============================================================================
 
@@ -121,7 +186,29 @@
                                  (or (read-file-as-string path) ""))))
                     (lsp-record-sent-content! uri text)
                     (lsp-did-open! uri lang-id text))))))
-          *buffer-list*)))))
+          *buffer-list*))))
+  ;; Install LSP modeline provider
+  (set-box! *lsp-modeline-provider*
+    (lambda ()
+      (if (lsp-running?)
+        (let ((errors 0) (warnings 0))
+          (hash-for-each
+            (lambda (uri diags)
+              (for-each
+                (lambda (d)
+                  (when (hash-table? d)
+                    (let ((sev (or (hash-get d "severity") 1)))
+                      (cond ((= sev 1) (set! errors (+ errors 1)))
+                            ((= sev 2) (set! warnings (+ warnings 1)))))))
+                diags))
+            *lsp-diagnostics*)
+          (string-append "[LSP"
+            (if (or (> errors 0) (> warnings 0))
+              (string-append " E:" (number->string errors)
+                             " W:" (number->string warnings))
+              "")
+            "]"))
+        #f))))
 
 (def (lsp-handle-diagnostics! app uri diags)
   "Handle publishDiagnostics — update indicators and compilation error list."
@@ -129,7 +216,7 @@
   (lsp-update-compilation-errors!))
 
 (def (lsp-apply-diagnostics-indicators! app uri diags)
-  "Apply Scintilla squiggly underline indicators for diagnostics."
+  "Apply Scintilla squiggly underline indicators and margin markers for diagnostics."
   (let* ((file-path (uri->file-path uri))
          (ed (current-qt-editor app))
          (buf (current-qt-buffer app))
@@ -138,6 +225,8 @@
     (when (and buf-path file-path
                (string=? (path-expand buf-path) (path-expand file-path)))
       (let ((sci ed))
+        ;; Ensure diagnostic margin is configured
+        (lsp-ensure-diagnostic-margin! sci)
         ;; Clear previous LSP indicators
         (for-each
           (lambda (indic)
@@ -146,7 +235,12 @@
               (sci-send sci SCI_GETLENGTH)))
           (list *indic-lsp-error* *indic-lsp-warning*
                 *indic-lsp-info* *indic-lsp-hint*))
-        ;; Apply new indicators
+        ;; Clear previous margin markers
+        (sci-send sci SCI_MARKERDELETEALL *marker-lsp-error*)
+        (sci-send sci SCI_MARKERDELETEALL *marker-lsp-warning*)
+        (sci-send sci SCI_MARKERDELETEALL *marker-lsp-info*)
+        (sci-send sci SCI_MARKERDELETEALL *marker-lsp-hint*)
+        ;; Apply new indicators and margin markers
         (for-each
           (lambda (diag)
             (when (hash-table? diag)
@@ -157,11 +251,19 @@
                               ((2) *indic-lsp-warning*)
                               ((3) *indic-lsp-info*)
                               ((4) *indic-lsp-hint*)
-                              (else *indic-lsp-info*))))
+                              (else *indic-lsp-info*)))
+                     (marker (case severity
+                               ((1) *marker-lsp-error*)
+                               ((2) *marker-lsp-warning*)
+                               ((3) *marker-lsp-info*)
+                               ((4) *marker-lsp-hint*)
+                               (else *marker-lsp-info*))))
                 (when (and range (hash-table? range))
                   (let* ((start-pos (lsp-range-start->pos sci range))
                          (end-pos (lsp-range-end->pos sci range))
-                         (len (max 1 (- end-pos start-pos))))
+                         (len (max 1 (- end-pos start-pos)))
+                         (start-obj (hash-get range "start"))
+                         (line (and start-obj (hash-get start-obj "line"))))
                     ;; Configure indicator style
                     (sci-send sci SCI_INDICSETSTYLE indic
                       (if (or (= severity 1) (= severity 2))
@@ -174,7 +276,10 @@
                         ((4) (rgb->sci 150 150 150)) ;; grey
                         (else (rgb->sci 100 150 255))))
                     (sci-send sci SCI_SETINDICATORCURRENT indic)
-                    (sci-send sci SCI_INDICATORFILLRANGE start-pos len))))))
+                    (sci-send sci SCI_INDICATORFILLRANGE start-pos len)
+                    ;; Add margin marker on the diagnostic line
+                    (when line
+                      (sci-send sci SCI_MARKERADD line marker)))))))
           diags)))))
 
 (def (lsp-range-start->pos sci range)
