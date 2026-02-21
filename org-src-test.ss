@@ -8,13 +8,24 @@
 
 (import :std/test
         :std/srfi/13
+        :std/misc/string
         (only-in :gemacs/org-parse
                  org-block-begin? org-parse-buffer)
-        (only-in :gemacs/org-babel
-                 org-babel-parse-begin-line org-babel-find-src-block
-                 org-babel-inside-src-block?))
+        (rename-in (only-in :gemacs/org-babel
+                            org-babel-parse-begin-line org-babel-find-src-block
+                            org-babel-inside-src-block?)
+                   (org-babel-find-src-block org-babel-find-src-block-real)
+                   (org-babel-inside-src-block? org-babel-inside-src-block?-real)))
 
 (export org-src-test)
+
+;; Adapter: tests pass text (string) but real function takes lines (list).
+;; Tests use 1-based line numbers, but function uses 0-based list indices.
+(def (org-babel-find-src-block text line-num)
+  (org-babel-find-src-block-real (string-split text #\newline) (- line-num 1)))
+
+(def (org-babel-inside-src-block? text line-num)
+  (org-babel-inside-src-block?-real (string-split text #\newline) (- line-num 1)))
 
 (def org-src-test
   (test-suite "org-src"

@@ -11,9 +11,19 @@
         :std/srfi/13
         (only-in :gemacs/org-parse
                  org-parse-buffer org-parse-heading-line
-                 org-heading-stars))
+                 org-heading-stars make-org-heading))
 
 (export org-fold-test)
+
+;; Adapter: org-parse-heading-line returns (values ...), wrap into struct.
+(def (org-parse-heading-line-adapter line)
+  (let-values (((level keyword priority title tags) (org-parse-heading-line line)))
+    (if (not level)
+      #f
+      (make-org-heading level keyword
+                        (and priority (string (char-upcase priority)))
+                        title tags
+                        #f #f #f #f '() 0 #f))))
 
 (def org-fold-test
   (test-suite "org-fold"
@@ -41,7 +51,7 @@
         ;; Should have 2 top-level headings
         (check (not (null? headings)) => #t)
         ;; First heading should be level 1
-        (let ((h1 (org-parse-heading-line "* Heading 1")))
+        (let ((h1 (org-parse-heading-line-adapter "* Heading 1")))
           (check (org-heading-stars h1) => 1))))
 
     (test-case "fold: heading hierarchy for contents mode"

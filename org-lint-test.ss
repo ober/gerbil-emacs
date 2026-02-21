@@ -10,7 +10,19 @@
         :std/srfi/13
         (only-in :gemacs/org-parse
                  org-parse-buffer org-parse-heading-line
-                 org-keyword-line? org-block-begin?))
+                 org-keyword-line? org-block-begin?
+                 make-org-heading))
+
+;; Adapter: org-parse-heading-line returns (values level keyword priority title tags),
+;; but tests use it as a single truthy value. Wrap into struct.
+(def (org-parse-heading-line-adapter line)
+  (let-values (((level keyword priority title tags) (org-parse-heading-line line)))
+    (if (not level)
+      #f
+      (make-org-heading level keyword
+                        (and priority (string (char-upcase priority)))
+                        title tags
+                        #f #f #f #f '() 0 #f))))
 
 (export org-lint-test)
 
@@ -166,8 +178,8 @@
     ;; =========================================================
 
     (test-case "lint: recognized TODO keywords"
-      (let ((todo (org-parse-heading-line "* TODO Task"))
-            (done (org-parse-heading-line "* DONE Finished")))
+      (let ((todo (org-parse-heading-line-adapter "* TODO Task"))
+            (done (org-parse-heading-line-adapter "* DONE Finished")))
         (check (not (not todo)) => #t)
         (check (not (not done)) => #t)))
 

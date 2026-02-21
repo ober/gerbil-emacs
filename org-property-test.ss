@@ -12,9 +12,19 @@
 (export org-property-test)
 
 ;; Adapter: tests call (org-parse-properties lines) with 1 arg,
-;; but actual function takes (lines start-idx).
+;; but actual function takes (lines start-idx). Convert hash→alist.
 (def (org-parse-properties lines)
-  (org-parse-properties-raw lines 0))
+  (hash->list (org-parse-properties-raw lines 0)))
+
+;; Adapter: org-parse-heading-line returns (values ...), wrap into struct.
+(def (org-parse-heading-line-adapter line)
+  (let-values (((level keyword priority title tags) (org-parse-heading-line line)))
+    (if (not level)
+      #f
+      (make-org-heading level keyword
+                        (and priority (string (char-upcase priority)))
+                        title tags
+                        #f #f #f #f '() 0 #f))))
 
 (def org-property-test
   (test-suite "org-property"
@@ -156,7 +166,7 @@
     ;; ITEM, TODO, PRIORITY, TAGS, DEADLINE, SCHEDULED, etc.
 
     (test-case "property: heading with all components"
-      (let ((h (org-parse-heading-line
+      (let ((h (org-parse-heading-line-adapter
                 "** TODO [#A] My Task :work:urgent:")))
         ;; The "special properties" are the heading components
         (check (not (not h)) => #t)))

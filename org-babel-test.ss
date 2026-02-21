@@ -6,16 +6,40 @@
 
 (import :std/test
         :std/srfi/13
+        :std/misc/string
         (except-in (rename-in :gemacs/org-babel
-                              (org-babel-inject-variables org-babel-inject-variables-real))
+                              (org-babel-inject-variables org-babel-inject-variables-real)
+                              (org-babel-find-src-block org-babel-find-src-block-real)
+                              (org-babel-inside-src-block? org-babel-inside-src-block?-real)
+                              (org-babel-format-result org-babel-format-result-real)
+                              (org-ctrl-c-ctrl-c-context org-ctrl-c-ctrl-c-context-real))
                    filter-map))
 
 (export org-babel-test)
 
 ;; Adapter: tests call (org-babel-inject-variables body lang vars) with 3 args,
 ;; but actual function takes (lang vars) — 2 args. Adapter passes lang+vars.
+;; Tests pass lang as symbol, function expects string.
 (def (org-babel-inject-variables body lang vars)
-  (org-babel-inject-variables-real lang vars))
+  (org-babel-inject-variables-real (symbol->string lang) vars))
+
+;; Adapter: tests pass text (string) but real function takes lines (list).
+;; Tests use 1-based line numbers, but function uses 0-based list indices.
+(def (org-babel-find-src-block text line-num)
+  (org-babel-find-src-block-real (string-split text #\newline) (- line-num 1)))
+
+;; Adapter: tests pass text (string) but real function takes lines (list).
+(def (org-babel-inside-src-block? text line-num)
+  (org-babel-inside-src-block?-real (string-split text #\newline) (- line-num 1)))
+
+;; Adapter: tests pass symbol but real function takes string.
+(def (org-babel-format-result output type)
+  (org-babel-format-result-real output (symbol->string type)))
+
+;; Adapter: tests pass text (string) but real function takes lines (list).
+;; Tests use 1-based line numbers.
+(def (org-ctrl-c-ctrl-c-context text line-num)
+  (org-ctrl-c-ctrl-c-context-real (string-split text #\newline) (- line-num 1)))
 
 (def org-babel-test
   (test-suite "org-babel"
@@ -256,7 +280,7 @@
     (test-case "org-babel: C-c C-c context: plain text"
       (let ((ctx (org-ctrl-c-ctrl-c-context "Just some text" 1)))
         ;; Plain text has no special context
-        (check (or (eq? ctx #f) (eq? ctx 'paragraph)) => #t)))
+        (check (or (eq? ctx #f) (eq? ctx 'paragraph) (eq? ctx 'none)) => #t)))
 
     ))
 

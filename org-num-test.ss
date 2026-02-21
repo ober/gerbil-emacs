@@ -8,9 +8,19 @@
         (only-in :gemacs/org-parse
                  org-parse-buffer org-parse-heading-line
                  org-heading-stars org-heading-keyword
-                 org-heading-tags))
+                 org-heading-tags make-org-heading))
 
 (export org-num-test)
+
+;; Adapter: org-parse-heading-line returns (values ...), wrap into struct.
+(def (org-parse-heading-line-adapter line)
+  (let-values (((level keyword priority title tags) (org-parse-heading-line line)))
+    (if (not level)
+      #f
+      (make-org-heading level keyword
+                        (and priority (string (char-upcase priority)))
+                        title tags
+                        #f #f #f #f '() 0 #f))))
 
 (def org-num-test
   (test-suite "org-num"
@@ -25,7 +35,7 @@
 
     (test-case "num: single heading gets 1"
       ;; "* H1" → number "1 "
-      (let ((h (org-parse-heading-line "* H1")))
+      (let ((h (org-parse-heading-line-adapter "* H1")))
         (check (org-heading-stars h) => 1)))
 
     (test-case "num: two headings get 1, 2"
@@ -53,7 +63,7 @@
              (headings (org-parse-buffer text)))
         ;; H3 is level 3, would be skipped with max-level=2
         (check (>= (length headings) 1) => #t)
-        (let ((h3 (org-parse-heading-line "*** H3")))
+        (let ((h3 (org-parse-heading-line-adapter "*** H3")))
           (check (org-heading-stars h3) => 3))))
 
     ;; =========================================================
@@ -65,7 +75,7 @@
     ;; unnumbered (and their subtrees).
 
     (test-case "num: COMMENT heading detection"
-      (let ((h (org-parse-heading-line "* COMMENT H2")))
+      (let ((h (org-parse-heading-line-adapter "* COMMENT H2")))
         ;; COMMENT may be parsed as keyword or as part of title
         (check (not (not h)) => #t)))
 
@@ -84,7 +94,7 @@
     ;; and their subtrees are unnumbered.
 
     (test-case "num: tagged heading detection"
-      (let ((h (org-parse-heading-line "* H2 :foo:")))
+      (let ((h (org-parse-heading-line-adapter "* H2 :foo:")))
         (check (org-heading-tags h) => '("foo"))))
 
     (test-case "num: tagged subtree"
@@ -141,7 +151,7 @@
 
     (test-case "num: empty headline"
       ;; "* " (heading with no title) should still be numbered
-      (let ((h (org-parse-heading-line "* ")))
+      (let ((h (org-parse-heading-line-adapter "* ")))
         (check (not (not h)) => #t)
         (check (org-heading-stars h) => 1)))
 
@@ -158,8 +168,8 @@
 
     (test-case "num: heading level change affects numbering"
       ;; Changing "* H" to "** H" should renumber
-      (let ((h1 (org-parse-heading-line "* H"))
-            (h2 (org-parse-heading-line "** H")))
+      (let ((h1 (org-parse-heading-line-adapter "* H"))
+            (h2 (org-parse-heading-line-adapter "** H")))
         (check (org-heading-stars h1) => 1)
         (check (org-heading-stars h2) => 2)))
 

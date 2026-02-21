@@ -5,10 +5,17 @@
 
 (import :std/test
         :std/srfi/13
-        (only-in :gemacs/org-list
-                 org-list-item? org-meta-return
-                 org-cycle-list-bullet org-count-leading-spaces
-                 org-update-checkbox-statistics!))
+        (rename-in (only-in :gemacs/org-list
+                            org-list-item? org-meta-return
+                            org-cycle-list-bullet org-count-leading-spaces
+                            org-update-checkbox-statistics!)
+                   (org-list-item? org-list-item?-raw)))
+
+;; Adapter: org-list-item? returns (values type indent marker),
+;; but tests only check the type. Return just the first value.
+(def (org-list-item? line)
+  (let-values (((type indent marker) (org-list-item?-raw line)))
+    type))
 
 (export org-list-test)
 

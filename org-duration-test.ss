@@ -9,8 +9,15 @@
 (import :std/test
         :std/srfi/13
         (except-in (rename-in :gemacs/org-parse
-                              (org-timestamp-elapsed org-timestamp-elapsed-real))
+                              (org-timestamp-elapsed org-timestamp-elapsed-real)
+                              (org-parse-clock-line org-parse-clock-line-raw))
                    string-prefix-ci?))
+
+;; Adapter: org-parse-clock-line returns (values start-ts end-ts dur-string),
+;; but tests just check truthiness. Return first value only.
+(def (org-parse-clock-line line)
+  (let-values (((start end dur) (org-parse-clock-line-raw line)))
+    start))
 
 (export org-duration-test)
 

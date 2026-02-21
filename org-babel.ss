@@ -363,7 +363,7 @@
                 (loop (+ i 1) result)
                 (let* ((hargs (cdr parsed))
                        (tangle-file (hash-get hargs "tangle")))
-                  (if (not tangle-file)
+                  (if (or (not tangle-file) (string=? tangle-file "no"))
                     (loop (+ i 1) result)
                     ;; Extract body
                     (let body-loop ((j (+ i 1)) (acc '()))

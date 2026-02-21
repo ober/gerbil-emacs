@@ -35,20 +35,20 @@ Handles *bold*, /italic/, _underline_, =verbatim=, ~code~, [[link][desc]]."
                 ((markdown) "<\\1>")
                 ((latex)    "\\\\url{\\1}")
                 (else       "\\1"))))
-         ;; Bold *text*
-         (s (pregexp-replace* "(?<=[\\s(]|^)\\*([^*]+)\\*(?=[\\s,.)!?]|$)" s
+         ;; Bold *text* — use capturing group instead of lookbehind (unsupported by :std/pregexp)
+         (s (pregexp-replace* "(^|[\\s(])\\*([^*]+)\\*(?=[\\s,.)!?]|$)" s
               (case backend
-                ((html)     "<b>\\1</b>")
-                ((markdown) "**\\1**")
-                ((latex)    "\\\\textbf{\\1}")
-                (else       "\\1"))))
+                ((html)     "\\1<b>\\2</b>")
+                ((markdown) "\\1**\\2**")
+                ((latex)    "\\1\\\\textbf{\\2}")
+                (else       "\\1\\2"))))
          ;; Italic /text/
-         (s (pregexp-replace* "(?<=[\\s(]|^)/([^/]+)/(?=[\\s,.)!?]|$)" s
+         (s (pregexp-replace* "(^|[\\s(])/([^/]+)/(?=[\\s,.)!?]|$)" s
               (case backend
-                ((html)     "<i>\\1</i>")
-                ((markdown) "*\\1*")
-                ((latex)    "\\\\textit{\\1}")
-                (else       "\\1"))))
+                ((html)     "\\1<i>\\2</i>")
+                ((markdown) "\\1*\\2*")
+                ((latex)    "\\1\\\\textit{\\2}")
+                (else       "\\1\\2"))))
          ;; Code ~text~
          (s (pregexp-replace* "~([^~]+)~" s
               (case backend
@@ -64,12 +64,19 @@ Handles *bold*, /italic/, _underline_, =verbatim=, ~code~, [[link][desc]]."
                 ((latex)    "\\\\verb|\\1|")
                 (else       "\\1"))))
          ;; Underline _text_ (only HTML supports this natively)
-         (s (pregexp-replace* "(?<=[\\s(]|^)_([^_]+)_(?=[\\s,.)!?]|$)" s
+         (s (pregexp-replace* "(^|[\\s(])_([^_]+)_(?=[\\s,.)!?]|$)" s
               (case backend
-                ((html)     "<u>\\1</u>")
-                ((markdown) "\\1")
-                ((latex)    "\\\\underline{\\1}")
-                (else       "\\1")))))
+                ((html)     "\\1<u>\\2</u>")
+                ((markdown) "\\1\\2")
+                ((latex)    "\\1\\\\underline{\\2}")
+                (else       "\\1\\2"))))
+         ;; Strikethrough +text+
+         (s (pregexp-replace* "(^|[\\s(])\\+([^+]+)\\+(?=[\\s,.)!?]|$)" s
+              (case backend
+                ((html)     "\\1<del>\\2</del>")
+                ((markdown) "\\1~~\\2~~")
+                ((latex)    "\\1\\\\sout{\\2}")
+                (else       "\\1\\2")))))
     s))
 
 ;;;============================================================================

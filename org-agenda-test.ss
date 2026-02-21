@@ -5,14 +5,14 @@
 
 (import :std/test
         :std/srfi/13
-        :std/format
         (except-in (rename-in :gemacs/org-agenda
                               (org-collect-agenda-items org-collect-agenda-items-real)
                               (make-org-agenda-item make-org-agenda-item-real)
                               (org-agenda-todo-list org-agenda-todo-list-real)
                               (org-agenda-tags-match org-agenda-tags-match-real)
                               (org-agenda-search org-agenda-search-real))
-                   string-downcase list-index))
+                   string-downcase list-index)
+        (only-in :gemacs/org-parse make-org-heading org-heading-title))
 
 (export org-agenda-test)
 
@@ -20,9 +20,13 @@
 (def (org-collect-agenda-items text date-from date-to)
   (org-collect-agenda-items-real text "" date-from date-to))
 
-(def (make-org-agenda-item heading type date hour minute)
-  (make-org-agenda-item-real heading type date
-                             (format "~2,'0d:~2,'0d" hour minute) "" 0))
+(def (zero-pad-2 n)
+  (if (< n 10) (string-append "0" (number->string n)) (number->string n)))
+
+(def (make-org-agenda-item heading-title type date hour minute)
+  (let ((h (make-org-heading 1 #f #f heading-title '() #f #f #f #f '() 0 #f)))
+    (make-org-agenda-item-real h type date
+                               (string-append (zero-pad-2 hour) ":" (zero-pad-2 minute)) "" 0)))
 
 (def (org-agenda-todo-list text)
   (org-agenda-todo-list-real text ""))
@@ -172,7 +176,7 @@
                       (org-make-date-ts 2024 1 15) 17 0))
              (sorted (org-agenda-sort-items (list item2 item1))))
         ;; 09:00 should come before 17:00
-        (check (equal? (org-agenda-item-heading (car sorted)) "Task 1") => #t)))
+        (check (equal? (org-heading-title (org-agenda-item-heading (car sorted))) "Task 1") => #t)))
 
     ;; =========================================================
     ;; TODO list
@@ -217,7 +221,7 @@
                     "* Task A :work:\n"
                     "* Task B :home:\n"))
              (results (org-agenda-tags-match text "nonexistent")))
-        (check (not (not (string-contains results "No matching"))) => #t)))
+        (check (not (not (string-contains results "No matches"))) => #t)))
 
     ;; =========================================================
     ;; Text search
@@ -237,7 +241,7 @@
     (test-case "org-agenda: text search no matches"
       (let* ((text "* Task A\n* Task B\n")
              (results (org-agenda-search text "nonexistent")))
-        (check (not (not (string-contains results "No matching"))) => #t)))
+        (check (not (not (string-contains results "No matches"))) => #t)))
 
     ;; =========================================================
     ;; Agenda item formatting

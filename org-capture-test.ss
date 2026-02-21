@@ -13,8 +13,9 @@
 
 ;; Adapter: tests call (org-capture-start) with 0 args,
 ;; but actual function takes (template-key source-file source-path) — 3 args.
+;; Use "t" (valid template key) instead of "" (which finds no template and returns #f).
 (def (org-capture-start)
-  (org-capture-start-real "" "" ""))
+  (org-capture-start-real "t" "" ""))
 
 (def org-capture-test
   (test-suite "org-capture"
@@ -82,9 +83,9 @@
         (check (= pos 0) => #t)))
 
     (test-case "org-capture: cursor position no marker"
-      ;; When no %? is present, position is typically at end or 0
+      ;; When no %? is present, returns #f
       (let ((pos (org-capture-cursor-position "No cursor marker")))
-        (check (number? pos) => #t)))
+        (check pos => #f)))
 
     ;; =========================================================
     ;; Capture menu
@@ -94,8 +95,8 @@
     (test-case "org-capture: menu string contains keys and descriptions"
       (let ((saved *org-capture-templates*))
         (set! *org-capture-templates*
-              '(("t" "TODO" entry "* TODO %?\n  %U")
-                ("n" "Note" entry "* %?\n  %U")))
+              (list (make-org-capture-template "t" "TODO" 'entry '(file "test.org") "* TODO %?\n  %U")
+                    (make-org-capture-template "n" "Note" 'entry '(file "test.org") "* %?\n  %U")))
         (let ((menu (org-capture-menu-string)))
           (check (not (not (string-contains menu "[t]"))) => #t)
           (check (not (not (string-contains menu "TODO"))) => #t)

@@ -6,15 +6,32 @@
 (import :std/test
         :std/srfi/13
         (except-in (rename-in :gemacs/org-parse
-                              (org-parse-properties org-parse-properties-raw))
+                              (org-parse-properties org-parse-properties-raw)
+                              (org-heading-stars-of-line org-heading-stars-of-line-raw))
                    string-prefix-ci?))
 
 (export org-element-test)
 
 ;; Adapter: tests call (org-parse-properties lines) with 1 arg,
-;; but actual function takes (lines start-idx).
+;; but actual function takes (lines start-idx). Convert hash→alist.
 (def (org-parse-properties lines)
-  (org-parse-properties-raw lines 0))
+  (hash->list (org-parse-properties-raw lines 0)))
+
+;; Adapter: org-parse-heading-line returns (values level keyword priority title tags),
+;; but tests use struct accessors. Wrap into an org-heading struct.
+(def (org-parse-heading-line-adapter line)
+  (let-values (((level keyword priority title tags) (org-parse-heading-line line)))
+    (if (not level)
+      #f
+      (make-org-heading level keyword
+                        (and priority (string (char-upcase priority)))
+                        title tags
+                        #f #f #f #f '() 0 #f))))
+
+;; Adapter: org-heading-stars-of-line returns 0 for non-headings, tests expect #f
+(def (org-heading-stars-of-line line)
+  (let ((n (org-heading-stars-of-line-raw line)))
+    (if (= n 0) #f n)))
 
 (def org-element-test
   (test-suite "org-element"
@@ -26,29 +43,29 @@
 
     (test-case "heading element: level detection"
       ;; org-element parsing of headlines at various levels
-      (let ((h1 (org-parse-heading-line "* Level 1"))
-            (h2 (org-parse-heading-line "** Level 2"))
-            (h3 (org-parse-heading-line "*** Level 3"))
-            (h4 (org-parse-heading-line "**** Level 4")))
+      (let ((h1 (org-parse-heading-line-adapter "* Level 1"))
+            (h2 (org-parse-heading-line-adapter "** Level 2"))
+            (h3 (org-parse-heading-line-adapter "*** Level 3"))
+            (h4 (org-parse-heading-line-adapter "**** Level 4")))
         (check (org-heading-stars h1) => 1)
         (check (org-heading-stars h2) => 2)
         (check (org-heading-stars h3) => 3)
         (check (org-heading-stars h4) => 4)))
 
     (test-case "heading element: TODO keyword detection"
-      (let ((todo (org-parse-heading-line "* TODO Task"))
-            (done (org-parse-heading-line "* DONE Finished"))
-            (none (org-parse-heading-line "* Plain heading")))
+      (let ((todo (org-parse-heading-line-adapter "* TODO Task"))
+            (done (org-parse-heading-line-adapter "* DONE Finished"))
+            (none (org-parse-heading-line-adapter "* Plain heading")))
         (check (org-heading-keyword todo) => "TODO")
         (check (org-heading-keyword done) => "DONE")
         (check (org-heading-keyword none) => #f)))
 
     (test-case "heading element: priority extraction"
       ;; From test-org-element.el parser tests for headlines
-      (let ((pri-a (org-parse-heading-line "* [#A] High priority"))
-            (pri-b (org-parse-heading-line "* [#B] Medium priority"))
-            (pri-c (org-parse-heading-line "* [#C] Low priority"))
-            (no-pri (org-parse-heading-line "* No priority")))
+      (let ((pri-a (org-parse-heading-line-adapter "* [#A] High priority"))
+            (pri-b (org-parse-heading-line-adapter "* [#B] Medium priority"))
+            (pri-c (org-parse-heading-line-adapter "* [#C] Low priority"))
+            (no-pri (org-parse-heading-line-adapter "* No priority")))
         (check (org-heading-priority pri-a) => "A")
         (check (org-heading-priority pri-b) => "B")
         (check (org-heading-priority pri-c) => "C")
@@ -56,15 +73,15 @@
 
     (test-case "heading element: tag extraction"
       ;; From test-org-element.el parser tests for headlines
-      (let ((tagged (org-parse-heading-line "* Task :work:urgent:"))
-            (multi (org-parse-heading-line "* Project :a:b:c:d:e:"))
-            (none (org-parse-heading-line "* No tags")))
+      (let ((tagged (org-parse-heading-line-adapter "* Task :work:urgent:"))
+            (multi (org-parse-heading-line-adapter "* Project :a:b:c:d:e:"))
+            (none (org-parse-heading-line-adapter "* No tags")))
         (check (org-heading-tags tagged) => '("work" "urgent"))
         (check (length (org-heading-tags multi)) => 5)
         (check (org-heading-tags none) => '())))
 
     (test-case "heading element: title extraction"
-      (let ((h (org-parse-heading-line "** TODO [#A] Complex Title :tag1:tag2:")))
+      (let ((h (org-parse-heading-line-adapter "** TODO [#A] Complex Title :tag1:tag2:")))
         (check (org-heading-title h) => "Complex Title")))
 
     ;; =========================================================

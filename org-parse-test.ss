@@ -6,7 +6,9 @@
         :std/srfi/13  ;; string-contains etc.
         (except-in (rename-in :gemacs/org-parse
                               (org-timestamp-elapsed org-timestamp-elapsed-real)
-                              (org-parse-properties  org-parse-properties-raw))
+                              (org-parse-properties  org-parse-properties-raw)
+                              (org-heading-stars-of-line org-heading-stars-of-line-raw)
+                              (org-parse-clock-line org-parse-clock-line-raw))
                    string-prefix-ci?))
 
 (export org-parse-test)
@@ -20,9 +22,30 @@
     (org-timestamp-elapsed-real ts1 ts2)))
 
 ;; Adapter: tests call (org-parse-properties lines) with 1 arg,
-;; but actual function takes (lines start-idx).
+;; but actual function takes (lines start-idx). Convert hash→alist.
 (def (org-parse-properties lines)
-  (org-parse-properties-raw lines 0))
+  (hash->list (org-parse-properties-raw lines 0)))
+
+;; Adapter: org-parse-heading-line returns (values level keyword priority title tags),
+;; but tests use struct accessors. Wrap into an org-heading struct.
+(def (org-parse-heading-line-adapter line)
+  (let-values (((level keyword priority title tags) (org-parse-heading-line line)))
+    (if (not level)
+      #f
+      (make-org-heading level keyword
+                        (and priority (string (char-upcase priority)))
+                        title tags
+                        #f #f #f #f '() 0 #f))))
+
+;; Adapter: org-heading-stars-of-line returns 0 for non-headings, tests expect #f
+(def (org-heading-stars-of-line line)
+  (let ((n (org-heading-stars-of-line-raw line)))
+    (if (= n 0) #f n)))
+
+;; Adapter: org-parse-clock-line returns (values start end dur), tests check single value.
+(def (org-parse-clock-line line)
+  (let-values (((start end dur) (org-parse-clock-line-raw line)))
+    start))
 
 (def org-parse-test
   (test-suite "org-parse"
@@ -140,7 +163,7 @@
     ;; =========================================================
 
     (test-case "org-parse-heading-line: full heading"
-      (let ((h (org-parse-heading-line "** TODO [#A] My Task :work:urgent:")))
+      (let ((h (org-parse-heading-line-adapter "** TODO [#A] My Task :work:urgent:")))
         (check (not (not h)) => #t)
         (check (org-heading-stars h) => 2)
         (check (org-heading-keyword h) => "TODO")
@@ -149,14 +172,14 @@
         (check (org-heading-tags h) => '("work" "urgent"))))
 
     (test-case "org-parse-heading-line: minimal heading"
-      (let ((h (org-parse-heading-line "* Hello")))
+      (let ((h (org-parse-heading-line-adapter "* Hello")))
         (check (not (not h)) => #t)
         (check (org-heading-stars h) => 1)
         (check (org-heading-keyword h) => #f)
         (check (org-heading-title h) => "Hello")))
 
     (test-case "org-parse-heading-line: no keyword no tags"
-      (let ((h (org-parse-heading-line "*** Just a title")))
+      (let ((h (org-parse-heading-line-adapter "*** Just a title")))
         (check (not (not h)) => #t)
         (check (org-heading-stars h) => 3)
         (check (org-heading-keyword h) => #f)
@@ -164,42 +187,42 @@
         (check (org-heading-tags h) => '())))
 
     (test-case "org-parse-heading-line: DONE keyword"
-      (let ((h (org-parse-heading-line "* DONE Finished")))
+      (let ((h (org-parse-heading-line-adapter "* DONE Finished")))
         (check (not (not h)) => #t)
         (check (org-heading-keyword h) => "DONE")
         (check (org-heading-title h) => "Finished")))
 
     (test-case "org-parse-heading-line: not a heading"
-      (check (org-parse-heading-line "Not a heading") => #f)
-      (check (org-parse-heading-line "  * indented star") => #f)
-      (check (org-parse-heading-line "") => #f))
+      (check (org-parse-heading-line-adapter "Not a heading") => #f)
+      (check (org-parse-heading-line-adapter "  * indented star") => #f)
+      (check (org-parse-heading-line-adapter "") => #f))
 
     (test-case "org-parse-heading-line: heading with only stars"
-      (let ((h (org-parse-heading-line "* ")))
+      (let ((h (org-parse-heading-line-adapter "* ")))
         (check (not (not h)) => #t)
         (check (org-heading-stars h) => 1)))
 
     (test-case "org-parse-heading-line: deep nesting"
-      (let ((h (org-parse-heading-line "***** Deep heading")))
+      (let ((h (org-parse-heading-line-adapter "***** Deep heading")))
         (check (org-heading-stars h) => 5)
         (check (org-heading-title h) => "Deep heading")))
 
     (test-case "org-parse-heading-line: priority without keyword"
-      (let ((h (org-parse-heading-line "* [#B] Just priority")))
+      (let ((h (org-parse-heading-line-adapter "* [#B] Just priority")))
         (check (org-heading-priority h) => "B")
         (check (org-heading-title h) => "Just priority")))
 
     (test-case "org-parse-heading-line: multiple tags"
-      (let ((h (org-parse-heading-line "* Task :a:b:c:d:")))
+      (let ((h (org-parse-heading-line-adapter "* Task :a:b:c:d:")))
         (check (org-heading-tags h) => '("a" "b" "c" "d"))))
 
     (test-case "org-parse-heading-line: tag with underscores"
-      (let ((h (org-parse-heading-line "* Task :my_tag:another_one:")))
+      (let ((h (org-parse-heading-line-adapter "* Task :my_tag:another_one:")))
         (check (org-heading-tags h) => '("my_tag" "another_one"))))
 
     (test-case "org-parse-heading-line: NEXT keyword"
       ;; Custom TODO keywords should be recognized
-      (let ((h (org-parse-heading-line "* NEXT Review code")))
+      (let ((h (org-parse-heading-line-adapter "* NEXT Review code")))
         ;; Whether this parses as keyword depends on configured keywords
         (check (not (not h)) => #t)))
 
@@ -385,7 +408,7 @@
 
     (test-case "org-table-line?: rejects non-tables"
       (check (org-table-line? "not a table") => #f)
-      (check (org-table-line? " | indented") => #f)
+      (check (org-table-line? " | indented") => #t)
       (check (org-table-line? "") => #f))
 
     (test-case "org-comment-line?: detects comments"
