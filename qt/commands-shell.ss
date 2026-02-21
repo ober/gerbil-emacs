@@ -645,21 +645,37 @@ S=sort by name, z=sort by size, q=quit."
     (qt-widget-show-maximized! win)
     (echo-message! (app-state-echo app) "Maximized")))
 
+(def *menu-bar-visible* #t)
+
 (def (cmd-toggle-menu-bar app)
   "Toggle menu bar visibility."
-  (echo-message! (app-state-echo app) "Menu bar toggled"))
+  (let* ((win (qt-frame-main-win (app-state-frame app)))
+         (mb (qt-main-window-menu-bar win)))
+    (set! *menu-bar-visible* (not *menu-bar-visible*))
+    (if *menu-bar-visible*
+      (qt-widget-show! mb)
+      (qt-widget-hide! mb))
+    (echo-message! (app-state-echo app)
+      (if *menu-bar-visible* "Menu bar shown" "Menu bar hidden"))))
 
 (def (cmd-toggle-menu-bar-mode app)
-  "Toggle menu bar mode."
-  (echo-message! (app-state-echo app) "Menu bar mode toggled"))
+  "Toggle menu bar mode (same as toggle-menu-bar)."
+  (cmd-toggle-menu-bar app))
 
 (def (cmd-toggle-tool-bar app)
   "Toggle toolbar visibility."
   (echo-message! (app-state-echo app) "Toolbar toggled"))
 
+(def *scroll-bar-visible* #t)
+
 (def (cmd-toggle-scroll-bar app)
-  "Toggle scrollbar visibility."
-  (echo-message! (app-state-echo app) "Scrollbar toggled"))
+  "Toggle vertical scrollbar visibility."
+  (let ((ed (current-qt-editor app)))
+    (set! *scroll-bar-visible* (not *scroll-bar-visible*))
+    ;; SCI_SETVSCROLLBAR = 2280
+    (sci-send ed 2280 (if *scroll-bar-visible* 1 0) 0)
+    (echo-message! (app-state-echo app)
+      (if *scroll-bar-visible* "Scrollbar shown" "Scrollbar hidden"))))
 
 (def (cmd-toggle-tab-bar-mode app)
   "Toggle tab bar visibility."
@@ -691,13 +707,61 @@ S=sort by name, z=sort by size, q=quit."
   "Toggle global whitespace display."
   (cmd-toggle-whitespace app))
 
+(def *show-spaces* #f)
+
 (def (cmd-toggle-show-spaces app)
-  "Toggle space display."
-  (echo-message! (app-state-echo app) "Show spaces toggled"))
+  "Toggle whitespace character visualization."
+  (let ((ed (current-qt-editor app)))
+    (set! *show-spaces* (not *show-spaces*))
+    ;; SCI_SETVIEWWS = 2021: 0=invisible, 1=always visible
+    (sci-send ed 2021 (if *show-spaces* 1 0) 0)
+    (echo-message! (app-state-echo app)
+      (if *show-spaces* "Whitespace visible" "Whitespace hidden"))))
+
+(def *show-trailing-whitespace* #f)
+(def *indic-trailing-ws* 7) ;; Indicator 7 for trailing whitespace
 
 (def (cmd-toggle-show-trailing-whitespace app)
-  "Toggle trailing whitespace display."
-  (echo-message! (app-state-echo app) "Show trailing whitespace toggled"))
+  "Toggle trailing whitespace highlighting."
+  (let ((ed (current-qt-editor app)))
+    (set! *show-trailing-whitespace* (not *show-trailing-whitespace*))
+    (if *show-trailing-whitespace*
+      (begin
+        ;; Set up indicator 7 as a red squiggly underline
+        (sci-send ed SCI_INDICSETSTYLE *indic-trailing-ws* INDIC_SQUIGGLE)
+        (sci-send ed SCI_INDICSETFORE *indic-trailing-ws* #xFF4444)
+        ;; Highlight all trailing whitespace
+        (highlight-trailing-whitespace! ed))
+      (begin
+        ;; Clear all trailing whitespace indicators
+        (sci-send ed SCI_SETINDICATORCURRENT *indic-trailing-ws*)
+        (sci-send ed SCI_INDICATORCLEARRANGE 0
+                  (sci-send ed SCI_GETTEXTLENGTH))))
+    (echo-message! (app-state-echo app)
+      (if *show-trailing-whitespace*
+        "Trailing whitespace highlighted"
+        "Trailing whitespace display off"))))
+
+(def (highlight-trailing-whitespace! ed)
+  "Highlight trailing whitespace in the editor using indicator 7."
+  (let* ((text (qt-plain-text-edit-text ed))
+         (lines (string-split text #\newline)))
+    (sci-send ed SCI_SETINDICATORCURRENT *indic-trailing-ws*)
+    ;; Clear existing
+    (sci-send ed SCI_INDICATORCLEARRANGE 0 (sci-send ed SCI_GETTEXTLENGTH))
+    ;; Mark trailing whitespace on each line
+    (let loop ((i 0) (pos 0))
+      (when (< i (length lines))
+        (let* ((line (list-ref lines i))
+               (trimmed (string-trim-right line))
+               (trail-len (- (string-length line) (string-length trimmed)))
+               (line-end-pos (+ pos (string-length line))))
+          (when (> trail-len 0)
+            (sci-send ed SCI_INDICATORFILLRANGE
+                      (- line-end-pos trail-len)
+                      trail-len))
+          ;; +1 for the newline character
+          (loop (+ i 1) (+ line-end-pos 1)))))))
 
 (def (cmd-toggle-narrow-indicator app)
   "Toggle narrow indicator."
@@ -888,12 +952,20 @@ S=sort by name, z=sort by size, q=quit."
 
 ;; --- Buffer/undo ---
 (def (cmd-buffer-disable-undo app)
-  "Disable undo for current buffer."
-  (echo-message! (app-state-echo app) "Undo disabled (not supported)"))
+  "Disable undo collection for current buffer."
+  (let ((ed (current-qt-editor app)))
+    ;; SCI_SETUNDOCOLLECTION = 2012
+    (sci-send ed 2012 0 0)
+    ;; SCI_EMPTYUNDOBUFFER = 2175 — clear existing undo history
+    (sci-send ed 2175 0 0)
+    (echo-message! (app-state-echo app) "Undo disabled for this buffer")))
 
 (def (cmd-buffer-enable-undo app)
-  "Enable undo for current buffer."
-  (echo-message! (app-state-echo app) "Undo enabled"))
+  "Enable undo collection for current buffer."
+  (let ((ed (current-qt-editor app)))
+    ;; SCI_SETUNDOCOLLECTION = 2012
+    (sci-send ed 2012 1 0)
+    (echo-message! (app-state-echo app) "Undo enabled for this buffer")))
 
 (def (cmd-lock-buffer app)
   "Lock the current buffer (toggle read-only)."
@@ -901,7 +973,7 @@ S=sort by name, z=sort by size, q=quit."
 
 (def (cmd-auto-revert-mode app)
   "Toggle auto-revert mode."
-  (echo-message! (app-state-echo app) "Auto-revert mode toggled"))
+  (cmd-toggle-auto-revert app))
 
 ;; --- Registers ---
 (def (cmd-append-to-register app)

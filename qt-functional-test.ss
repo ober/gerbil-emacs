@@ -2542,6 +2542,73 @@
   (displayln "Group 15 complete"))
 
 ;;;============================================================================
+;;; Group 16: Qt UI toggles and visual features
+;;;============================================================================
+
+(def (run-group-16-ui-toggles)
+  (displayln "\n=== Group 16: UI Toggles ===")
+
+  ;; Test 1: Toggle commands are registered
+  (let ((menu-bar (find-command 'toggle-menu-bar))
+        (scroll-bar (find-command 'toggle-scroll-bar))
+        (show-spaces (find-command 'toggle-show-spaces))
+        (trailing-ws (find-command 'toggle-show-trailing-whitespace))
+        (disable-undo (find-command 'buffer-disable-undo))
+        (enable-undo (find-command 'buffer-enable-undo)))
+    (if (and menu-bar scroll-bar show-spaces trailing-ws disable-undo enable-undo)
+      (pass! "UI toggle commands registered (6 commands)")
+      (fail! "UI toggle commands" "missing" "all 6 present")))
+
+  ;; Test 2: toggle-scroll-bar dispatch
+  (let-values (((ed _w app) (make-qt-test-app "scrollbar-test")))
+    (with-catch
+      (lambda (e)
+        (fail! "toggle-scroll-bar" (with-output-to-string "" (lambda () (display-exception e))) "no error"))
+      (lambda ()
+        (execute-command! app 'toggle-scroll-bar)
+        (pass! "toggle-scroll-bar dispatch executes without error"))))
+
+  ;; Test 3: toggle-show-spaces dispatch
+  (let-values (((ed _w app) (make-qt-test-app "spaces-test")))
+    (with-catch
+      (lambda (e)
+        (fail! "toggle-show-spaces" (with-output-to-string "" (lambda () (display-exception e))) "no error"))
+      (lambda ()
+        (execute-command! app 'toggle-show-spaces)
+        (pass! "toggle-show-spaces dispatch executes without error"))))
+
+  ;; Test 4: toggle-show-trailing-whitespace dispatch
+  (let-values (((ed _w app) (make-qt-test-app "trailing-ws-test")))
+    (qt-plain-text-edit-set-text! ed "hello   \nworld  \n")
+    (with-catch
+      (lambda (e)
+        (fail! "trailing-whitespace" (with-output-to-string "" (lambda () (display-exception e))) "no error"))
+      (lambda ()
+        (execute-command! app 'toggle-show-trailing-whitespace)
+        (pass! "toggle-show-trailing-whitespace dispatch executes without error"))))
+
+  ;; Test 5: buffer-disable-undo / buffer-enable-undo dispatch
+  (let-values (((ed _w app) (make-qt-test-app "undo-test")))
+    (with-catch
+      (lambda (e)
+        (fail! "buffer-undo-control" (with-output-to-string "" (lambda () (display-exception e))) "no error"))
+      (lambda ()
+        (execute-command! app 'buffer-disable-undo)
+        (execute-command! app 'buffer-enable-undo)
+        (pass! "buffer-disable-undo + buffer-enable-undo dispatch without error"))))
+
+  ;; Test 6: auto-revert-mode delegates to toggle-auto-revert
+  (let-values (((ed _w app) (make-qt-test-app "auto-revert-test")))
+    (with-catch
+      (lambda (e)
+        (fail! "auto-revert-mode" (with-output-to-string "" (lambda () (display-exception e))) "no error"))
+      (lambda ()
+        (execute-command! app 'auto-revert-mode)
+        (pass! "auto-revert-mode delegates to toggle-auto-revert"))))
+
+  (displayln "Group 16 complete"))
+
+;;;============================================================================
 ;;; Main
 ;;;============================================================================
 
@@ -2565,6 +2632,7 @@
     (run-group-13-org-table)
     (run-group-14-lsp-visuals)
     (run-group-15-code-folding)
+    (run-group-16-ui-toggles)
 
     (displayln "---")
     (displayln "Results: " *passes* " passed, " *failures* " failed")
