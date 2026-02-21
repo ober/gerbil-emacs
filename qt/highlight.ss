@@ -12,6 +12,7 @@
         qt-highlight-search-matches!
         qt-clear-search-highlights!
         qt-enable-code-folding!
+        detect-language
         *search-highlight-active*)
 
 (import :std/sugar

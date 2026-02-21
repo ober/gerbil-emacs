@@ -1929,5 +1929,63 @@ Returns (values start end) or (values #f #f)."
       (echo-message! (app-state-echo app) "Markdown preview"))))
 
 ;;; ============================================================================
+;;; Format buffer with external tool
+
+(def *qt-formatters*
+  '((scheme "gerbil" "fmt") (python "black" "-") (go "gofmt")
+    (javascript "prettier" "--stdin-filepath" "file.js")
+    (rust "rustfmt") (c "clang-format") (shell "shfmt" "-")
+    (ruby "rubocop" "--auto-correct" "--stdin" "file.rb")
+    (json "prettier" "--stdin-filepath" "file.json")
+    (css "prettier" "--stdin-filepath" "file.css")
+    (xml "xmllint" "--format" "-")
+    (yaml "prettier" "--stdin-filepath" "file.yaml")))
+
+(def (cmd-format-buffer app)
+  "Format buffer using language-appropriate external formatter."
+  (let* ((buf (current-qt-buffer app))
+         (path (buffer-file-path buf))
+         (ed (current-qt-editor app)))
+    (if (not path)
+      (echo-error! (app-state-echo app) "Buffer has no file")
+      (let* ((lang (detect-language path))
+             (entry (and lang (assq lang *qt-formatters*))))
+        (if (not entry)
+          (echo-error! (app-state-echo app)
+            (string-append "No formatter for " (or (and lang (symbol->string lang)) "unknown")))
+          (let* ((cmd (cadr entry))
+                 (args (cddr entry))
+                 (text (qt-plain-text-edit-text ed)))
+            (with-catch
+              (lambda (e) (echo-error! (app-state-echo app) "Format failed"))
+              (lambda ()
+                (let* ((proc (open-process
+                               (list path: cmd arguments: args
+                                     stdin-redirection: #t stdout-redirection: #t
+                                     stderr-redirection: #f)))
+                       (_ (begin (display text proc) (close-output-port proc)))
+                       (formatted (read-line proc #f))
+                       (status (process-status proc)))
+                  (close-port proc)
+                  (when (and formatted (> (string-length formatted) 0)
+                             (not (string=? formatted text)))
+                    (let ((pos (qt-plain-text-edit-cursor-position ed)))
+                      (qt-plain-text-edit-set-text! ed formatted)
+                      (qt-plain-text-edit-set-cursor-position! ed
+                        (min pos (string-length formatted)))
+                      (echo-message! (app-state-echo app)
+                        (string-append "Formatted with " cmd)))))))))))))
+
+(def (cmd-copy-file-name-only app)
+  "Copy just the filename (no directory) to kill ring."
+  (let* ((buf (current-qt-buffer app))
+         (path (buffer-file-path buf)))
+    (if (not path)
+      (echo-message! (app-state-echo app) "Buffer has no file")
+      (let ((name (path-strip-directory path)))
+        (qt-kill-ring-push! app name)
+        (echo-message! (app-state-echo app) (string-append "Copied: " name))))))
+
+;;; ============================================================================
 ;;; Snippet/template expansion system
 

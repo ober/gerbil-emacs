@@ -1368,6 +1368,8 @@
   (register-command! 'git-log-file cmd-git-log-file)
   (register-command! 'switch-buffer-mru cmd-switch-buffer-mru)
   (register-command! 'find-file-ssh cmd-find-file-ssh)
+  (register-command! 'format-buffer cmd-format-buffer)
+  (register-command! 'copy-file-name-only cmd-copy-file-name-only)
   ;; Sort numeric / sort fields
   (register-command! 'sort-numeric cmd-sort-numeric)
   (register-command! 'sort-fields cmd-sort-fields)
