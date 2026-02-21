@@ -1290,6 +1290,7 @@
   (register-command! 'bookmark-list cmd-bookmark-list)
   ;; Rectangle operations
   (register-command! 'kill-rectangle cmd-kill-rectangle)
+  (register-command! 'delete-rectangle cmd-delete-rectangle)
   (register-command! 'yank-rectangle cmd-yank-rectangle)
   (register-command! 'string-rectangle cmd-string-rectangle)
   (register-command! 'open-rectangle cmd-open-rectangle)

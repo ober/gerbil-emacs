@@ -288,6 +288,7 @@
   (keymap-bind! *ctrl-x-r-map* "b" 'bookmark-jump)
   (keymap-bind! *ctrl-x-r-map* "l" 'bookmark-list)
   (keymap-bind! *ctrl-x-r-map* "k" 'kill-rectangle)
+  (keymap-bind! *ctrl-x-r-map* "d" 'delete-rectangle)
   (keymap-bind! *ctrl-x-r-map* "y" 'yank-rectangle)
 
   ;; M-x

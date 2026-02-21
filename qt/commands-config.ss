@@ -385,9 +385,63 @@
           (echo-message! (app-state-echo app)
             "Invalid font size (must be 6-72)"))))))
 
+(def *named-colors*
+  '("aliceblue" "antiquewhite" "aqua" "aquamarine" "azure"
+    "beige" "bisque" "black" "blanchedalmond" "blue" "blueviolet" "brown"
+    "burlywood" "cadetblue" "chartreuse" "chocolate" "coral"
+    "cornflowerblue" "cornsilk" "crimson" "cyan" "darkblue" "darkcyan"
+    "darkgoldenrod" "darkgray" "darkgreen" "darkkhaki" "darkmagenta"
+    "darkolivegreen" "darkorange" "darkorchid" "darkred" "darksalmon"
+    "darkseagreen" "darkslateblue" "darkslategray" "darkturquoise"
+    "darkviolet" "deeppink" "deepskyblue" "dimgray" "dodgerblue"
+    "firebrick" "floralwhite" "forestgreen" "fuchsia" "gainsboro"
+    "ghostwhite" "gold" "goldenrod" "gray" "green" "greenyellow"
+    "honeydew" "hotpink" "indianred" "indigo" "ivory" "khaki"
+    "lavender" "lavenderblush" "lawngreen" "lemonchiffon" "lightblue"
+    "lightcoral" "lightcyan" "lightgoldenrodyellow" "lightgray"
+    "lightgreen" "lightpink" "lightsalmon" "lightseagreen"
+    "lightskyblue" "lightslategray" "lightsteelblue" "lightyellow"
+    "lime" "limegreen" "linen" "magenta" "maroon" "mediumaquamarine"
+    "mediumblue" "mediumorchid" "mediumpurple" "mediumseagreen"
+    "mediumslateblue" "mediumspringgreen" "mediumturquoise"
+    "mediumvioletred" "midnightblue" "mintcream" "mistyrose"
+    "moccasin" "navajowhite" "navy" "oldlace" "olive" "olivedrab"
+    "orange" "orangered" "orchid" "palegoldenrod" "palegreen"
+    "paleturquoise" "palevioletred" "papayawhip" "peachpuff" "peru"
+    "pink" "plum" "powderblue" "purple" "red" "rosybrown" "royalblue"
+    "saddlebrown" "salmon" "sandybrown" "seagreen" "seashell" "sienna"
+    "silver" "skyblue" "slateblue" "slategray" "snow" "springgreen"
+    "steelblue" "tan" "teal" "thistle" "tomato" "turquoise" "violet"
+    "wheat" "white" "whitesmoke" "yellow" "yellowgreen"))
+
 (def (cmd-list-colors app)
-  "List available colors."
-  (echo-message! (app-state-echo app) "Color list not available"))
+  "List available named colors in a buffer."
+  (let* ((fr (app-state-frame app))
+         (ed (current-qt-editor app))
+         (buf (qt-buffer-create! "*Colors*" ed #f))
+         ;; Format color list with 4 columns
+         (lines (let loop ((cs *named-colors*) (row []) (acc []))
+                  (cond
+                    ((null? cs)
+                     (reverse (if (null? row) acc
+                                (cons (string-join (reverse row) "  ") acc))))
+                    ((= (length row) 4)
+                     (loop cs [] (cons (string-join (reverse row) "  ") acc)))
+                    (else
+                     (let* ((c (car cs))
+                            (padded (string-append c
+                                      (make-string (max 1 (- 22 (string-length c))) #\space))))
+                       (loop (cdr cs) (cons padded row) acc))))))
+         (header "Named Colors (CSS/Qt)\n=====================\n")
+         (text (string-append header (string-join lines "\n") "\n\n"
+                  (number->string (length *named-colors*)) " colors total")))
+    (qt-buffer-attach! ed buf)
+    (set! (qt-edit-window-buffer (qt-current-window fr)) buf)
+    (qt-plain-text-edit-set-text! ed text)
+    (qt-plain-text-edit-set-cursor-position! ed 0)
+    (qt-text-document-set-modified! (buffer-doc-pointer buf) #f)
+    (echo-message! (app-state-echo app)
+      (string-append (number->string (length *named-colors*)) " named colors"))))
 
 ;;; ============================================================================
 ;;; User Theme Discovery

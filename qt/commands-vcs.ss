@@ -909,23 +909,27 @@
   (echo-message! (app-state-echo app) "Variable inspection not available"))
 
 (def (cmd-describe-syntax app)
-  "Describe syntax at point."
+  "Describe syntax and style at point."
   (let* ((ed (current-qt-editor app))
          (pos (qt-plain-text-edit-cursor-position ed))
          (text (qt-plain-text-edit-text ed))
          (len (string-length text)))
     (if (< pos len)
       (let* ((ch (string-ref text pos))
-             (code (char->integer ch)))
+             (code (char->integer ch))
+             ;; Get Scintilla style at position (SCI_GETSTYLEAT = 2010)
+             (style (sci-send ed 2010 pos 0))
+             (char-class
+               (cond ((char-alphabetic? ch) "letter")
+                     ((char-numeric? ch) "digit")
+                     ((char-whitespace? ch) "whitespace")
+                     ((memq ch '(#\( #\) #\[ #\] #\{ #\})) "bracket")
+                     ((memq ch '(#\" #\')) "string delimiter")
+                     (else "punctuation"))))
         (echo-message! (app-state-echo app)
           (string-append "Char: " (string ch) " (U+"
-            (number->string code 16) ") "
-            (cond ((char-alphabetic? ch) "letter")
-                  ((char-numeric? ch) "digit")
-                  ((char-whitespace? ch) "whitespace")
-                  ((memq ch '(#\( #\) #\[ #\] #\{ #\})) "bracket")
-                  ((memq ch '(#\" #\')) "string delimiter")
-                  (else "punctuation")))))
+            (number->string code 16) ") " char-class
+            ", style=" (number->string style))))
       (echo-message! (app-state-echo app) "End of buffer"))))
 
 (def (cmd-insert-lorem-ipsum app)

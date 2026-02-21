@@ -189,6 +189,29 @@
           (echo-message! echo
             (string-append "Killed rectangle (" (number->string (length rect-lines)) " lines)")))))))
 
+(def (cmd-delete-rectangle app)
+  "Delete the rectangle defined by mark and point (without saving to kill ring)."
+  (let ((echo (app-state-echo app)))
+    (let-values (((start-line start-col end-line end-col) (get-region-lines app)))
+      (if (not start-line)
+        (echo-error! echo "No region (set mark first)")
+        (let* ((ed (current-editor app))
+               (left-col (min start-col end-col))
+               (right-col (max start-col end-col)))
+          (with-undo-action ed
+            (let loop ((line end-line))
+              (when (>= line start-line)
+                (let* ((line-start (editor-position-from-line ed line))
+                       (line-text (editor-get-line ed line))
+                       (line-len (string-length (string-trim-right line-text #\newline)))
+                       (l (min left-col line-len))
+                       (r (min right-col line-len)))
+                  (when (< l r)
+                    (editor-delete-range ed (+ line-start l) (- r l)))
+                  (loop (- line 1))))))
+          (set! (buffer-mark (current-buffer-from-app app)) #f)
+          (echo-message! echo "Rectangle deleted"))))))
+
 (def (cmd-yank-rectangle app)
   "Yank (paste) the last killed rectangle at point."
   (let* ((echo (app-state-echo app))

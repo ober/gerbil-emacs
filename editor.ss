@@ -170,6 +170,7 @@
   (register-command! 'bookmark-list cmd-bookmark-list)
   ;; Rectangle operations
   (register-command! 'kill-rectangle cmd-kill-rectangle)
+  (register-command! 'delete-rectangle cmd-delete-rectangle)
   (register-command! 'yank-rectangle cmd-yank-rectangle)
   ;; Go to matching paren
   (register-command! 'goto-matching-paren cmd-goto-matching-paren)

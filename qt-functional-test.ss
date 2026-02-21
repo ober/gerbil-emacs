@@ -2690,6 +2690,63 @@
   (displayln "Group 18 complete"))
 
 ;;;============================================================================
+;;; Group 19: New Feature Implementations
+;;;============================================================================
+
+(def (run-group-19-new-features)
+  (displayln "\n=== Group 19: New Features ===")
+
+  ;; Test 1: delete-rectangle registered
+  (if (find-command 'delete-rectangle)
+    (pass! "delete-rectangle registered")
+    (fail! "delete-rectangle" "not found" "registered"))
+
+  ;; Test 2: delete-rectangle dispatch
+  (let-values (((ed _w app) (make-qt-test-app "del-rect-test")))
+    (qt-plain-text-edit-set-text! ed "abcde\nfghij\nklmno\n")
+    ;; Set mark at position 1 (after 'a'), move cursor to position 9
+    (qt-plain-text-edit-set-cursor-position! ed 1)
+    (execute-command! app 'set-mark)
+    (qt-plain-text-edit-set-cursor-position! ed 9)
+    (with-catch
+      (lambda (e)
+        (fail! "delete-rectangle dispatch"
+               (with-output-to-string "" (lambda () (display-exception e)))
+               "no error"))
+      (lambda ()
+        (execute-command! app 'delete-rectangle)
+        (pass! "delete-rectangle dispatch executes without error"))))
+
+  ;; Test 3: list-colors dispatch
+  (let-values (((ed _w app) (make-qt-test-app "colors-test")))
+    (with-catch
+      (lambda (e)
+        (fail! "list-colors dispatch"
+               (with-output-to-string "" (lambda () (display-exception e)))
+               "no error"))
+      (lambda ()
+        (execute-command! app 'list-colors)
+        (let ((text (qt-plain-text-edit-text ed)))
+          (if (string-contains text "Named Colors")
+            (pass! "list-colors shows color listing")
+            (fail! "list-colors" text "contains 'Named Colors'"))))))
+
+  ;; Test 4: describe-syntax dispatch
+  (let-values (((ed _w app) (make-qt-test-app "syntax-test")))
+    (qt-plain-text-edit-set-text! ed "hello world")
+    (qt-plain-text-edit-set-cursor-position! ed 0)
+    (with-catch
+      (lambda (e)
+        (fail! "describe-syntax dispatch"
+               (with-output-to-string "" (lambda () (display-exception e)))
+               "no error"))
+      (lambda ()
+        (execute-command! app 'describe-syntax)
+        (pass! "describe-syntax dispatch executes without error"))))
+
+  (displayln "Group 19 complete"))
+
+;;;============================================================================
 ;;; Main
 ;;;============================================================================
 
@@ -2716,6 +2773,7 @@
     (run-group-16-ui-toggles)
     (run-group-17-recenter)
     (run-group-18-stub-replacements)
+    (run-group-19-new-features)
 
     (displayln "---")
     (displayln "Results: " *passes* " passed, " *failures* " failed")

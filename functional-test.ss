@@ -1909,6 +1909,20 @@
         (execute-command! app 'overwrite-mode)
         (check (send-message ed 2187 0 0) => 0)))
 
+    (test-case "delete-rectangle: registered and dispatches"
+      (let-values (((ed app) (make-test-app "del-rect-test")))
+        (editor-set-text ed "abcde\nfghij\nklmno\n")
+        ;; Set mark at col 1 line 0, cursor at col 3 line 1
+        (let ((buf (current-buffer-from-app app)))
+          (set! (buffer-mark buf) 1)
+          (editor-goto-pos ed 9))
+        (execute-command! app 'delete-rectangle)
+        (check (app-state-last-command app) => 'delete-rectangle)))
+
+    (test-case "delete-rectangle: C-x r d binding"
+      (setup-default-bindings!)
+      (check (keymap-lookup *ctrl-x-r-map* "d") => 'delete-rectangle))
+
 ))
 
 (def main
