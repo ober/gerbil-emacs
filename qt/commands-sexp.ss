@@ -1629,3 +1629,242 @@
           (qt-plain-text-edit-set-cursor-position! ed line-start)
           (qt-plain-text-edit-insert-text! ed (string-append text "\n")))))))
 
+;;;============================================================================
+;;; Transpose windows (swap two windows' buffers)
+;;;============================================================================
+
+(def (cmd-transpose-windows app)
+  "Swap the buffers displayed in the current and next window."
+  (let* ((fr (app-state-frame app))
+         (wins (qt-frame-windows fr))
+         (echo (app-state-echo app)))
+    (if (< (length wins) 2)
+      (echo-message! echo "Need at least 2 windows to transpose")
+      (let* ((cur (qt-current-window fr))
+             ;; Find the other window
+             (other (let loop ((ws wins))
+                      (cond
+                        ((null? ws) (car wins))
+                        ((not (eq? (car ws) cur)) (car ws))
+                        (else (loop (cdr ws))))))
+             (buf1 (qt-edit-window-buffer cur))
+             (buf2 (qt-edit-window-buffer other))
+             (ed1 (qt-edit-window-editor cur))
+             (ed2 (qt-edit-window-editor other)))
+        ;; Swap buffers
+        (qt-buffer-attach! ed1 buf2)
+        (qt-buffer-attach! ed2 buf1)
+        (set! (qt-edit-window-buffer cur) buf2)
+        (set! (qt-edit-window-buffer other) buf1)
+        (qt-modeline-update! app)
+        (echo-message! echo "Windows transposed")))))
+
+;;;============================================================================
+;;; Desktop session management (save/read/clear)
+;;;============================================================================
+
+(def (cmd-desktop-save app)
+  "Save desktop session (buffer list and files)."
+  (let* ((bufs (buffer-list))
+         (files (filter (lambda (f) f)
+                        (map buffer-file-path bufs)))
+         (session-file (string-append (getenv "HOME" "/tmp") "/.gemacs-session")))
+    (with-catch
+      (lambda (e) (echo-message! (app-state-echo app) "Error saving session"))
+      (lambda ()
+        (call-with-output-file session-file
+          (lambda (port)
+            (for-each (lambda (f) (display f port) (newline port)) files)))
+        (echo-message! (app-state-echo app)
+          (string-append "Session saved: " (number->string (length files)) " files"))))))
+
+(def (cmd-desktop-read app)
+  "Restore desktop session from saved file list."
+  (let ((session-file (string-append (getenv "HOME" "/tmp") "/.gemacs-session")))
+    (if (file-exists? session-file)
+      (with-catch
+        (lambda (e) (echo-message! (app-state-echo app) "Error reading session"))
+        (lambda ()
+          (let ((files (call-with-input-file session-file
+                         (lambda (port)
+                           (let loop ((acc []))
+                             (let ((line (read-line port)))
+                               (if (eof-object? line)
+                                 (reverse acc)
+                                 (loop (cons line acc)))))))))
+            (let* ((fr (app-state-frame app))
+                   (ed (current-qt-editor app))
+                   (count 0))
+              (for-each
+                (lambda (f)
+                  (when (file-exists? f)
+                    (let ((buf (qt-buffer-create! (path-strip-directory f) ed)))
+                      (set! (buffer-file-path buf) f)
+                      (set! count (+ count 1)))))
+                files)
+              (echo-message! (app-state-echo app)
+                (string-append "Session restored: " (number->string count) " files"))))))
+      (echo-message! (app-state-echo app) "No session file found"))))
+
+(def (cmd-desktop-clear app)
+  "Clear saved session file."
+  (let ((session-file (string-append (getenv "HOME" "/tmp") "/.gemacs-session")))
+    (when (file-exists? session-file)
+      (delete-file session-file))
+    (echo-message! (app-state-echo app) "Session cleared")))
+
+;;;============================================================================
+;;; Savehist commands (user-facing wrappers)
+;;;============================================================================
+
+(def *qt-history-file*
+  (string-append (getenv "HOME" "/tmp") "/.gemacs-history"))
+
+(def (cmd-savehist-save app)
+  "Save command history to disk."
+  (with-catch
+    (lambda (e) (echo-error! (app-state-echo app) "Error saving history"))
+    (lambda ()
+      (when (pair? *mx-command-history*)
+        (call-with-output-file *qt-history-file*
+          (lambda (port)
+            (let loop ((h *mx-command-history*) (n 0))
+              (when (and (pair? h) (< n 500))
+                (display (car h) port) (newline port)
+                (loop (cdr h) (+ n 1)))))))
+      (echo-message! (app-state-echo app)
+        (string-append "History saved: " (number->string (length *mx-command-history*)) " entries")))))
+
+(def (cmd-savehist-load app)
+  "Load command history from disk."
+  (with-catch
+    (lambda (e) (echo-error! (app-state-echo app) "Error loading history"))
+    (lambda ()
+      (when (file-exists? *qt-history-file*)
+        (let ((lines (call-with-input-file *qt-history-file*
+                       (lambda (port)
+                         (let loop ((acc []))
+                           (let ((line (read-line port)))
+                             (if (eof-object? line) (reverse acc)
+                               (loop (cons line acc)))))))))
+          (set! *mx-command-history* lines)))
+      (echo-message! (app-state-echo app) "History loaded"))))
+
+(def *savehist-mode-enabled* #f)
+
+(def (cmd-savehist-mode app)
+  "Toggle savehist-mode (auto-save/load command history)."
+  (set! *savehist-mode-enabled* (not *savehist-mode-enabled*))
+  (when *savehist-mode-enabled*
+    (cmd-savehist-load app))
+  (echo-message! (app-state-echo app)
+    (if *savehist-mode-enabled* "savehist-mode ON" "savehist-mode OFF")))
+
+;;;============================================================================
+;;; Paredit wrap-curly (missing from Qt)
+;;;============================================================================
+
+(def (cmd-paredit-wrap-curly app)
+  "Wrap the sexp at point in curly braces."
+  (let* ((ed (current-qt-editor app))
+         (text (qt-plain-text-edit-text ed))
+         (pos (qt-plain-text-edit-cursor-position ed))
+         (fwd (skip-whitespace-forward text pos))
+         (end (sexp-end text fwd)))
+    (when (> end fwd)
+      (let ((new-text (string-append
+                        (substring text 0 fwd) "{"
+                        (substring text fwd end) "}"
+                        (substring text end (string-length text)))))
+        (qt-plain-text-edit-set-text! ed new-text)
+        (qt-plain-text-edit-set-cursor-position! ed (+ fwd 1))
+        (qt-plain-text-edit-ensure-cursor-visible! ed)))))
+
+;;;============================================================================
+;;; Complete-at-point (buffer-word completion)
+;;;============================================================================
+
+(def (cmd-complete-at-point app)
+  "Show completion popup for the word prefix at point."
+  (let* ((ed (current-qt-editor app))
+         (echo (app-state-echo app))
+         (text (qt-plain-text-edit-text ed))
+         (pos (qt-plain-text-edit-cursor-position ed))
+         (len (string-length text)))
+    ;; Find prefix at cursor
+    (let* ((prefix-start
+             (let loop ((i (- pos 1)))
+               (if (or (< i 0)
+                       (let ((ch (string-ref text i)))
+                         (not (or (char-alphabetic? ch)
+                                  (char-numeric? ch)
+                                  (char=? ch #\_)
+                                  (char=? ch #\-)
+                                  (char=? ch #\?)
+                                  (char=? ch #\!)))))
+                 (+ i 1) (loop (- i 1)))))
+           (prefix (substring text prefix-start pos))
+           (plen (string-length prefix)))
+      (if (= plen 0)
+        (echo-message! echo "No prefix to complete")
+        ;; Collect unique word candidates from buffer
+        (let ((candidates (make-hash-table)))
+          (let scan ((i 0))
+            (when (< i len)
+              (let skip ((j i))
+                (if (or (>= j len)
+                        (let ((ch (string-ref text j)))
+                          (or (char-alphabetic? ch) (char-numeric? ch)
+                              (char=? ch #\_) (char=? ch #\-)
+                              (char=? ch #\?) (char=? ch #\!))))
+                  ;; Found word start
+                  (let word-end ((k j))
+                    (if (or (>= k len)
+                            (let ((ch (string-ref text k)))
+                              (not (or (char-alphabetic? ch) (char-numeric? ch)
+                                       (char=? ch #\_) (char=? ch #\-)
+                                       (char=? ch #\?) (char=? ch #\!)))))
+                      (begin
+                        (when (> k j)
+                          (let ((word (substring text j k)))
+                            (when (and (> (string-length word) plen)
+                                       (string-prefix? prefix word)
+                                       (not (= j prefix-start)))
+                              (hash-put! candidates word #t))))
+                        (scan k))
+                      (word-end (+ k 1))))
+                  (skip (+ j 1))))))
+          ;; Show results in echo area (Qt doesn't have Scintilla autocomplete API)
+          (let ((words (sort (hash-keys candidates) string<?)))
+            (if (null? words)
+              (echo-message! echo (string-append "No completions for \"" prefix "\""))
+              (if (= (length words) 1)
+                ;; Single match: insert it
+                (begin
+                  (qt-plain-text-edit-set-selection! ed prefix-start pos)
+                  (qt-plain-text-edit-remove-selected-text! ed)
+                  (qt-plain-text-edit-insert-text! ed (car words))
+                  (echo-message! echo (string-append "Completed: " (car words))))
+                ;; Multiple: find common prefix and insert that
+                (let* ((common
+                         (let loop ((p (car words)) (rest (cdr words)))
+                           (if (null? rest) p
+                             (let* ((a p) (b (car rest))
+                                    (end (min (string-length a) (string-length b)))
+                                    (cp (let lp ((i 0))
+                                          (if (and (< i end) (char=? (string-ref a i) (string-ref b i)))
+                                            (lp (+ i 1)) i))))
+                               (loop (substring a 0 cp) (cdr rest)))))))
+                  (when (> (string-length common) plen)
+                    (qt-plain-text-edit-set-selection! ed prefix-start pos)
+                    (qt-plain-text-edit-remove-selected-text! ed)
+                    (qt-plain-text-edit-insert-text! ed common))
+                  (echo-message! echo
+                    (let ((shown (let loop ((ws words) (n 0) (acc []))
+                                    (if (or (null? ws) (>= n 5))
+                                      (reverse acc)
+                                      (loop (cdr ws) (+ n 1) (cons (car ws) acc))))))
+                      (string-append (number->string (length words)) " completions: "
+                                     (string-join shown ", ")
+                                     (if (> (length words) 5) " ..." "")))))))))))))
+

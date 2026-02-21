@@ -1385,6 +1385,16 @@
   (register-command! 'count-words-line cmd-count-words-line)
   (register-command! 'diff-goto-source cmd-diff-goto-source)
   (register-command! 'insert-date-iso cmd-insert-date-iso)
+  ;; Parity batch: transpose-windows, desktop, savehist, paredit-wrap-curly, complete-at-point
+  (register-command! 'transpose-windows cmd-transpose-windows)
+  (register-command! 'desktop-save cmd-desktop-save)
+  (register-command! 'desktop-read cmd-desktop-read)
+  (register-command! 'desktop-clear cmd-desktop-clear)
+  (register-command! 'savehist-save cmd-savehist-save)
+  (register-command! 'savehist-load cmd-savehist-load)
+  (register-command! 'savehist-mode cmd-savehist-mode)
+  (register-command! 'paredit-wrap-curly cmd-paredit-wrap-curly)
+  (register-command! 'complete-at-point cmd-complete-at-point)
   ;; Sort numeric / sort fields
   (register-command! 'sort-numeric cmd-sort-numeric)
   (register-command! 'sort-fields cmd-sort-fields)
