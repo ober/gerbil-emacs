@@ -256,3 +256,5 @@
 (def (cmd-sort-regexp-fields app)
   "Sort lines in region by regex match."
   (echo-message! (app-state-echo app) "sort-regexp-fields: use M-x sort-lines for basic sorting"))
+
+

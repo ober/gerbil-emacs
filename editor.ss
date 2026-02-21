@@ -921,5 +921,12 @@
   (register-command! 'helm-occur cmd-occur)
   ;; Batch 13: aliases needing editor.ss scope
   (register-command! 'apropos-variable cmd-apropos-command)
+  ;; Batch 14: standard aliases needing editor.ss scope
+  (register-command! 'kill-emacs cmd-quit)
+  (register-command! 'forward-list cmd-forward-sexp)
+  (register-command! 'backward-list cmd-backward-sexp)
+  (register-command! 'beginning-of-visual-line cmd-beginning-of-line)
+  (register-command! 'end-of-visual-line cmd-end-of-line)
+  (register-command! 'kill-visual-line cmd-kill-line)
   ;; Task #46+ (in editor-extra.ss)
   (register-extra-commands!))

@@ -1360,7 +1360,14 @@
   ;; Batch 13: new commands
   (register-command! 'set-visited-file-name cmd-set-visited-file-name)
   (register-command! 'sort-columns cmd-sort-columns)
-  (register-command! 'sort-regexp-fields cmd-sort-regexp-fields))
+  (register-command! 'sort-regexp-fields cmd-sort-regexp-fields)
+  ;; Batch 14: visual line + sexp aliases
+  ;; Note: kill-emacs → cmd-quit registered in facade (forward ref)
+  (register-command! 'forward-list cmd-forward-sexp)
+  (register-command! 'backward-list cmd-backward-sexp)
+  (register-command! 'beginning-of-visual-line cmd-beginning-of-line)
+  (register-command! 'end-of-visual-line cmd-end-of-line)
+  (register-command! 'kill-visual-line cmd-kill-line))
 
 ;;;============================================================================
 ;;; Batch 13: New Qt commands
@@ -1388,3 +1395,5 @@
 (def (cmd-sort-regexp-fields app)
   "Sort lines in region by regex match."
   (echo-message! (app-state-echo app) "sort-regexp-fields: use M-x sort-lines for basic sorting"))
+
+

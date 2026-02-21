@@ -1402,4 +1402,6 @@
   (qt-register-extended-commands!)
   (qt-register-alias-commands!)
   ;; Batch 12: Emacs-standard aliases
-  (qt-register-batch12-aliases!))
+  (qt-register-batch12-aliases!)
+  ;; Batch 14: facade-scope aliases
+  (register-command! 'kill-emacs cmd-quit))

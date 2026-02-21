@@ -1975,4 +1975,6 @@
   ;; Batch 13: new commands
   (register-command! 'set-visited-file-name cmd-set-visited-file-name)
   (register-command! 'sort-columns cmd-sort-columns)
-  (register-command! 'sort-regexp-fields cmd-sort-regexp-fields))
+  (register-command! 'sort-regexp-fields cmd-sort-regexp-fields)
+  ;; Batch 14: address mode alias (editor-extra scope)
+  (register-command! 'goto-address-mode cmd-toggle-global-goto-address))
