@@ -1312,4 +1312,9 @@
   (register-command! 'swap-window cmd-swap-window)
   ;; Alias: next/previous grep result (cmd-next-error is in our chain)
   (register-command! 'next-grep-result cmd-next-error)
+  ;; Parity batch 3: select-current-line, smart-join-line, pop-to-mark, duplicate-line-or-region
+  (register-command! 'select-current-line cmd-select-current-line)
+  (register-command! 'smart-join-line cmd-smart-join-line)
+  (register-command! 'pop-to-mark cmd-pop-to-mark)
+  (register-command! 'duplicate-line-or-region cmd-duplicate-line-or-region)
 )

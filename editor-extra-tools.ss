@@ -1830,3 +1830,99 @@
     (echo-message! echo (if *global-lsp-semantic-tokens*
                           "LSP semantic tokens ON" "LSP semantic tokens OFF"))))
 
+;;;============================================================================
+;;; Select current line
+;;;============================================================================
+
+(def (cmd-select-current-line app)
+  "Select the entire current line."
+  (let* ((ed (current-editor app))
+         (pos (editor-get-current-pos ed))
+         (line (editor-line-from-position ed pos))
+         (line-start (editor-position-from-line ed line))
+         (line-end (editor-get-line-end-position ed line)))
+    (editor-set-selection ed line-start line-end)))
+
+;;;============================================================================
+;;; Smart join line
+;;;============================================================================
+
+(def (cmd-smart-join-line app)
+  "Join the next line to the current one, handling indentation intelligently."
+  (let* ((ed (current-editor app))
+         (text (editor-get-text ed))
+         (pos (editor-get-current-pos ed))
+         (len (string-length text)))
+    ;; Find end of current line
+    (let loop-eol ((i pos))
+      (if (or (>= i len) (char=? (string-ref text i) #\newline))
+        (when (< i len)
+          ;; i is at newline - find first non-whitespace on next line
+          (let skip-ws ((j (+ i 1)))
+            (if (and (< j len)
+                     (memv (string-ref text j) '(#\space #\tab)))
+              (skip-ws (+ j 1))
+              ;; Replace newline+whitespace with a single space
+              (begin
+                (editor-delete-range ed i (- j i))
+                ;; Add space unless next char is a closing paren/bracket
+                (let ((new-text (editor-get-text ed))
+                      (new-pos i))
+                  (unless (and (< new-pos (string-length new-text))
+                               (memv (string-ref new-text new-pos)
+                                     '(#\) #\] #\})))
+                    (editor-insert-text ed new-pos " ")))))))
+        (loop-eol (+ i 1))))))
+
+;;;============================================================================
+;;; Pop-to-mark (cycle through mark ring)
+;;;============================================================================
+
+(def (cmd-pop-to-mark app)
+  "Pop to previous mark position in the mark ring."
+  (let* ((ed (current-editor app))
+         (marks (app-state-mark-ring app)))
+    (if (null? marks)
+      (echo-message! (app-state-echo app) "Mark ring empty")
+      (let* ((entry (car marks))
+             (rest (cdr marks))
+             (buf-name (car entry))
+             (pos (cdr entry))
+             (fr (app-state-frame app)))
+        ;; Push current position, pop first entry
+        (set! (app-state-mark-ring app)
+          (append rest (list (cons (buffer-name (current-buffer-from-app app))
+                                   (editor-get-current-pos ed)))))
+        ;; Switch buffer if needed
+        (let ((target-buf (buffer-by-name buf-name)))
+          (when target-buf
+            (unless (eq? target-buf (current-buffer-from-app app))
+              (buffer-attach! ed target-buf)
+              (set! (edit-window-buffer (current-window fr)) target-buf))
+            (editor-goto-pos ed pos)
+            (editor-scroll-caret ed)))))))
+
+;;;============================================================================
+;;; Duplicate line or region
+;;;============================================================================
+
+(def (cmd-duplicate-line-or-region app)
+  "Duplicate the current line or selected region."
+  (let* ((ed (current-editor app))
+         (text (editor-get-text ed))
+         (sel-start (editor-get-selection-start ed))
+         (sel-end (editor-get-selection-end ed)))
+    (if (not (= sel-start sel-end))
+      ;; Duplicate selection
+      (let ((sel-text (substring text sel-start sel-end)))
+        (editor-goto-pos ed sel-end)
+        (editor-insert-text ed sel-end sel-text))
+      ;; Duplicate current line
+      (let* ((pos (editor-get-current-pos ed))
+             (line (editor-line-from-position ed pos))
+             (line-start (editor-position-from-line ed line))
+             (line-end (editor-get-line-end-position ed line))
+             (line-text (substring text line-start line-end)))
+        (editor-goto-pos ed line-end)
+        (editor-insert-text ed line-end (string-append "\n" line-text))))))
+
