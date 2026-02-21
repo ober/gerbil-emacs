@@ -1296,4 +1296,12 @@
   (register-command! 'find-file-read-only cmd-find-file-read-only)
   (register-command! 'view-file cmd-view-file)
   (register-command! 'append-to-file cmd-append-to-file)
+  ;; Parity from Qt: comment-dwim, kill operations, sexp navigation
+  (register-command! 'comment-dwim cmd-comment-dwim)
+  (register-command! 'kill-sentence cmd-kill-sentence)
+  (register-command! 'backward-kill-sentence cmd-backward-kill-sentence)
+  (register-command! 'kill-paragraph cmd-kill-paragraph)
+  (register-command! 'kill-subword cmd-kill-subword)
+  (register-command! 'up-list cmd-up-list)
+  (register-command! 'down-list cmd-down-list)
 )

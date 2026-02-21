@@ -1885,3 +1885,191 @@
     (echo-message! echo (if *global-pipenv*
                           "Pipenv ON" "Pipenv OFF"))))
 
+;;;============================================================================
+;;; Comment-dwim (M-;) — Do What I Mean with comments
+;;;============================================================================
+
+(def (cmd-comment-dwim app)
+  "Do What I Mean with comments. Region active: toggle. Blank line: insert comment. Otherwise: toggle current line."
+  (let* ((ed (current-editor app))
+         (buf (current-buffer-from-app app))
+         (text (editor-get-text ed))
+         (mark (buffer-mark buf)))
+    (if mark
+      ;; Region active: toggle comment on region lines
+      (let* ((pos (editor-get-current-pos ed))
+             (start (min pos mark))
+             (end (max pos mark))
+             (start-line (editor-line-from-position ed start))
+             (end-line (editor-line-from-position ed end)))
+        (with-undo-action ed
+          (let loop ((l end-line))
+            (when (>= l start-line)
+              (let* ((ls (editor-position-from-line ed l))
+                     (le (editor-get-line-end-position ed l))
+                     (lt (substring text ls le))
+                     (trimmed (string-trim lt)))
+                (if (string-prefix? ";;" trimmed)
+                  ;; Uncomment
+                  (let ((off (string-contains lt ";;")))
+                    (when off
+                      (let ((del-len (if (and (< (+ off 2) (string-length lt))
+                                              (char=? (string-ref lt (+ off 2)) #\space))
+                                       3 2)))
+                        (editor-delete-range ed (+ ls off) del-len))))
+                  ;; Comment
+                  (editor-insert-text ed ls ";; ")))
+              (loop (- l 1)))))
+        (set! (buffer-mark buf) #f)
+        (echo-message! (app-state-echo app)
+          (string-append "Toggled " (number->string (+ 1 (- end-line start-line))) " lines")))
+      ;; No region: check current line
+      (let* ((pos (editor-get-current-pos ed))
+             (line (editor-line-from-position ed pos))
+             (ls (editor-position-from-line ed line))
+             (le (editor-get-line-end-position ed line))
+             (line-text (substring text ls le))
+             (trimmed (string-trim line-text)))
+        (cond
+          ;; Blank line: insert comment
+          ((string=? trimmed "")
+           (with-undo-action ed
+             (editor-insert-text ed ls ";; "))
+           (editor-goto-pos ed (+ ls 3)))
+          ;; Already commented: uncomment
+          ((string-prefix? ";;" trimmed)
+           (let ((off (string-contains line-text ";;")))
+             (when off
+               (let ((del-len (if (and (< (+ off 2) (string-length line-text))
+                                       (char=? (string-ref line-text (+ off 2)) #\space))
+                                3 2)))
+                 (with-undo-action ed
+                   (editor-delete-range ed (+ ls off) del-len))))))
+          ;; Not commented: add comment prefix
+          (else
+           (with-undo-action ed
+             (editor-insert-text ed ls ";; "))))))))
+
+;;;============================================================================
+;;; Kill sentence / paragraph / subword
+;;;============================================================================
+
+(def (tui-sentence-end-pos text pos)
+  "Find end of current sentence from pos."
+  (let ((len (string-length text)))
+    (let loop ((i pos))
+      (cond
+        ((>= i len) len)
+        ((memv (string-ref text i) '(#\. #\? #\!))
+         (+ i 1))
+        (else (loop (+ i 1)))))))
+
+(def (tui-sentence-start-pos text pos)
+  "Find start of current sentence from pos."
+  (let loop ((i (- pos 1)))
+    (cond
+      ((<= i 0) 0)
+      ((memv (string-ref text i) '(#\. #\? #\!))
+       (let skip-ws ((j (+ i 1)))
+         (if (and (< j pos) (char-whitespace? (string-ref text j)))
+           (skip-ws (+ j 1))
+           j)))
+      (else (loop (- i 1))))))
+
+(def (cmd-kill-sentence app)
+  "Kill from point to end of sentence."
+  (let* ((ed (current-editor app))
+         (text (editor-get-text ed))
+         (pos (editor-get-current-pos ed))
+         (end (tui-sentence-end-pos text pos))
+         (killed (substring text pos end)))
+    (set! (app-state-kill-ring app) (cons killed (app-state-kill-ring app)))
+    (with-undo-action ed (editor-delete-range ed pos (- end pos)))))
+
+(def (cmd-backward-kill-sentence app)
+  "Kill from point back to start of sentence."
+  (let* ((ed (current-editor app))
+         (text (editor-get-text ed))
+         (pos (editor-get-current-pos ed))
+         (start (tui-sentence-start-pos text pos))
+         (killed (substring text start pos)))
+    (set! (app-state-kill-ring app) (cons killed (app-state-kill-ring app)))
+    (with-undo-action ed (editor-delete-range ed start (- pos start)))))
+
+(def (cmd-kill-paragraph app)
+  "Kill from point to end of paragraph."
+  (let* ((ed (current-editor app))
+         (text (editor-get-text ed))
+         (pos (editor-get-current-pos ed))
+         (len (string-length text)))
+    (let loop ((i pos) (saw-text? #f))
+      (let ((end (cond
+                   ((>= i len) len)
+                   ((char=? (string-ref text i) #\newline)
+                    (if (and saw-text?
+                             (or (>= (+ i 1) len)
+                                 (char=? (string-ref text (+ i 1)) #\newline)))
+                      (+ i 1) #f))
+                   (else #f))))
+        (if end
+          (let ((killed (substring text pos end)))
+            (set! (app-state-kill-ring app) (cons killed (app-state-kill-ring app)))
+            (with-undo-action ed (editor-delete-range ed pos (- end pos))))
+          (loop (+ i 1) (or saw-text? (not (char=? (string-ref text i) #\newline)))))))))
+
+(def (cmd-kill-subword app)
+  "Kill forward to the next subword boundary (camelCase, snake_case)."
+  (let* ((ed (current-editor app))
+         (text (editor-get-text ed))
+         (pos (editor-get-current-pos ed))
+         (len (string-length text)))
+    (let loop ((i (+ pos 1)))
+      (let ((at-boundary?
+             (or (>= i len)
+                 (memv (string-ref text i) '(#\_ #\- #\space #\tab #\newline))
+                 (and (> i 0)
+                      (char-lower-case? (string-ref text (- i 1)))
+                      (char-upper-case? (string-ref text i))))))
+        (if at-boundary?
+          (let* ((end (min i len))
+                 (killed (substring text pos end)))
+            (set! (app-state-kill-ring app) (cons killed (app-state-kill-ring app)))
+            (with-undo-action ed (editor-delete-range ed pos (- end pos))))
+          (loop (+ i 1)))))))
+
+;;;============================================================================
+;;; S-expression list navigation: up-list, down-list
+;;;============================================================================
+
+(def (cmd-up-list app)
+  "Move backward out of one level of parentheses."
+  (let* ((ed (current-editor app))
+         (text (editor-get-text ed))
+         (pos (editor-get-current-pos ed)))
+    (let loop ((i (- pos 1)) (depth 0))
+      (cond
+        ((< i 0)
+         (echo-message! (app-state-echo app) "At top level"))
+        ((memv (string-ref text i) '(#\) #\] #\}))
+         (loop (- i 1) (+ depth 1)))
+        ((memv (string-ref text i) '(#\( #\[ #\{))
+         (if (= depth 0)
+           (begin (editor-goto-pos ed i) (editor-scroll-caret ed))
+           (loop (- i 1) (- depth 1))))
+        (else (loop (- i 1) depth))))))
+
+(def (cmd-down-list app)
+  "Move forward into one level of parentheses."
+  (let* ((ed (current-editor app))
+         (text (editor-get-text ed))
+         (pos (editor-get-current-pos ed))
+         (len (string-length text)))
+    (let loop ((i pos))
+      (cond
+        ((>= i len)
+         (echo-message! (app-state-echo app) "No inner list found"))
+        ((memv (string-ref text i) '(#\( #\[ #\{))
+         (editor-goto-pos ed (+ i 1))
+         (editor-scroll-caret ed))
+        (else (loop (+ i 1)))))))
+
