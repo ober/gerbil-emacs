@@ -27,7 +27,13 @@
         :gemacs/qt/commands-sexp
         :gemacs/qt/commands-ide
         :gemacs/qt/commands-vcs
-        :gemacs/qt/commands-shell)
+        :gemacs/qt/commands-shell
+        (only-in :gemacs/org-table
+                 org-table-row? org-table-separator? org-table-parse-row
+                 org-table-column-widths org-table-format-row org-table-format-separator
+                 org-table-parse-tblfm org-table-eval-formula org-numeric-cell?
+                 org-csv-to-table csv-split-line
+                 swap-list-elements list-insert list-remove-at filter-map))
 
 
 (def (cmd-expand-abbrev app)
@@ -1012,51 +1018,544 @@
     (echo-message! (app-state-echo app)
       (string-append (number->string (length headings)) " headings"))))
 
-(def (cmd-org-table-delete-column app)
-  "Delete the column at point in an org table.
-   Org tables use | as column separator."
+;;;============================================================================
+;;; Org table commands — Qt implementation
+;;; String-based helpers imported from :gemacs/org-table.
+;;; Editor operations use Qt API (qt-plain-text-edit-*, sci-send).
+;;;============================================================================
+
+;;; --- Infrastructure helpers ---
+
+(def (qt-tbl-line ed text n)
+  "Get text of line N from buffer."
+  (let ((ls (sci-send ed SCI_POSITIONFROMLINE n 0))
+        (le (sci-send ed SCI_GETLINEENDPOSITION n)))
+    (if (<= le (string-length text))
+      (substring text ls le) "")))
+
+(def (qt-tbl-bounds ed text pos)
+  "Find table start/end line numbers around cursor.
+Returns (values start end) or (values #f #f)."
+  (let ((cur (sci-send ed SCI_LINEFROMPOSITION pos))
+        (total (sci-send ed SCI_GETLINECOUNT)))
+    (if (not (org-table-row? (qt-tbl-line ed text cur)))
+      (values #f #f)
+      (let ((start (let loop ((i cur))
+                     (if (and (>= i 0) (org-table-row? (qt-tbl-line ed text i)))
+                       (loop (- i 1)) (+ i 1))))
+            (end (let loop ((i cur))
+                   (if (and (< i total) (org-table-row? (qt-tbl-line ed text i)))
+                     (loop (+ i 1)) (- i 1)))))
+        (values start end)))))
+
+(def (qt-tbl-rows ed text start end)
+  "Get table rows. Data rows become lists of cell strings, separators become 'separator."
+  (let loop ((i start) (acc '()))
+    (if (> i end) (reverse acc)
+      (let ((line (qt-tbl-line ed text i)))
+        (loop (+ i 1)
+              (cons (if (org-table-separator? line)
+                      'separator (org-table-parse-row line))
+                    acc))))))
+
+(def (qt-tbl-col text pos line-start)
+  "Get current column index (0-based) by counting | chars before cursor."
+  (let loop ((i line-start) (pipes -1))
+    (if (>= i pos) (max 0 pipes)
+      (loop (+ i 1)
+            (if (and (< i (string-length text))
+                     (char=? (string-ref text i) #\|))
+              (+ pipes 1) pipes)))))
+
+(def (qt-tbl-format rows)
+  "Format rows into aligned table text string."
+  (let* ((widths (org-table-column-widths rows))
+         (lines (map (lambda (r)
+                       (if (eq? r 'separator)
+                         (org-table-format-separator widths)
+                         (org-table-format-row r widths)))
+                     rows)))
+    (string-join lines "\n")))
+
+(def (qt-tbl-replace-text text start-pos end-pos new-tbl)
+  "Replace text region [start-pos, end-pos) with new-tbl."
+  (string-append (substring text 0 start-pos)
+                 new-tbl
+                 (substring text end-pos (string-length text))))
+
+(def (qt-tbl-goto new-text start-pos row col)
+  "Find cursor position for cell (row, col) in table starting at start-pos."
+  (let ((len (string-length new-text)))
+    (let* ((row-start
+             (let loop ((r 0) (p start-pos))
+               (if (>= r row) p
+                 (let scan ((j p))
+                   (cond ((>= j len) j)
+                         ((char=? (string-ref new-text j) #\newline)
+                          (loop (+ r 1) (+ j 1)))
+                         (else (scan (+ j 1))))))))
+           (cell-start
+             (let loop ((j row-start) (pipes 0))
+               (cond ((>= j len) j)
+                     ((char=? (string-ref new-text j) #\|)
+                      (if (= pipes col) (min (+ j 2) len)
+                        (loop (+ j 1) (+ pipes 1))))
+                     (else (loop (+ j 1) pipes))))))
+      (min cell-start (max 0 (- len 1))))))
+
+(def (qt-tbl-apply! app ed text pos start end new-rows target-row target-col)
+  "Common pattern: format new-rows, replace table, position cursor."
+  (let* ((tbl-text (qt-tbl-format new-rows))
+         (start-pos (sci-send ed SCI_POSITIONFROMLINE start 0))
+         (end-pos (sci-send ed SCI_GETLINEENDPOSITION end))
+         (new-text (qt-tbl-replace-text text start-pos end-pos tbl-text))
+         (new-pos (if target-col
+                    (qt-tbl-goto new-text start-pos target-row target-col)
+                    (min pos (max 0 (- (string-length new-text) 1))))))
+    (qt-plain-text-edit-set-text! ed new-text)
+    (qt-plain-text-edit-set-cursor-position! ed new-pos)
+    (qt-plain-text-edit-ensure-cursor-visible! ed)))
+
+;;; --- Table alignment ---
+
+(def (cmd-org-table-align app)
+  "Re-align the org table at point."
   (let* ((ed (current-qt-editor app))
          (text (qt-plain-text-edit-text ed))
          (pos (qt-plain-text-edit-cursor-position ed)))
-    (let-values (((line line-start line-end) (org-get-current-line ed)))
-      ;; Check if we're in a table line (starts with |)
-      (if (not (and (> (string-length line) 0) (char=? (string-ref line 0) #\|)))
+    (let-values (((start end) (qt-tbl-bounds ed text pos)))
+      (if (not start)
         (echo-message! (app-state-echo app) "Not in an org table")
-        ;; Find which column we're in
-        (let* ((col-pos (- pos line-start))
-               ;; Count pipes before cursor to find column index
-               (col-idx
-                 (let loop ((i 0) (count 0))
-                   (if (>= i col-pos) count
-                     (if (char=? (string-ref line i) #\|)
-                       (loop (+ i 1) (+ count 1))
-                       (loop (+ i 1) count))))))
-          ;; Delete this column from all table lines
-          (let* ((all-lines (string-split text #\newline))
-                 (new-lines
-                   (map (lambda (l)
-                          (if (and (> (string-length l) 0)
-                                   (char=? (string-ref l 0) #\|))
-                            ;; Split on | and remove the column
-                            (let* ((parts (string-split l #\|))
-                                   ;; parts includes empty first element from leading |
-                                   (new-parts
-                                     (let loop ((ps parts) (i 0) (acc []))
-                                       (if (null? ps)
-                                         (reverse acc)
-                                         (if (= i col-idx)
-                                           (loop (cdr ps) (+ i 1) acc)
-                                           (loop (cdr ps) (+ i 1)
-                                             (cons (car ps) acc)))))))
-                              (string-join new-parts "|"))
-                            l))
-                        all-lines))
-                 (new-text (string-join new-lines "\n")))
-            (qt-plain-text-edit-set-text! ed new-text)
-            (qt-plain-text-edit-set-cursor-position! ed
-              (min pos (- (string-length new-text) 1)))
-            (echo-message! (app-state-echo app)
-              (string-append "Deleted column " (number->string col-idx)))))))))
+        (let* ((rows (qt-tbl-rows ed text start end))
+               (cur-line (sci-send ed SCI_LINEFROMPOSITION pos))
+               (line-start (sci-send ed SCI_POSITIONFROMLINE cur-line 0))
+               (cur-col (qt-tbl-col text pos line-start)))
+          (qt-tbl-apply! app ed text pos start end rows
+                         (- cur-line start) cur-col))))))
+
+;;; --- Row operations ---
+
+(def (cmd-org-table-insert-row app)
+  "Insert an empty row above the current row."
+  (let* ((ed (current-qt-editor app))
+         (text (qt-plain-text-edit-text ed))
+         (pos (qt-plain-text-edit-cursor-position ed)))
+    (let-values (((start end) (qt-tbl-bounds ed text pos)))
+      (if (not start)
+        (echo-message! (app-state-echo app) "Not in an org table")
+        (let* ((cur-line (sci-send ed SCI_LINEFROMPOSITION pos))
+               (row-idx (- cur-line start))
+               (rows (qt-tbl-rows ed text start end))
+               (ncols (length (org-table-column-widths rows)))
+               (new-rows (list-insert rows row-idx (make-list ncols ""))))
+          (qt-tbl-apply! app ed text pos start end new-rows row-idx 0))))))
+
+(def (cmd-org-table-delete-row app)
+  "Delete the current row from the table."
+  (let* ((ed (current-qt-editor app))
+         (text (qt-plain-text-edit-text ed))
+         (pos (qt-plain-text-edit-cursor-position ed)))
+    (let-values (((start end) (qt-tbl-bounds ed text pos)))
+      (if (not start)
+        (echo-message! (app-state-echo app) "Not in an org table")
+        (let* ((cur-line (sci-send ed SCI_LINEFROMPOSITION pos))
+               (row-idx (- cur-line start))
+               (rows (qt-tbl-rows ed text start end)))
+          (if (<= (length rows) 1)
+            (echo-message! (app-state-echo app) "Cannot delete last row")
+            (let* ((new-rows (list-remove-at rows row-idx))
+                   (target-row (min row-idx (- (length new-rows) 1))))
+              (qt-tbl-apply! app ed text pos start end new-rows target-row 0))))))))
+
+(def (cmd-org-table-move-row-up app)
+  "Move current row up one position."
+  (let* ((ed (current-qt-editor app))
+         (text (qt-plain-text-edit-text ed))
+         (pos (qt-plain-text-edit-cursor-position ed)))
+    (let-values (((start end) (qt-tbl-bounds ed text pos)))
+      (if (not start)
+        (echo-message! (app-state-echo app) "Not in an org table")
+        (let* ((cur-line (sci-send ed SCI_LINEFROMPOSITION pos))
+               (row-idx (- cur-line start))
+               (rows (qt-tbl-rows ed text start end)))
+          (if (<= row-idx 0)
+            (echo-message! (app-state-echo app) "Already at first row")
+            (let ((new-rows (swap-list-elements rows row-idx (- row-idx 1))))
+              (qt-tbl-apply! app ed text pos start end new-rows
+                             (- row-idx 1) 0))))))))
+
+(def (cmd-org-table-move-row-down app)
+  "Move current row down one position."
+  (let* ((ed (current-qt-editor app))
+         (text (qt-plain-text-edit-text ed))
+         (pos (qt-plain-text-edit-cursor-position ed)))
+    (let-values (((start end) (qt-tbl-bounds ed text pos)))
+      (if (not start)
+        (echo-message! (app-state-echo app) "Not in an org table")
+        (let* ((cur-line (sci-send ed SCI_LINEFROMPOSITION pos))
+               (row-idx (- cur-line start))
+               (rows (qt-tbl-rows ed text start end)))
+          (if (>= row-idx (- (length rows) 1))
+            (echo-message! (app-state-echo app) "Already at last row")
+            (let ((new-rows (swap-list-elements rows row-idx (+ row-idx 1))))
+              (qt-tbl-apply! app ed text pos start end new-rows
+                             (+ row-idx 1) 0))))))))
+
+;;; --- Column operations ---
+
+(def (cmd-org-table-delete-column app)
+  "Delete the current column from the table."
+  (let* ((ed (current-qt-editor app))
+         (text (qt-plain-text-edit-text ed))
+         (pos (qt-plain-text-edit-cursor-position ed)))
+    (let-values (((start end) (qt-tbl-bounds ed text pos)))
+      (if (not start)
+        (echo-message! (app-state-echo app) "Not in an org table")
+        (let* ((cur-line (sci-send ed SCI_LINEFROMPOSITION pos))
+               (line-start (sci-send ed SCI_POSITIONFROMLINE cur-line 0))
+               (cur-col (qt-tbl-col text pos line-start))
+               (rows (qt-tbl-rows ed text start end))
+               (ncols (length (org-table-column-widths rows))))
+          (if (<= ncols 1)
+            (echo-message! (app-state-echo app) "Cannot delete last column")
+            (let* ((new-rows (map (lambda (row)
+                                    (if (eq? row 'separator) row
+                                      (list-remove-at row (min cur-col
+                                                               (- (length row) 1)))))
+                                  rows))
+                   (target-col (min cur-col (- ncols 2))))
+              (qt-tbl-apply! app ed text pos start end new-rows
+                             (- cur-line start) target-col))))))))
+
+(def (cmd-org-table-insert-column app)
+  "Insert an empty column after the current one."
+  (let* ((ed (current-qt-editor app))
+         (text (qt-plain-text-edit-text ed))
+         (pos (qt-plain-text-edit-cursor-position ed)))
+    (let-values (((start end) (qt-tbl-bounds ed text pos)))
+      (if (not start)
+        (echo-message! (app-state-echo app) "Not in an org table")
+        (let* ((cur-line (sci-send ed SCI_LINEFROMPOSITION pos))
+               (line-start (sci-send ed SCI_POSITIONFROMLINE cur-line 0))
+               (cur-col (qt-tbl-col text pos line-start))
+               (rows (qt-tbl-rows ed text start end))
+               (new-rows (map (lambda (row)
+                                (if (eq? row 'separator) row
+                                  (list-insert row (+ cur-col 1) "")))
+                              rows)))
+          (qt-tbl-apply! app ed text pos start end new-rows
+                         (- cur-line start) (+ cur-col 1)))))))
+
+(def (cmd-org-table-move-column-left app)
+  "Move current column one position to the left."
+  (let* ((ed (current-qt-editor app))
+         (text (qt-plain-text-edit-text ed))
+         (pos (qt-plain-text-edit-cursor-position ed)))
+    (let-values (((start end) (qt-tbl-bounds ed text pos)))
+      (if (not start)
+        (echo-message! (app-state-echo app) "Not in an org table")
+        (let* ((cur-line (sci-send ed SCI_LINEFROMPOSITION pos))
+               (line-start (sci-send ed SCI_POSITIONFROMLINE cur-line 0))
+               (cur-col (qt-tbl-col text pos line-start))
+               (rows (qt-tbl-rows ed text start end)))
+          (if (<= cur-col 0)
+            (echo-message! (app-state-echo app) "Already at first column")
+            (let* ((target (- cur-col 1))
+                   (new-rows (map (lambda (row)
+                                    (if (eq? row 'separator) row
+                                      (swap-list-elements row cur-col target)))
+                                  rows)))
+              (qt-tbl-apply! app ed text pos start end new-rows
+                             (- cur-line start) target))))))))
+
+(def (cmd-org-table-move-column-right app)
+  "Move current column one position to the right."
+  (let* ((ed (current-qt-editor app))
+         (text (qt-plain-text-edit-text ed))
+         (pos (qt-plain-text-edit-cursor-position ed)))
+    (let-values (((start end) (qt-tbl-bounds ed text pos)))
+      (if (not start)
+        (echo-message! (app-state-echo app) "Not in an org table")
+        (let* ((cur-line (sci-send ed SCI_LINEFROMPOSITION pos))
+               (line-start (sci-send ed SCI_POSITIONFROMLINE cur-line 0))
+               (cur-col (qt-tbl-col text pos line-start))
+               (rows (qt-tbl-rows ed text start end))
+               (ncols (length (org-table-column-widths rows))))
+          (if (>= cur-col (- ncols 1))
+            (echo-message! (app-state-echo app) "Already at last column")
+            (let* ((target (+ cur-col 1))
+                   (new-rows (map (lambda (row)
+                                    (if (eq? row 'separator) row
+                                      (swap-list-elements row cur-col target)))
+                                  rows)))
+              (qt-tbl-apply! app ed text pos start end new-rows
+                             (- cur-line start) target))))))))
+
+;;; --- Separator ---
+
+(def (cmd-org-table-insert-separator app)
+  "Insert a separator line (|---+---|) below the current row."
+  (let* ((ed (current-qt-editor app))
+         (text (qt-plain-text-edit-text ed))
+         (pos (qt-plain-text-edit-cursor-position ed)))
+    (let-values (((start end) (qt-tbl-bounds ed text pos)))
+      (if (not start)
+        (echo-message! (app-state-echo app) "Not in an org table")
+        (let* ((cur-line (sci-send ed SCI_LINEFROMPOSITION pos))
+               (row-idx (- cur-line start))
+               (rows (qt-tbl-rows ed text start end))
+               (new-rows (list-insert rows (+ row-idx 1) 'separator)))
+          (qt-tbl-apply! app ed text pos start end new-rows row-idx #f))))))
+
+;;; --- Sort ---
+
+(def (qt-tbl-column-numeric? rows col)
+  "Check if all non-empty cells in column col are numeric."
+  (let loop ((rs rows))
+    (if (null? rs) #t
+      (let ((row (car rs)))
+        (if (or (eq? row 'separator) (>= col (length row)))
+          (loop (cdr rs))
+          (let ((cell (string-trim-both (list-ref row col))))
+            (if (string=? cell "") (loop (cdr rs))
+              (if (org-numeric-cell? cell) (loop (cdr rs)) #f))))))))
+
+(def (cmd-org-table-sort app)
+  "Sort table by current column (ascending). Auto-detects numeric vs alphabetic."
+  (let* ((ed (current-qt-editor app))
+         (text (qt-plain-text-edit-text ed))
+         (pos (qt-plain-text-edit-cursor-position ed)))
+    (let-values (((start end) (qt-tbl-bounds ed text pos)))
+      (if (not start)
+        (echo-message! (app-state-echo app) "Not in an org table")
+        (let* ((cur-line (sci-send ed SCI_LINEFROMPOSITION pos))
+               (line-start (sci-send ed SCI_POSITIONFROMLINE cur-line 0))
+               (cur-col (qt-tbl-col text pos line-start))
+               (rows (qt-tbl-rows ed text start end))
+               (numeric? (qt-tbl-column-numeric? rows cur-col))
+               ;; Separate data rows from separators with indices
+               (indexed (let loop ((i 0) (rs rows) (acc '()))
+                          (if (null? rs) (reverse acc)
+                            (loop (+ i 1) (cdr rs)
+                                  (cons (cons i (car rs)) acc)))))
+               (data-indexed (filter (lambda (p) (list? (cdr p))) indexed))
+               (sep-indexed (filter (lambda (p) (eq? (cdr p) 'separator)) indexed))
+               (sorted-data
+                 (sort (map cdr data-indexed)
+                       (lambda (a b)
+                         (let ((va (if (< cur-col (length a))
+                                     (list-ref a cur-col) ""))
+                               (vb (if (< cur-col (length b))
+                                     (list-ref b cur-col) "")))
+                           (if numeric?
+                             (< (or (string->number va) 0)
+                                (or (string->number vb) 0))
+                             (string<? va vb))))))
+               ;; Reconstruct with separators in original positions
+               (result (let loop ((i 0) (seps sep-indexed)
+                                  (data sorted-data) (acc '()))
+                         (cond
+                           ((and (null? seps) (null? data)) (reverse acc))
+                           ((and (pair? seps) (= (caar seps) i))
+                            (loop (+ i 1) (cdr seps) data
+                                  (cons 'separator acc)))
+                           ((pair? data)
+                            (loop (+ i 1) seps (cdr data)
+                                  (cons (car data) acc)))
+                           (else (reverse acc))))))
+          (qt-tbl-apply! app ed text pos start end result
+                         (- cur-line start) #f)
+          (echo-message! (app-state-echo app)
+            (string-append "Sorted by column " (number->string (+ cur-col 1))
+                           (if numeric? " (numeric)" " (alphabetic)"))))))))
+
+;;; --- Sum ---
+
+(def (cmd-org-table-sum app)
+  "Sum numeric cells in the current column. Shows result in echo area."
+  (let* ((ed (current-qt-editor app))
+         (text (qt-plain-text-edit-text ed))
+         (pos (qt-plain-text-edit-cursor-position ed)))
+    (let-values (((start end) (qt-tbl-bounds ed text pos)))
+      (if (not start)
+        (echo-message! (app-state-echo app) "Not in an org table")
+        (let* ((cur-line (sci-send ed SCI_LINEFROMPOSITION pos))
+               (line-start (sci-send ed SCI_POSITIONFROMLINE cur-line 0))
+               (cur-col (qt-tbl-col text pos line-start))
+               (rows (qt-tbl-rows ed text start end))
+               (vals (filter-map
+                       (lambda (row)
+                         (and (list? row) (< cur-col (length row))
+                              (string->number
+                                (string-trim-both (list-ref row cur-col)))))
+                       rows))
+               (total (apply + vals)))
+          (echo-message! (app-state-echo app)
+            (string-append "Sum of column " (number->string (+ cur-col 1))
+                           ": " (number->string total)
+                           " (" (number->string (length vals)) " values)")))))))
+
+;;; --- Recalculate ---
+
+(def (cmd-org-table-recalculate app)
+  "Recalculate formulas from the #+TBLFM: line below the table."
+  (let* ((ed (current-qt-editor app))
+         (text (qt-plain-text-edit-text ed))
+         (pos (qt-plain-text-edit-cursor-position ed)))
+    (let-values (((start end) (qt-tbl-bounds ed text pos)))
+      (if (not start)
+        (echo-message! (app-state-echo app) "Not in an org table")
+        (let* ((total (sci-send ed SCI_GETLINECOUNT))
+               (tblfm-line-num (+ end 1)))
+          (if (>= tblfm-line-num total)
+            (echo-message! (app-state-echo app) "No #+TBLFM: line after table")
+            (let ((tblfm-line (qt-tbl-line ed text tblfm-line-num)))
+              (if (not (string-prefix? "#+TBLFM:" (string-trim tblfm-line)))
+                (echo-message! (app-state-echo app) "No #+TBLFM: line after table")
+                (let* ((formulas (org-table-parse-tblfm tblfm-line))
+                       (rows (qt-tbl-rows ed text start end)))
+                  ;; Apply each formula
+                  (for-each
+                    (lambda (pair)
+                      (let ((target (car pair))
+                            (formula (cdr pair)))
+                        ;; Handle $N= formulas (whole column)
+                        (when (and (> (string-length target) 1)
+                                   (char=? (string-ref target 0) #\$))
+                          (let ((n (string->number
+                                     (substring target 1
+                                                (string-length target)))))
+                            (when n
+                              (let* ((target-col (- n 1))
+                                     (val (org-table-eval-formula
+                                            formula rows target-col)))
+                                ;; Set last data row's column to result
+                                (let loop ((i (- (length rows) 1)))
+                                  (when (>= i 0)
+                                    (if (list? (list-ref rows i))
+                                      (when (< target-col
+                                               (length (list-ref rows i)))
+                                        (set! (car (list-tail
+                                                     (list-ref rows i)
+                                                     target-col))
+                                              val))
+                                      (loop (- i 1)))))))))))
+                    formulas)
+                  (qt-tbl-apply! app ed text pos start end rows
+                                 (- (sci-send ed SCI_LINEFROMPOSITION pos) start)
+                                 #f)
+                  (echo-message! (app-state-echo app)
+                    (string-append "Recalculated "
+                      (number->string (length formulas)) " formula(s)")))))))))))
+
+;;; --- Table creation ---
+
+(def (cmd-org-table-create app)
+  "Insert a 3-column org table template at point."
+  (let* ((ed (current-qt-editor app))
+         (text (qt-plain-text-edit-text ed))
+         (pos (qt-plain-text-edit-cursor-position ed))
+         (header "| Col1 | Col2 | Col3 |")
+         (sep "|------+------+------|")
+         (empty "|      |      |      |")
+         (table (string-append "\n" header "\n" sep "\n" empty "\n"))
+         (new-text (string-append (substring text 0 pos)
+                                  table
+                                  (substring text pos (string-length text))))
+         ;; Position cursor in first cell of empty row
+         (new-pos (+ pos 1 (string-length header) 1 (string-length sep) 1 2)))
+    (qt-plain-text-edit-set-text! ed new-text)
+    (qt-plain-text-edit-set-cursor-position! ed
+      (min new-pos (- (string-length new-text) 1)))
+    (qt-plain-text-edit-ensure-cursor-visible! ed)
+    (echo-message! (app-state-echo app) "Inserted 3-column table")))
+
+;;; --- CSV import/export ---
+
+(def (cmd-org-table-export-csv app)
+  "Export the current org table as CSV in a new buffer."
+  (let* ((ed (current-qt-editor app))
+         (fr (app-state-frame app))
+         (text (qt-plain-text-edit-text ed))
+         (pos (qt-plain-text-edit-cursor-position ed)))
+    (let-values (((start end) (qt-tbl-bounds ed text pos)))
+      (if (not start)
+        (echo-message! (app-state-echo app) "Not in an org table")
+        (let* ((rows (qt-tbl-rows ed text start end))
+               (data-rows (filter list? rows))
+               (csv (string-join
+                      (map (lambda (row)
+                             (string-join
+                               (map (lambda (cell)
+                                      (if (string-contains cell ",")
+                                        (string-append "\"" cell "\"")
+                                        cell))
+                                    row)
+                               ","))
+                           data-rows)
+                      "\n"))
+               (buf (or (buffer-by-name "*CSV Export*")
+                        (qt-buffer-create! "*CSV Export*" ed #f))))
+          (qt-buffer-attach! ed buf)
+          (set! (qt-edit-window-buffer (qt-current-window fr)) buf)
+          (qt-plain-text-edit-set-text! ed csv)
+          (qt-text-document-set-modified! (buffer-doc-pointer buf) #f)
+          (qt-plain-text-edit-set-cursor-position! ed 0)
+          (qt-modeline-update! app)
+          (echo-message! (app-state-echo app)
+            (string-append "Exported " (number->string (length data-rows))
+                           " rows as CSV")))))))
+
+(def (cmd-org-table-import-csv app)
+  "Convert selected CSV text to an org table (replaces selection)."
+  (let* ((ed (current-qt-editor app))
+         (text (qt-plain-text-edit-text ed))
+         (sel-start (sci-send ed SCI_GETSELECTIONSTART))
+         (sel-end (sci-send ed SCI_GETSELECTIONEND)))
+    (if (= sel-start sel-end)
+      (echo-message! (app-state-echo app) "Select CSV text first")
+      (let* ((csv-text (substring text sel-start sel-end))
+             (table-text (org-csv-to-table csv-text))
+             (new-text (string-append (substring text 0 sel-start)
+                                      table-text
+                                      (substring text sel-end
+                                                 (string-length text)))))
+        (qt-plain-text-edit-set-text! ed new-text)
+        (qt-plain-text-edit-set-cursor-position! ed sel-start)
+        (qt-plain-text-edit-ensure-cursor-visible! ed)
+        (echo-message! (app-state-echo app) "Converted CSV to org table")))))
+
+;;; --- Transpose ---
+
+(def (cmd-org-table-transpose app)
+  "Transpose the table (swap rows and columns)."
+  (let* ((ed (current-qt-editor app))
+         (text (qt-plain-text-edit-text ed))
+         (pos (qt-plain-text-edit-cursor-position ed)))
+    (let-values (((start end) (qt-tbl-bounds ed text pos)))
+      (if (not start)
+        (echo-message! (app-state-echo app) "Not in an org table")
+        (let* ((rows (qt-tbl-rows ed text start end))
+               (data-rows (filter list? rows))
+               (ncols (if (null? data-rows) 0
+                        (apply max (map length data-rows))))
+               ;; Transpose: new-row[i] = old column i values
+               (transposed
+                 (let loop ((col 0) (acc '()))
+                   (if (>= col ncols) (reverse acc)
+                     (loop (+ col 1)
+                           (cons (map (lambda (row)
+                                        (if (< col (length row))
+                                          (list-ref row col) ""))
+                                      data-rows)
+                                 acc))))))
+          (qt-tbl-apply! app ed text pos start end transposed 0 0)
+          (echo-message! (app-state-echo app)
+            (string-append "Transposed: "
+              (number->string (length data-rows)) " rows x "
+              (number->string ncols) " cols -> "
+              (number->string ncols) " rows x "
+              (number->string (length data-rows)) " cols")))))))
 
 ;;; ============================================================================
 ;;; Markdown mode

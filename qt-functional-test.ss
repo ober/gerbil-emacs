@@ -2202,6 +2202,237 @@
   (displayln "Group 12 complete"))
 
 ;;;============================================================================
+;;; Group 13: Org-table commands
+;;;============================================================================
+
+(def (run-group-13-org-table)
+  (displayln "=== Group 13: Org-Table Commands ===")
+
+  ;; Helper: a simple 2x3 org table for testing
+  (def sample-table
+    (string-append "| Name  | Age | City   |\n"
+                   "|-------+-----+--------|\n"
+                   "| Alice | 30  | Paris  |\n"
+                   "| Bob   | 25  | London |"))
+
+  ;; Test: org-table-create inserts a table template
+  (displayln "Test: org-table-create inserts table template")
+  (let-values (((ed w app) (make-qt-test-app "notes.org")))
+    (set-qt-text! ed "" 0)
+    (execute-command! app 'org-table-create)
+    (let ((text (qt-plain-text-edit-text ed)))
+      (if (and (string-contains text "| Col1")
+               (string-contains text "|------"))
+        (pass! "org-table-create: template inserted")
+        (fail! "org-table-create" text "table template")))
+    (destroy-qt-test-app! ed w))
+
+  ;; Test: org-table-align re-aligns uneven table
+  (displayln "Test: org-table-align re-aligns uneven table")
+  (let-values (((ed w app) (make-qt-test-app "notes.org")))
+    (set-qt-text! ed "| a | bb | ccc |\n| dddd | e | ff |" 0)
+    (execute-command! app 'org-table-align)
+    (let ((text (qt-plain-text-edit-text ed)))
+      (if (and (string-contains text "| a    |")
+               (string-contains text "| dddd |"))
+        (pass! "org-table-align: columns aligned")
+        (fail! "org-table-align" text "aligned columns")))
+    (destroy-qt-test-app! ed w))
+
+  ;; Test: org-table-insert-row adds empty row
+  (displayln "Test: org-table-insert-row inserts empty row above")
+  (let-values (((ed w app) (make-qt-test-app "notes.org")))
+    (set-qt-text! ed sample-table 0)
+    ;; Position cursor on "Alice" row (line 2, after header+sep)
+    (let ((line2-pos (sci-send ed SCI_POSITIONFROMLINE 2 0)))
+      (qt-plain-text-edit-set-cursor-position! ed line2-pos)
+      (execute-command! app 'org-table-insert-row)
+      (let* ((text (qt-plain-text-edit-text ed))
+             (lines (string-split text #\newline)))
+        (if (= (length lines) 5)  ;; Was 4, now 5
+          (pass! "org-table-insert-row: row count 4 → 5")
+          (fail! "org-table-insert-row" (length lines) 5))))
+    (destroy-qt-test-app! ed w))
+
+  ;; Test: org-table-delete-row removes current row
+  (displayln "Test: org-table-delete-row removes current row")
+  (let-values (((ed w app) (make-qt-test-app "notes.org")))
+    (set-qt-text! ed sample-table 0)
+    ;; Position cursor on "Alice" row (line 2)
+    (let ((line2-pos (sci-send ed SCI_POSITIONFROMLINE 2 0)))
+      (qt-plain-text-edit-set-cursor-position! ed line2-pos)
+      (execute-command! app 'org-table-delete-row)
+      (let ((text (qt-plain-text-edit-text ed)))
+        (if (and (not (string-contains text "Alice"))
+                 (string-contains text "Bob"))
+          (pass! "org-table-delete-row: Alice removed, Bob remains")
+          (fail! "org-table-delete-row" text "no Alice, has Bob"))))
+    (destroy-qt-test-app! ed w))
+
+  ;; Test: org-table-move-row-down moves row down
+  (displayln "Test: org-table-move-row-down swaps rows")
+  (let-values (((ed w app) (make-qt-test-app "notes.org")))
+    (set-qt-text! ed sample-table 0)
+    ;; Position on "Alice" row (line 2), move down → Bob should be first
+    (let ((line2-pos (sci-send ed SCI_POSITIONFROMLINE 2 0)))
+      (qt-plain-text-edit-set-cursor-position! ed line2-pos)
+      (execute-command! app 'org-table-move-row-down)
+      (let* ((text (qt-plain-text-edit-text ed))
+             (lines (string-split text #\newline)))
+        ;; Line 2 should now be Bob, line 3 Alice
+        (if (and (string-contains (list-ref lines 2) "Bob")
+                 (string-contains (list-ref lines 3) "Alice"))
+          (pass! "org-table-move-row-down: Alice↔Bob swapped")
+          (fail! "org-table-move-row-down" text "Bob before Alice"))))
+    (destroy-qt-test-app! ed w))
+
+  ;; Test: org-table-move-row-up moves row up
+  (displayln "Test: org-table-move-row-up swaps rows")
+  (let-values (((ed w app) (make-qt-test-app "notes.org")))
+    (set-qt-text! ed sample-table 0)
+    ;; Position on "Bob" row (line 3), move up → Bob should be first
+    (let ((line3-pos (sci-send ed SCI_POSITIONFROMLINE 3 0)))
+      (qt-plain-text-edit-set-cursor-position! ed line3-pos)
+      (execute-command! app 'org-table-move-row-up)
+      (let* ((text (qt-plain-text-edit-text ed))
+             (lines (string-split text #\newline)))
+        (if (and (string-contains (list-ref lines 2) "Bob")
+                 (string-contains (list-ref lines 3) "Alice"))
+          (pass! "org-table-move-row-up: Bob moved above Alice")
+          (fail! "org-table-move-row-up" text "Bob before Alice"))))
+    (destroy-qt-test-app! ed w))
+
+  ;; Test: org-table-delete-column removes a column
+  (displayln "Test: org-table-delete-column removes Age column")
+  (let-values (((ed w app) (make-qt-test-app "notes.org")))
+    (set-qt-text! ed sample-table 0)
+    ;; Position cursor in "Age" column (col 1) on header row
+    ;; "| Name  | Age | City   |" — cursor after second |
+    (let ((pos (+ (sci-send ed SCI_POSITIONFROMLINE 0 0) 10)))
+      (qt-plain-text-edit-set-cursor-position! ed pos)
+      (execute-command! app 'org-table-delete-column)
+      (let ((text (qt-plain-text-edit-text ed)))
+        (if (and (not (string-contains text "Age"))
+                 (string-contains text "Name")
+                 (string-contains text "City"))
+          (pass! "org-table-delete-column: Age removed")
+          (fail! "org-table-delete-column" text "no Age, has Name+City"))))
+    (destroy-qt-test-app! ed w))
+
+  ;; Test: org-table-insert-column adds empty column
+  (displayln "Test: org-table-insert-column adds column after current")
+  (let-values (((ed w app) (make-qt-test-app "notes.org")))
+    (set-qt-text! ed "| A | B |\n| 1 | 2 |" 0)
+    ;; Cursor in first column
+    (qt-plain-text-edit-set-cursor-position! ed 2)
+    (execute-command! app 'org-table-insert-column)
+    (let* ((text (qt-plain-text-edit-text ed))
+           (lines (string-split text #\newline)))
+      ;; Each row should now have 3 data columns (4+ pipe-separated parts)
+      (if (>= (length (string-split (car lines) #\|)) 4)
+        (pass! "org-table-insert-column: 3 columns after insert")
+        (fail! "org-table-insert-column" text "3 columns")))
+    (destroy-qt-test-app! ed w))
+
+  ;; Test: org-table-move-column-right moves column right
+  (displayln "Test: org-table-move-column-right swaps columns")
+  (let-values (((ed w app) (make-qt-test-app "notes.org")))
+    (set-qt-text! ed "| A | B | C |\n| 1 | 2 | 3 |" 0)
+    ;; Cursor in column A (col 0)
+    (qt-plain-text-edit-set-cursor-position! ed 2)
+    (execute-command! app 'org-table-move-column-right)
+    (let* ((text (qt-plain-text-edit-text ed))
+           (lines (string-split text #\newline))
+           (first-line (car lines)))
+      ;; After moving col A right: first data col should be B
+      ;; Check that "| B" appears before "| A" (or " B " before " A ")
+      (if (string-prefix? "| B" first-line)
+        (pass! "org-table-move-column-right: A↔B swapped")
+        (fail! "org-table-move-column-right" first-line "starts with | B")))
+    (destroy-qt-test-app! ed w))
+
+  ;; Test: org-table-move-column-left moves column left
+  (displayln "Test: org-table-move-column-left swaps columns")
+  (let-values (((ed w app) (make-qt-test-app "notes.org")))
+    (set-qt-text! ed "| A | B | C |\n| 1 | 2 | 3 |" 0)
+    ;; Cursor in column B (col 1) — after second |, about position 6
+    (qt-plain-text-edit-set-cursor-position! ed 6)
+    (execute-command! app 'org-table-move-column-left)
+    (let* ((text (qt-plain-text-edit-text ed))
+           (lines (string-split text #\newline))
+           (first-line (car lines)))
+      ;; After moving col B left: first data col should be B
+      (if (string-prefix? "| B" first-line)
+        (pass! "org-table-move-column-left: B moved before A")
+        (fail! "org-table-move-column-left" first-line "starts with | B")))
+    (destroy-qt-test-app! ed w))
+
+  ;; Test: org-table-insert-separator inserts separator row
+  (displayln "Test: org-table-insert-separator inserts |---+---| row")
+  (let-values (((ed w app) (make-qt-test-app "notes.org")))
+    (set-qt-text! ed "| A | B |\n| 1 | 2 |" 0)
+    (qt-plain-text-edit-set-cursor-position! ed 0) ;; on header row
+    (execute-command! app 'org-table-insert-separator)
+    (let* ((text (qt-plain-text-edit-text ed))
+           (lines (string-split text #\newline)))
+      ;; Should now have 3 lines: header, separator, data
+      (if (and (= (length lines) 3)
+               (string-contains (list-ref lines 1) "---"))
+        (pass! "org-table-insert-separator: separator added below header")
+        (fail! "org-table-insert-separator" text "3 lines with ---")))
+    (destroy-qt-test-app! ed w))
+
+  ;; Test: org-table-sort sorts by column
+  (displayln "Test: org-table-sort sorts numerically")
+  (let-values (((ed w app) (make-qt-test-app "notes.org")))
+    (set-qt-text! ed "| X | 30 |\n| Y | 10 |\n| Z | 20 |" 0)
+    ;; Cursor in column 1 (numbers) — about position 5
+    (qt-plain-text-edit-set-cursor-position! ed 5)
+    (execute-command! app 'org-table-sort)
+    (let* ((text (qt-plain-text-edit-text ed))
+           (lines (string-split text #\newline)))
+      ;; Should be sorted: 10, 20, 30
+      (if (and (string-contains (car lines) "10")
+               (string-contains (list-ref lines 2) "30"))
+        (pass! "org-table-sort: sorted numerically 10,20,30")
+        (fail! "org-table-sort" text "sorted by number")))
+    (destroy-qt-test-app! ed w))
+
+  ;; Test: org-table-transpose swaps rows and columns
+  (displayln "Test: org-table-transpose swaps rows and columns")
+  (let-values (((ed w app) (make-qt-test-app "notes.org")))
+    (set-qt-text! ed "| A | B |\n| 1 | 2 |\n| 3 | 4 |" 0)
+    (qt-plain-text-edit-set-cursor-position! ed 0)
+    (execute-command! app 'org-table-transpose)
+    (let* ((text (qt-plain-text-edit-text ed))
+           (lines (string-split text #\newline)))
+      ;; 3 rows x 2 cols → 2 rows x 3 cols
+      (if (= (length lines) 2)
+        (pass! "org-table-transpose: 3 rows → 2 rows")
+        (fail! "org-table-transpose" (length lines) 2)))
+    (destroy-qt-test-app! ed w))
+
+  ;; Test: org-table-align is registered
+  (displayln "Test: all 17 org-table commands are registered")
+  (let ((cmds '(org-table-align org-table-insert-row org-table-delete-row
+                org-table-move-row-up org-table-move-row-down
+                org-table-delete-column org-table-insert-column
+                org-table-move-column-left org-table-move-column-right
+                org-table-insert-separator org-table-sort org-table-sum
+                org-table-recalculate org-table-create
+                org-table-export-csv org-table-import-csv
+                org-table-transpose)))
+    (let loop ((cs cmds) (ok 0))
+      (if (null? cs)
+        (if (= ok 17)
+          (pass! "all 17 org-table commands registered")
+          (fail! "org-table registration" ok 17))
+        (loop (cdr cs)
+              (+ ok (if (find-command (car cs)) 1 0))))))
+
+  (displayln "Group 13 complete"))
+
+;;;============================================================================
 ;;; Main
 ;;;============================================================================
 
@@ -2222,6 +2453,7 @@
     (run-group-10-split-operations)
     (run-group-11-window-scenarios)
     (run-group-12-layout-verification)
+    (run-group-13-org-table)
 
     (displayln "---")
     (displayln "Results: " *passes* " passed, " *failures* " failed")
