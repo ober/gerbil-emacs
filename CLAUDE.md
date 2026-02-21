@@ -47,6 +47,10 @@ HOME=/home/user LD_LIBRARY_PATH=/home/linuxbrew/.linuxbrew/opt/openssl@3/lib \
   GERBIL_LOADPATH=/home/user/.gerbil/lib gxi functional-test.ss
 ```
 
+## Feature Parity: "As is in Qt, it is in TUI!"
+
+Every command implemented in the Qt layer (`qt/commands-*.ss`) **MUST** have a corresponding implementation in the TUI layer (`editor-*.ss`), and vice versa. When adding a new `cmd-*` function to one layer, always check the other layer and add the equivalent there too. Both layers should expose the same set of user-facing commands via `M-x`.
+
 ## File size limit
 
 All source files must stay below 2000 lines. If a file approaches this limit, split it following the existing `commands-*.ss` chain pattern.

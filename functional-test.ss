@@ -1696,6 +1696,125 @@
           (check (split-node-orientation root) => 'horizontal)
           (check (length (split-node-children root)) => 3))))
 
+    ;;; Org-table commands — TUI dispatch-chain tests
+    (test-case "org-table: create inserts table template"
+      (setup-default-bindings!)
+      (register-all-commands!)
+      (let-values (((ed app) (make-test-app-with-file "/tmp/test.org")))
+        (editor-set-text ed "")
+        (editor-goto-pos ed 0)
+        ;; Feed empty string so app-read-string defaults to 3 columns
+        (with-scripted-responses '("")
+          (lambda ()
+            (execute-command! app 'org-table-create)
+            (let ((text (editor-get-text ed)))
+              (check (and (string-contains text "| Col1") #t) => #t)
+              (check (and (string-contains text "|---") #t) => #t))))))
+
+    (test-case "org-table: align re-aligns uneven table"
+      (setup-default-bindings!)
+      (register-all-commands!)
+      (let-values (((ed app) (make-test-app-with-file "/tmp/test.org")))
+        (editor-set-text ed "| a | bb | ccc |\n| dddd | e | ff |")
+        (editor-goto-pos ed 0)
+        (execute-command! app 'org-table-align)
+        (let ((text (editor-get-text ed)))
+          (check (and (string-contains text "| a    |") #t) => #t)
+          (check (and (string-contains text "| dddd |") #t) => #t))))
+
+    (test-case "org-table: insert-row adds empty row"
+      (setup-default-bindings!)
+      (register-all-commands!)
+      (let-values (((ed app) (make-test-app-with-file "/tmp/test.org")))
+        (editor-set-text ed "| A | B |\n| 1 | 2 |")
+        ;; Position on second row
+        (editor-goto-pos ed (editor-position-from-line ed 1))
+        (execute-command! app 'org-table-insert-row)
+        (let ((text (editor-get-text ed)))
+          ;; Should now have 3 lines
+          (check (length (string-split text #\newline)) => 3))))
+
+    (test-case "org-table: delete-row removes current row"
+      (setup-default-bindings!)
+      (register-all-commands!)
+      (let-values (((ed app) (make-test-app-with-file "/tmp/test.org")))
+        (editor-set-text ed "| Alice | 30 |\n| Bob | 25 |")
+        ;; Position on Alice row
+        (editor-goto-pos ed 0)
+        (execute-command! app 'org-table-delete-row)
+        (let ((text (editor-get-text ed)))
+          (check (string-contains text "Alice") => #f)
+          (check (and (string-contains text "Bob") #t) => #t))))
+
+    (test-case "org-table: move-row-down swaps rows"
+      (setup-default-bindings!)
+      (register-all-commands!)
+      (let-values (((ed app) (make-test-app-with-file "/tmp/test.org")))
+        (editor-set-text ed "| Alice |\n| Bob |")
+        (editor-goto-pos ed 0) ;; on Alice
+        (execute-command! app 'org-table-move-row-down)
+        (let* ((text (editor-get-text ed))
+               (lines (string-split text #\newline)))
+          (check (and (string-contains (car lines) "Bob") #t) => #t))))
+
+    (test-case "org-table: delete-column removes column"
+      (setup-default-bindings!)
+      (register-all-commands!)
+      (let-values (((ed app) (make-test-app-with-file "/tmp/test.org")))
+        (editor-set-text ed "| Name | Age |\n| Alice | 30 |")
+        ;; Position cursor in Age column (after second |)
+        (editor-goto-pos ed 10)
+        (execute-command! app 'org-table-delete-column)
+        (let ((text (editor-get-text ed)))
+          (check (string-contains text "Age") => #f)
+          (check (and (string-contains text "Name") #t) => #t))))
+
+    (test-case "org-table: insert-separator adds divider"
+      (setup-default-bindings!)
+      (register-all-commands!)
+      (let-values (((ed app) (make-test-app-with-file "/tmp/test.org")))
+        (editor-set-text ed "| A | B |\n| 1 | 2 |")
+        (editor-goto-pos ed 0)
+        (execute-command! app 'org-table-insert-separator)
+        (let ((text (editor-get-text ed)))
+          (check (and (string-contains text "---") #t) => #t))))
+
+    (test-case "org-table: sort sorts numerically"
+      (setup-default-bindings!)
+      (register-all-commands!)
+      (let-values (((ed app) (make-test-app-with-file "/tmp/test.org")))
+        (editor-set-text ed "| X | 30 |\n| Y | 10 |\n| Z | 20 |")
+        ;; Position in number column (col 1)
+        (editor-goto-pos ed 5)
+        (execute-command! app 'org-table-sort)
+        (let* ((text (editor-get-text ed))
+               (lines (string-split text #\newline)))
+          (check (and (string-contains (car lines) "10") #t) => #t))))
+
+    (test-case "org-table: transpose swaps rows and columns"
+      (setup-default-bindings!)
+      (register-all-commands!)
+      (let-values (((ed app) (make-test-app-with-file "/tmp/test.org")))
+        (editor-set-text ed "| A | B |\n| 1 | 2 |\n| 3 | 4 |")
+        (editor-goto-pos ed 0)
+        (execute-command! app 'org-table-transpose)
+        (let* ((text (editor-get-text ed))
+               (lines (string-split text #\newline)))
+          ;; 3 rows x 2 cols -> 2 rows x 3 cols
+          (check (length lines) => 2))))
+
+    (test-case "org-table: all 17 commands registered"
+      (setup-default-bindings!)
+      (register-all-commands!)
+      (let ((cmds '(org-table-create org-table-align org-table-insert-row
+                    org-table-delete-row org-table-move-row-up org-table-move-row-down
+                    org-table-delete-column org-table-insert-column
+                    org-table-move-column-left org-table-move-column-right
+                    org-table-insert-separator org-table-sort org-table-sum
+                    org-table-recalculate org-table-export-csv org-table-import-csv
+                    org-table-transpose)))
+        (for-each (lambda (cmd) (check (procedure? (find-command cmd)) => #t)) cmds)))
+
 ))
 
 (def main

@@ -20,7 +20,17 @@
         (only-in :gemacs/persist buffer-local-set!)
         (only-in :gemacs/highlight register-custom-highlighter!)
         (only-in :gemacs/org-highlight
-                 setup-org-styles! org-highlight-buffer! org-set-fold-levels!))
+                 setup-org-styles! org-highlight-buffer! org-set-fold-levels!)
+        (only-in :gemacs/org-table
+                 org-table-align org-table-insert-row org-table-delete-row
+                 org-table-move-row org-table-move-column
+                 org-table-insert-column org-table-delete-column
+                 org-table-insert-separator-line org-table-sort
+                 org-table-recalculate org-table-to-csv org-csv-to-table
+                 org-table-on-table-line? org-table-current-column
+                 org-table-find-bounds org-table-get-rows
+                 org-table-column-widths org-table-replace-rows
+                 org-numeric-cell? filter-map))
 
 ;;;============================================================================
 ;;; Register org-mode syntax highlighter
@@ -1881,3 +1891,106 @@
     (set! *global-nix-mode* (not *global-nix-mode*))
     (echo-message! echo (if *global-nix-mode*
                           "Nix mode ON" "Nix mode OFF"))))
+
+;;;============================================================================
+;;; Org-table TUI commands (parity with Qt layer)
+;;;============================================================================
+
+(def (tui-ed app) (edit-window-editor (current-window (app-state-frame app))))
+(def (tui-tbl app fn)
+  "Run fn on editor if on table line, else echo error."
+  (let ((ed (tui-ed app)))
+    (if (org-table-on-table-line? ed) (fn ed)
+      (echo-message! (app-state-echo app) "Not in an org table"))))
+
+(def (cmd-org-table-align app)
+  (tui-tbl app (lambda (ed) (org-table-align ed)
+    (echo-message! (app-state-echo app) "Table aligned"))))
+(def (cmd-org-table-insert-row app) (tui-tbl app org-table-insert-row))
+(def (cmd-org-table-delete-row app) (tui-tbl app org-table-delete-row))
+(def (cmd-org-table-move-row-up app) (tui-tbl app (lambda (ed) (org-table-move-row ed -1))))
+(def (cmd-org-table-move-row-down app) (tui-tbl app (lambda (ed) (org-table-move-row ed 1))))
+(def (cmd-org-table-delete-column app) (tui-tbl app org-table-delete-column))
+(def (cmd-org-table-insert-column app) (tui-tbl app org-table-insert-column))
+(def (cmd-org-table-move-column-left app) (tui-tbl app (lambda (ed) (org-table-move-column ed -1))))
+(def (cmd-org-table-move-column-right app) (tui-tbl app (lambda (ed) (org-table-move-column ed 1))))
+(def (cmd-org-table-insert-separator app) (tui-tbl app org-table-insert-separator-line))
+(def (cmd-org-table-recalculate app)
+  (tui-tbl app (lambda (ed) (org-table-recalculate ed)
+    (echo-message! (app-state-echo app) "Recalculated"))))
+
+(def (cmd-org-table-sort app)
+  (tui-tbl app (lambda (ed)
+    (let* ((col (org-table-current-column ed))
+           (rows (let-values (((s e) (org-table-find-bounds ed)))
+                   (org-table-get-rows ed s e)))
+           (numeric? (let loop ((rs rows))
+                       (if (null? rs) #t
+                         (let ((r (car rs)))
+                           (if (or (eq? r 'separator) (>= col (length r))) (loop (cdr rs))
+                             (let ((cell (string-trim-both (list-ref r col))))
+                               (if (string=? cell "") (loop (cdr rs))
+                                 (if (org-numeric-cell? cell) (loop (cdr rs)) #f)))))))))
+      (org-table-sort ed col numeric?)
+      (echo-message! (app-state-echo app)
+        (string-append "Sorted by column " (number->string (+ col 1))
+                       (if numeric? " (numeric)" " (alphabetic)")))))))
+
+(def (cmd-org-table-sum app)
+  (tui-tbl app (lambda (ed)
+    (let-values (((start end) (org-table-find-bounds ed)))
+      (let* ((col (org-table-current-column ed))
+             (rows (org-table-get-rows ed start end))
+             (vals (filter-map
+                     (lambda (row)
+                       (and (list? row) (< col (length row))
+                            (string->number (string-trim-both (list-ref row col)))))
+                     rows))
+             (total (apply + vals)))
+        (echo-message! (app-state-echo app)
+          (string-append "Sum of column " (number->string (+ col 1))
+                         ": " (number->string total)
+                         " (" (number->string (length vals)) " values)")))))))
+
+(def (cmd-org-table-export-csv app)
+  (let* ((ed (tui-ed app)) (fr (app-state-frame app)) (win (current-window fr)))
+    (if (org-table-on-table-line? ed)
+      (let* ((csv (org-table-to-csv ed))
+             (buf (buffer-create! "*CSV Export*" ed)))
+        (buffer-attach! ed buf) (set! (edit-window-buffer win) buf)
+        (editor-set-text ed csv) (editor-goto-pos ed 0)
+        (echo-message! (app-state-echo app) "Exported table as CSV"))
+      (echo-message! (app-state-echo app) "Not in an org table"))))
+
+(def (cmd-org-table-import-csv app)
+  (let* ((ed (tui-ed app))
+         (sel-start (editor-get-selection-start ed))
+         (sel-end (editor-get-selection-end ed)))
+    (if (= sel-start sel-end)
+      (echo-message! (app-state-echo app) "Select CSV text first")
+      (let* ((text (editor-get-text ed))
+             (csv-text (substring text sel-start sel-end))
+             (table-text (org-csv-to-table csv-text))
+             (new-text (string-append (substring text 0 sel-start) table-text
+                                      (substring text sel-end (string-length text)))))
+        (editor-set-text ed new-text) (editor-goto-pos ed sel-start)
+        (echo-message! (app-state-echo app) "Converted CSV to org table")))))
+
+(def (cmd-org-table-transpose app)
+  (tui-tbl app (lambda (ed)
+    (let-values (((start end) (org-table-find-bounds ed)))
+      (let* ((rows (org-table-get-rows ed start end))
+             (data-rows (filter list? rows))
+             (ncols (if (null? data-rows) 0 (apply max (map length data-rows))))
+             (transposed
+               (let loop ((col 0) (acc '()))
+                 (if (>= col ncols) (reverse acc)
+                   (loop (+ col 1)
+                         (cons (map (lambda (row)
+                                      (if (< col (length row)) (list-ref row col) ""))
+                                    data-rows) acc))))))
+        (org-table-replace-rows ed start end transposed)
+        (echo-message! (app-state-echo app)
+          (string-append "Transposed: " (number->string (length data-rows)) "x"
+            (number->string ncols) " -> " (number->string ncols) "x"
+            (number->string (length data-rows)))))))))
