@@ -638,6 +638,94 @@
   "Refresh the magit status buffer."
   (cmd-magit-status app))
 
+(def (cmd-magit-blame app)
+  "Show git blame for current file."
+  (let* ((buf (current-qt-buffer app))
+         (path (buffer-file-path buf)))
+    (if (not path)
+      (echo-error! (app-state-echo app) "Buffer has no file")
+      (let* ((dir (path-directory path))
+             (output (magit-run-git (list "blame" "--" path) dir))
+             (ed (current-qt-editor app))
+             (fr (app-state-frame app))
+             (blame-buf (or (buffer-by-name "*Git Blame*")
+                            (qt-buffer-create! "*Git Blame*" ed #f))))
+        (qt-buffer-attach! ed blame-buf)
+        (set! (qt-edit-window-buffer (qt-current-window fr)) blame-buf)
+        (qt-plain-text-edit-set-text! ed (if (string=? output "") "No blame info.\n" output))
+        (qt-text-document-set-modified! (buffer-doc-pointer blame-buf) #f)
+        (qt-plain-text-edit-set-cursor-position! ed 0)))))
+
+(def (cmd-magit-fetch app)
+  "Fetch from all remotes."
+  (when *magit-dir*
+    (let ((output (magit-run-git '("fetch" "--all") *magit-dir*)))
+      (echo-message! (app-state-echo app) "Fetched from all remotes"))))
+
+(def (cmd-magit-pull app)
+  "Pull from remote."
+  (when *magit-dir*
+    (let ((output (magit-run-git '("pull") *magit-dir*)))
+      (echo-message! (app-state-echo app)
+        (if (string=? output "") "Pull complete" (string-trim output))))))
+
+(def (cmd-magit-push app)
+  "Push to remote."
+  (when *magit-dir*
+    (let ((output (magit-run-git '("push") *magit-dir*)))
+      (echo-message! (app-state-echo app)
+        (if (string=? output "") "Pushed" (string-trim output))))))
+
+(def (cmd-magit-rebase app)
+  "Rebase onto a branch."
+  (let ((branch (qt-echo-read-string app "Rebase onto (default origin/main): ")))
+    (let ((target (if (or (not branch) (string=? branch "")) "origin/main" branch)))
+      (when *magit-dir*
+        (let ((output (magit-run-git (list "rebase" target) *magit-dir*)))
+          (echo-message! (app-state-echo app)
+            (if (string=? output "") "Rebase complete" (string-trim output))))))))
+
+(def (cmd-magit-merge app)
+  "Merge a branch."
+  (let ((branch (qt-echo-read-string app "Merge branch: ")))
+    (when (and branch (> (string-length branch) 0))
+      (when *magit-dir*
+        (let ((output (magit-run-git (list "merge" branch) *magit-dir*)))
+          (echo-message! (app-state-echo app)
+            (if (string=? output "") "Merge complete" (string-trim output))))))))
+
+(def (cmd-magit-stash app)
+  "Stash working directory changes."
+  (when *magit-dir*
+    (let ((output (magit-run-git '("stash" "push" "-m" "stash from editor") *magit-dir*)))
+      (echo-message! (app-state-echo app)
+        (if (string=? output "") "Stashed" (string-trim output))))))
+
+(def (cmd-magit-branch app)
+  "Show git branches."
+  (let* ((dir (or *magit-dir* (current-directory)))
+         (output (magit-run-git '("branch" "-a") dir)))
+    (let* ((ed (current-qt-editor app))
+           (fr (app-state-frame app))
+           (br-buf (or (buffer-by-name "*Git Branches*")
+                       (qt-buffer-create! "*Git Branches*" ed #f))))
+      (qt-buffer-attach! ed br-buf)
+      (set! (qt-edit-window-buffer (qt-current-window fr)) br-buf)
+      (qt-plain-text-edit-set-text! ed (if (string=? output "") "No branches\n" output))
+      (qt-text-document-set-modified! (buffer-doc-pointer br-buf) #f)
+      (qt-plain-text-edit-set-cursor-position! ed 0))))
+
+(def (cmd-magit-checkout app)
+  "Switch git branch."
+  (let ((branch (qt-echo-read-string app "Branch: ")))
+    (when (and branch (> (string-length branch) 0))
+      (let* ((dir (or *magit-dir* (current-directory)))
+             (output (magit-run-git (list "checkout" branch) dir)))
+        (echo-message! (app-state-echo app)
+          (if (string=? output "")
+            (string-append "Switched to: " branch)
+            (string-trim output)))))))
+
 ;;;============================================================================
 ;;; Text manipulation
 ;;;============================================================================
