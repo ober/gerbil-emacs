@@ -1500,8 +1500,10 @@ Returns list of (name . line-number) pairs."
   (cmd-delete-other-windows app))
 
 (def (cmd-minimize-window app)
-  "Minimize window (placeholder)."
-  (echo-message! (app-state-echo app) "Window minimized"))
+  "Minimize the main window."
+  (let ((win (qt-frame-main-win (app-state-frame app))))
+    (qt-widget-show-minimized! win)
+    (echo-message! (app-state-echo app) "Window minimized")))
 
 (def (cmd-delete-matching-lines app)
   "Delete lines matching a pattern (alias for flush-lines)."

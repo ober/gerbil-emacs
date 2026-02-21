@@ -2636,6 +2636,60 @@
   (displayln "Group 17 complete"))
 
 ;;;============================================================================
+;;; Group 18: Stub Replacements (overwrite-mode, window resize, chmod, etc.)
+;;;============================================================================
+
+(def (run-group-18-stub-replacements)
+  (displayln "\n=== Group 18: Stub Replacements ===")
+
+  ;; Test 1: overwrite-mode registered (Qt)
+  (if (find-command 'toggle-overwrite-mode)
+    (pass! "toggle-overwrite-mode registered")
+    (fail! "toggle-overwrite-mode" "not found" "registered"))
+
+  ;; Test 2: shrink/enlarge-window-horizontally dispatch
+  (let-values (((ed _w app) (make-qt-test-app "resize-test")))
+    (with-catch
+      (lambda (e)
+        (fail! "shrink-window-horizontally"
+               (with-output-to-string "" (lambda () (display-exception e)))
+               "no error"))
+      (lambda ()
+        (execute-command! app 'shrink-window-horizontally)
+        (execute-command! app 'enlarge-window-horizontally)
+        (pass! "shrink/enlarge-window-horizontally dispatch without error"))))
+
+  ;; Test 3: minimize-window registered
+  (if (find-command 'minimize-window)
+    (pass! "minimize-window registered")
+    (fail! "minimize-window" "not found" "registered"))
+
+  ;; Test 4: complete-filename registered
+  (if (find-command 'complete-filename)
+    (pass! "complete-filename registered")
+    (fail! "complete-filename" "not found" "registered"))
+
+  ;; Test 5: dired-do-chmod registered
+  (if (find-command 'dired-do-chmod)
+    (pass! "dired-do-chmod registered")
+    (fail! "dired-do-chmod" "not found" "registered"))
+
+  ;; Test 6: complete-filename dispatches on buffer with a path prefix
+  (let-values (((ed _w app) (make-qt-test-app "fname-test")))
+    (qt-plain-text-edit-set-text! ed "/tmp/")
+    (qt-plain-text-edit-set-cursor-position! ed 5)
+    (with-catch
+      (lambda (e)
+        (fail! "complete-filename dispatch"
+               (with-output-to-string "" (lambda () (display-exception e)))
+               "no error"))
+      (lambda ()
+        (execute-command! app 'complete-filename)
+        (pass! "complete-filename dispatch executes without error"))))
+
+  (displayln "Group 18 complete"))
+
+;;;============================================================================
 ;;; Main
 ;;;============================================================================
 
@@ -2661,6 +2715,7 @@
     (run-group-15-code-folding)
     (run-group-16-ui-toggles)
     (run-group-17-recenter)
+    (run-group-18-stub-replacements)
 
     (displayln "---")
     (displayln "Results: " *passes* " passed, " *failures* " failed")

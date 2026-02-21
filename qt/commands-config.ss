@@ -568,8 +568,48 @@
   (echo-message! (app-state-echo app) "No backup file to diff"))
 
 (def (cmd-dired-do-chmod app)
-  "Change permissions in dired."
-  (echo-message! (app-state-echo app) "chmod not yet implemented in dired"))
+  "Change permissions of marked files (or file under cursor) in dired."
+  (let* ((buf (current-qt-buffer app))
+         (marked (dired-marked-files buf))
+         (files (if (null? marked)
+                  ;; Fall back to file under cursor
+                  (let* ((ed (current-qt-editor app))
+                         (line (qt-plain-text-edit-cursor-line ed))
+                         (idx (- line 3))
+                         (entries (hash-get *dired-entries* buf)))
+                    (if (and entries (>= idx 0) (< idx (vector-length entries)))
+                      (list (vector-ref entries idx))
+                      []))
+                  marked)))
+    (if (null? files)
+      (echo-message! (app-state-echo app) "No file on this line")
+      (let ((mode-str (qt-echo-read-string app
+                        (string-append "chmod " (number->string (length files))
+                                       " file(s) to mode (e.g. 755): "))))
+        (when (and mode-str (> (string-length mode-str) 0))
+          (let ((count 0))
+            (for-each
+              (lambda (path)
+                (with-catch
+                  (lambda (e)
+                    (echo-error! (app-state-echo app)
+                      (string-append "chmod failed: " (path-strip-directory path))))
+                  (lambda ()
+                    (let* ((proc (open-process
+                                  (list path: "chmod"
+                                        arguments: (list mode-str path)
+                                        stdout-redirection: #f
+                                        stderr-redirection: #f)))
+                           (rc (process-status proc)))
+                      (when (zero? rc)
+                        (set! count (+ count 1)))))))
+              files)
+            ;; Refresh dired listing
+            (let ((dir (buffer-file-path buf)))
+              (when dir (dired-open-directory! app dir)))
+            (echo-message! (app-state-echo app)
+              (string-append "Changed mode of " (number->string count)
+                             " file(s) to " mode-str))))))))
 
 (def (cmd-eldoc app)
   "Toggle eldoc mode (automatic function signature display)."
@@ -1266,13 +1306,13 @@ If on blank line: insert comment and indent."
 
 (def (cmd-shrink-window-horizontally app)
   "Shrink the current window horizontally."
-  (echo-message! (app-state-echo app)
-    "Horizontal resize not supported in vertical splitter layout"))
+  (adjust-window-size! app -50)
+  (echo-message! (app-state-echo app) "Window shrunk horizontally"))
 
 (def (cmd-enlarge-window-horizontally app)
   "Enlarge the current window horizontally."
-  (echo-message! (app-state-echo app)
-    "Horizontal resize not supported in vertical splitter layout"))
+  (adjust-window-size! app 50)
+  (echo-message! (app-state-echo app) "Window enlarged horizontally"))
 
 ;;;============================================================================
 ;;; Recover file from auto-save

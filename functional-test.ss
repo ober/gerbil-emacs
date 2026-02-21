@@ -1898,6 +1898,17 @@
       (setup-default-bindings!)
       (check (keymap-lookup *global-keymap* "C-l") => 'recenter-top-bottom))
 
+    (test-case "overwrite-mode: dispatches via execute-command!"
+      (let-values (((ed app) (make-test-app "overwrite-test")))
+        (editor-set-text ed "hello")
+        (execute-command! app 'overwrite-mode)
+        (check (app-state-last-command app) => 'overwrite-mode)
+        ;; SCI_GETOVERTYPE = 2187; should be 1 after toggling ON
+        (check (send-message ed 2187 0 0) => 1)
+        ;; Toggle again to turn OFF
+        (execute-command! app 'overwrite-mode)
+        (check (send-message ed 2187 0 0) => 0)))
+
 ))
 
 (def main

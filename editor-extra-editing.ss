@@ -977,8 +977,13 @@
 
 ;; Misc text
 (def (cmd-overwrite-mode app)
-  "Toggle overwrite mode (stub — use M-x toggle-overwrite-mode)."
-  (echo-message! (app-state-echo app) "Use M-x toggle-overwrite-mode"))
+  "Toggle overwrite mode."
+  (let* ((ed (current-editor app))
+         (cur (send-message ed 2187 0 0))  ;; SCI_GETOVERTYPE
+         (new (if (zero? cur) 1 0)))
+    (send-message ed 2186 new 0)           ;; SCI_SETOVERTYPE
+    (echo-message! (app-state-echo app)
+      (if (= new 1) "Overwrite mode ON" "Overwrite mode OFF"))))
 
 ;;;============================================================================
 ;;; Real multi-selection commands (using Scintilla multi-selection API)

@@ -998,8 +998,78 @@ S=sort by name, z=sort by size, q=quit."
 
 ;; --- Completion ---
 (def (cmd-complete-filename app)
-  "Complete filename at point."
-  (echo-message! (app-state-echo app) "Filename completion not yet available"))
+  "Complete filename at point using filesystem entries."
+  (let* ((ed (current-qt-editor app))
+         (pos (qt-plain-text-edit-cursor-position ed))
+         (text (qt-plain-text-edit-text ed))
+         (len (string-length text))
+         ;; Walk backward to find start of path-like prefix
+         (start (let loop ((i (- pos 1)))
+                  (if (or (< i 0)
+                          (let ((ch (string-ref text i)))
+                            (or (char=? ch #\space) (char=? ch #\newline)
+                                (char=? ch #\tab) (char=? ch #\() (char=? ch #\))
+                                (char=? ch #\") (char=? ch #\'))))
+                    (+ i 1)
+                    (loop (- i 1)))))
+         (prefix (if (< start pos) (substring text start pos) "")))
+    (if (string=? prefix "")
+      (echo-message! (app-state-echo app) "No filename prefix at point")
+      ;; Expand ~ and resolve directory
+      (let* ((expanded (if (and (> (string-length prefix) 0)
+                                (char=? (string-ref prefix 0) #\~))
+                         (string-append (getenv "HOME" "/")
+                                        (substring prefix 1 (string-length prefix)))
+                         prefix))
+             (dir (path-directory expanded))
+             (base (path-strip-directory expanded))
+             (dir-path (if (string=? dir "") "." dir)))
+        (with-catch
+          (lambda (e)
+            (echo-message! (app-state-echo app) "No completions"))
+          (lambda ()
+            (let* ((entries (directory-files
+                              (list path: dir-path ignore-hidden: 'dot-and-dot-dot)))
+                   (matches (filter (lambda (name) (string-prefix? base name))
+                                    (sort entries string<?))))
+              (cond
+                ((null? matches)
+                 (echo-message! (app-state-echo app) "No completions"))
+                ((= (length matches) 1)
+                 ;; Single match — complete it
+                 (let* ((match (car matches))
+                        (suffix (substring match (string-length base)
+                                           (string-length match)))
+                        ;; Add trailing / for directories
+                        (full (string-append dir-path "/" match))
+                        (trail (if (and (file-exists? full)
+                                        (eq? 'directory
+                                             (file-info-type (file-info full))))
+                                 "/" "")))
+                   (qt-plain-text-edit-insert-text! ed (string-append suffix trail))
+                   (echo-message! (app-state-echo app) (string-append dir-path "/" match))))
+                (else
+                 ;; Multiple — complete common prefix and show candidates
+                 (let* ((common (let loop ((i (string-length base)))
+                                  (if (>= i (apply min (map string-length matches)))
+                                    i
+                                    (let ((ch (string-ref (car matches) i)))
+                                      (if (every (lambda (s) (char=? (string-ref s i) ch))
+                                                 matches)
+                                        (loop (+ i 1))
+                                        i)))))
+                        (common-suffix (substring (car matches) (string-length base) common))
+                        (shown (if (> (length matches) 10)
+                                 (append (let loop ((l matches) (n 0) (acc []))
+                                           (if (or (null? l) (>= n 10)) (reverse acc)
+                                             (loop (cdr l) (+ n 1) (cons (car l) acc))))
+                                         (list (string-append "... +"
+                                                  (number->string (- (length matches) 10)))))
+                                 matches)))
+                   (when (> (string-length common-suffix) 0)
+                     (qt-plain-text-edit-insert-text! ed common-suffix))
+                   (echo-message! (app-state-echo app)
+                     (string-join shown "  "))))))))))))
 
 (def (cmd-completion-at-point app)
   "Smart completion at point. For Gerbil buffers, combines buffer words
