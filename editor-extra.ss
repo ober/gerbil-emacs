@@ -1444,6 +1444,7 @@
   (register-command! 'diff-two-files cmd-diff-two-files)
   (register-command! 'recompile cmd-recompile)
   (register-command! 'comment-dwim cmd-comment-dwim)
+  (register-command! 'auto-save-visited-mode cmd-auto-save-mode)
 )
 
 ;;;============================================================================

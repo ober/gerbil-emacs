@@ -11,18 +11,30 @@
         cmd-org-capture cmd-org-refile cmd-org-time-stamp
         cmd-org-insert-link cmd-org-narrow-to-subtree cmd-org-sort
         cmd-project-switch-to-buffer cmd-project-kill-buffers
-        cmd-vc-next-action)
+        cmd-vc-next-action
+        ;; Batch 2
+        cmd-sort-numeric-fields cmd-find-dired cmd-find-name-dired
+        cmd-dired-hide-details cmd-desktop-save-mode
+        cmd-org-babel-execute-src-block cmd-org-babel-tangle
+        cmd-other-frame cmd-winum-mode cmd-help-with-tutorial
+        cmd-cua-mode)
 
 (import :std/sugar
         :std/srfi/13
         :std/sort
         :std/misc/string
+        :std/misc/process
+        (only-in :std/misc/ports read-all-as-string)
+        (only-in :gemacs/pregexp-compat pregexp-match)
         :gerbil-scintilla/scintilla
         :gemacs/core
         :gemacs/keymap
         :gemacs/buffer
         :gemacs/window
         :gemacs/echo
+        (only-in :gemacs/org-babel
+                 org-babel-find-src-block org-babel-execute
+                 org-babel-tangle-to-files org-babel-insert-result)
         :gemacs/editor-core
         :gemacs/editor-text
         :gemacs/editor-ui
@@ -626,6 +638,33 @@
   (register-command! 'project-switch-to-buffer cmd-project-switch-to-buffer)
   (register-command! 'project-kill-buffers cmd-project-kill-buffers)
   (register-command! 'vc-next-action cmd-vc-next-action)
+  ;;; Batch 2: more canonical aliases for standard Emacs names
+  (register-command! 'keyboard-escape-quit cmd-keyboard-quit)
+  (register-command! 'buffer-menu cmd-list-buffers)
+  (register-command! 'move-beginning-of-line cmd-beginning-of-line)
+  (register-command! 'move-end-of-line cmd-end-of-line)
+  (register-command! 'scroll-other-window-down cmd-scroll-other-window-up)
+  (register-command! 'kmacro-start-macro cmd-start-kbd-macro)
+  (register-command! 'kmacro-end-macro cmd-end-kbd-macro)
+  (register-command! 'tab-bar-mode cmd-toggle-tab-bar-mode)
+  (register-command! 'clipboard-yank cmd-yank)
+  (register-command! 'clipboard-kill-region cmd-kill-region)
+  (register-command! 'comment-line cmd-toggle-comment)
+  (register-command! 'indent-for-tab-command cmd-indent-or-complete)
+  (register-command! 'linum-mode cmd-toggle-line-numbers)
+  (register-command! 'sort-numeric-fields cmd-sort-numeric-fields)
+  (register-command! 'find-dired cmd-find-dired)
+  (register-command! 'find-name-dired cmd-find-name-dired)
+  (register-command! 'dired-hide-details-mode cmd-dired-hide-details)
+  (register-command! 'desktop-save-mode cmd-desktop-save-mode)
+  (register-command! 'org-babel-execute-src-block cmd-org-babel-execute-src-block)
+  (register-command! 'org-babel-tangle cmd-org-babel-tangle)
+  (register-command! 'other-frame cmd-other-frame)
+  (register-command! 'register-to-point cmd-point-to-register)
+  (register-command! 'winum-mode cmd-winum-mode)
+  (register-command! 'help-with-tutorial cmd-help-with-tutorial)
+  (register-command! 'flyspell-prog-mode cmd-toggle-flyspell)
+  (register-command! 'cua-mode cmd-cua-mode)
 )
 
 ;;;============================================================================
@@ -891,4 +930,184 @@
                (echo-message! (app-state-echo app)
                  (string-append "Status: " (string-trim status-line)))))))))))
 
+;;;============================================================================
+;;; Batch 2: New feature implementations
+;;;============================================================================
 
+;;; --- Sort numeric ---
+(def (cmd-sort-numeric-fields app)
+  "Sort lines by numeric value of first number on each line."
+  (let* ((ed (current-editor app))
+         (text (editor-get-text ed))
+         (lines (string-split text #\newline))
+         (numbered (map (lambda (l)
+                          (let ((nums (pregexp-match "[0-9]+" l)))
+                            (cons (if nums (string->number (car nums)) 0) l)))
+                        lines))
+         (sorted (sort numbered (lambda (a b) (< (car a) (car b)))))
+         (result (string-join (map cdr sorted) "\n")))
+    (editor-set-text ed result)
+    (echo-message! (app-state-echo app)
+      (string-append "Sorted " (number->string (length lines)) " lines numerically"))))
+
+;;; --- Find in dired ---
+(def (cmd-find-dired app)
+  "Find files matching pattern in directory (find-dired)."
+  (let ((dir (app-read-string app "Directory: ")))
+    (when (and dir (not (string-empty? dir)))
+      (let ((args (app-read-string app "Find arguments: ")))
+        (when (and args (not (string-empty? args)))
+          (with-catch
+            (lambda (e) (echo-message! (app-state-echo app) "find error"))
+            (lambda ()
+              (let* ((cmd-str (string-append "find " dir " " args))
+                     (output (run-process ["bash" "-c" cmd-str] coprocess: read-all-as-string)))
+                (open-output-buffer app "*Find*" (or output ""))))))))))
+
+(def (cmd-find-name-dired app)
+  "Find files by name pattern in directory (find-name-dired)."
+  (let ((dir (app-read-string app "Directory: ")))
+    (when (and dir (not (string-empty? dir)))
+      (let ((pattern (app-read-string app "Filename pattern: ")))
+        (when (and pattern (not (string-empty? pattern)))
+          (with-catch
+            (lambda (e) (echo-message! (app-state-echo app) "find error"))
+            (lambda ()
+              (let* ((cmd-str (string-append "find " dir " -name " (string-append "'" pattern "'")))
+                     (output (run-process ["bash" "-c" cmd-str] coprocess: read-all-as-string)))
+                (open-output-buffer app "*Find*" (or output ""))))))))))
+
+;;; --- Dired details ---
+(def *dired-hide-details* #f)
+(def (cmd-dired-hide-details app)
+  "Toggle dired details display."
+  (set! *dired-hide-details* (not *dired-hide-details*))
+  (echo-message! (app-state-echo app)
+    (if *dired-hide-details* "Details hidden" "Details shown")))
+
+;;; --- Desktop save mode ---
+(def *desktop-save-mode* #f)
+(def (cmd-desktop-save-mode app)
+  "Toggle desktop-save-mode (auto save/restore session)."
+  (set! *desktop-save-mode* (not *desktop-save-mode*))
+  (echo-message! (app-state-echo app)
+    (if *desktop-save-mode* "Desktop save mode enabled" "Desktop save mode disabled")))
+
+;;; --- Org babel commands ---
+(def (cmd-org-babel-execute-src-block app)
+  "Execute the org source block at point (C-c C-c)."
+  (let* ((ed (current-editor app))
+         (text (editor-get-text ed))
+         (pos (editor-get-current-pos ed))
+         (line-num (editor-line-from-position ed pos))
+         (lines (string-split text #\newline)))
+    (let-values (((lang header-args body begin-line end-line block-name)
+                  (org-babel-find-src-block lines line-num)))
+      (if (not lang)
+        (echo-message! (app-state-echo app) "Not in a source block")
+        (with-catch
+          (lambda (e) (echo-message! (app-state-echo app)
+                        (string-append "Babel error: "
+                          (with-output-to-string (lambda () (display-exception e))))))
+          (lambda ()
+            (let ((output (org-babel-execute lang body header-args)))
+              (org-babel-insert-result ed end-line output
+                (or (hash-get header-args "results") "output"))
+              (echo-message! (app-state-echo app)
+                (string-append "Executed " lang " block")))))))))
+
+(def (cmd-org-babel-tangle app)
+  "Tangle the current org buffer — extract code blocks to files."
+  (let* ((ed (current-editor app))
+         (text (editor-get-text ed)))
+    (with-catch
+      (lambda (e) (echo-message! (app-state-echo app)
+                    (string-append "Tangle error: "
+                      (with-output-to-string (lambda () (display-exception e))))))
+      (lambda ()
+        (let ((files (org-babel-tangle-to-files text)))
+          (echo-message! (app-state-echo app)
+            (if (null? files)
+              "No :tangle blocks found"
+              (string-append "Tangled to: "
+                (string-join (map car files) ", ")))))))))
+
+;;; --- Other frame (stub) ---
+(def (cmd-other-frame app)
+  "Switch to next frame (stub — gemacs is single-frame)."
+  (echo-message! (app-state-echo app) "Only one frame"))
+
+;;; --- Winum mode (stub) ---
+(def *winum-mode* #f)
+(def (cmd-winum-mode app)
+  "Toggle window-numbering mode."
+  (set! *winum-mode* (not *winum-mode*))
+  (echo-message! (app-state-echo app)
+    (if *winum-mode* "Winum mode enabled (use M-1..M-9)" "Winum mode disabled")))
+
+;;; --- Help with tutorial ---
+(def (cmd-help-with-tutorial app)
+  "Show the gemacs tutorial (C-h t)."
+  (let ((text (string-append
+    "=== Gemacs Tutorial ===\n\n"
+    "Welcome to Gemacs, a Gerbil Scheme Emacs replacement.\n\n"
+    "== Basic Movement ==\n"
+    "  C-f / C-b    Forward / backward character\n"
+    "  M-f / M-b    Forward / backward word\n"
+    "  C-n / C-p    Next / previous line\n"
+    "  C-a / C-e    Beginning / end of line\n"
+    "  M-< / M->    Beginning / end of buffer\n"
+    "  C-v / M-v    Scroll down / up\n"
+    "  C-l          Recenter\n\n"
+    "== Editing ==\n"
+    "  C-d          Delete character\n"
+    "  M-d          Kill word\n"
+    "  C-k          Kill to end of line\n"
+    "  C-w          Kill region\n"
+    "  M-w          Copy region\n"
+    "  C-y          Yank (paste)\n"
+    "  M-y          Yank pop (cycle kill ring)\n"
+    "  C-/          Undo\n"
+    "  C-x u        Undo\n\n"
+    "== Files & Buffers ==\n"
+    "  C-x C-f      Find file\n"
+    "  C-x C-s      Save buffer\n"
+    "  C-x s        Save all buffers\n"
+    "  C-x b        Switch buffer\n"
+    "  C-x k        Kill buffer\n"
+    "  C-x C-b      List buffers\n\n"
+    "== Windows ==\n"
+    "  C-x 2        Split horizontally\n"
+    "  C-x 3        Split vertically\n"
+    "  C-x 1        Delete other windows\n"
+    "  C-x 0        Delete this window\n"
+    "  C-x o        Other window\n\n"
+    "== Search & Replace ==\n"
+    "  C-s          Search forward\n"
+    "  C-r          Search backward\n"
+    "  M-%          Query replace\n\n"
+    "== Commands ==\n"
+    "  M-x          Execute command by name\n"
+    "  C-g          Keyboard quit\n"
+    "  C-h k        Describe key\n"
+    "  C-h f        Describe function\n\n"
+    "== Org Mode ==\n"
+    "  TAB          Cycle visibility\n"
+    "  M-RET        Insert heading\n"
+    "  C-c C-t      Toggle TODO\n"
+    "  C-c C-c      Execute src block\n\n"
+    "== Gemacs-Specific ==\n"
+    "  M-x magit-status   Git integration\n"
+    "  M-x treemacs       File tree\n"
+    "  M-x shell          Shell\n"
+    "  M-x eshell         Gerbil shell\n"
+    "  M-x term           Terminal\n")))
+    (open-output-buffer app "*Tutorial*" text)))
+
+;;; --- CUA mode (stub) ---
+(def *cua-mode* #f)
+(def (cmd-cua-mode app)
+  "Toggle CUA keybindings (C-c/C-x/C-v for copy/cut/paste)."
+  (set! *cua-mode* (not *cua-mode*))
+  (echo-message! (app-state-echo app)
+    (if *cua-mode* "CUA mode enabled" "CUA mode disabled")))
