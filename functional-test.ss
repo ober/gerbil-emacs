@@ -1815,6 +1815,47 @@
                     org-table-transpose)))
         (for-each (lambda (cmd) (check (procedure? (find-command cmd)) => #t)) cmds)))
 
+    ;; Electric pair tests
+    (test-case "electric-pair: ( inserts matching )"
+      (let-values (((ed app) (make-test-app-with-file "/tmp/test.ss")))
+        (set! *auto-pair-mode* #t)
+        (editor-set-text ed "")
+        (editor-goto-pos ed 0)
+        (cmd-self-insert! app 40) ;; (
+        (let ((text (editor-get-text ed)))
+          (check text => "()")
+          (check (editor-get-current-pos ed) => 1))))
+
+    (test-case "electric-pair: [ inserts matching ]"
+      (let-values (((ed app) (make-test-app-with-file "/tmp/test.ss")))
+        (set! *auto-pair-mode* #t)
+        (editor-set-text ed "")
+        (editor-goto-pos ed 0)
+        (cmd-self-insert! app 91) ;; [
+        (check (editor-get-text ed) => "[]")))
+
+    (test-case "electric-pair: { inserts matching }"
+      (let-values (((ed app) (make-test-app-with-file "/tmp/test.ss")))
+        (set! *auto-pair-mode* #t)
+        (editor-set-text ed "")
+        (editor-goto-pos ed 0)
+        (cmd-self-insert! app 123) ;; {
+        (check (editor-get-text ed) => "{}")))
+
+    (test-case "electric-pair: ) skips over existing )"
+      (let-values (((ed app) (make-test-app-with-file "/tmp/test.ss")))
+        (set! *auto-pair-mode* #t)
+        (editor-set-text ed "()")
+        (editor-goto-pos ed 1) ;; between ( and )
+        (cmd-self-insert! app 41) ;; )
+        (check (editor-get-text ed) => "()")
+        (check (editor-get-current-pos ed) => 2)))
+
+    (test-case "electric-pair: toggle-electric-pair registered"
+      (setup-default-bindings!)
+      (register-all-commands!)
+      (check (procedure? (find-command 'toggle-electric-pair)) => #t))
+
 ))
 
 (def main

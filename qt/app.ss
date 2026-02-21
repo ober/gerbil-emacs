@@ -402,14 +402,28 @@
                                    (qt-plain-text-edit-insert-text! ed (string ch))
                                    (loop (+ i 1)))))
                               (else
-                               (if (and close-ch (= n 1)) ; Only auto-pair if n=1
+                               (cond
+                                 ;; Auto-pair skip-over: typing closing delimiter when next char matches
+                                 ((and *auto-pair-mode* (= n 1)
+                                       (auto-pair-closing? (char->integer ch)))
+                                  (let* ((pos (qt-plain-text-edit-cursor-position ed))
+                                         (text (qt-plain-text-edit-text ed))
+                                         (next-ch (and (< pos (string-length text))
+                                                       (string-ref text pos))))
+                                    (if (and next-ch (char=? next-ch ch))
+                                      ;; Skip over existing closing char
+                                      (qt-plain-text-edit-set-cursor-position! ed (+ pos 1))
+                                      ;; No match — insert normally
+                                      (qt-plain-text-edit-insert-text! ed (string ch)))))
                                  ;; Auto-pair: insert both chars and place cursor between
-                                 (let ((pos (qt-plain-text-edit-cursor-position ed)))
-                                   (qt-plain-text-edit-insert-text! ed (string ch close-ch))
-                                   (qt-plain-text-edit-set-cursor-position! ed (+ pos 1)))
+                                 ((and close-ch (= n 1))
+                                  (let ((pos (qt-plain-text-edit-cursor-position ed)))
+                                    (qt-plain-text-edit-insert-text! ed (string ch close-ch))
+                                    (qt-plain-text-edit-set-cursor-position! ed (+ pos 1))))
                                  ;; Insert character n times
-                                 (let ((str (make-string n ch)))
-                                   (qt-plain-text-edit-insert-text! ed str))))))
+                                 (else
+                                  (let ((str (make-string n ch)))
+                                    (qt-plain-text-edit-insert-text! ed str)))))))
                           ;; Auto-fill: break line if past fill-column
                           (auto-fill-check! (qt-current-editor (app-state-frame app)))
                           (set! (app-state-prefix-arg app) #f)

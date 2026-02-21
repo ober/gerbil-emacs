@@ -13,6 +13,7 @@
   cmd-digit-argument
   *auto-pair-mode*
   auto-pair-char
+  auto-pair-closing?
   register-all-commands!
   read-file-as-string
   expand-filename

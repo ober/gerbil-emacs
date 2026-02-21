@@ -283,8 +283,13 @@
   (cond
     ((= ch 40) 41)   ; ( -> )
     ((= ch 91) 93)   ; [ -> ]
+    ((= ch 123) 125) ; { -> }
     ((= ch 34) 34)   ; " -> "
     (else #f)))
+
+(def (auto-pair-closing? ch)
+  "Return #t if ch is a closing delimiter that should be skipped over."
+  (or (= ch 41) (= ch 93) (= ch 125) (= ch 34)))  ; ) ] } "
 
 (def (cmd-self-insert! app ch)
   ;; Clear search highlights on any text insertion
@@ -325,18 +330,32 @@
        (let* ((ed (current-editor app))
               (close-ch (and *auto-pair-mode* (auto-pair-char ch)))
               (n (get-prefix-arg app))) ; Get prefix arg
-
-         (if (and close-ch (= n 1)) ; Only auto-pair if n=1
+         (cond
+           ;; Auto-pair skip-over: typing a closing delimiter when next char matches
+           ((and *auto-pair-mode* (= n 1) (auto-pair-closing? ch))
+            (let* ((pos (editor-get-current-pos ed))
+                   (len (send-message ed SCI_GETLENGTH))
+                   (next-ch (and (< pos len)
+                                (send-message ed SCI_GETCHARAT pos 0))))
+              (if (and next-ch (= next-ch ch))
+                ;; Skip over the existing closing char
+                (editor-goto-pos ed (+ pos 1))
+                ;; No match — insert normally
+                (begin
+                  (editor-insert-text ed pos (string (integer->char ch)))
+                  (editor-goto-pos ed (+ pos 1))))))
            ;; Auto-pair: insert both chars and place cursor between
-           (let ((pos (editor-get-current-pos ed)))
-             (editor-insert-text ed pos
-               (string (integer->char ch) (integer->char close-ch)))
-             (editor-goto-pos ed (+ pos 1)))
+           ((and close-ch (= n 1))
+            (let ((pos (editor-get-current-pos ed)))
+              (editor-insert-text ed pos
+                (string (integer->char ch) (integer->char close-ch)))
+              (editor-goto-pos ed (+ pos 1))))
            ;; Insert character n times
-           (let* ((pos (editor-get-current-pos ed))
-                  (str (make-string n (integer->char ch))))
-             (editor-insert-text ed pos str)
-             (editor-goto-pos ed (+ pos n)))))))))
+           (else
+            (let* ((pos (editor-get-current-pos ed))
+                   (str (make-string n (integer->char ch))))
+              (editor-insert-text ed pos str)
+              (editor-goto-pos ed (+ pos n))))))))))
 
 ;;;============================================================================
 ;;; Navigation commands
