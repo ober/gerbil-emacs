@@ -1304,4 +1304,12 @@
   (register-command! 'kill-subword cmd-kill-subword)
   (register-command! 'up-list cmd-up-list)
   (register-command! 'down-list cmd-down-list)
+  ;; Parity batch 2: highlight navigation, browse-url, scratch, swap, aliases
+  (register-command! 'highlight-symbol-next cmd-highlight-symbol-next)
+  (register-command! 'highlight-symbol-prev cmd-highlight-symbol-prev)
+  (register-command! 'browse-url cmd-browse-url)
+  (register-command! 'scratch-buffer-new cmd-scratch-buffer-new)
+  (register-command! 'swap-window cmd-swap-window)
+  ;; Alias: next/previous grep result (cmd-next-error is in our chain)
+  (register-command! 'next-grep-result cmd-next-error)
 )

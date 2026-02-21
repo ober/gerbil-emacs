@@ -1844,3 +1844,44 @@
     (set! *global-swift-mode* (not *global-swift-mode*))
     (echo-message! echo (if *global-swift-mode*
                           "Swift mode ON" "Swift mode OFF"))))
+
+;;;============================================================================
+;;; Scratch buffer new (create numbered scratch buffers)
+;;;============================================================================
+
+(def *tui-scratch-counter* 0)
+
+(def (cmd-scratch-buffer-new app)
+  "Create a new scratch buffer with a unique name."
+  (let* ((ed (current-editor app))
+         (fr (app-state-frame app)))
+    (set! *tui-scratch-counter* (+ *tui-scratch-counter* 1))
+    (let* ((name (string-append "*scratch-" (number->string *tui-scratch-counter*) "*"))
+           (buf (buffer-create! name ed #f)))
+      (buffer-attach! ed buf)
+      (set! (edit-window-buffer (current-window fr)) buf)
+      (editor-set-text ed (string-append ";; " name " -- scratch buffer\n\n"))
+      (echo-message! (app-state-echo app) (string-append "Created " name)))))
+
+;;;============================================================================
+;;; Swap window contents
+;;;============================================================================
+
+(def (cmd-swap-window app)
+  "Swap the buffers of the current and next window."
+  (let* ((fr (app-state-frame app))
+         (wins (frame-windows fr))
+         (n (length wins)))
+    (if (<= n 1)
+      (echo-message! (app-state-echo app) "Only one window")
+      (let* ((idx (frame-current-idx fr))
+             (other-idx (modulo (+ idx 1) n))
+             (w1 (list-ref wins idx))
+             (w2 (list-ref wins other-idx))
+             (b1 (edit-window-buffer w1))
+             (b2 (edit-window-buffer w2)))
+        (set! (edit-window-buffer w1) b2)
+        (set! (edit-window-buffer w2) b1)
+        (buffer-attach! (edit-window-editor w1) b2)
+        (buffer-attach! (edit-window-editor w2) b1)
+        (echo-message! (app-state-echo app) "Windows swapped")))))

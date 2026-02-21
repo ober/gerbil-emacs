@@ -1811,3 +1811,119 @@
     (set! *global-scala-mode* (not *global-scala-mode*))
     (echo-message! echo (if *global-scala-mode*
                           "Scala mode ON" "Scala mode OFF"))))
+
+;;;============================================================================
+;;; Highlight symbol navigation (next/prev occurrence)
+;;;============================================================================
+
+(def (cmd-highlight-symbol-next app)
+  "Jump to next occurrence of the word at point or last search."
+  (let* ((ed (current-editor app))
+         (search (app-state-last-search app)))
+    (when (not search)
+      ;; If nothing highlighted, use word at point
+      (let* ((text (editor-get-text ed))
+             (pos (editor-get-current-pos ed))
+             (len (string-length text))
+             (start (let loop ((i (- pos 1)))
+                      (if (or (< i 0) (not (let ((c (string-ref text i)))
+                                              (or (char-alphabetic? c) (char-numeric? c)
+                                                  (char=? c #\_) (char=? c #\-)))))
+                        (+ i 1) (loop (- i 1)))))
+             (end (let loop ((i pos))
+                    (if (or (>= i len) (not (let ((c (string-ref text i)))
+                                              (or (char-alphabetic? c) (char-numeric? c)
+                                                  (char=? c #\_) (char=? c #\-)))))
+                      i (loop (+ i 1))))))
+        (when (< start end)
+          (set! search (substring text start end))
+          (set! (app-state-last-search app) search))))
+    (if (not search)
+      (echo-message! (app-state-echo app) "No word at point")
+      (let* ((text (editor-get-text ed))
+             (pos (editor-get-current-pos ed))
+             (slen (string-length search))
+             (tlen (string-length text))
+             (found (let loop ((i (+ pos 1)))
+                      (cond
+                        ((> (+ i slen) tlen) #f)
+                        ((string=? (substring text i (+ i slen)) search) i)
+                        (else (loop (+ i 1)))))))
+        (if found
+          (begin (editor-goto-pos ed found) (editor-scroll-caret ed)
+                 (echo-message! (app-state-echo app) (string-append "\"" search "\" found")))
+          ;; Wrap around
+          (let ((wrapped (let loop ((i 0))
+                           (cond
+                             ((> (+ i slen) pos) #f)
+                             ((string=? (substring text i (+ i slen)) search) i)
+                             (else (loop (+ i 1)))))))
+            (if wrapped
+              (begin (editor-goto-pos ed wrapped) (editor-scroll-caret ed)
+                     (echo-message! (app-state-echo app) (string-append "\"" search "\" (wrapped)")))
+              (echo-message! (app-state-echo app) "No more occurrences"))))))))
+
+(def (cmd-highlight-symbol-prev app)
+  "Jump to previous occurrence of the word at point or last search."
+  (let* ((ed (current-editor app))
+         (search (app-state-last-search app)))
+    (when (not search)
+      (let* ((text (editor-get-text ed))
+             (pos (editor-get-current-pos ed))
+             (len (string-length text))
+             (start (let loop ((i (- pos 1)))
+                      (if (or (< i 0) (not (let ((c (string-ref text i)))
+                                              (or (char-alphabetic? c) (char-numeric? c)
+                                                  (char=? c #\_) (char=? c #\-)))))
+                        (+ i 1) (loop (- i 1)))))
+             (end (let loop ((i pos))
+                    (if (or (>= i len) (not (let ((c (string-ref text i)))
+                                              (or (char-alphabetic? c) (char-numeric? c)
+                                                  (char=? c #\_) (char=? c #\-)))))
+                      i (loop (+ i 1))))))
+        (when (< start end)
+          (set! search (substring text start end))
+          (set! (app-state-last-search app) search))))
+    (if (not search)
+      (echo-message! (app-state-echo app) "No word at point")
+      (let* ((text (editor-get-text ed))
+             (pos (editor-get-current-pos ed))
+             (slen (string-length search))
+             (tlen (string-length text))
+             (found (let loop ((i (- pos 1)))
+                      (cond
+                        ((< i 0) #f)
+                        ((and (<= (+ i slen) tlen)
+                              (string=? (substring text i (+ i slen)) search)) i)
+                        (else (loop (- i 1)))))))
+        (if found
+          (begin (editor-goto-pos ed found) (editor-scroll-caret ed)
+                 (echo-message! (app-state-echo app) (string-append "\"" search "\" found")))
+          ;; Wrap around from end
+          (let ((wrapped (let loop ((i (- tlen slen)))
+                           (cond
+                             ((< i pos) #f)
+                             ((string=? (substring text i (+ i slen)) search) i)
+                             (else (loop (- i 1)))))))
+            (if wrapped
+              (begin (editor-goto-pos ed wrapped) (editor-scroll-caret ed)
+                     (echo-message! (app-state-echo app) (string-append "\"" search "\" (wrapped)")))
+              (echo-message! (app-state-echo app) "No more occurrences"))))))))
+
+;;;============================================================================
+;;; Browse URL (prompted)
+;;;============================================================================
+
+(def (cmd-browse-url app)
+  "Prompt for a URL and open it in an external browser."
+  (let ((url (app-read-string app "URL: ")))
+    (when (and url (> (string-length url) 0))
+      (let ((full-url (if (or (string-prefix? "http://" url) (string-prefix? "https://" url))
+                        url (string-append "https://" url))))
+        (with-catch
+          (lambda (e) (echo-error! (app-state-echo app) "Failed to open URL"))
+          (lambda ()
+            (open-process
+              (list path: "xdg-open" arguments: (list full-url)
+                    stdout-redirection: #f stderr-redirection: #f))
+            (echo-message! (app-state-echo app) (string-append "Opening: " full-url))))))))
