@@ -1320,4 +1320,13 @@
   ;; Parity batch 4: follow-mode, recentf-open-files
   (register-command! 'follow-mode cmd-follow-mode)
   (register-command! 'recentf-open-files cmd-recentf-open-files)
+  ;; Parity batch 5: dired advanced ops, diff navigation, display-line-numbers
+  (register-command! 'dired-toggle-marks cmd-dired-toggle-marks)
+  (register-command! 'dired-do-copy-marked cmd-dired-do-copy-marked)
+  (register-command! 'dired-do-rename-marked cmd-dired-do-rename-marked)
+  (register-command! 'dired-mark-by-regexp cmd-dired-mark-by-regexp)
+  (register-command! 'dired-sort-toggle cmd-dired-sort-toggle)
+  (register-command! 'diff-next-hunk cmd-diff-next-hunk)
+  (register-command! 'diff-prev-hunk cmd-diff-prev-hunk)
+  (register-command! 'display-line-numbers-mode cmd-display-line-numbers-mode)
 )

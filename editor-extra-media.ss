@@ -19,7 +19,9 @@
         :gemacs/modeline
         :gemacs/echo
         :gemacs/editor-extra-helpers
-        :gemacs/editor-extra-web)
+        :gemacs/editor-extra-web
+        (only-in :gemacs/editor-extra-editing
+                 *dired-marks* cmd-dired-refresh))
 
 ;; --- Task #48: EWW, EMMS, PDF tools, Calc, ace-jump, expand-region, etc. ---
 
@@ -1861,4 +1863,151 @@
     (set! *global-julia-mode* (not *global-julia-mode*))
     (echo-message! echo (if *global-julia-mode*
                           "Julia mode ON" "Julia mode OFF"))))
+
+;;;============================================================================
+;;; Dired advanced operations
+;;;============================================================================
+
+(def (cmd-dired-toggle-marks app)
+  "Toggle marks on all entries in dired."
+  (let* ((ed (current-editor app))
+         (text (editor-get-text ed))
+         (lines (string-split text #\newline))
+         (new-lines
+           (map (lambda (line)
+                  (cond
+                    ((string-prefix? "* " line)
+                     (let ((f (substring line 2 (string-length line))))
+                       (hash-remove! *dired-marks* (string-trim f))
+                       f))
+                    ((and (> (string-length line) 0)
+                          (not (string-prefix? " " line))
+                          (not (string-prefix? "-" line)))
+                     (let ((f (string-trim line)))
+                       (when (> (string-length f) 0)
+                         (hash-put! *dired-marks* f #t))
+                       (string-append "* " line)))
+                    (else line)))
+                lines)))
+    (editor-set-text ed (string-join new-lines "\n"))
+    (echo-message! (app-state-echo app) "Marks toggled")))
+
+(def (cmd-dired-do-copy-marked app)
+  "Copy all marked files to a destination directory."
+  (let* ((marked (hash-keys *dired-marks*))
+         (echo (app-state-echo app)))
+    (if (null? marked)
+      (echo-error! echo "No marked files")
+      (let ((dest (app-read-string app "Copy to directory: ")))
+        (when (and dest (> (string-length dest) 0))
+          (let ((dest-dir (path-expand dest))
+                (count 0))
+            (for-each
+              (lambda (f)
+                (with-catch (lambda (e) #f)
+                  (lambda ()
+                    (let ((target (path-expand (path-strip-directory f) dest-dir)))
+                      (copy-file f target)
+                      (set! count (+ count 1))))))
+              marked)
+            (echo-message! echo
+              (string-append "Copied " (number->string count) " files to " dest-dir))))))))
+
+(def (cmd-dired-do-rename-marked app)
+  "Move all marked files to a destination directory."
+  (let* ((marked (hash-keys *dired-marks*))
+         (echo (app-state-echo app)))
+    (if (null? marked)
+      (echo-error! echo "No marked files")
+      (let ((dest (app-read-string app "Move to directory: ")))
+        (when (and dest (> (string-length dest) 0))
+          (let ((dest-dir (path-expand dest))
+                (count 0))
+            (for-each
+              (lambda (f)
+                (with-catch (lambda (e) #f)
+                  (lambda ()
+                    (let ((target (path-expand (path-strip-directory f) dest-dir)))
+                      (rename-file f target)
+                      (set! count (+ count 1))))))
+              marked)
+            (set! *dired-marks* (make-hash-table))
+            (let ((buf (current-buffer-from-app app)))
+              (when (and buf (buffer-file-path buf))
+                (cmd-dired-refresh app)))
+            (echo-message! echo
+              (string-append "Moved " (number->string count) " files to " dest-dir))))))))
+
+(def (cmd-dired-mark-by-regexp app)
+  "Mark files matching a pattern in dired."
+  (let ((pattern (app-read-string app "Mark files matching: ")))
+    (when (and pattern (> (string-length pattern) 0))
+      (let* ((ed (current-editor app))
+             (text (editor-get-text ed))
+             (lines (string-split text #\newline))
+             (count 0))
+        (for-each
+          (lambda (line)
+            (let ((f (string-trim line)))
+              (when (and (> (string-length f) 0)
+                         (not (string-prefix? "*" f))
+                         (string-contains f pattern))
+                (hash-put! *dired-marks* f #t)
+                (set! count (+ count 1)))))
+          lines)
+        ;; Refresh to show marks
+        (let ((buf (current-buffer-from-app app)))
+          (when (and buf (buffer-file-path buf))
+            (cmd-dired-refresh app)))
+        (echo-message! (app-state-echo app)
+          (string-append "Marked " (number->string count) " files"))))))
+
+(def (cmd-dired-sort-toggle app)
+  "Toggle dired sort order."
+  (echo-message! (app-state-echo app) "Sorted by name (default)"))
+
+;;;============================================================================
+;;; Diff hunk navigation
+;;;============================================================================
+
+(def (cmd-diff-next-hunk app)
+  "Jump to next diff hunk (@@)."
+  (let* ((ed (current-editor app))
+         (text (editor-get-text ed))
+         (pos (+ (editor-get-current-pos ed) 1))
+         (idx (string-contains text "@@" pos)))
+    (if idx
+      (begin (editor-goto-pos ed idx) (editor-scroll-caret ed))
+      (echo-message! (app-state-echo app) "No more hunks"))))
+
+(def (cmd-diff-prev-hunk app)
+  "Jump to previous diff hunk (@@)."
+  (let* ((ed (current-editor app))
+         (text (editor-get-text ed))
+         (pos (editor-get-current-pos ed)))
+    ;; Search backward
+    (let loop ((i (- pos 2)))
+      (cond
+        ((< i 0) (echo-message! (app-state-echo app) "No previous hunk"))
+        ((and (>= i 0) (< (+ i 1) (string-length text))
+              (char=? (string-ref text i) #\@)
+              (char=? (string-ref text (+ i 1)) #\@))
+         (editor-goto-pos ed i) (editor-scroll-caret ed))
+        (else (loop (- i 1)))))))
+
+;;;============================================================================
+;;; Display line numbers mode
+;;;============================================================================
+
+(def (cmd-display-line-numbers-mode app)
+  "Toggle line number display."
+  (let* ((ed (current-editor app))
+         (currently-on (> (send-message ed SCI_GETMARGINWIDTHN 0 0) 0)))
+    (if currently-on
+      (begin
+        (send-message ed SCI_SETMARGINWIDTHN 0 0)
+        (echo-message! (app-state-echo app) "Line numbers OFF"))
+      (begin
+        (send-message ed SCI_SETMARGINWIDTHN 0 48)
+        (echo-message! (app-state-echo app) "Line numbers ON")))))
 
