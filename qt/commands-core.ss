@@ -1758,3 +1758,127 @@ Returns (path . line) or #f. Handles file:line format."
              (echo-message! (app-state-echo app)
                (string-append "First difference at position " (number->string i))))
             (else (loop (+ i 1)))))))))
+
+;;;============================================================================
+;;; Dedent region (remove one level of indentation)
+;;;============================================================================
+
+(def (cmd-dedent-region app)
+  "Remove one level of indentation from selected region."
+  (let* ((ed (current-qt-editor app))
+         (sel-start (qt-plain-text-edit-selection-start ed))
+         (sel-end (qt-plain-text-edit-selection-end ed)))
+    (if (= sel-start sel-end)
+      (echo-message! (app-state-echo app) "No selection to dedent")
+      (let* ((text (qt-plain-text-edit-text ed))
+             (region (substring text sel-start sel-end))
+             (lines (string-split region #\newline))
+             (dedented (map (lambda (line)
+                              (let ((len (string-length line)))
+                                (cond
+                                  ((and (> len 0) (char=? (string-ref line 0) #\tab))
+                                   (substring line 1 len))
+                                  ((string-prefix? "    " line)
+                                   (substring line 4 len))
+                                  ((string-prefix? "  " line)
+                                   (substring line 2 len))
+                                  (else line))))
+                            lines))
+             (result (string-join dedented "\n"))
+             (new-text (string-append
+                         (substring text 0 sel-start)
+                         result
+                         (substring text sel-end (string-length text)))))
+        (qt-plain-text-edit-set-text! ed new-text)
+        (qt-plain-text-edit-set-selection! ed sel-start (+ sel-start (string-length result)))
+        (echo-message! (app-state-echo app) "Region dedented")))))
+
+;;;============================================================================
+;;; Count words in current line
+;;;============================================================================
+
+(def (cmd-count-words-line app)
+  "Count words in current line."
+  (let* ((ed (current-qt-editor app))
+         (text (qt-plain-text-edit-text ed))
+         (line (qt-plain-text-edit-cursor-line ed))
+         (lines (string-split text #\newline))
+         (line-text (if (< line (length lines)) (list-ref lines line) "")))
+    (let loop ((i 0) (count 0) (in-word #f))
+      (if (>= i (string-length line-text))
+        (echo-message! (app-state-echo app)
+          (string-append "Words in line: " (number->string (if in-word (+ count 1) count))))
+        (let ((ch (string-ref line-text i)))
+          (if (or (char=? ch #\space) (char=? ch #\tab))
+            (loop (+ i 1) (if in-word (+ count 1) count) #f)
+            (loop (+ i 1) count #t)))))))
+
+;;;============================================================================
+;;; Diff goto source (jump from diff buffer to source)
+;;;============================================================================
+
+(def (cmd-diff-goto-source app)
+  "Jump from a diff hunk to the corresponding source location."
+  (let* ((ed (current-qt-editor app))
+         (text (qt-plain-text-edit-text ed))
+         (pos (qt-plain-text-edit-cursor-position ed))
+         (lines (string-split text #\newline))
+         (cur-line (qt-plain-text-edit-cursor-line ed)))
+    ;; Find the @@ hunk header and +++ file header above
+    (let find-context ((l cur-line) (file #f) (hunk-line #f))
+      (cond
+        ((< l 0)
+         (if (and file hunk-line)
+           ;; Count lines from hunk start to cursor
+           (let* ((offset (- cur-line (+ l 1)))
+                  (target-line (+ hunk-line offset)))
+             (if (file-exists? file)
+               (begin
+                 (cmd-find-file-by-path app file)
+                 (echo-message! (app-state-echo app)
+                   (string-append file ":" (number->string target-line))))
+               (echo-error! (app-state-echo app) (string-append "File not found: " file))))
+           (echo-error! (app-state-echo app) "No diff context found")))
+        (else
+         (let ((line-text (if (< l (length lines)) (list-ref lines l) "")))
+           (cond
+             ((and (not hunk-line) (string-prefix? "@@ " line-text))
+              ;; Parse @@ -x,y +N,M @@ to get N
+              (let* ((plus-pos (string-contains line-text "+"))
+                     (comma-pos (and plus-pos (string-contains line-text "," (+ plus-pos 1))))
+                     (space-pos (and plus-pos (string-contains line-text " " (+ plus-pos 1))))
+                     (end-pos (or comma-pos space-pos (string-length line-text)))
+                     (num-str (and plus-pos (substring line-text (+ plus-pos 1) end-pos)))
+                     (num (and num-str (string->number num-str))))
+                (find-context (- l 1) file (or num 1))))
+             ((and (not file) (string-prefix? "+++ " line-text))
+              (let* ((path (substring line-text 4 (string-length line-text)))
+                     (clean (if (string-prefix? "b/" path) (substring path 2 (string-length path)) path)))
+                (find-context (- l 1) clean hunk-line)))
+             (else (find-context (- l 1) file hunk-line)))))))))
+
+(def (cmd-find-file-by-path app path)
+  "Open file by path (helper for diff-goto-source)."
+  (let* ((ed (current-qt-editor app))
+         (fr (app-state-frame app))
+         (name (path-strip-directory path)))
+    (let ((buf (or (buffer-by-name name) (qt-buffer-create! name ed))))
+      (when (file-exists? path)
+        (let ((content (read-file-as-string path)))
+          (qt-buffer-attach! ed buf)
+          (set! (qt-edit-window-buffer (qt-current-window fr)) buf)
+          (qt-plain-text-edit-set-text! ed (or content ""))
+          (set! (buffer-file-path buf) path)
+          (qt-modeline-update! app))))))
+
+;;;============================================================================
+;;; Insert date ISO (alias for consistency with TUI)
+;;;============================================================================
+
+(def (cmd-insert-date-iso app)
+  "Insert current date in ISO 8601 format (YYYY-MM-DD)."
+  (let* ((ed (current-qt-editor app))
+         (out (open-process (list path: "date" arguments: '("+%Y-%m-%d"))))
+         (result (read-line out)))
+    (close-port out)
+    (qt-plain-text-edit-insert-text! ed (if (string? result) result "???"))))

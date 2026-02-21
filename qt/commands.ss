@@ -1381,6 +1381,10 @@
   (register-command! 'xml-format cmd-xml-format)
   (register-command! 'open-url-at-point cmd-open-url-at-point)
   (register-command! 'compare-windows cmd-compare-windows)
+  (register-command! 'dedent-region cmd-dedent-region)
+  (register-command! 'count-words-line cmd-count-words-line)
+  (register-command! 'diff-goto-source cmd-diff-goto-source)
+  (register-command! 'insert-date-iso cmd-insert-date-iso)
   ;; Sort numeric / sort fields
   (register-command! 'sort-numeric cmd-sort-numeric)
   (register-command! 'sort-fields cmd-sort-fields)
