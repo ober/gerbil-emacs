@@ -1393,6 +1393,10 @@
   (register-command! 'delete-pair cmd-delete-pair)
   ;; Sudo write
   (register-command! 'sudo-write cmd-sudo-write)
+  (register-command! 'sudo-save-buffer cmd-sudo-save-buffer)
+  (register-command! 'consult-line cmd-consult-line)
+  (register-command! 'consult-grep cmd-consult-grep)
+  (register-command! 'consult-buffer cmd-consult-buffer)
   ;; Ediff buffers
   (register-command! 'ediff-buffers cmd-ediff-buffers)
   ;; Highlight symbol / clear
