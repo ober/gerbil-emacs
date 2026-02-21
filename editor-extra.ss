@@ -1555,6 +1555,31 @@
   (register-command! 'org-metadown cmd-org-demote)
   (register-command! 'org-shiftmetaup cmd-org-promote)
   (register-command! 'org-shiftmetadown cmd-org-demote)
+  ;; Batch 10: project/diff/calendar/mode aliases (editor-extra scope)
+  ;; Project
+  (register-command! 'project-forget-project cmd-project-switch-project)
+  (register-command! 'project-remember-project cmd-project-switch-project)
+  (register-command! 'project-forget-zombie-projects cmd-project-switch-project)
+  (register-command! 'project-vc-dir cmd-vc-dir)
+  (register-command! 'project-or-external-find-regexp cmd-project-find-regexp)
+  (register-command! 'project-list-buffers cmd-project-switch-to-buffer)
+  (register-command! 'project-kill-buffers-confirm cmd-project-kill-buffers)
+  ;; Diff/ediff
+  (register-command! 'ediff-merge-files cmd-ediff-files)
+  (register-command! 'ediff-patch-file cmd-ediff-files)
+  (register-command! 'emerge-files cmd-ediff-files)
+  ;; Calendar/diary
+  (register-command! 'diary-add-entry cmd-diary-view-entries)
+  (register-command! 'diary-show-all-entries cmd-diary-view-entries)
+  (register-command! 'diary-insert-entry cmd-diary-view-entries)
+  (register-command! 'diary-insert-weekly-entry cmd-diary-view-entries)
+  (register-command! 'diary-insert-monthly-entry cmd-diary-view-entries)
+  (register-command! 'diary-insert-yearly-entry cmd-diary-view-entries)
+  (register-command! 'diary-insert-anniversary cmd-diary-view-entries)
+  (register-command! 'calendar-goto-today cmd-calendar-today)
+  (register-command! 'calendar-mark-holidays cmd-calendar)
+  (register-command! 'calendar-list-holidays cmd-calendar)
+  (register-command! 'calendar-sunrise-sunset cmd-calendar)
 )
 
 ;;;============================================================================

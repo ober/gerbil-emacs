@@ -778,6 +778,12 @@
   ;; Minibuffer/escape
   (register-command! 'abort-recursive-edit cmd-keyboard-quit)
   (register-command! 'top-level cmd-keyboard-quit)
+  ;; Batch 10: project/diff aliases (editor-cmds scope)
+  (register-command! 'project-compile cmd-project-compile)
+  (register-command! 'project-async-shell-command cmd-async-shell-command)
+  (register-command! 'ediff-merge-buffers cmd-ediff-buffers)
+  (register-command! 'ediff-revision cmd-vc-diff-head)
+  (register-command! 'emerge-buffers cmd-ediff-buffers)
 )
 
 ;;;============================================================================
