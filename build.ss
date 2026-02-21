@@ -9,9 +9,24 @@
 (def static-build? (getenv "GEMACS_STATIC" #f))
 (def build-tui-only? (getenv "GEMACS_BUILD_TUI_ONLY" #f))
 
+;; Resolve package source directory (linked or GitHub-installed)
+;; NOTE: GERBIL_PATH points to the project-local .gerbil during builds,
+;; but packages are installed/linked under $HOME/.gerbil/pkg/.
+(def user-gerbil-dir (path-expand ".gerbil" (getenv "HOME")))
+
+(def (find-pkg-source name)
+  "Find package source dir via Gerbil package system."
+  (let ((linked (path-expand (string-append "pkg/" name) user-gerbil-dir))
+        (github (path-expand (string-append "pkg/github.com/ober/" name) user-gerbil-dir)))
+    (cond
+      ((file-exists? linked) linked)
+      ((file-exists? github) github)
+      (else (error (string-append "Package not found: " name
+                                  "\nRun: gerbil pkg install github.com/ober/" name))))))
+
 ;; gerbil-scintilla FFI paths (needed for TUI exe linking)
 (def sci-base (or (getenv "GEMACS_SCI_BASE" #f)
-                  (path-expand "mine/gerbil-scintilla" (getenv "HOME"))))
+                  (find-pkg-source "gerbil-scintilla")))
 (def vendor-dir (path-expand "vendor" sci-base))
 (def sci-dir (path-expand "scintilla" vendor-dir))
 (def sci-tb-dir (path-expand "termbox" sci-dir))
@@ -36,7 +51,7 @@
 
 ;; gerbil-qt FFI paths (needed for Qt exe linking)
 (def qt-base (or (getenv "GEMACS_QT_BASE" #f)
-                 (path-expand "mine/gerbil-qt" (getenv "HOME"))))
+                 (find-pkg-source "gerbil-qt")))
 (def qt-vendor-dir (path-expand "vendor" qt-base))
 
 ;; Ensure pkg-config can find Qt6 .pc files

@@ -1,2 +1,4 @@
 (package: gemacs)
-(depend: ("github.com/ober/gerbil-pcre2"))
+(depend: (github: "ober/gerbil-pcre2")
+         (github: "ober/gerbil-scintilla")
+         (github: "ober/gerbil-qt"))

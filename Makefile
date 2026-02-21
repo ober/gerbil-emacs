@@ -88,9 +88,10 @@ DOCKER_IMAGE := gerbil/gerbilxx:$(ARCH)-master
 UID := $(shell id -u)
 GID := $(shell id -g)
 
-# Local source dirs for dependencies (mounted into Docker)
-SCI_SRC ?= $(HOME)/mine/gerbil-scintilla
-QT_SRC  ?= $(HOME)/mine/gerbil-qt
+# Package source dirs for dependencies (linked or installed via gerbil pkg)
+GERBIL_PATH ?= $(HOME)/.gerbil
+SCI_SRC ?= $(shell readlink -f $(GERBIL_PATH)/pkg/gerbil-scintilla 2>/dev/null || echo $(GERBIL_PATH)/pkg/github.com/ober/gerbil-scintilla)
+QT_SRC  ?= $(shell readlink -f $(GERBIL_PATH)/pkg/gerbil-qt 2>/dev/null || echo $(GERBIL_PATH)/pkg/github.com/ober/gerbil-qt)
 
 static: linux-static-docker
 
