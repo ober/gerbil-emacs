@@ -5,8 +5,13 @@
 (import :std/build-script
         :std/make)
 
+;; Static build support: env vars for Docker/CI overrides
+(def static-build? (getenv "GEMACS_STATIC" #f))
+(def build-tui-only? (getenv "GEMACS_BUILD_TUI_ONLY" #f))
+
 ;; gerbil-scintilla FFI paths (needed for TUI exe linking)
-(def sci-base (path-expand "mine/gerbil-scintilla" (getenv "HOME")))
+(def sci-base (or (getenv "GEMACS_SCI_BASE" #f)
+                  (path-expand "mine/gerbil-scintilla" (getenv "HOME"))))
 (def vendor-dir (path-expand "vendor" sci-base))
 (def sci-dir (path-expand "scintilla" vendor-dir))
 (def sci-tb-dir (path-expand "termbox" sci-dir))
@@ -23,13 +28,15 @@
 
 (def ld-opts
   (string-append
+   (if static-build? "-static " "")
    (path-expand "bin/scintilla.a" sci-dir) " "
    (path-expand "bin/liblexilla.a" lexilla-dir) " "
    (path-expand "bin/termbox.a" termbox-dir) " "
    "-lstdc++ -lpthread -lpcre2-8"))
 
 ;; gerbil-qt FFI paths (needed for Qt exe linking)
-(def qt-base (path-expand "mine/gerbil-qt" (getenv "HOME")))
+(def qt-base (or (getenv "GEMACS_QT_BASE" #f)
+                 (path-expand "mine/gerbil-qt" (getenv "HOME"))))
 (def qt-vendor-dir (path-expand "vendor" qt-base))
 
 ;; Ensure pkg-config can find Qt6 .pc files
@@ -83,6 +90,7 @@
 ;; Qt exe also links scintilla/termbox/lexilla because editor.ss pulls them in
 (def qt-ld-opts
   (string-append
+   (if static-build? "-static " "")
    "-L" openssl-lib-dir " "
    "-Wl,-rpath," openssl-lib-dir " "
    "-L" qt-vendor-dir " -lqt_shim "
@@ -163,49 +171,50 @@
           "-ld-options" ,ld-opts)
     ;; emacsclient-like client binary
     (exe: "emacsclient" bin: "gemacs-client")
-    ;; Qt backend
-    (gxc: "qt/keymap"   "-cc-options" ,qt-cc-opts "-ld-options" ,qt-ld-opts)
-    (gxc: "qt/sci-shim" "-cc-options" ,qt-cc-opts "-ld-options" ,qt-ld-opts)
-    (gxc: "qt/buffer"   "-cc-options" ,qt-cc-opts "-ld-options" ,qt-ld-opts)
-    (gxc: "qt/window"   "-cc-options" ,qt-cc-opts "-ld-options" ,qt-ld-opts)
-    (gxc: "qt/modeline" "-cc-options" ,qt-cc-opts "-ld-options" ,qt-ld-opts)
-    (gxc: "qt/echo"     "-cc-options" ,qt-cc-opts "-ld-options" ,qt-ld-opts)
-    (gxc: "qt/highlight" "-cc-options" ,qt-cc-opts "-ld-options" ,qt-ld-opts)
-    (gxc: "qt/image"    "-cc-options" ,qt-cc-opts "-ld-options" ,qt-ld-opts)
-    (gxc: "qt/commands-core"   "-cc-options" ,qt-cc-opts "-ld-options" ,qt-ld-opts)
-    (gxc: "qt/commands-edit"   "-cc-options" ,qt-cc-opts "-ld-options" ,qt-ld-opts)
-    (gxc: "qt/commands-search" "-cc-options" ,qt-cc-opts "-ld-options" ,qt-ld-opts)
-    (gxc: "qt/commands-file"   "-cc-options" ,qt-cc-opts "-ld-options" ,qt-ld-opts)
-    (gxc: "qt/commands-sexp"   "-cc-options" ,qt-cc-opts "-ld-options" ,qt-ld-opts)
-    (gxc: "qt/commands-ide"    "-cc-options" ,qt-cc-opts "-ld-options" ,qt-ld-opts)
-    (gxc: "qt/commands-vcs"    "-cc-options" ,qt-cc-opts "-ld-options" ,qt-ld-opts)
-    (gxc: "qt/lsp-client"     "-cc-options" ,qt-cc-opts "-ld-options" ,qt-ld-opts)
-    (gxc: "qt/commands-lsp"   "-cc-options" ,qt-cc-opts "-ld-options" ,qt-ld-opts)
-    (gxc: "qt/commands-shell"  "-cc-options" ,qt-cc-opts "-ld-options" ,qt-ld-opts)
-    (gxc: "qt/commands-modes"  "-cc-options" ,qt-cc-opts "-ld-options" ,qt-ld-opts)
-    (gxc: "qt/commands-config" "-cc-options" ,qt-cc-opts "-ld-options" ,qt-ld-opts)
-    (gxc: "qt/commands"        "-cc-options" ,qt-cc-opts "-ld-options" ,qt-ld-opts)
-    (gxc: "qt/menubar"  "-cc-options" ,qt-cc-opts "-ld-options" ,qt-ld-opts)
-    (gxc: "qt/app"      "-cc-options" ,qt-cc-opts "-ld-options" ,qt-ld-opts)
-    (exe: "qt-highlight-test" bin: "qt-highlight-test"
-          "-cc-options" ,qt-cc-opts
-          "-ld-options" ,qt-ld-opts)
-    (exe: "qt-functional-test" bin: "qt-functional-test"
-          "-cc-options" ,qt-cc-opts
-          "-ld-options" ,qt-ld-opts)
-    (exe: "lsp-functional-test" bin: "lsp-functional-test"
-          "-cc-options" ,qt-cc-opts
-          "-ld-options" ,qt-ld-opts)
-    ;; (exe: "qt-split-comprehensive-test" bin: "qt-split-comprehensive-test"
-    ;;       "-cc-options" ,qt-cc-opts
-    ;;       "-ld-options" ,qt-ld-opts)
-    ;; (exe: "qt-split-debug-test" bin: "qt-split-debug-test"
-    ;;       "-cc-options" ,qt-cc-opts
-    ;;       "-ld-options" ,qt-ld-opts)
-    (exe: "qt-split-simple-test" bin: "qt-split-simple-test"
-          "-cc-options" ,qt-cc-opts
-          "-ld-options" ,qt-ld-opts)
-    (exe: "qt/main" bin: "gemacs-qt"
-          "-cc-options" ,qt-cc-opts
-          "-ld-options" ,qt-ld-opts))
+    ;; Qt backend (skipped when GEMACS_BUILD_TUI_ONLY is set)
+    ,@(if build-tui-only? '()
+        `((gxc: "qt/keymap"   "-cc-options" ,qt-cc-opts "-ld-options" ,qt-ld-opts)
+          (gxc: "qt/sci-shim" "-cc-options" ,qt-cc-opts "-ld-options" ,qt-ld-opts)
+          (gxc: "qt/buffer"   "-cc-options" ,qt-cc-opts "-ld-options" ,qt-ld-opts)
+          (gxc: "qt/window"   "-cc-options" ,qt-cc-opts "-ld-options" ,qt-ld-opts)
+          (gxc: "qt/modeline" "-cc-options" ,qt-cc-opts "-ld-options" ,qt-ld-opts)
+          (gxc: "qt/echo"     "-cc-options" ,qt-cc-opts "-ld-options" ,qt-ld-opts)
+          (gxc: "qt/highlight" "-cc-options" ,qt-cc-opts "-ld-options" ,qt-ld-opts)
+          (gxc: "qt/image"    "-cc-options" ,qt-cc-opts "-ld-options" ,qt-ld-opts)
+          (gxc: "qt/commands-core"   "-cc-options" ,qt-cc-opts "-ld-options" ,qt-ld-opts)
+          (gxc: "qt/commands-edit"   "-cc-options" ,qt-cc-opts "-ld-options" ,qt-ld-opts)
+          (gxc: "qt/commands-search" "-cc-options" ,qt-cc-opts "-ld-options" ,qt-ld-opts)
+          (gxc: "qt/commands-file"   "-cc-options" ,qt-cc-opts "-ld-options" ,qt-ld-opts)
+          (gxc: "qt/commands-sexp"   "-cc-options" ,qt-cc-opts "-ld-options" ,qt-ld-opts)
+          (gxc: "qt/commands-ide"    "-cc-options" ,qt-cc-opts "-ld-options" ,qt-ld-opts)
+          (gxc: "qt/commands-vcs"    "-cc-options" ,qt-cc-opts "-ld-options" ,qt-ld-opts)
+          (gxc: "qt/lsp-client"     "-cc-options" ,qt-cc-opts "-ld-options" ,qt-ld-opts)
+          (gxc: "qt/commands-lsp"   "-cc-options" ,qt-cc-opts "-ld-options" ,qt-ld-opts)
+          (gxc: "qt/commands-shell"  "-cc-options" ,qt-cc-opts "-ld-options" ,qt-ld-opts)
+          (gxc: "qt/commands-modes"  "-cc-options" ,qt-cc-opts "-ld-options" ,qt-ld-opts)
+          (gxc: "qt/commands-config" "-cc-options" ,qt-cc-opts "-ld-options" ,qt-ld-opts)
+          (gxc: "qt/commands"        "-cc-options" ,qt-cc-opts "-ld-options" ,qt-ld-opts)
+          (gxc: "qt/menubar"  "-cc-options" ,qt-cc-opts "-ld-options" ,qt-ld-opts)
+          (gxc: "qt/app"      "-cc-options" ,qt-cc-opts "-ld-options" ,qt-ld-opts)
+          (exe: "qt-highlight-test" bin: "qt-highlight-test"
+                "-cc-options" ,qt-cc-opts
+                "-ld-options" ,qt-ld-opts)
+          (exe: "qt-functional-test" bin: "qt-functional-test"
+                "-cc-options" ,qt-cc-opts
+                "-ld-options" ,qt-ld-opts)
+          (exe: "lsp-functional-test" bin: "lsp-functional-test"
+                "-cc-options" ,qt-cc-opts
+                "-ld-options" ,qt-ld-opts)
+          ;; (exe: "qt-split-comprehensive-test" bin: "qt-split-comprehensive-test"
+          ;;       "-cc-options" ,qt-cc-opts
+          ;;       "-ld-options" ,qt-ld-opts)
+          ;; (exe: "qt-split-debug-test" bin: "qt-split-debug-test"
+          ;;       "-cc-options" ,qt-cc-opts
+          ;;       "-ld-options" ,qt-ld-opts)
+          (exe: "qt-split-simple-test" bin: "qt-split-simple-test"
+                "-cc-options" ,qt-cc-opts
+                "-ld-options" ,qt-ld-opts)
+          (exe: "qt/main" bin: "gemacs-qt"
+                "-cc-options" ,qt-cc-opts
+                "-ld-options" ,qt-ld-opts))))
   parallelize: (max 1 (quotient (##cpu-count) 2)))
