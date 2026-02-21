@@ -18,7 +18,9 @@
         cmd-org-babel-execute-src-block cmd-org-babel-tangle
         cmd-other-frame cmd-winum-mode cmd-help-with-tutorial
         cmd-cua-mode cmd-org-archive-subtree cmd-org-toggle-heading
-        cmd-magit-init cmd-magit-tag)
+        cmd-magit-init cmd-magit-tag
+        ;; Batch 4
+        cmd-check-parens cmd-count-lines-page cmd-how-many)
 
 (import :std/sugar
         :std/srfi/13
@@ -26,7 +28,7 @@
         :std/misc/string
         :std/misc/process
         (only-in :std/misc/ports read-all-as-string)
-        (only-in :gemacs/pregexp-compat pregexp-match)
+        (only-in :gemacs/pregexp-compat pregexp pregexp-match)
         :gerbil-scintilla/scintilla
         :gemacs/core
         :gemacs/keymap
@@ -666,6 +668,14 @@
   (register-command! 'help-with-tutorial cmd-help-with-tutorial)
   (register-command! 'flyspell-prog-mode cmd-toggle-flyspell)
   (register-command! 'cua-mode cmd-cua-mode)
+  ;; Batch 4: new commands + aliases
+  (register-command! 'check-parens cmd-check-parens)
+  (register-command! 'count-lines-page cmd-count-lines-page)
+  (register-command! 'how-many cmd-how-many)
+  (register-command! 'move-to-window-line-top-bottom cmd-move-to-window-line)
+  (register-command! 'binary-overwrite-mode cmd-toggle-overwrite-mode)
+  (register-command! 'highlight-symbol-at-point cmd-highlight-symbol)
+  (register-command! 'ediff-regions-linewise cmd-ediff-buffers)
 )
 
 ;;;============================================================================
@@ -1167,3 +1177,95 @@
           (run-process ["git" "tag" tag] coprocess: void)
           (echo-message! (app-state-echo app)
             (string-append "Created tag: " tag)))))))
+
+;;;============================================================================
+;;; Batch 4: check-parens, count-lines-page, how-many
+;;;============================================================================
+
+;;; --- Check parens ---
+(def (cmd-check-parens app)
+  "Check for unbalanced parentheses in the current buffer."
+  (let* ((ed (current-editor app))
+         (text (editor-get-text ed))
+         (len (string-length text))
+         (stk '())
+         (pairs '((#\( . #\)) (#\[ . #\]) (#\{ . #\}))))
+    (let lp ((i 0) (stk '()))
+      (cond
+        ((>= i len)
+         (if (null? stk)
+           (echo-message! (app-state-echo app) "Parentheses are balanced")
+           (let* ((pos (car stk))
+                  (line (editor-line-from-position ed pos)))
+             (echo-message! (app-state-echo app)
+               (string-append "Unmatched opener at line " (number->string (+ line 1)))))))
+        (else
+         (let ((ch (string-ref text i)))
+           (cond
+             ((assoc ch pairs)
+              (lp (+ i 1) (cons i stk)))
+             ((find (lambda (p) (char=? ch (cdr p))) pairs)
+              => (lambda (p)
+                   (if (and (pair? stk)
+                            (char=? (string-ref text (car stk)) (car p)))
+                     (lp (+ i 1) (cdr stk))
+                     (let ((line (editor-line-from-position ed i)))
+                       (echo-message! (app-state-echo app)
+                         (string-append "Unmatched " (string ch) " at line "
+                           (number->string (+ line 1))))))))
+             (else (lp (+ i 1) stk)))))))))
+
+;;; --- Count lines page ---
+(def (cmd-count-lines-page app)
+  "Count lines on the current page (delimited by form-feed)."
+  (let* ((ed (current-editor app))
+         (text (editor-get-text ed))
+         (pos (editor-get-current-pos ed))
+         (len (string-length text))
+         ;; Find page boundaries (form-feed = \f = char 12)
+         (page-start (let lp ((i (- pos 1)))
+                       (cond ((<= i 0) 0)
+                             ((char=? (string-ref text i) (integer->char 12)) (+ i 1))
+                             (else (lp (- i 1))))))
+         (page-end (let lp ((i pos))
+                     (cond ((>= i len) len)
+                           ((char=? (string-ref text i) (integer->char 12)) i)
+                           (else (lp (+ i 1))))))
+         ;; Count lines
+         (count-lines (lambda (start end)
+                        (let lp ((i start) (n 0))
+                          (cond ((>= i end) n)
+                                ((char=? (string-ref text i) #\newline) (lp (+ i 1) (+ n 1)))
+                                (else (lp (+ i 1) n))))))
+         (before (count-lines page-start pos))
+         (after (count-lines pos page-end))
+         (total (+ before after)))
+    (echo-message! (app-state-echo app)
+      (string-append "Page has " (number->string total) " lines ("
+        (number->string before) " + " (number->string after) ")"))))
+
+;;; --- How many ---
+(def (cmd-how-many app)
+  "Count regexp matches from point to end of buffer."
+  (let ((pattern (app-read-string app "How many (regexp): ")))
+    (when (and pattern (not (string-empty? pattern)))
+      (let* ((ed (current-editor app))
+             (text (editor-get-text ed))
+             (pos (editor-get-current-pos ed))
+             (rest (substring text pos (string-length text)))
+             (rx (with-catch (lambda (e) #f) (lambda () (pregexp pattern)))))
+        (if (not rx)
+          (echo-message! (app-state-echo app) "Invalid regexp")
+          (let lp ((s rest) (count 0))
+            (let ((m (pregexp-match rx s)))
+              (if (not m)
+                (echo-message! (app-state-echo app)
+                  (string-append (number->string count) " occurrences"))
+                (let* ((match-str (car m))
+                       (match-len (string-length match-str))
+                       (idx (string-contains s match-str)))
+                  (if (or (not idx) (= match-len 0))
+                    (echo-message! (app-state-echo app)
+                      (string-append (number->string count) " occurrences"))
+                    (lp (substring s (+ idx (max 1 match-len)) (string-length s))
+                        (+ count 1))))))))))))

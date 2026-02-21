@@ -10,7 +10,7 @@
         :std/misc/string
         :std/misc/process
         (only-in :std/misc/ports read-all-as-string)
-        (only-in :gemacs/pregexp-compat pregexp-match)
+        (only-in :gemacs/pregexp-compat pregexp pregexp-match)
         :gemacs/qt/sci-shim
         :gemacs/core
         :gemacs/editor
@@ -805,3 +805,106 @@
           (run-process ["git" "tag" tag] coprocess: void)
           (echo-message! (app-state-echo app)
             (string-append "Created tag: " tag)))))))
+
+;;;============================================================================
+;;; Batch 4: check-parens, count-lines-page, how-many
+;;;============================================================================
+
+;;; --- Text mode ---
+(def (cmd-text-mode app)
+  "Switch to text mode."
+  (echo-message! (app-state-echo app) "Text mode active"))
+
+;;; --- Shell script mode ---
+(def (cmd-shell-script-mode app)
+  "Switch to shell script mode."
+  (echo-message! (app-state-echo app) "Shell script mode active"))
+
+;;; --- Check parens ---
+(def (cmd-check-parens app)
+  "Check for unbalanced parentheses in the current buffer."
+  (let* ((ed (current-qt-editor app))
+         (text (qt-plain-text-edit-text ed))
+         (len (string-length text))
+         (pairs '((#\( . #\)) (#\[ . #\]) (#\{ . #\}))))
+    (let lp ((i 0) (stk '()))
+      (cond
+        ((>= i len)
+         (if (null? stk)
+           (echo-message! (app-state-echo app) "Parentheses are balanced")
+           (let* ((pos (car stk))
+                  (line (let cnt ((j 0) (n 0))
+                          (if (>= j pos) n
+                            (cnt (+ j 1) (if (char=? (string-ref text j) #\newline) (+ n 1) n))))))
+             (echo-message! (app-state-echo app)
+               (string-append "Unmatched opener at line " (number->string (+ line 1)))))))
+        (else
+         (let ((ch (string-ref text i)))
+           (cond
+             ((assoc ch pairs)
+              (lp (+ i 1) (cons i stk)))
+             ((find (lambda (p) (char=? ch (cdr p))) pairs)
+              => (lambda (p)
+                   (if (and (pair? stk)
+                            (char=? (string-ref text (car stk)) (car p)))
+                     (lp (+ i 1) (cdr stk))
+                     (let ((line (let cnt ((j 0) (n 0))
+                                   (if (>= j i) n
+                                     (cnt (+ j 1) (if (char=? (string-ref text j) #\newline) (+ n 1) n))))))
+                       (echo-message! (app-state-echo app)
+                         (string-append "Unmatched " (string ch) " at line "
+                           (number->string (+ line 1))))))))
+             (else (lp (+ i 1) stk)))))))))
+
+;;; --- Count lines page ---
+(def (cmd-count-lines-page app)
+  "Count lines on the current page (delimited by form-feed)."
+  (let* ((ed (current-qt-editor app))
+         (text (qt-plain-text-edit-text ed))
+         (pos (qt-plain-text-edit-cursor-position ed))
+         (len (string-length text))
+         (page-start (let lp ((i (- pos 1)))
+                       (cond ((<= i 0) 0)
+                             ((char=? (string-ref text i) (integer->char 12)) (+ i 1))
+                             (else (lp (- i 1))))))
+         (page-end (let lp ((i pos))
+                     (cond ((>= i len) len)
+                           ((char=? (string-ref text i) (integer->char 12)) i)
+                           (else (lp (+ i 1))))))
+         (count-lines (lambda (start end)
+                        (let lp ((i start) (n 0))
+                          (cond ((>= i end) n)
+                                ((char=? (string-ref text i) #\newline) (lp (+ i 1) (+ n 1)))
+                                (else (lp (+ i 1) n))))))
+         (before (count-lines page-start pos))
+         (after (count-lines pos page-end))
+         (total (+ before after)))
+    (echo-message! (app-state-echo app)
+      (string-append "Page has " (number->string total) " lines ("
+        (number->string before) " + " (number->string after) ")"))))
+
+;;; --- How many ---
+(def (cmd-how-many app)
+  "Count regexp matches from point to end of buffer."
+  (let ((pattern (qt-echo-read-string (app-state-echo app) "How many (regexp): ")))
+    (when (and pattern (not (string=? pattern "")))
+      (let* ((ed (current-qt-editor app))
+             (text (qt-plain-text-edit-text ed))
+             (pos (qt-plain-text-edit-cursor-position ed))
+             (rest (substring text pos (string-length text)))
+             (rx (with-catch (lambda (e) #f) (lambda () (pregexp pattern)))))
+        (if (not rx)
+          (echo-message! (app-state-echo app) "Invalid regexp")
+          (let lp ((s rest) (count 0))
+            (let ((m (pregexp-match rx s)))
+              (if (not m)
+                (echo-message! (app-state-echo app)
+                  (string-append (number->string count) " occurrences"))
+                (let* ((match-str (car m))
+                       (match-len (string-length match-str))
+                       (idx (string-contains s match-str)))
+                  (if (or (not idx) (= match-len 0))
+                    (echo-message! (app-state-echo app)
+                      (string-append (number->string count) " occurrences"))
+                    (lp (substring s (+ idx (max 1 match-len)) (string-length s))
+                        (+ count 1))))))))))))

@@ -1467,6 +1467,12 @@
   (register-command! 'org-toggle-heading cmd-org-toggle-heading)
   (register-command! 'magit-init cmd-magit-init)
   (register-command! 'magit-tag cmd-magit-tag)
+  ;; Batch 4: mode aliases (need editor-extra sub-module scope)
+  (register-command! 'enriched-mode cmd-text-mode)
+  (register-command! 'conf-mode cmd-text-mode)
+  (register-command! 'nxml-mode cmd-text-mode)
+  (register-command! 'sh-mode cmd-shell-script-mode)
+  (register-command! 'markdown-preview-mode cmd-markdown-mode)
 )
 
 ;;;============================================================================

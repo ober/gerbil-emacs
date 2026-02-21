@@ -2297,6 +2297,19 @@
   (register-command! 'org-toggle-heading cmd-org-toggle-heading)
   (register-command! 'magit-init cmd-magit-init)
   (register-command! 'magit-tag cmd-magit-tag)
+  ;; Batch 4: new commands + aliases
+  (register-command! 'check-parens cmd-check-parens)
+  (register-command! 'count-lines-page cmd-count-lines-page)
+  (register-command! 'how-many cmd-how-many)
+  (register-command! 'move-to-window-line-top-bottom cmd-move-to-window-line)
+  (register-command! 'binary-overwrite-mode cmd-toggle-overwrite-mode)
+  (register-command! 'enriched-mode cmd-text-mode)
+  (register-command! 'conf-mode cmd-text-mode)
+  (register-command! 'nxml-mode cmd-text-mode)
+  (register-command! 'sh-mode cmd-shell-script-mode)
+  (register-command! 'markdown-preview-mode cmd-markdown-mode)
+  (register-command! 'highlight-symbol-at-point cmd-highlight-symbol)
+  (register-command! 'ediff-regions-linewise cmd-ediff-buffers)
   )
 
 ;;;============================================================================
