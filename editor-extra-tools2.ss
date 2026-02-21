@@ -1735,3 +1735,89 @@
       (when (> (- end start) 0)
         (editor-delete-range ed start (- end start))
         (editor-goto-pos ed start)))))
+
+;;;============================================================================
+;;; fill-region (TUI) — fill/wrap text in marked region
+;;;============================================================================
+
+(def (fill-words words col)
+  "Reflow WORDS list to COL width, returning string."
+  (if (null? words) ""
+    (let loop ((ws (cdr words)) (line (car words)) (lines []))
+      (if (null? ws)
+        (string-join (reverse (cons line lines)) "\n")
+        (let ((next (string-append line " " (car ws))))
+          (if (> (string-length next) col)
+            (if (string=? line "")
+              (loop (cdr ws) "" (cons (car ws) lines))
+              (loop ws "" (cons line lines)))
+            (loop (cdr ws) next lines)))))))
+
+(def (cmd-fill-region app)
+  "Fill (word-wrap) the selected region at fill-column."
+  (let* ((ed (current-editor app))
+         (buf (current-buffer-from-app app))
+         (mark (buffer-mark buf)))
+    (if (not mark)
+      (echo-message! (app-state-echo app) "No mark set")
+      (let* ((pos (editor-get-current-pos ed))
+             (start (min pos mark))
+             (end (max pos mark))
+             (text (editor-get-text ed))
+             (region (substring text start end))
+             (words (filter (lambda (w) (> (string-length w) 0))
+                            (string-split (string-trim region) #\space)))
+             (filled (fill-words words 80)))
+        (with-undo-action ed
+          (editor-delete-range ed start (- end start))
+          (editor-insert-text ed start filled))
+        (set! (buffer-mark buf) #f)
+        (echo-message! (app-state-echo app) "Region filled")))))
+
+;;;============================================================================
+;;; copy-rectangle-to-register (TUI)
+;;;============================================================================
+
+(def (cmd-copy-rectangle-to-register app)
+  "Copy rectangle (region) to a register."
+  (let* ((echo (app-state-echo app))
+         (fr (app-state-frame app))
+         (row (- (frame-height fr) 1))
+         (width (frame-width fr))
+         (input (echo-read-string echo "Copy rectangle to register: " row width)))
+    (when (and input (> (string-length input) 0))
+      (let* ((reg (string-ref input 0))
+             (ed (current-editor app))
+             (buf (current-buffer-from-app app))
+             (mark (buffer-mark buf)))
+        (if (not mark)
+          (echo-error! echo "No mark set")
+          (let* ((pos (editor-get-current-pos ed))
+                 (start (min pos mark))
+                 (end (max pos mark))
+                 (text (editor-get-text ed))
+                 (lines (string-split text #\newline))
+                 (start-line (editor-line-from-position ed start))
+                 (end-line (editor-line-from-position ed end))
+                 ;; Compute columns
+                 (start-col (- start (let loop ((i 0) (p 0))
+                                        (if (>= i start-line) p
+                                          (loop (+ i 1) (+ p 1 (string-length (list-ref lines i))))))))
+                 (end-col (- end (let loop ((i 0) (p 0))
+                                    (if (>= i end-line) p
+                                      (loop (+ i 1) (+ p 1 (string-length (list-ref lines i))))))))
+                 (left (min start-col end-col))
+                 (right (max start-col end-col))
+                 ;; Extract rectangle lines
+                 (rect-lines
+                   (let loop ((i start-line) (acc []))
+                     (if (> i end-line) (reverse acc)
+                       (let* ((l (if (< i (length lines)) (list-ref lines i) ""))
+                              (llen (string-length l))
+                              (s (min left llen))
+                              (e (min right llen)))
+                         (loop (+ i 1) (cons (substring l s e) acc)))))))
+            (hash-put! (app-state-registers app) reg
+              (string-join rect-lines "\n"))
+            (echo-message! echo
+              (string-append "Rectangle copied to register " (string reg)))))))))

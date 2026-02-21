@@ -1652,5 +1652,136 @@
     (sci-send ed SCI_ROTATESELECTION 0 0)))
 
 ;;;============================================================================
+;;; fill-region, insert-buffer, prepend-to-buffer, copy-rectangle-to-register
+;;;============================================================================
+
+(def (qt-fill-words words col)
+  "Reflow WORDS list to COL width, returning string."
+  (if (null? words) ""
+    (let loop ((ws (cdr words)) (line (car words)) (lines []))
+      (if (null? ws)
+        (string-join (reverse (cons line lines)) "\n")
+        (let ((next (string-append line " " (car ws))))
+          (if (> (string-length next) col)
+            (if (string=? line "")
+              (loop (cdr ws) "" (cons (car ws) lines))
+              (loop ws "" (cons line lines)))
+            (loop (cdr ws) next lines)))))))
+
+(def (cmd-fill-region app)
+  "Fill (word-wrap) the selected region at fill-column."
+  (let* ((ed (current-qt-editor app))
+         (buf (current-qt-buffer app))
+         (mark (buffer-mark buf)))
+    (if (not mark)
+      (echo-error! (app-state-echo app) "No region")
+      (let* ((pos (qt-plain-text-edit-cursor-position ed))
+             (start (min mark pos))
+             (end (max mark pos))
+             (text (qt-plain-text-edit-text ed))
+             (region (substring text start end))
+             (words (filter (lambda (w) (> (string-length w) 0))
+                            (string-split (string-trim region) #\space)))
+             (filled (qt-fill-words words *fill-column*)))
+        (qt-plain-text-edit-set-selection! ed start end)
+        (qt-plain-text-edit-remove-selected-text! ed)
+        (qt-plain-text-edit-insert-text! ed filled)
+        (set! (buffer-mark buf) #f)
+        (echo-message! (app-state-echo app) "Region filled")))))
+
+(def (cmd-insert-buffer app)
+  "Insert the contents of another buffer at point."
+  (let* ((bufs (buffer-list))
+         (names (map buffer-name bufs))
+         (target-name (qt-echo-read-string-with-completion app "Insert buffer: " names)))
+    (when (and target-name (> (string-length target-name) 0))
+      (let ((target-buf (find (lambda (b) (string=? (buffer-name b) target-name)) bufs)))
+        (if (not target-buf)
+          (echo-error! (app-state-echo app)
+            (string-append "No buffer: " target-name))
+          ;; Find editor showing target buffer to get its text
+          (let* ((fr (app-state-frame app))
+                 (target-text
+                   (let loop ((wins (qt-frame-windows fr)))
+                     (cond
+                       ((null? wins) #f)
+                       ((eq? (qt-edit-window-buffer (car wins)) target-buf)
+                        (qt-plain-text-edit-text (qt-edit-window-editor (car wins))))
+                       (else (loop (cdr wins)))))))
+            (if target-text
+              (let ((ed (current-qt-editor app)))
+                (qt-plain-text-edit-insert-text! ed target-text)
+                (echo-message! (app-state-echo app)
+                  (string-append "Inserted buffer " target-name)))
+              (echo-error! (app-state-echo app)
+                (string-append "Buffer " target-name " not visible in any window")))))))))
+
+(def (cmd-prepend-to-buffer app)
+  "Prepend region to another buffer."
+  (let* ((ed (current-qt-editor app))
+         (buf (current-qt-buffer app))
+         (mark (buffer-mark buf)))
+    (if (not mark)
+      (echo-error! (app-state-echo app) "No region")
+      (let* ((pos (qt-plain-text-edit-cursor-position ed))
+             (start (min mark pos))
+             (end (max mark pos))
+             (text (qt-plain-text-edit-text ed))
+             (region (substring text start end))
+             (bufs (buffer-list))
+             (names (map buffer-name bufs))
+             (target-name (qt-echo-read-string-with-completion app "Prepend to buffer: " names)))
+        (when target-name
+          (let ((target-buf (find (lambda (b) (string=? (buffer-name b) target-name)) bufs)))
+            (if target-buf
+              (let ((fr (app-state-frame app)))
+                (let loop ((wins (qt-frame-windows fr)))
+                  (when (pair? wins)
+                    (if (eq? (qt-edit-window-buffer (car wins)) target-buf)
+                      (let ((target-ed (qt-edit-window-editor (car wins))))
+                        ;; Move to beginning and insert
+                        (qt-plain-text-edit-set-cursor-position! target-ed 0)
+                        (qt-plain-text-edit-insert-text! target-ed region))
+                      (loop (cdr wins)))))
+                (echo-message! (app-state-echo app)
+                  (string-append "Prepended to " target-name)))
+              (echo-error! (app-state-echo app) "Buffer not found"))))))))
+
+(def (cmd-copy-rectangle-to-register app)
+  "Copy rectangle (region interpreted as column block) to a register."
+  (let* ((input (qt-echo-read-string app "Copy rectangle to register: "))
+         (echo (app-state-echo app)))
+    (when (and input (> (string-length input) 0))
+      (let* ((reg (string-ref input 0))
+             (ed (current-qt-editor app))
+             (buf (current-qt-buffer app))
+             (mark (buffer-mark buf)))
+        (if (not mark)
+          (echo-error! echo "No mark set")
+          (let* ((pos (qt-plain-text-edit-cursor-position ed))
+                 (start (min mark pos))
+                 (end (max mark pos))
+                 (text (qt-plain-text-edit-text ed))
+                 (lines (string-split text #\newline))
+                 (col1 (column-at-position text start))
+                 (col2 (column-at-position text end))
+                 (left-col (min col1 col2))
+                 (right-col (max col1 col2)))
+            (let-values (((start-line end-line) (region-line-range text start end)))
+              (let ((rect-lines
+                      (let loop ((i start-line) (acc []))
+                        (if (> i end-line) (reverse acc)
+                          (let* ((l (if (< i (length lines)) (list-ref lines i) ""))
+                                 (llen (string-length l))
+                                 (s (min left-col llen))
+                                 (e (min right-col llen)))
+                            (loop (+ i 1) (cons (substring l s e) acc)))))))
+                (hash-put! (app-state-registers app) reg
+                  (string-join rect-lines "\n"))
+                (set! (buffer-mark buf) #f)
+                (echo-message! echo
+                  (string-append "Rectangle copied to register " (string reg)))))))))))
+
+;;;============================================================================
 ;;; Batch 7: More missing commands
 

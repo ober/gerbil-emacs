@@ -2052,6 +2052,11 @@
   (keymap-bind! *ctrl-c-m-map* "l" 'mc-edit-lines)
   (keymap-bind! *ctrl-c-m-map* "u" 'mc-unmark-last)
   (keymap-bind! *ctrl-c-m-map* "r" 'mc-rotate)
+  ;; fill-region, insert-buffer, prepend-to-buffer, copy-rectangle-to-register
+  (register-command! 'fill-region cmd-fill-region)
+  (register-command! 'insert-buffer cmd-insert-buffer)
+  (register-command! 'prepend-to-buffer cmd-prepend-to-buffer)
+  (register-command! 'copy-rectangle-to-register cmd-copy-rectangle-to-register)
   )
 
 ;;;============================================================================

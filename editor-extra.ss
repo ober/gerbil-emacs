@@ -1279,4 +1279,7 @@
   (register-command! 'toggle-global-pipenv cmd-toggle-global-pipenv)
   ;; delete-horizontal-space (defined in editor-extra-tools2.ss)
   (register-command! 'delete-horizontal-space cmd-delete-horizontal-space)
+  ;; fill-region, copy-rectangle-to-register (defined in editor-extra-tools2.ss)
+  (register-command! 'fill-region cmd-fill-region)
+  (register-command! 'copy-rectangle-to-register cmd-copy-rectangle-to-register)
 )
