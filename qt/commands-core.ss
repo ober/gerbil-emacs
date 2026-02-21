@@ -264,34 +264,37 @@
     (load-theme! theme-name))
   (when *qt-app-ptr*
     (qt-app-set-style-sheet! *qt-app-ptr* (theme-stylesheet))
-    ;; Update line number area colors
-    (let* ((fr (app-state-frame app))
-           (g-bg (theme-color 'gutter-bg))
-           (g-fg (theme-color 'gutter-fg)))
-      (when (and g-bg g-fg)
-        (let ((parse-color (lambda (hex)
-                (let ((r (string->number (substring hex 1 3) 16))
-                      (g (string->number (substring hex 3 5) 16))
-                      (b (string->number (substring hex 5 7) 16)))
-                  (values r g b)))))
-          (for-each
-            (lambda (win)
-              (let ((lna (qt-edit-window-line-number-area win)))
-                (when lna
-                  (let-values (((r g b) (parse-color g-bg)))
-                    (qt-line-number-area-set-bg-color! lna r g b))
-                  (let-values (((r g b) (parse-color g-fg)))
-                    (qt-line-number-area-set-fg-color! lna r g b)))))
-            (qt-frame-windows fr)))))
+    (let ((fr (app-state-frame app)))
+      ;; Apply Scintilla base colors (bg, fg, caret, selection, line numbers)
+      ;; to ALL visible editors via the face system
+      (for-each
+        (lambda (win)
+          (let ((ed (qt-edit-window-editor win)))
+            (qt-apply-editor-theme! ed)))
+        (qt-frame-windows fr))
+      ;; Update line number area widget colors (separate from Scintilla margin)
+      (let ((g-bg (theme-color 'gutter-bg))
+            (g-fg (theme-color 'gutter-fg)))
+        (when (and g-bg g-fg)
+          (let ((parse-color (lambda (hex)
+                  (let ((r (string->number (substring hex 1 3) 16))
+                        (g (string->number (substring hex 3 5) 16))
+                        (b (string->number (substring hex 5 7) 16)))
+                    (values r g b)))))
+            (for-each
+              (lambda (win)
+                (let ((lna (qt-edit-window-line-number-area win)))
+                  (when lna
+                    (let-values (((r g b) (parse-color g-bg)))
+                      (qt-line-number-area-set-bg-color! lna r g b))
+                    (let-values (((r g b) (parse-color g-fg)))
+                      (qt-line-number-area-set-fg-color! lna r g b)))))
+              (qt-frame-windows fr))))))
     ;; Re-apply syntax highlighting to all open buffers
     (for-each
       (lambda (buf)
         (qt-setup-highlighting! app buf))
-      (buffer-list))
-    ;; TODO: Update visual decorations (cursor-line, brace match, search highlight)
-    ;; TODO: Update tab colors and window borders
-    ;; Echo area label styling is handled by the Qt stylesheet above
-    ))
+      (buffer-list))))
 
 ;; Auto-save path: #filename# (Emacs convention)
 (def (make-auto-save-path path)

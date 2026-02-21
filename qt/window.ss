@@ -32,6 +32,7 @@
         qt-frame-delete-window!
         qt-frame-delete-other-windows!
         qt-frame-other-window!
+        qt-apply-editor-theme!
         ;; Tree helpers (used by commands-sexp.ss, tests)
         split-tree-flatten
         split-tree-find-parent
@@ -41,6 +42,7 @@
 (import :std/sugar
         :gemacs/qt/sci-shim
         :gemacs/core
+        :gemacs/face
         :gemacs/qt/buffer)
 
 ;;;============================================================================
@@ -173,27 +175,66 @@
 ;;; QScintilla editor setup
 ;;;============================================================================
 
-(def (qt-scintilla-setup-editor! ed)
-  "Configure QScintilla editor: dark theme, margins, caret, save-point signals."
-  ;; Base dark theme
-  (sci-send ed SCI_STYLESETBACK STYLE_DEFAULT (rgb->sci #x1e #x1e #x2e))
-  (sci-send ed SCI_STYLESETFORE STYLE_DEFAULT (rgb->sci #xd4 #xd4 #xd4))
-  ;; Set monospace font on STYLE_DEFAULT before STYLECLEARALL so all styles inherit it.
-  ;; This is critical for org-table column alignment — CSS font-family alone doesn't
-  ;; affect Scintilla's internal text renderer.
-  ;; Font family and size come from the face system (*default-font-family*, *default-font-size*)
+(def (qt-apply-editor-theme! ed)
+  "Apply current theme colors from the face system to a QScintilla editor.
+   Updates background, foreground, line numbers, caret, selection, and cursor line."
+  ;; Background/foreground from 'default face
+  (let ((default-face (face-get 'default)))
+    (if default-face
+      (begin
+        (when (face-bg default-face)
+          (let-values (((r g b) (parse-hex-color (face-bg default-face))))
+            (sci-send ed SCI_STYLESETBACK STYLE_DEFAULT (rgb->sci r g b))))
+        (when (face-fg default-face)
+          (let-values (((r g b) (parse-hex-color (face-fg default-face))))
+            (sci-send ed SCI_STYLESETFORE STYLE_DEFAULT (rgb->sci r g b))
+            ;; Caret color matches text foreground
+            (sci-send ed SCI_SETCARETFORE (rgb->sci r g b)))))
+      ;; Fallback when no face system is initialized yet
+      (begin
+        (sci-send ed SCI_STYLESETBACK STYLE_DEFAULT (rgb->sci #x1e #x1e #x2e))
+        (sci-send ed SCI_STYLESETFORE STYLE_DEFAULT (rgb->sci #xd4 #xd4 #xd4))
+        (sci-send ed SCI_SETCARETFORE (rgb->sci #xd4 #xd4 #xd4)))))
+  ;; Font on STYLE_DEFAULT before STYLECLEARALL so all styles inherit it
   (sci-send/string ed SCI_STYLESETFONT *default-font-family* STYLE_DEFAULT)
   (sci-send ed SCI_STYLESETSIZE STYLE_DEFAULT *default-font-size*)
+  ;; Propagate to all styles
   (sci-send ed SCI_STYLECLEARALL)
+  ;; Line number margin from 'line-number face
+  (let ((ln-face (face-get 'line-number)))
+    (if ln-face
+      (begin
+        (when (face-bg ln-face)
+          (let-values (((r g b) (parse-hex-color (face-bg ln-face))))
+            (sci-send ed SCI_STYLESETBACK STYLE_LINENUMBER (rgb->sci r g b))))
+        (when (face-fg ln-face)
+          (let-values (((r g b) (parse-hex-color (face-fg ln-face))))
+            (sci-send ed SCI_STYLESETFORE STYLE_LINENUMBER (rgb->sci r g b)))))
+      ;; Fallback
+      (begin
+        (sci-send ed SCI_STYLESETBACK STYLE_LINENUMBER (rgb->sci #x20 #x20 #x20))
+        (sci-send ed SCI_STYLESETFORE STYLE_LINENUMBER (rgb->sci #x8c #x8c #x8c)))))
+  ;; Cursor line from 'cursor-line face
+  (let ((cl-face (face-get 'cursor-line)))
+    (if (and cl-face (face-bg cl-face))
+      (let-values (((r g b) (parse-hex-color (face-bg cl-face))))
+        (sci-send ed SCI_SETCARETLINEBACK (rgb->sci r g b)))
+      (sci-send ed SCI_SETCARETLINEBACK (rgb->sci #x22 #x22 #x28))))
+  ;; Selection background from 'region face (SCI_SETSELBACK = 2068)
+  (let ((region-face (face-get 'region)))
+    (when (and region-face (face-bg region-face))
+      (let-values (((r g b) (parse-hex-color (face-bg region-face))))
+        (sci-send ed 2068 1 (rgb->sci r g b))))))
+
+(def (qt-scintilla-setup-editor! ed)
+  "Configure QScintilla editor: theme, margins, caret, save-point signals."
+  ;; Apply theme colors from face system
+  (qt-apply-editor-theme! ed)
   ;; Line number margin
   (sci-send ed SCI_SETMARGINTYPEN 0 SC_MARGIN_NUMBER)
   (sci-send ed SCI_SETMARGINWIDTHN 0 50)
-  (sci-send ed SCI_STYLESETBACK STYLE_LINENUMBER (rgb->sci #x20 #x20 #x20))
-  (sci-send ed SCI_STYLESETFORE STYLE_LINENUMBER (rgb->sci #x8c #x8c #x8c))
   ;; Caret line highlight
   (sci-send ed SCI_SETCARETLINEVISIBLE 1)
-  (sci-send ed SCI_SETCARETLINEBACK (rgb->sci #x22 #x22 #x28))
-  (sci-send ed SCI_SETCARETFORE (rgb->sci #xd4 #xd4 #xd4))
   ;; Tab settings
   (sci-send ed SCI_SETTABWIDTH 4)
   (sci-send ed SCI_SETINDENT 4)
@@ -289,6 +330,14 @@
            ;; Find new window's index in the rebuilt list
            (let ((new-idx (list-index (lambda (w) (eq? w new-win)) (qt-frame-windows fr))))
              (set! (qt-frame-current-idx fr) (or new-idx 0)))
+           ;; Equalize all children in the splitter for even sizing
+           (with-catch void
+             (lambda ()
+               (let ((n (length (split-node-children parent))))
+                 (qt-splitter-set-sizes! parent-spl
+                   (let loop ((i 0) (acc '()))
+                     (if (>= i n) (reverse acc)
+                       (loop (+ i 1) (cons 500 acc))))))))
            (qt-edit-window-editor new-win)))
 
         ;; ── Case B: root is a leaf (very first split) ─────────────────────────
@@ -303,6 +352,8 @@
            ;; Find new window's index in the rebuilt list
            (let ((new-idx (list-index (lambda (w) (eq? w new-win)) (qt-frame-windows fr))))
              (set! (qt-frame-current-idx fr) (or new-idx 0)))
+           ;; 50/50 split
+           (with-catch void (lambda () (qt-splitter-set-sizes! root-spl (list 500 500))))
            (qt-edit-window-editor new-win)))
 
         ;; ── Case C: no parent or different orientation — nest with new splitter ─
@@ -336,6 +387,8 @@
            ;; Find new window's index in the rebuilt list
            (let ((new-idx (list-index (lambda (w) (eq? w new-win)) (qt-frame-windows fr))))
              (set! (qt-frame-current-idx fr) (or new-idx 0)))
+           ;; 50/50 split in nested splitter
+           (with-catch void (lambda () (qt-splitter-set-sizes! new-spl (list 500 500))))
            (qt-edit-window-editor new-win))))))
       ;; Restore main window size — prevent Qt from growing the window
       (when (and main-win saved-w saved-h)

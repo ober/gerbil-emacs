@@ -1061,11 +1061,31 @@
   (lsp-stop!)
   (echo-message! (app-state-echo app) "LSP: stopped"))
 
+(def (lsp-clear-all-indicators! app)
+  "Clear all LSP diagnostic indicators and margin markers from the current editor."
+  (let ((ed (current-qt-editor app)))
+    ;; Clear underline indicators
+    (for-each
+      (lambda (indic)
+        (sci-send ed SCI_SETINDICATORCURRENT indic)
+        (sci-send ed SCI_INDICATORCLEARRANGE 0
+          (sci-send ed SCI_GETLENGTH)))
+      (list *indic-lsp-error* *indic-lsp-warning*
+            *indic-lsp-info* *indic-lsp-hint*))
+    ;; Clear margin markers
+    (sci-send ed SCI_MARKERDELETEALL *marker-lsp-error*)
+    (sci-send ed SCI_MARKERDELETEALL *marker-lsp-warning*)
+    (sci-send ed SCI_MARKERDELETEALL *marker-lsp-info*)
+    (sci-send ed SCI_MARKERDELETEALL *marker-lsp-hint*)))
+
 (def (cmd-toggle-lsp app)
   "Toggle LSP server on/off. Start if not running, stop if running."
   (if (lsp-running?)
-    (begin (lsp-stop!)
-           (echo-message! (app-state-echo app) "LSP: stopped"))
+    (begin
+      (lsp-stop!)
+      ;; Clear visual indicators from current buffer
+      (lsp-clear-all-indicators! app)
+      (echo-message! (app-state-echo app) "LSP: stopped"))
     (let* ((buf (current-qt-buffer app))
            (path (buffer-file-path buf))
            (root (and path (lsp-find-project-root path))))
@@ -1073,6 +1093,9 @@
         (begin
           (lsp-start! root)
           (lsp-install-handlers! app)
+          ;; Proactively set up diagnostic margin so indicators are visible immediately
+          (let ((ed (current-qt-editor app)))
+            (lsp-ensure-diagnostic-margin! ed))
           (echo-message! (app-state-echo app) "LSP: starting gerbil-lsp..."))
         (echo-error! (app-state-echo app) "LSP: no project root found")))))
 
