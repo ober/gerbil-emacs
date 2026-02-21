@@ -440,6 +440,9 @@
   (register-command! 'describe-char cmd-describe-char)
   ;; Find file at point
   (register-command! 'find-file-at-point cmd-find-file-at-point)
+  (register-command! 'ffap cmd-find-file-at-point)
+  ;; Auto-fill-mode alias
+  (register-command! 'auto-fill-mode cmd-toggle-auto-fill)
   ;; Count chars region
   (register-command! 'count-chars-region cmd-count-chars-region)
   ;; Capitalize region

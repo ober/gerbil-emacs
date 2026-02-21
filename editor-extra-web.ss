@@ -1836,3 +1836,43 @@
     (set! *global-web-mode* (not *global-web-mode*))
     (echo-message! echo (if *global-web-mode*
                           "Web mode ON" "Web mode OFF"))))
+
+;;;============================================================================
+;;; Follow-mode (synchronized scrolling toggle)
+;;;============================================================================
+
+(def *tui-follow-mode* #f)
+
+(def (cmd-follow-mode app)
+  "Toggle follow-mode: synchronized scrolling across split windows."
+  (set! *tui-follow-mode* (not *tui-follow-mode*))
+  (echo-message! (app-state-echo app)
+    (if *tui-follow-mode* "Follow mode ON" "Follow mode OFF")))
+
+;;;============================================================================
+;;; Recentf-open-files (show recent files in a buffer)
+;;;============================================================================
+
+(def (cmd-recentf-open-files app)
+  "Show recent files in a numbered buffer for easy selection."
+  (let* ((fr (app-state-frame app))
+         (ed (current-editor app))
+         (recents *recent-files*)
+         (lines (let loop ((fs recents) (i 1) (acc []))
+                  (if (null? fs) (reverse acc)
+                    (loop (cdr fs) (+ i 1)
+                          (cons (string-append "  " (number->string i) ". " (car fs))
+                                acc)))))
+         (text (string-append "Recent Files:\n\n"
+                              (if (null? lines) "  (no recent files)"
+                                (string-join lines "\n"))))
+         (buf-name "*Recent Files*")
+         (buf (or (buffer-by-name buf-name)
+                  (buffer-create! buf-name ed #f))))
+    (buffer-attach! ed buf)
+    (set! (edit-window-buffer (current-window fr)) buf)
+    (editor-set-text ed text)
+    (editor-set-save-point ed)
+    (editor-goto-pos ed 0)
+    (echo-message! (app-state-echo app)
+      (string-append (number->string (length recents)) " recent files"))))

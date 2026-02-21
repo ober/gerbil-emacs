@@ -1317,4 +1317,7 @@
   (register-command! 'smart-join-line cmd-smart-join-line)
   (register-command! 'pop-to-mark cmd-pop-to-mark)
   (register-command! 'duplicate-line-or-region cmd-duplicate-line-or-region)
+  ;; Parity batch 4: follow-mode, recentf-open-files
+  (register-command! 'follow-mode cmd-follow-mode)
+  (register-command! 'recentf-open-files cmd-recentf-open-files)
 )
