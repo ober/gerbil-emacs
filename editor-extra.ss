@@ -1286,4 +1286,6 @@
   (register-command! 'insert-buffer cmd-insert-buffer)
   (register-command! 'session-save cmd-session-save)
   (register-command! 'session-restore cmd-session-restore)
+  ;; ace-window (defined in editor-extra-tools2.ss)
+  (register-command! 'ace-window cmd-ace-window)
 )

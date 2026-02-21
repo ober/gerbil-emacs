@@ -1963,3 +1963,48 @@ Returns list of (name . line-number) pairs."
   "Fill each paragraph in the region individually."
   (cmd-fill-paragraph app))
 
+;;;============================================================================
+;;; Xref find-definitions / find-references (grep-based, non-LSP)
+
+(def (cmd-xref-find-definitions app)
+  "Find definitions of symbol at point (alias for goto-definition)."
+  (cmd-goto-definition app))
+
+(def (cmd-xref-find-references app)
+  "Find references to symbol at point using grep."
+  (let* ((ed (current-qt-editor app))
+         (sym (symbol-at-point ed)))
+    (if (not sym)
+      (echo-error! (app-state-echo app) "No symbol at point")
+      (let* ((root (current-project-root app))
+             (proc (open-process
+                     (list path: "/usr/bin/grep"
+                           arguments: (list "-rn" sym
+                             "--include=*.ss" "--include=*.scm"
+                             root)
+                           stdout-redirection: #t
+                           stderr-redirection: #f)))
+             (output (read-line proc #f))
+             (_ (close-port proc)))
+        (if (not output)
+          (echo-error! (app-state-echo app) (string-append "No references: " sym))
+          (let* ((lines (string-split output #\newline))
+                 (filtered (filter (lambda (l) (> (string-length l) 0)) lines))
+                 (count (length filtered)))
+            (echo-message! (app-state-echo app)
+              (string-append "References to " sym ": " (number->string count) " matches"))))))))
+
+;;;============================================================================
+;;; Number-to-register
+
+(def (cmd-number-to-register app)
+  "Store a number in a register."
+  (let ((reg (qt-echo-read-string app "Register (a-z): ")))
+    (when (and reg (> (string-length reg) 0))
+      (let* ((key (string->symbol reg))
+             (registers (app-state-registers app))
+             (arg (get-prefix-arg app)))
+        (hash-put! registers key arg)
+        (echo-message! (app-state-echo app)
+          (string-append "Register " reg " = " (number->string arg)))))))
+

@@ -1911,3 +1911,37 @@
           (echo-message! (app-state-echo app)
             (string-append "Session: " (number->string file-count)
               " files available. Use M-x find-file to open them.")))))))
+
+;;;============================================================================
+;;; Ace-window: quick window switching by number
+
+(def (cmd-ace-window app)
+  "Switch to a window by number (like ace-window)."
+  (let* ((fr (app-state-frame app))
+         (wins (frame-windows fr))
+         (n (length wins)))
+    (if (<= n 1)
+      (echo-message! (app-state-echo app) "Only one window")
+      (if (= n 2)
+        (frame-other-window! fr)
+        (let* ((labels
+                (let loop ((ws wins) (i 0) (acc []))
+                  (if (null? ws) (reverse acc)
+                    (let* ((w (car ws))
+                           (bname (buffer-name (edit-window-buffer w)))
+                           (marker (if (= i (frame-current-idx fr)) "*" " "))
+                           (label (string-append (number->string (+ i 1)) marker ": " bname)))
+                      (loop (cdr ws) (+ i 1) (cons label acc))))))
+               (prompt-str (string-append "Window [" (string-join labels " | ") "]: "))
+               (input (app-read-string app prompt-str))
+               (num (and input (string->number (string-trim input)))))
+          (cond
+            ((not num)
+             (echo-error! (app-state-echo app) "Not a number"))
+            ((or (< num 1) (> num n))
+             (echo-error! (app-state-echo app)
+               (string-append "Window " (number->string num) " out of range")))
+            (else
+             (set! (frame-current-idx fr) (- num 1))
+             (echo-message! (app-state-echo app)
+               (string-append "Window " (number->string num))))))))))
