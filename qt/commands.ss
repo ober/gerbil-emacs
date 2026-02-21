@@ -2125,6 +2125,25 @@
   (register-command! 'insert-buffer cmd-insert-buffer)
   (register-command! 'prepend-to-buffer cmd-prepend-to-buffer)
   (register-command! 'copy-rectangle-to-register cmd-copy-rectangle-to-register)
+  ;; Parity batch 6: org-mode, VCS, DAP
+  (register-command! 'org-schedule cmd-org-schedule)
+  (register-command! 'org-deadline cmd-org-deadline)
+  (register-command! 'org-insert-src-block cmd-org-insert-src-block)
+  (register-command! 'org-clock-in cmd-org-clock-in)
+  (register-command! 'org-clock-out cmd-org-clock-out)
+  (register-command! 'org-agenda cmd-org-agenda)
+  (register-command! 'org-export cmd-org-export)
+  (register-command! 'org-priority cmd-org-priority)
+  (register-command! 'org-todo cmd-org-todo-cycle)  ;; alias
+  (register-command! 'flycheck-previous-error cmd-flycheck-prev-error)  ;; alias
+  (register-command! 'vc-pull cmd-vc-pull)
+  (register-command! 'vc-push cmd-vc-push)
+  (register-command! 'magit-stage-file cmd-magit-stage-file)
+  (register-command! 'dap-debug cmd-dap-debug)
+  (register-command! 'dap-breakpoint-toggle cmd-dap-breakpoint-toggle)
+  (register-command! 'dap-step-over cmd-dap-step-over)
+  (register-command! 'dap-step-in cmd-dap-step-in)
+  (register-command! 'dap-step-out cmd-dap-step-out)
   )
 
 ;;;============================================================================

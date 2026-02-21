@@ -1868,3 +1868,133 @@
                                      (string-join shown ", ")
                                      (if (> (length words) 5) " ..." "")))))))))))))
 
+;;;============================================================================
+;;; Org-mode parity: agenda, export, priority
+;;;============================================================================
+
+(def (cmd-org-agenda app)
+  "Scan open buffers for TODO/DONE items and display in *Org Agenda*."
+  (let* ((fr (app-state-frame app))
+         (ed (current-qt-editor app))
+         (items []))
+    ;; Scan all buffers via file on disk
+    (for-each
+      (lambda (buf)
+        (let ((fp (buffer-file-path buf))
+              (name (buffer-name buf)))
+          (when fp
+            (with-exception-catcher (lambda (e) (void))
+              (lambda ()
+                (let* ((content (call-with-input-file fp (lambda (p) (read-line p #f))))
+                       (lines (if content (string-split content #\newline) '())))
+                  (let loop ((ls lines) (n 1))
+                    (when (pair? ls)
+                      (let ((l (car ls)))
+                        (when (or (string-contains l "TODO ")
+                                  (string-contains l "SCHEDULED:")
+                                  (string-contains l "DEADLINE:"))
+                          (set! items (cons (string-append "  " name ":"
+                                                          (number->string n) ": "
+                                                          (string-trim l))
+                                           items))))
+                      (loop (cdr ls) (+ n 1))))))))))
+      *buffer-list*)
+    ;; Also scan current editor text
+    (let* ((text (qt-plain-text-edit-text ed))
+           (cur-buf (current-qt-buffer app))
+           (cur-name (if cur-buf (buffer-name cur-buf) "*scratch*"))
+           (lines (string-split text #\newline)))
+      (let loop ((ls lines) (n 1))
+        (when (pair? ls)
+          (let ((l (car ls)))
+            (when (or (string-contains l "TODO ")
+                      (string-contains l "SCHEDULED:")
+                      (string-contains l "DEADLINE:"))
+              (set! items (cons (string-append "  " cur-name ":"
+                                              (number->string n) ": "
+                                              (string-trim l))
+                               items))))
+          (loop (cdr ls) (+ n 1)))))
+    (let* ((buf (or (buffer-by-name "*Org Agenda*")
+                    (qt-buffer-create! "*Org Agenda*" ed #f)))
+           (agenda-text (if (null? items)
+                          "Org Agenda\n\nNo TODO items found.\n"
+                          (string-append "Org Agenda\n\n"
+                                        (string-join (reverse items) "\n")
+                                        "\n"))))
+      (qt-buffer-attach! ed buf)
+      (set! (qt-edit-window-buffer (qt-current-window fr)) buf)
+      (qt-plain-text-edit-set-text! ed agenda-text)
+      (qt-plain-text-edit-set-cursor-position! ed 0)
+      (qt-modeline-update! app))))
+
+(def (cmd-org-export app)
+  "Export org buffer to plain text (strip markup)."
+  (let* ((ed (current-qt-editor app))
+         (text (qt-plain-text-edit-text ed))
+         (lines (string-split text #\newline))
+         (exported
+           (string-join
+             (map (lambda (line)
+                    (cond
+                      ;; Strip leading *s from headings
+                      ((and (> (string-length line) 0)
+                            (char=? (string-ref line 0) #\*))
+                       (let loop ((i 0))
+                         (if (and (< i (string-length line))
+                                  (or (char=? (string-ref line i) #\*)
+                                      (char=? (string-ref line i) #\space)))
+                           (loop (+ i 1))
+                           (substring line i (string-length line)))))
+                      ;; Strip #+KEYWORDS
+                      ((string-prefix? "#+" line) "")
+                      (else line)))
+                  lines)
+             "\n"))
+         (fr (app-state-frame app))
+         (buf (or (buffer-by-name "*Org Export*")
+                  (qt-buffer-create! "*Org Export*" ed #f))))
+    (qt-buffer-attach! ed buf)
+    (set! (qt-edit-window-buffer (qt-current-window fr)) buf)
+    (qt-plain-text-edit-set-text! ed exported)
+    (qt-plain-text-edit-set-cursor-position! ed 0)
+    (qt-modeline-update! app)
+    (echo-message! (app-state-echo app) "Exported to *Org Export*")))
+
+(def (cmd-org-priority app)
+  "Cycle priority on heading: none -> [#A] -> [#B] -> [#C] -> none."
+  (let* ((ed (current-qt-editor app)) (text (qt-plain-text-edit-text ed))
+         (pos (qt-plain-text-edit-cursor-position ed))
+         (line-start (let lp ((i (- pos 1)))
+                       (if (or (< i 0) (char=? (string-ref text i) #\newline))
+                         (+ i 1) (lp (- i 1)))))
+         (line-end (let lp ((i pos))
+                     (if (or (>= i (string-length text))
+                             (char=? (string-ref text i) #\newline))
+                       i (lp (+ i 1)))))
+         (line (substring text line-start line-end)) (echo (app-state-echo app))
+         (replace-pri (lambda (old new)
+                        (let ((idx (string-contains line old)))
+                          (and idx (string-append (substring line 0 idx) new
+                                                  (substring line (+ idx (string-length old))
+                                                             (string-length line))))))))
+    (if (or (= (string-length line) 0) (not (char=? (string-ref line 0) #\*)))
+      (echo-message! echo "Not on a heading")
+      (let* ((new-line (or (replace-pri "[#A] " "[#B] ")
+                           (replace-pri "[#B] " "[#C] ")
+                           (replace-pri "[#C] " "")
+                           (let lp ((i 0))
+                             (if (and (< i (string-length line)) (char=? (string-ref line i) #\*))
+                               (lp (+ i 1))
+                               (string-append (substring line 0 i) " [#A]"
+                                              (substring line i (string-length line)))))))
+             (new-text (string-append (substring text 0 line-start) new-line
+                                      (substring text line-end (string-length text)))))
+        (qt-plain-text-edit-set-text! ed new-text)
+        (qt-plain-text-edit-set-cursor-position! ed (min pos (+ line-start (string-length new-line))))
+        (echo-message! echo
+          (cond ((string-contains new-line "[#A]") "Priority: A")
+                ((string-contains new-line "[#B]") "Priority: B")
+                ((string-contains new-line "[#C]") "Priority: C")
+                (else "Priority: none")))))))
+

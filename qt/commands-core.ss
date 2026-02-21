@@ -1882,3 +1882,113 @@ Returns (path . line) or #f. Handles file:line format."
          (result (read-line out)))
     (close-port out)
     (qt-plain-text-edit-insert-text! ed (if (string? result) result "???"))))
+
+;;;============================================================================
+;;; Org-mode parity commands
+;;;============================================================================
+
+(def (cmd-org-schedule app)
+  "Insert SCHEDULED timestamp on next line."
+  (let* ((ed (current-qt-editor app))
+         (date (qt-echo-read-string app "Schedule date (YYYY-MM-DD): ")))
+    (when (and date (> (string-length date) 0))
+      (let* ((text (qt-plain-text-edit-text ed))
+             (pos (qt-plain-text-edit-cursor-position ed))
+             (line-end (let loop ((i pos))
+                         (if (or (>= i (string-length text))
+                                 (char=? (string-ref text i) #\newline))
+                           i (loop (+ i 1)))))
+             (new-text (string-append (substring text 0 line-end)
+                                      "\n  SCHEDULED: <" date ">"
+                                      (substring text line-end (string-length text)))))
+        (qt-plain-text-edit-set-text! ed new-text)
+        (qt-plain-text-edit-set-cursor-position! ed (+ line-end 1))
+        (echo-message! (app-state-echo app) (string-append "Scheduled: " date))))))
+
+(def (cmd-org-deadline app)
+  "Insert DEADLINE timestamp on next line."
+  (let* ((ed (current-qt-editor app))
+         (date (qt-echo-read-string app "Deadline date (YYYY-MM-DD): ")))
+    (when (and date (> (string-length date) 0))
+      (let* ((text (qt-plain-text-edit-text ed))
+             (pos (qt-plain-text-edit-cursor-position ed))
+             (line-end (let loop ((i pos))
+                         (if (or (>= i (string-length text))
+                                 (char=? (string-ref text i) #\newline))
+                           i (loop (+ i 1)))))
+             (new-text (string-append (substring text 0 line-end)
+                                      "\n  DEADLINE: <" date ">"
+                                      (substring text line-end (string-length text)))))
+        (qt-plain-text-edit-set-text! ed new-text)
+        (qt-plain-text-edit-set-cursor-position! ed (+ line-end 1))
+        (echo-message! (app-state-echo app) (string-append "Deadline: " date))))))
+
+(def (cmd-org-insert-src-block app)
+  "Insert #+BEGIN_SRC ... #+END_SRC template at point."
+  (let* ((ed (current-qt-editor app))
+         (lang (qt-echo-read-string app "Language (default: empty): "))
+         (lang-str (if (and lang (> (string-length lang) 0))
+                     (string-append " " lang) ""))
+         (template (string-append "#+BEGIN_SRC" lang-str "\n\n#+END_SRC\n")))
+    (qt-plain-text-edit-insert-text! ed template)
+    (echo-message! (app-state-echo app) "Source block inserted")))
+
+(def (cmd-org-clock-in app)
+  "Insert CLOCK-IN timestamp in :LOGBOOK: drawer."
+  (let* ((ed (current-qt-editor app))
+         (text (qt-plain-text-edit-text ed))
+         (pos (qt-plain-text-edit-cursor-position ed))
+         (line-end (let loop ((i pos))
+                     (if (or (>= i (string-length text))
+                             (char=? (string-ref text i) #\newline))
+                       i (loop (+ i 1)))))
+         (now (with-exception-catcher (lambda (e) "")
+                (lambda ()
+                  (let ((p (open-process
+                             (list path: "date"
+                                   arguments: '("+[%Y-%m-%d %a %H:%M]")))))
+                    (let ((out (read-line p)))
+                      (close-port p) (or out "")))))))
+    (when (> (string-length now) 0)
+      (let* ((clock-text (string-append "\n  :LOGBOOK:\n  CLOCK: " now "\n  :END:"))
+             (new-text (string-append (substring text 0 line-end)
+                                      clock-text
+                                      (substring text line-end (string-length text)))))
+        (qt-plain-text-edit-set-text! ed new-text)
+        (qt-plain-text-edit-set-cursor-position! ed (+ line-end 1))
+        (echo-message! (app-state-echo app) (string-append "Clocked in: " now))))))
+
+(def (cmd-org-clock-out app)
+  "Close open CLOCK entry with end timestamp."
+  (let* ((ed (current-qt-editor app))
+         (text (qt-plain-text-edit-text ed))
+         (lines (string-split text #\newline))
+         (echo (app-state-echo app))
+         ;; Find last open CLOCK entry
+         (clock-line
+           (let loop ((i (- (length lines) 1)))
+             (cond
+               ((< i 0) #f)
+               ((let ((l (list-ref lines i)))
+                  (and (string-contains l "CLOCK: [")
+                       (not (string-contains l "--"))))
+                i)
+               (else (loop (- i 1)))))))
+    (if (not clock-line)
+      (echo-message! echo "No open clock entry")
+      (let ((now (with-exception-catcher (lambda (e) "")
+                   (lambda ()
+                     (let ((p (open-process
+                                (list path: "date"
+                                      arguments: '("+[%Y-%m-%d %a %H:%M]")))))
+                       (let ((out (read-line p)))
+                         (close-port p) (or out "")))))))
+        (when (> (string-length now) 0)
+          (let* ((old-line (list-ref lines clock-line))
+                 (new-line (string-append old-line "--" now))
+                 (new-lines (let loop ((ls lines) (i 0) (acc []))
+                              (if (null? ls) (reverse acc)
+                                (loop (cdr ls) (+ i 1)
+                                      (cons (if (= i clock-line) new-line (car ls)) acc))))))
+            (qt-plain-text-edit-set-text! ed (string-join new-lines "\n"))
+            (echo-message! echo (string-append "Clocked out: " now))))))))

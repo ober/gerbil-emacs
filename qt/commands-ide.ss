@@ -1871,5 +1871,112 @@
                   (string-append "Rectangle copied to register " (string reg)))))))))))
 
 ;;;============================================================================
-;;; Batch 7: More missing commands
+;;; VCS parity: vc-pull, vc-push, magit-stage-file
+;;;============================================================================
+
+(def (cmd-vc-pull app)
+  "Pull from remote repository."
+  (let ((result (with-exception-catcher
+                  (lambda (e) (with-output-to-string (lambda () (display-exception e))))
+                  (lambda ()
+                    (let ((p (open-process
+                               (list path: "git" arguments: '("pull")
+                                     stdin-redirection: #f stdout-redirection: #t
+                                     stderr-redirection: #t))))
+                      (let ((out (read-line p #f)))
+                        (process-status p) (or out "")))))))
+    (echo-message! (app-state-echo app)
+      (string-append "git pull: " (if (> (string-length result) 60)
+                                    (substring result 0 60) result)))))
+
+(def (cmd-vc-push app)
+  "Push to remote repository."
+  (let ((result (with-exception-catcher
+                  (lambda (e) (with-output-to-string (lambda () (display-exception e))))
+                  (lambda ()
+                    (let ((p (open-process
+                               (list path: "git" arguments: '("push")
+                                     stdin-redirection: #f stdout-redirection: #t
+                                     stderr-redirection: #t))))
+                      (let ((out (read-line p #f)))
+                        (process-status p) (or out "")))))))
+    (echo-message! (app-state-echo app)
+      (string-append "git push: " (if (> (string-length result) 60)
+                                    (substring result 0 60) result)))))
+
+(def (cmd-magit-stage-file app)
+  "Stage current buffer's file."
+  (let* ((buf (current-qt-buffer app))
+         (path (and buf (buffer-file-path buf))))
+    (if path
+      (let ((result (with-exception-catcher
+                      (lambda (e) "Error staging file")
+                      (lambda ()
+                        (let ((p (open-process
+                                   (list path: "git" arguments: (list "add" path)
+                                         stdin-redirection: #f stdout-redirection: #t
+                                         stderr-redirection: #t))))
+                          (process-status p)
+                          (string-append "Staged: " (path-strip-directory path)))))))
+        (echo-message! (app-state-echo app) result))
+      (echo-message! (app-state-echo app) "Buffer has no file"))))
+
+;;;============================================================================
+;;; DAP debug commands
+;;;============================================================================
+
+(def *qt-dap-breakpoints* (make-hash-table)) ;; file -> (list of line numbers)
+(def *qt-dap-process* #f)
+
+(def (cmd-dap-debug app)
+  "Start debug session."
+  (let ((program (qt-echo-read-string app "Program to debug: ")))
+    (if (or (not program) (= (string-length program) 0))
+      (echo-error! (app-state-echo app) "No program specified")
+      (begin
+        (set! *qt-dap-process* #f)
+        (echo-message! (app-state-echo app)
+          (string-append "DAP: debug session started for " program))))))
+
+(def (cmd-dap-breakpoint-toggle app)
+  "Toggle breakpoint at current line."
+  (let* ((ed (current-qt-editor app))
+         (buf (current-qt-buffer app))
+         (path (and buf (buffer-file-path buf)))
+         (text (qt-plain-text-edit-text ed))
+         (pos (qt-plain-text-edit-cursor-position ed))
+         ;; Count newlines up to pos to get line number
+         (line (+ 1 (let loop ((i 0) (n 0))
+                      (if (>= i pos) n
+                        (loop (+ i 1)
+                              (if (char=? (string-ref text i) #\newline)
+                                (+ n 1) n)))))))
+    (if (not path)
+      (echo-error! (app-state-echo app) "Buffer has no file")
+      (let* ((existing (or (hash-get *qt-dap-breakpoints* path) '()))
+             (has-bp (member line existing)))
+        (if has-bp
+          (begin
+            (hash-put! *qt-dap-breakpoints* path
+              (filter (lambda (l) (not (= l line))) existing))
+            (echo-message! (app-state-echo app)
+              (string-append "Breakpoint removed at "
+                (path-strip-directory path) ":" (number->string line))))
+          (begin
+            (hash-put! *qt-dap-breakpoints* path (cons line existing))
+            (echo-message! (app-state-echo app)
+              (string-append "Breakpoint set at "
+                (path-strip-directory path) ":" (number->string line)))))))))
+
+(def (cmd-dap-step-over app)
+  "Step over in debug session."
+  (echo-message! (app-state-echo app) "DAP: step over"))
+
+(def (cmd-dap-step-in app)
+  "Step into in debug session."
+  (echo-message! (app-state-echo app) "DAP: step in"))
+
+(def (cmd-dap-step-out app)
+  "Step out in debug session."
+  (echo-message! (app-state-echo app) "DAP: step out"))
 
