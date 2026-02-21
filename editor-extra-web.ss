@@ -1876,3 +1876,68 @@
     (editor-goto-pos ed 0)
     (echo-message! (app-state-echo app)
       (string-append (number->string (length recents)) " recent files"))))
+
+;;;============================================================================
+;;; Markdown editing parity from Qt
+;;;============================================================================
+
+(def (tui-get-current-line ed)
+  "Get current line text, start pos, end pos for TUI editor."
+  (let* ((pos (editor-get-current-pos ed))
+         (line-num (editor-line-from-position ed pos))
+         (line-start (editor-position-from-line ed line-num))
+         (line-end (editor-get-line-end-position ed line-num))
+         (text (editor-get-text ed))
+         (ls (min line-start (string-length text)))
+         (le (min line-end (string-length text))))
+    (values (substring text ls le) ls le)))
+
+(def (tui-md-heading-level line)
+  "Count leading # chars in a markdown heading."
+  (let loop ((i 0))
+    (if (and (< i (string-length line)) (char=? (string-ref line i) #\#))
+      (loop (+ i 1))
+      (if (and (> i 0) (< i (string-length line)) (char=? (string-ref line i) #\space))
+        i 0))))
+
+(def (cmd-markdown-promote app)
+  "Decrease heading level (remove a #)."
+  (let* ((ed (current-editor app)))
+    (let-values (((line line-start line-end) (tui-get-current-line ed)))
+      (let ((level (tui-md-heading-level line)))
+        (if (<= level 1)
+          (echo-error! (app-state-echo app) "Cannot promote further")
+          (let ((new-line (substring line 1 (string-length line))))
+            (send-message ed SCI_SETTARGETSTART line-start 0)
+            (send-message ed SCI_SETTARGETEND line-end 0)
+            (send-message/string ed SCI_REPLACETARGET new-line)))))))
+
+(def (cmd-markdown-demote app)
+  "Increase heading level (add a #)."
+  (let* ((ed (current-editor app)))
+    (let-values (((line line-start line-end) (tui-get-current-line ed)))
+      (let ((level (tui-md-heading-level line)))
+        (cond
+          ((= level 0)
+           (let ((new-line (string-append "# " line)))
+             (send-message ed SCI_SETTARGETSTART line-start 0)
+             (send-message ed SCI_SETTARGETEND line-end 0)
+             (send-message/string ed SCI_REPLACETARGET new-line)))
+          ((>= level 6)
+           (echo-error! (app-state-echo app) "Cannot demote further (max level 6)"))
+          (else
+           (let ((new-line (string-append "#" line)))
+             (send-message ed SCI_SETTARGETSTART line-start 0)
+             (send-message ed SCI_SETTARGETEND line-end 0)
+             (send-message/string ed SCI_REPLACETARGET new-line))))))))
+
+(def (cmd-markdown-insert-heading app)
+  "Insert a heading at the same level as the current one."
+  (let* ((ed (current-editor app)))
+    (let-values (((line line-start line-end) (tui-get-current-line ed)))
+      (let* ((level (tui-md-heading-level line))
+             (prefix (if (> level 0) (string-append (make-string level #\#) " ") "## "))
+             (insert-text (string-append "\n" prefix)))
+        (editor-insert-text ed line-end insert-text)
+        (editor-goto-pos ed (+ line-end (string-length insert-text)))
+        (editor-scroll-caret ed)))))

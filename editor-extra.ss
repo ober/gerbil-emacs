@@ -1329,4 +1329,13 @@
   (register-command! 'diff-next-hunk cmd-diff-next-hunk)
   (register-command! 'diff-prev-hunk cmd-diff-prev-hunk)
   (register-command! 'display-line-numbers-mode cmd-display-line-numbers-mode)
+  ;; Parity batch 6: magit ops, markdown editing, multi-vterm
+  (register-command! 'magit-refresh cmd-magit-refresh)
+  (register-command! 'magit-stage cmd-magit-stage)
+  (register-command! 'magit-unstage cmd-magit-unstage)
+  (register-command! 'magit-stage-all cmd-magit-stage-all)
+  (register-command! 'multi-vterm cmd-multi-vterm)
+  (register-command! 'markdown-promote cmd-markdown-promote)
+  (register-command! 'markdown-demote cmd-markdown-demote)
+  (register-command! 'markdown-insert-heading cmd-markdown-insert-heading)
 )

@@ -2144,6 +2144,14 @@
   (register-command! 'dap-step-over cmd-dap-step-over)
   (register-command! 'dap-step-in cmd-dap-step-in)
   (register-command! 'dap-step-out cmd-dap-step-out)
+  ;; Parity batch 7: bookmark menu, clone buffer, macro, text-scale, magit-unstage-file
+  (register-command! 'bookmark-bmenu-list cmd-bookmark-bmenu-list)
+  (register-command! 'clone-indirect-buffer cmd-clone-indirect-buffer)
+  (register-command! 'apply-macro-to-region cmd-apply-macro-to-region)
+  (register-command! 'magit-unstage-file cmd-magit-unstage-file)
+  (register-command! 'text-scale-increase cmd-text-scale-increase)
+  (register-command! 'text-scale-decrease cmd-text-scale-decrease)
+  (register-command! 'text-scale-reset cmd-text-scale-reset)
   )
 
 ;;;============================================================================

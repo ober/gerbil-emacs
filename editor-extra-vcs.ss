@@ -1927,3 +1927,57 @@
               (list path: "xdg-open" arguments: (list full-url)
                     stdout-redirection: #f stderr-redirection: #f))
             (echo-message! (app-state-echo app) (string-append "Opening: " full-url))))))))
+
+;;;============================================================================
+;;; Magit parity from Qt
+;;;============================================================================
+
+(def (tui-git-run args)
+  "Run git command and return output string."
+  (with-exception-catcher (lambda (e) "")
+    (lambda ()
+      (let ((p (open-process
+                 (list path: "git" arguments: args
+                       stdin-redirection: #f stdout-redirection: #t
+                       stderr-redirection: #t))))
+        (let ((out (read-line p #f)))
+          (process-status p) (or out ""))))))
+
+(def (cmd-magit-refresh app)
+  "Refresh magit status buffer by re-running git status."
+  (let* ((status (tui-git-run '("status" "--short")))
+         (branch (tui-git-run '("branch" "--show-current"))))
+    (echo-message! (app-state-echo app)
+      (string-append "On " (string-trim branch)
+        (if (string=? (string-trim status) "") " (clean)" " (modified)")))))
+
+(def (cmd-magit-stage app)
+  "Stage current file."
+  (let* ((fr (app-state-frame app))
+         (buf (edit-window-buffer (current-window fr)))
+         (path (and buf (buffer-file-path buf))))
+    (if path
+      (begin (tui-git-run (list "add" path))
+             (echo-message! (app-state-echo app)
+               (string-append "Staged: " (path-strip-directory path))))
+      (echo-message! (app-state-echo app) "Buffer has no file"))))
+
+(def (cmd-magit-unstage app)
+  "Unstage current file."
+  (let* ((fr (app-state-frame app))
+         (buf (edit-window-buffer (current-window fr)))
+         (path (and buf (buffer-file-path buf))))
+    (if path
+      (begin (tui-git-run (list "reset" "HEAD" path))
+             (echo-message! (app-state-echo app)
+               (string-append "Unstaged: " (path-strip-directory path))))
+      (echo-message! (app-state-echo app) "Buffer has no file"))))
+
+(def (cmd-magit-stage-all app)
+  "Stage all changes."
+  (tui-git-run '("add" "-A"))
+  (echo-message! (app-state-echo app) "All changes staged"))
+
+(def (cmd-multi-vterm app)
+  "Open a new terminal buffer (alias for shell)."
+  (echo-message! (app-state-echo app) "Use M-x shell or M-x eshell for terminal"))

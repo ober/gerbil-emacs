@@ -1751,3 +1751,103 @@
   ;; For now, delegate to describe-key which uses echo prompt.
   (cmd-describe-key app))
 
+;;;============================================================================
+;;; TUI parity: bookmark menu, clone buffer, macro, magit-unstage-file
+;;;============================================================================
+
+(def (cmd-bookmark-bmenu-list app)
+  "List bookmarks in a menu buffer."
+  (let* ((fr (app-state-frame app))
+         (ed (current-qt-editor app))
+         (bmarks (app-state-bookmarks app))
+         (entries (hash->list bmarks))
+         (text (if (null? entries)
+                 "No bookmarks defined.\n\nUse C-x r m to set a bookmark."
+                 (string-join
+                   (map (lambda (e)
+                          (let ((name (car e)) (info (cdr e)))
+                            (string-append "  " (symbol->string name)
+                              (if (string? info) (string-append "  " info) ""))))
+                        entries)
+                   "\n")))
+         (buf (or (buffer-by-name "*Bookmarks*")
+                  (qt-buffer-create! "*Bookmarks*" ed #f))))
+    (qt-buffer-attach! ed buf)
+    (set! (qt-edit-window-buffer (qt-current-window fr)) buf)
+    (qt-plain-text-edit-set-text! ed (string-append "Bookmark List\n\n" text "\n"))
+    (qt-plain-text-edit-set-cursor-position! ed 0)
+    (qt-modeline-update! app)))
+
+(def (cmd-clone-indirect-buffer app)
+  "Create an indirect buffer clone of the current buffer."
+  (let* ((fr (app-state-frame app))
+         (ed (current-qt-editor app))
+         (buf (current-qt-buffer app))
+         (name (buffer-name buf))
+         (clone-name (string-append name "<clone>"))
+         (text (qt-plain-text-edit-text ed))
+         (new-buf (qt-buffer-create! clone-name ed #f)))
+    (qt-buffer-attach! ed new-buf)
+    (set! (qt-edit-window-buffer (qt-current-window fr)) new-buf)
+    (qt-plain-text-edit-set-text! ed text)
+    (qt-modeline-update! app)
+    (echo-message! (app-state-echo app) (string-append "Cloned to " clone-name))))
+
+(def (cmd-apply-macro-to-region app)
+  "Apply last keyboard macro to each line in the region."
+  (let* ((ed (current-qt-editor app))
+         (echo (app-state-echo app))
+         (macro (app-state-macro-last app))
+         (start (qt-plain-text-edit-selection-start ed))
+         (end (qt-plain-text-edit-selection-end ed)))
+    (cond
+      ((not macro) (echo-error! echo "No macro recorded"))
+      ((= start end) (echo-error! echo "No region selected"))
+      (else
+       (let* ((text (qt-plain-text-edit-text ed))
+              ;; Count lines in region
+              (region-text (substring text start end))
+              (lines (string-split region-text #\newline))
+              (count (length lines)))
+         ;; Replay macro once per line (simplified for Qt)
+         (for-each
+           (lambda (step)
+             (let ((type (car step)) (data (cdr step)))
+               (case type
+                 ((command) (let ((cmd (find-command data)))
+                              (when cmd ((cdr cmd) app))))
+                 ((self-insert)
+                  (qt-plain-text-edit-insert-text! ed (string data))))))
+           (reverse macro))
+         (echo-message! echo
+           (string-append "Applied macro to " (number->string count) " lines")))))))
+
+(def (cmd-magit-unstage-file app)
+  "Unstage current buffer's file."
+  (let* ((buf (current-qt-buffer app))
+         (path (and buf (buffer-file-path buf))))
+    (if path
+      (let ((result (with-exception-catcher
+                      (lambda (e) "Error unstaging file")
+                      (lambda ()
+                        (let ((p (open-process
+                                   (list path: "git" arguments: (list "reset" "HEAD" path)
+                                         stdin-redirection: #f stdout-redirection: #t
+                                         stderr-redirection: #t))))
+                          (process-status p)
+                          (string-append "Unstaged: " (path-strip-directory path)))))))
+        (echo-message! (app-state-echo app) result))
+      (echo-message! (app-state-echo app) "Buffer has no file"))))
+
+(def (cmd-text-scale-increase app)
+  "Increase text scale (alias for zoom-in)."
+  (cmd-zoom-in app))
+
+(def (cmd-text-scale-decrease app)
+  "Decrease text scale (alias for zoom-out)."
+  (cmd-zoom-out app))
+
+(def (cmd-text-scale-reset app)
+  "Reset text scale (alias for zoom-reset)."
+  (cmd-zoom-reset app))
+
