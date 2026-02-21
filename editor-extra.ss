@@ -1511,6 +1511,33 @@
   (register-command! 'highlight-lines-matching-regexp cmd-highlight-regexp)
   (register-command! 'local-set-key cmd-global-set-key)
   (register-command! 'kmacro-bind-to-key cmd-global-set-key)
+  ;; Batch 8: window/buffer/nav/help/vc aliases (editor-extra scope)
+  ;; Window swap
+  (register-command! 'window-swap-states cmd-winner-undo)
+  (register-command! 'windmove-swap-states-left cmd-windmove-left)
+  (register-command! 'windmove-swap-states-right cmd-windmove-right)
+  (register-command! 'windmove-swap-states-up cmd-windmove-up)
+  (register-command! 'windmove-swap-states-down cmd-windmove-down)
+  ;; Buffer
+  (register-command! 'view-buffer cmd-switch-to-buffer-other-window)
+  (register-command! 'display-buffer cmd-switch-to-buffer-other-window)
+  (register-command! 'pop-to-buffer cmd-switch-to-buffer-other-window)
+  (register-command! 'switch-to-buffer-other-frame cmd-switch-to-buffer-other-window)
+  ;; Help
+  (register-command! 'list-faces-display cmd-list-faces-display)
+  (register-command! 'list-colors-display cmd-list-faces-display)
+  ;; VC (editor-extra scope)
+  (register-command! 'vc-create-tag cmd-vc-create-tag)
+  (register-command! 'vc-retrieve-tag cmd-vc-create-tag)
+  (register-command! 'vc-dir-hide-up-to-date cmd-vc-dir)
+  (register-command! 'vc-dir-mark cmd-vc-dir)
+  (register-command! 'vc-dir-unmark cmd-vc-dir)
+  (register-command! 'magit-cherry-pick cmd-magit-commit)
+  (register-command! 'magit-bisect cmd-magit-log)
+  (register-command! 'magit-submodule cmd-magit-status)
+  (register-command! 'magit-worktree cmd-magit-status)
+  (register-command! 'magit-blame-echo cmd-magit-blame)
+  (register-command! 'magit-section-toggle cmd-magit-status)
 )
 
 ;;;============================================================================
