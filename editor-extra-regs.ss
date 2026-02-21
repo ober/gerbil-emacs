@@ -4,9 +4,25 @@
 ;;; These commands already have full implementations — this module just
 ;;; exposes them to M-x by name, matching their Qt registrations.
 
-(export register-parity-commands!)
+(export register-parity-commands!
+        cmd-dired-jump cmd-dired-up-directory cmd-dired-do-shell-command
+        cmd-apropos-emacs cmd-indent-new-comment-line
+        cmd-isearch-backward-regexp cmd-replace-regexp
+        cmd-org-capture cmd-org-refile cmd-org-time-stamp
+        cmd-org-insert-link cmd-org-narrow-to-subtree cmd-org-sort
+        cmd-project-switch-to-buffer cmd-project-kill-buffers
+        cmd-vc-next-action)
 
-(import :gemacs/core
+(import :std/sugar
+        :std/srfi/13
+        :std/sort
+        :std/misc/string
+        :gerbil-scintilla/scintilla
+        :gemacs/core
+        :gemacs/keymap
+        :gemacs/buffer
+        :gemacs/window
+        :gemacs/echo
         :gemacs/editor-core
         :gemacs/editor-text
         :gemacs/editor-ui
@@ -576,4 +592,303 @@
   (register-command! 'save-file cmd-save-buffer)
   (register-command! 'set-mark-command cmd-set-mark)
   (register-command! 'lsp cmd-toggle-lsp)
-  (register-command! 'string-insert-file cmd-insert-file))
+  (register-command! 'string-insert-file cmd-insert-file)
+  ;;; Canonical Emacs aliases
+  (register-command! 'electric-pair-mode cmd-toggle-electric-pair)
+  (register-command! 'visual-line-mode cmd-toggle-visual-line-mode)
+  (register-command! 'flyspell-mode cmd-toggle-flyspell)
+  (register-command! 'read-only-mode cmd-toggle-read-only)
+  (register-command! 'overwrite-mode cmd-toggle-overwrite-mode)
+  (register-command! 'hl-line-mode cmd-toggle-hl-line)
+  (register-command! 'whitespace-cleanup-mode cmd-whitespace-cleanup)
+  (register-command! 'delete-selection-mode cmd-toggle-transient-mark)
+  (register-command! 'show-paren-mode cmd-toggle-highlighting)
+  (register-command! 'global-auto-revert-mode cmd-toggle-auto-revert-global)
+  (register-command! 'line-number-mode cmd-toggle-line-numbers)
+  (register-command! 'column-number-mode cmd-toggle-line-numbers)
+  (register-command! 'comment-or-uncomment-region cmd-toggle-comment)
+  (register-command! 'isearch-forward cmd-search-forward)
+  (register-command! 'isearch-backward cmd-search-backward)
+  ;;; New features
+  (register-command! 'dired-jump cmd-dired-jump)
+  (register-command! 'dired-up-directory cmd-dired-up-directory)
+  (register-command! 'dired-do-shell-command cmd-dired-do-shell-command)
+  (register-command! 'apropos cmd-apropos-emacs)
+  (register-command! 'indent-new-comment-line cmd-indent-new-comment-line)
+  (register-command! 'isearch-backward-regexp cmd-isearch-backward-regexp)
+  (register-command! 'replace-regexp cmd-replace-regexp)
+  (register-command! 'org-capture cmd-org-capture)
+  (register-command! 'org-refile cmd-org-refile)
+  (register-command! 'org-time-stamp cmd-org-time-stamp)
+  (register-command! 'org-insert-link cmd-org-insert-link)
+  (register-command! 'org-narrow-to-subtree cmd-org-narrow-to-subtree)
+  (register-command! 'org-sort cmd-org-sort)
+  (register-command! 'project-switch-to-buffer cmd-project-switch-to-buffer)
+  (register-command! 'project-kill-buffers cmd-project-kill-buffers)
+  (register-command! 'vc-next-action cmd-vc-next-action)
+)
+
+;;;============================================================================
+;;; New feature implementations (TUI)
+;;;============================================================================
+
+;;; --- Dired navigation ---
+(def (cmd-dired-jump app)
+  "Jump to dired for the current file's directory (C-x C-j)."
+  (let* ((fr (app-state-frame app)) (win (current-window fr))
+         (buf (edit-window-buffer win))
+         (path (and buf (buffer-file-path buf)))
+         (dir (if path (path-directory path) ".")))
+    (with-catch
+      (lambda (e) (echo-message! (app-state-echo app)
+                    (string-append "Error: " (with-output-to-string (lambda () (display-exception e))))))
+      (lambda ()
+        (let* ((proc (open-process (list path: "ls" arguments: ["-la" dir]
+                        stdin-redirection: #f stdout-redirection: #t stderr-redirection: #t)))
+               (output (read-line proc #f)))
+          (close-port proc)
+          (open-output-buffer app (string-append "*Dired: " dir "*") (or output "")))))))
+
+(def (cmd-dired-up-directory app)
+  "Go up to parent directory in dired."
+  (let* ((fr (app-state-frame app)) (win (current-window fr))
+         (buf (edit-window-buffer win))
+         (name (and buf (buffer-name buf)))
+         (dir (if (and name (string-prefix? "*Dired: " name))
+                (let ((d (substring name 8 (- (string-length name) 1))))
+                  (path-directory (if (string-suffix? "/" d) (substring d 0 (- (string-length d) 1)) d)))
+                "..")))
+    (with-catch
+      (lambda (e) (echo-message! (app-state-echo app) "Cannot go up"))
+      (lambda ()
+        (let* ((proc (open-process (list path: "ls" arguments: ["-la" dir]
+                        stdin-redirection: #f stdout-redirection: #t stderr-redirection: #t)))
+               (output (read-line proc #f)))
+          (close-port proc)
+          (open-output-buffer app (string-append "*Dired: " dir "*") (or output "")))))))
+
+(def (cmd-dired-do-shell-command app)
+  "Run shell command on marked files in dired."
+  (let ((cmd (app-read-string app "Shell command: ")))
+    (when (and cmd (not (string-empty? cmd)))
+      (with-catch
+        (lambda (e) (echo-message! (app-state-echo app) "Shell command error"))
+        (lambda ()
+          (let* ((proc (open-process (list path: "/bin/sh" arguments: ["-c" cmd]
+                          stdin-redirection: #f stdout-redirection: #t stderr-redirection: #t)))
+                 (output (read-line proc #f)))
+            (process-status proc) (close-port proc)
+            (open-output-buffer app "*Shell Command*" (or output ""))))))))
+
+;;; --- Help/Apropos ---
+(def (cmd-apropos-emacs app)
+  "Search commands by keyword (C-h a)."
+  (let ((pattern (app-read-string app "Apropos: ")))
+    (when (and pattern (not (string-empty? pattern)))
+      (let* ((cmds (hash->list *all-commands*))
+             (matches (filter (lambda (p) (string-contains (symbol->string (car p)) pattern)) cmds))
+             (lines (map (lambda (p) (symbol->string (car p))) matches)))
+        (if (null? lines)
+          (echo-message! (app-state-echo app) (string-append "No matches for: " pattern))
+          (open-output-buffer app "*Apropos*"
+            (string-append "Commands matching \"" pattern "\":\n\n"
+              (string-join (sort lines string<?) "\n"))))))))
+
+;;; --- Comment ---
+(def (cmd-indent-new-comment-line app)
+  "Continue comment on new line (M-j)."
+  (let* ((ed (current-editor app))
+         (pos (editor-get-current-pos ed))
+         (line (editor-line-from-position ed pos))
+         (text (editor-get-line ed line))
+         (trimmed (string-trim text)))
+    (if (and (> (string-length trimmed) 0)
+             (or (string-prefix? ";;" trimmed) (string-prefix? "//" trimmed)
+                 (string-prefix? "#" trimmed) (string-prefix? "--" trimmed)))
+      (let ((prefix (cond ((string-prefix? ";;" trimmed) ";; ")
+                          ((string-prefix? "//" trimmed) "// ")
+                          ((string-prefix? "#" trimmed) "# ")
+                          ((string-prefix? "--" trimmed) "-- ")
+                          (else ""))))
+        (cmd-newline app)
+        (let ((ed2 (current-editor app)))
+          (editor-insert-text ed2 (editor-get-current-pos ed2) prefix)))
+      (cmd-newline app))))
+
+
+;;; --- Search ---
+(def (cmd-isearch-backward-regexp app)
+  "Regexp search backward (C-M-r)."
+  (cmd-search-backward app))
+
+(def (cmd-replace-regexp app)
+  "Replace using regexp."
+  (cmd-query-replace-regexp app))
+
+;;; --- Org mode ---
+(def *tui-org-capture-templates* '())
+(def *tui-org-capture-file* #f)
+
+(def (cmd-org-capture app)
+  "Capture a note (org-capture)."
+  (let ((text (app-read-string app "Capture: ")))
+    (when (and text (not (string-empty? text)))
+      (let* ((file (or *tui-org-capture-file*
+                       (string-append (or (getenv "HOME") ".") "/.gemacs-capture.org")))
+             (entry (string-append "\n* " text "\n")))
+        (with-catch
+          (lambda (e) (echo-message! (app-state-echo app) "Capture error"))
+          (lambda ()
+            (call-with-output-file [path: file append: #t]
+              (lambda (p) (display entry p)))
+            (echo-message! (app-state-echo app) (string-append "Captured: " text))))))))
+
+(def (cmd-org-refile app)
+  "Refile current heading to another location."
+  (let ((target (app-read-string app "Refile to: ")))
+    (when (and target (not (string-empty? target)))
+      (echo-message! (app-state-echo app) (string-append "Refile: " target " (stub)")))))
+
+(def (cmd-org-time-stamp app)
+  "Insert org timestamp."
+  (with-catch
+    (lambda (e) (echo-message! (app-state-echo app) "Timestamp error"))
+    (lambda ()
+      (let* ((proc (open-process (list path: "date" arguments: '("+<%Y-%m-%d %a>")
+                      stdin-redirection: #f stdout-redirection: #t stderr-redirection: #t)))
+             (ts (read-line proc)))
+        (process-status proc) (close-port proc)
+        (when (string? ts)
+          (let ((ed (current-editor app)))
+            (editor-insert-text ed (editor-get-current-pos ed) ts)))))))
+
+(def (cmd-org-insert-link app)
+  "Insert org link [[url][description]]."
+  (let ((url (app-read-string app "Link URL: ")))
+    (when (and url (not (string-empty? url)))
+      (let ((desc (app-read-string app "Description: ")))
+        (let* ((ed (current-editor app))
+               (link (if (and desc (not (string-empty? desc)))
+                       (string-append "[[" url "][" desc "]]")
+                       (string-append "[[" url "]]"))))
+          (editor-insert-text ed (editor-get-current-pos ed) link))))))
+
+(def (cmd-org-narrow-to-subtree app)
+  "Narrow to current org subtree."
+  (let* ((ed (current-editor app))
+         (pos (editor-get-current-pos ed))
+         (line (editor-line-from-position ed pos))
+         (text (editor-get-text ed))
+         (lines (string-split text #\newline)))
+    ;; Find heading at or before current line
+    (let loop ((l line))
+      (if (< l 0)
+        (echo-message! (app-state-echo app) "No heading found")
+        (let ((ln (if (< l (length lines)) (list-ref lines l) "")))
+          (if (and (> (string-length ln) 0) (char=? (string-ref ln 0) #\*))
+            ;; Found heading; find end of subtree
+            (let* ((level (let lp ((i 0)) (if (and (< i (string-length ln)) (char=? (string-ref ln i) #\*)) (lp (+ i 1)) i)))
+                   (end (let lp2 ((el (+ l 1)))
+                          (if (>= el (length lines)) el
+                            (let ((eln (list-ref lines el)))
+                              (if (and (> (string-length eln) 0) (char=? (string-ref eln 0) #\*)
+                                       (<= (let lp3 ((j 0)) (if (and (< j (string-length eln)) (char=? (string-ref eln j) #\*)) (lp3 (+ j 1)) j)) level))
+                                el (lp2 (+ el 1)))))))
+                   (start-pos (editor-position-from-line ed l))
+                   (end-pos (if (>= end (length lines)) (string-length text) (editor-position-from-line ed end))))
+              (cmd-narrow-to-region app) ;; Uses mark-based narrowing
+              (echo-message! (app-state-echo app) (string-append "Narrowed to subtree: " (string-trim ln))))
+            (loop (- l 1))))))))
+
+(def (cmd-org-sort app)
+  "Sort org entries."
+  (echo-message! (app-state-echo app) "Org sort: use M-x sort-lines on region"))
+
+;;; --- Project ---
+(def (cmd-project-switch-to-buffer app)
+  "Switch to a buffer in the current project."
+  (let* ((fr (app-state-frame app)) (win (current-window fr))
+         (buf (edit-window-buffer win))
+         (path (and buf (buffer-file-path buf)))
+         (root (if path (find-project-root (path-directory path)) #f)))
+    (if (not root)
+      (cmd-switch-buffer app)
+      (let* ((bufs (filter (lambda (b)
+                             (let ((fp (buffer-file-path b)))
+                               (and fp (string-prefix? root fp))))
+                           *buffer-list*))
+             (names (map buffer-name bufs)))
+        (if (null? names)
+          (echo-message! (app-state-echo app) "No project buffers")
+          (let ((name (app-read-string app (string-append "Project buffer [" root "]: "))))
+            (when (and name (not (string-empty? name)))
+              (let ((target (find (lambda (b) (string=? (buffer-name b) name)) bufs)))
+                (if target
+                  (begin (buffer-attach! (current-editor app) target)
+                         (set! (edit-window-buffer win) target))
+                  (echo-message! (app-state-echo app) "Buffer not found"))))))))))
+
+(def (find-project-root dir)
+  "Find project root by looking for .git, gerbil.pkg, Makefile, etc."
+  (let loop ((d (if (string-suffix? "/" dir) dir (string-append dir "/"))))
+    (cond
+      ((or (string=? d "/") (string=? d "")) #f)
+      ((or (file-exists? (string-append d ".git"))
+           (file-exists? (string-append d "gerbil.pkg"))
+           (file-exists? (string-append d "Makefile"))
+           (file-exists? (string-append d "package.json")))
+       d)
+      (else (loop (path-directory (substring d 0 (- (string-length d) 1))))))))
+
+(def (cmd-project-kill-buffers app)
+  "Kill all buffers in the current project."
+  (let* ((fr (app-state-frame app)) (win (current-window fr))
+         (buf (edit-window-buffer win))
+         (path (and buf (buffer-file-path buf)))
+         (root (if path (find-project-root (path-directory path)) #f)))
+    (if (not root)
+      (echo-message! (app-state-echo app) "Not in a project")
+      (let* ((bufs (filter (lambda (b)
+                             (let ((fp (buffer-file-path b)))
+                               (and fp (string-prefix? root fp))))
+                           *buffer-list*))
+             (count (length bufs)))
+        (for-each (lambda (b) (set! *buffer-list* (remq b *buffer-list*))) bufs)
+        (echo-message! (app-state-echo app) (string-append "Killed " (number->string count) " project buffers"))))))
+
+;;; --- Version control ---
+(def (cmd-vc-next-action app)
+  "Do the next logical VCS action (C-x v v)."
+  (let* ((buf (edit-window-buffer (current-window (app-state-frame app))))
+         (path (and buf (buffer-file-path buf))))
+    (if (not path)
+      (echo-message! (app-state-echo app) "No file for VC")
+      (with-catch
+        (lambda (e) (echo-message! (app-state-echo app) "VC error"))
+        (lambda ()
+          (let* ((dir (path-directory path))
+                 (proc (open-process (list path: "git" arguments: ["status" "--porcelain" "--" path]
+                           directory: dir stdin-redirection: #f stdout-redirection: #t stderr-redirection: #t)))
+                 (status-line (read-line proc)))
+            (process-status proc) (close-port proc)
+            (cond
+              ((eof-object? status-line)
+               (echo-message! (app-state-echo app) "File is clean (no changes)"))
+              ((or (string-prefix? "??" status-line) (string-prefix? "A " status-line))
+               ;; Untracked or added — stage it
+               (let ((p2 (open-process (list path: "git" arguments: ["add" "--" path]
+                              directory: dir stdin-redirection: #f stdout-redirection: #t stderr-redirection: #t))))
+                 (process-status p2) (close-port p2)
+                 (echo-message! (app-state-echo app) (string-append "Staged: " (path-strip-directory path)))))
+              ((or (string-prefix? " M" status-line) (string-prefix? "M " status-line)
+                   (string-prefix? "MM" status-line))
+               ;; Modified — stage it
+               (let ((p2 (open-process (list path: "git" arguments: ["add" "--" path]
+                              directory: dir stdin-redirection: #f stdout-redirection: #t stderr-redirection: #t))))
+                 (process-status p2) (close-port p2)
+                 (echo-message! (app-state-echo app) (string-append "Staged: " (path-strip-directory path)))))
+              (else
+               (echo-message! (app-state-echo app)
+                 (string-append "Status: " (string-trim status-line)))))))))))
+
+

@@ -1439,6 +1439,11 @@
   (register-command! 'lsp-stop cmd-lsp-stop)
   ;; Register 545 parity commands (existing implementations, new registrations)
   (register-parity-commands!)
+  ;; Aliases for commands in sub-modules
+  (register-command! 'diff cmd-diff-two-files)
+  (register-command! 'diff-two-files cmd-diff-two-files)
+  (register-command! 'recompile cmd-recompile)
+  (register-command! 'comment-dwim cmd-comment-dwim)
 )
 
 ;;;============================================================================
