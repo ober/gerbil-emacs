@@ -1609,6 +1609,9 @@
   (register-command! 'ace-jump-mode cmd-avy-goto-char)
   (register-command! 'swiper cmd-isearch-occur)
   (register-command! 'helm-ag cmd-rgrep)
+  ;; Batch 12: Emacs-standard aliases
+  (register-batch12-aliases!)
+  (register-batch12-extra-aliases!)
 )
 
 ;;;============================================================================
@@ -1946,3 +1949,22 @@
 (def (cmd-lsp-workspace-symbol app) "LSP ws sym." (echo-message! (app-state-echo app) "LSP: not available in TUI"))
 (def (cmd-lsp-restart app) "LSP restart." (echo-message! (app-state-echo app) "LSP: not available in TUI"))
 (def (cmd-lsp-stop app) "LSP stop." (echo-message! (app-state-echo app) "LSP: not available in TUI"))
+
+;;;============================================================================
+;;; Batch 12: Emacs-standard alias registrations (editor-extra chain scope)
+;;;============================================================================
+
+(def (register-batch12-extra-aliases!)
+  ;; Text scale alias
+  (register-command! 'text-scale-adjust cmd-text-scale-increase)
+  ;; Tab bar aliases (TUI only)
+  (register-command! 'tab-bar-new-tab cmd-tab-new)
+  (register-command! 'tab-bar-close-tab cmd-tab-close)
+  (register-command! 'tab-bar-switch-to-tab cmd-tab-next)
+  ;; Mode aliases
+  (register-command! 'word-count-mode cmd-toggle-word-count)
+  (register-command! 'completion-preview-mode cmd-company-mode)
+  (register-command! 'flymake-start cmd-flycheck-mode)
+  (register-command! 'flymake-stop cmd-flycheck-mode)
+  ;; Dired aliases
+  (register-command! 'dired-mark-directories cmd-dired-mark))

@@ -1325,3 +1325,29 @@
          (ed (qt-current-editor fr)))
     (when (image-buffer? buf)
       (qt-image-zoom! app ed buf 'reset))))
+
+;;;============================================================================
+;;; Batch 12: Emacs-standard alias registrations (Qt)
+;;;============================================================================
+
+(def (qt-register-batch12-aliases!)
+  ;; Undo/redo aliases
+  (register-command! 'undo-redo cmd-redo)
+  (register-command! 'undo-only cmd-undo)
+  ;; Text scale alias
+  (register-command! 'text-scale-adjust cmd-text-scale-increase)
+  ;; Display/mode aliases
+  (register-command! 'display-time-mode cmd-display-time)
+  (register-command! 'word-count-mode cmd-count-words)
+  (register-command! 'completion-preview-mode cmd-company-mode)
+  (register-command! 'flymake-start cmd-flycheck-mode)
+  (register-command! 'flymake-stop cmd-flycheck-mode)
+  ;; Outline/folding aliases
+  (register-command! 'outline-hide-all cmd-fold-all)
+  (register-command! 'outline-show-all cmd-unfold-all)
+  (register-command! 'outline-cycle cmd-toggle-fold)
+  ;; Dired aliases
+  (register-command! 'dired-do-touch cmd-dired-create-directory)
+  (register-command! 'dired-copy-filename-as-kill cmd-copy-buffer-name)
+  (register-command! 'dired-mark-directories cmd-dired-mark)
+  (register-command! 'dired-hide-dotfiles cmd-dired-hide-details))

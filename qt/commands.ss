@@ -1400,4 +1400,6 @@
   (register-command! 'counsel-find-file cmd-find-file)
   ;; Extended + alias registrations (in commands-aliases.ss)
   (qt-register-extended-commands!)
-  (qt-register-alias-commands!))
+  (qt-register-alias-commands!)
+  ;; Batch 12: Emacs-standard aliases
+  (qt-register-batch12-aliases!))

@@ -24,7 +24,9 @@
         ;; Batch 5
         cmd-delete-directory cmd-set-file-modes cmd-dired-do-chown cmd-butterfly
         ;; Batch 7
-        cmd-debug-on-entry cmd-cancel-debug-on-entry)
+        cmd-debug-on-entry cmd-cancel-debug-on-entry
+        ;; Batch 12
+        register-batch12-aliases!)
 
 (import :std/sugar
         :std/srfi/13
@@ -1450,3 +1452,22 @@
 (def (cmd-cancel-debug-on-entry app)
   "Cancel debug-on-entry (stub)."
   (echo-message! (app-state-echo app) "cancel-debug-on-entry: not yet implemented"))
+
+;;;============================================================================
+;;; Batch 12: Emacs-standard alias registrations (editor-cmds chain scope)
+;;;============================================================================
+
+(def (register-batch12-aliases!)
+  ;; Undo/redo aliases
+  (register-command! 'undo-redo cmd-redo)
+  (register-command! 'undo-only cmd-undo)
+  ;; Display/mode aliases
+  (register-command! 'display-time-mode cmd-display-time)
+  ;; Outline/folding aliases
+  (register-command! 'outline-hide-all cmd-fold-all)
+  (register-command! 'outline-show-all cmd-unfold-all)
+  (register-command! 'outline-cycle cmd-toggle-fold)
+  ;; Dired aliases
+  (register-command! 'dired-do-touch cmd-dired-create-directory)
+  (register-command! 'dired-copy-filename-as-kill cmd-copy-buffer-name)
+  (register-command! 'dired-hide-dotfiles cmd-dired-hide-details))
