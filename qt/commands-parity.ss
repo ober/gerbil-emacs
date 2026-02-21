@@ -908,3 +908,60 @@
                       (string-append (number->string count) " occurrences"))
                     (lp (substring s (+ idx (max 1 match-len)) (string-length s))
                         (+ count 1))))))))))))
+
+;;;============================================================================
+;;; Batch 5: delete-directory, set-file-modes, dired-do-chown, butterfly
+;;;============================================================================
+
+;;; --- Delete directory ---
+(def (cmd-delete-directory app)
+  "Delete a directory (must be empty)."
+  (let ((dir (qt-echo-read-string (app-state-echo app) "Delete directory: ")))
+    (when (and dir (not (string=? dir "")))
+      (with-catch
+        (lambda (e) (echo-message! (app-state-echo app)
+                      (string-append "Cannot delete: " dir)))
+        (lambda ()
+          (delete-directory dir)
+          (echo-message! (app-state-echo app)
+            (string-append "Deleted directory: " dir)))))))
+
+;;; --- Set file modes (chmod) ---
+(def (cmd-set-file-modes app)
+  "Set file permissions (chmod)."
+  (let* ((buf (current-qt-buffer app))
+         (path (and buf (buffer-file-path buf))))
+    (if (not path)
+      (echo-message! (app-state-echo app) "No file in current buffer")
+      (let ((mode (qt-echo-read-string (app-state-echo app)
+                    (string-append "chmod " path " to: "))))
+        (when (and mode (not (string=? mode "")))
+          (with-catch
+            (lambda (e) (echo-message! (app-state-echo app) "chmod failed"))
+            (lambda ()
+              (run-process ["chmod" mode path] coprocess: void)
+              (echo-message! (app-state-echo app)
+                (string-append "Set " path " to mode " mode)))))))))
+
+;;; --- Dired do chown ---
+(def (cmd-dired-do-chown app)
+  "Change file owner in dired."
+  (let* ((buf (current-qt-buffer app))
+         (path (and buf (buffer-file-path buf))))
+    (if (not path)
+      (echo-message! (app-state-echo app) "No file in current buffer")
+      (let ((owner (qt-echo-read-string (app-state-echo app)
+                     (string-append "chown " path " to: "))))
+        (when (and owner (not (string=? owner "")))
+          (with-catch
+            (lambda (e) (echo-message! (app-state-echo app) "chown failed"))
+            (lambda ()
+              (run-process ["chown" owner path] coprocess: void)
+              (echo-message! (app-state-echo app)
+                (string-append "Changed owner of " path " to " owner)))))))))
+
+;;; --- Butterfly ---
+(def (cmd-butterfly app)
+  "A butterfly flapping its wings causes a gentle breeze..."
+  (echo-message! (app-state-echo app)
+    "The butterflies have set the universe in motion."))

@@ -20,7 +20,9 @@
         cmd-cua-mode cmd-org-archive-subtree cmd-org-toggle-heading
         cmd-magit-init cmd-magit-tag
         ;; Batch 4
-        cmd-check-parens cmd-count-lines-page cmd-how-many)
+        cmd-check-parens cmd-count-lines-page cmd-how-many
+        ;; Batch 5
+        cmd-delete-directory cmd-set-file-modes cmd-dired-do-chown cmd-butterfly)
 
 (import :std/sugar
         :std/srfi/13
@@ -676,6 +678,14 @@
   (register-command! 'binary-overwrite-mode cmd-toggle-overwrite-mode)
   (register-command! 'highlight-symbol-at-point cmd-highlight-symbol)
   (register-command! 'ediff-regions-linewise cmd-ediff-buffers)
+  ;; Batch 5: aliases in editor-cmds scope
+  (register-command! 'rename-file cmd-rename-file-and-buffer)
+  (register-command! 'delete-directory cmd-delete-directory)
+  (register-command! 'copy-to-buffer cmd-copy-region-as-kill)
+  (register-command! 'dired-do-flagged-delete cmd-dired-do-delete)
+  (register-command! 'set-file-modes cmd-set-file-modes)
+  (register-command! 'dired-do-chown cmd-dired-do-chown)
+  (register-command! 'butterfly cmd-butterfly)
 )
 
 ;;;============================================================================
@@ -1269,3 +1279,60 @@
                       (string-append (number->string count) " occurrences"))
                     (lp (substring s (+ idx (max 1 match-len)) (string-length s))
                         (+ count 1))))))))))))
+
+;;;============================================================================
+;;; Batch 5: delete-directory, set-file-modes, dired-do-chown, butterfly
+;;;============================================================================
+
+;;; --- Delete directory ---
+(def (cmd-delete-directory app)
+  "Delete a directory (must be empty)."
+  (let ((dir (app-read-string app "Delete directory: ")))
+    (when (and dir (not (string-empty? dir)))
+      (with-catch
+        (lambda (e) (echo-message! (app-state-echo app)
+                      (string-append "Cannot delete: " dir)))
+        (lambda ()
+          (delete-directory dir)
+          (echo-message! (app-state-echo app)
+            (string-append "Deleted directory: " dir)))))))
+
+;;; --- Set file modes (chmod) ---
+(def (cmd-set-file-modes app)
+  "Set file permissions (chmod)."
+  (let* ((fr (app-state-frame app))
+         (buf (edit-window-buffer (current-window fr)))
+         (path (and buf (buffer-file-path buf))))
+    (if (not path)
+      (echo-message! (app-state-echo app) "No file in current buffer")
+      (let ((mode (app-read-string app (string-append "chmod " path " to: "))))
+        (when (and mode (not (string-empty? mode)))
+          (with-catch
+            (lambda (e) (echo-message! (app-state-echo app) "chmod failed"))
+            (lambda ()
+              (run-process ["chmod" mode path] coprocess: void)
+              (echo-message! (app-state-echo app)
+                (string-append "Set " path " to mode " mode)))))))))
+
+;;; --- Dired do chown ---
+(def (cmd-dired-do-chown app)
+  "Change file owner in dired."
+  (let* ((fr (app-state-frame app))
+         (buf (edit-window-buffer (current-window fr)))
+         (path (and buf (buffer-file-path buf))))
+    (if (not path)
+      (echo-message! (app-state-echo app) "No file in current buffer")
+      (let ((owner (app-read-string app (string-append "chown " path " to: "))))
+        (when (and owner (not (string-empty? owner)))
+          (with-catch
+            (lambda (e) (echo-message! (app-state-echo app) "chown failed"))
+            (lambda ()
+              (run-process ["chown" owner path] coprocess: void)
+              (echo-message! (app-state-echo app)
+                (string-append "Changed owner of " path " to " owner)))))))))
+
+;;; --- Butterfly ---
+(def (cmd-butterfly app)
+  "A butterfly flapping its wings causes a gentle breeze..."
+  (echo-message! (app-state-echo app)
+    "The strstrstrstr butterflies have set the strstrstrstr universe in motion."))

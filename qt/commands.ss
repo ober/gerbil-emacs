@@ -2310,6 +2310,23 @@
   (register-command! 'markdown-preview-mode cmd-markdown-mode)
   (register-command! 'highlight-symbol-at-point cmd-highlight-symbol)
   (register-command! 'ediff-regions-linewise cmd-ediff-buffers)
+  ;; Batch 5: file/dired/ibuffer aliases + new commands
+  (register-command! 'rename-file cmd-rename-file-and-buffer)
+  (register-command! 'delete-directory cmd-delete-directory)
+  (register-command! 'copy-to-buffer cmd-copy-region-as-kill)
+  (register-command! 'dired-flag-file-deletion cmd-dired-mark)
+  (register-command! 'dired-do-flagged-delete cmd-dired-do-delete)
+  (register-command! 'dired-sort-toggle-or-edit cmd-dired-sort-toggle)
+  (register-command! 'ibuffer-mark-modified-buffers cmd-ibuffer)
+  (register-command! 'ibuffer-mark-unsaved-buffers cmd-ibuffer)
+  (register-command! 'ibuffer-do-delete cmd-ibuffer)
+  (register-command! 'set-file-modes cmd-set-file-modes)
+  (register-command! 'dired-do-chown cmd-dired-do-chown)
+  (register-command! 'org-table-sort-lines cmd-org-table-sort)
+  (register-command! 'org-export-dispatch cmd-org-export)
+  (register-command! 'wdired-change-to-wdired-mode cmd-wdired-mode)
+  (register-command! 'info-apropos cmd-apropos-emacs)
+  (register-command! 'butterfly cmd-butterfly)
   )
 
 ;;;============================================================================

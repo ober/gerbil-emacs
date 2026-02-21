@@ -1473,6 +1473,16 @@
   (register-command! 'nxml-mode cmd-text-mode)
   (register-command! 'sh-mode cmd-shell-script-mode)
   (register-command! 'markdown-preview-mode cmd-markdown-mode)
+  ;; Batch 5: aliases needing editor-extra scope
+  (register-command! 'dired-flag-file-deletion cmd-dired-mark)
+  (register-command! 'dired-sort-toggle-or-edit cmd-dired-sort-toggle)
+  (register-command! 'ibuffer-mark-modified-buffers cmd-ibuffer-mark)
+  (register-command! 'ibuffer-mark-unsaved-buffers cmd-ibuffer-mark)
+  (register-command! 'ibuffer-do-delete cmd-ibuffer-do-kill)
+  (register-command! 'org-table-sort-lines cmd-org-table-sort)
+  (register-command! 'org-export-dispatch cmd-org-export)
+  (register-command! 'wdired-change-to-wdired-mode cmd-wdired-mode)
+  (register-command! 'info-apropos cmd-apropos-emacs)
 )
 
 ;;;============================================================================
