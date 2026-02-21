@@ -1277,4 +1277,6 @@
   (register-command! 'toggle-global-conda cmd-toggle-global-conda)
   (register-command! 'toggle-global-pyvenv cmd-toggle-global-pyvenv)
   (register-command! 'toggle-global-pipenv cmd-toggle-global-pipenv)
+  ;; delete-horizontal-space (defined in editor-extra-tools2.ss)
+  (register-command! 'delete-horizontal-space cmd-delete-horizontal-space)
 )

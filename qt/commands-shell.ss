@@ -564,27 +564,7 @@ S=sort by name, z=sort by size, q=quit."
       "Delete trailing whitespace on save: ON"
       "Delete trailing whitespace on save: OFF")))
 
-;;; delete-horizontal-space — delete all whitespace around point
-
-(def (cmd-delete-horizontal-space app)
-  "Delete all whitespace around point."
-  (let* ((ed (current-qt-editor app))
-         (text (qt-plain-text-edit-text ed))
-         (pos (qt-plain-text-edit-cursor-position ed))
-         (len (string-length text))
-         (ws-start (let loop ((i (- pos 1)))
-                     (if (and (>= i 0) (memq (string-ref text i) '(#\space #\tab)))
-                       (loop (- i 1))
-                       (+ i 1))))
-         (ws-end (let loop ((i pos))
-                   (if (and (< i len) (memq (string-ref text i) '(#\space #\tab)))
-                     (loop (+ i 1))
-                     i)))
-         (before (substring text 0 ws-start))
-         (after (substring text ws-end len)))
-    (let ((new-text (string-append before after)))
-      (qt-plain-text-edit-set-text! ed new-text)
-      (qt-plain-text-edit-set-cursor-position! ed ws-start))))
+;;; delete-horizontal-space — see section at end of file
 
 ;;; ========================================================================
 ;;; Uniquify buffer names
@@ -1423,4 +1403,29 @@ S=sort by name, z=sort by size, q=quit."
       (abbrevs-save!)
       (echo-message! (app-state-echo app)
         (string-append "\"" abbrev "\" => \"" expansion "\"")))))
+
+;;; delete-horizontal-space — delete all whitespace around point
+;;; (not defined in other chain modules, so it lives here)
+
+(def (cmd-delete-horizontal-space app)
+  "Delete all spaces and tabs around point (M-\\)."
+  (let* ((ed (current-qt-editor app))
+         (text (qt-plain-text-edit-text ed))
+         (pos (qt-plain-text-edit-cursor-position ed))
+         (len (string-length text)))
+    (let* ((start (let loop ((i (- pos 1)))
+                    (if (and (>= i 0)
+                             (let ((ch (string-ref text i)))
+                               (or (char=? ch #\space) (char=? ch #\tab))))
+                      (loop (- i 1))
+                      (+ i 1))))
+           (end (let loop ((i pos))
+                  (if (and (< i len)
+                           (let ((ch (string-ref text i)))
+                             (or (char=? ch #\space) (char=? ch #\tab))))
+                    (loop (+ i 1))
+                    i))))
+      (when (> (- end start) 0)
+        (qt-plain-text-edit-set-selection! ed start end)
+        (qt-plain-text-edit-remove-selected-text! ed)))))
 

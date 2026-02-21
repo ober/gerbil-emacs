@@ -2051,7 +2051,8 @@
   (keymap-bind! *ctrl-c-m-map* "s" 'mc-skip-and-mark-next)
   (keymap-bind! *ctrl-c-m-map* "l" 'mc-edit-lines)
   (keymap-bind! *ctrl-c-m-map* "u" 'mc-unmark-last)
-  (keymap-bind! *ctrl-c-m-map* "r" 'mc-rotate))
+  (keymap-bind! *ctrl-c-m-map* "r" 'mc-rotate)
+  )
 
 ;;;============================================================================
 ;;; Key-chord commands

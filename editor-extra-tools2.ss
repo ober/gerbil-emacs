@@ -1715,3 +1715,23 @@
     (set! *global-org-present* (not *global-org-present*))
     (echo-message! echo (if *global-org-present*
                           "Org-present ON" "Org-present OFF"))))
+
+;;;============================================================================
+;;; delete-horizontal-space (TUI) — not defined in other editor modules
+;;;============================================================================
+
+(def (cmd-delete-horizontal-space app)
+  "Delete all spaces and tabs around point."
+  (let* ((ed (current-editor app))
+         (text (editor-get-text ed))
+         (pos (editor-get-current-pos ed))
+         (len (string-length text)))
+    (let* ((start (let loop ((i (- pos 1)))
+                    (if (and (>= i 0) (memq (string-ref text i) '(#\space #\tab)))
+                      (loop (- i 1)) (+ i 1))))
+           (end (let loop ((i pos))
+                  (if (and (< i len) (memq (string-ref text i) '(#\space #\tab)))
+                    (loop (+ i 1)) i))))
+      (when (> (- end start) 0)
+        (editor-delete-range ed start (- end start))
+        (editor-goto-pos ed start)))))
