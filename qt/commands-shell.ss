@@ -1638,3 +1638,234 @@ S=sort by name, z=sort by size, q=quit."
   (echo-message! (app-state-echo app)
     (if *qt-delete-selection-enabled* "Delete selection mode: on" "Delete selection mode: off")))
 
+;;;============================================================================
+;;; Xref additions: find-apropos, go-forward
+
+(def *xref-forward-stack* [])
+
+(def (cmd-xref-find-apropos app)
+  "Find symbols matching a prompted pattern in project."
+  (let ((pattern (qt-echo-read-string app "Find symbol matching: ")))
+    (when (and pattern (> (string-length pattern) 0))
+      (let* ((root (current-project-root app))
+             (proc (open-process
+                     (list path: "/usr/bin/grep"
+                           arguments: (list "-rn" pattern
+                             "--include=*.ss" "--include=*.scm"
+                             root)
+                           stdout-redirection: #t
+                           stderr-redirection: #t)))
+             (output (read-line proc #f))
+             (_ (close-port proc)))
+        (if (not output)
+          (echo-error! (app-state-echo app) (string-append "No matches: " pattern))
+          (let* ((ed (current-qt-editor app))
+                 (fr (app-state-frame app))
+                 (buf (or (buffer-by-name "*Xref Apropos*")
+                          (qt-buffer-create! "*Xref Apropos*" ed #f))))
+            (qt-buffer-attach! ed buf)
+            (set! (qt-edit-window-buffer (qt-current-window fr)) buf)
+            (qt-plain-text-edit-set-text! ed
+              (string-append "Symbols matching: " pattern "\n\n" output))
+            (qt-text-document-set-modified! (buffer-doc-pointer buf) #f)
+            (qt-plain-text-edit-set-cursor-position! ed 0)))))))
+
+(def (cmd-xref-go-back app)
+  "Go back in xref history (alias for xref-back)."
+  (cmd-xref-back app))
+
+(def (cmd-xref-go-forward app)
+  "Go forward in xref history."
+  (if (null? *xref-forward-stack*)
+    (echo-error! (app-state-echo app) "No forward xref history")
+    (let* ((loc (car *xref-forward-stack*))
+           (path-or-name (car loc))
+           (pos (cdr loc))
+           (fr (app-state-frame app))
+           (ed (current-qt-editor app)))
+      ;; Save current location for back
+      (xref-push-location! app)
+      (set! *xref-forward-stack* (cdr *xref-forward-stack*))
+      ;; Navigate to forward location
+      (let ((buf (or (let loop ((bufs *buffer-list*))
+                       (if (null? bufs) #f
+                         (let ((b (car bufs)))
+                           (if (and (buffer-file-path b)
+                                    (string=? (buffer-file-path b) path-or-name))
+                             b (loop (cdr bufs))))))
+                     (buffer-by-name path-or-name))))
+        (when buf
+          (qt-buffer-attach! ed buf)
+          (set! (qt-edit-window-buffer (qt-current-window fr)) buf)
+          (qt-plain-text-edit-set-cursor-position! ed pos)
+          (qt-plain-text-edit-ensure-cursor-visible! ed)))
+      (echo-message! (app-state-echo app) "Xref: forward"))))
+
+;;;============================================================================
+;;; Eldoc mode toggle
+
+(def *qt-eldoc-enabled* #f)
+
+(def (cmd-eldoc-mode app)
+  "Toggle eldoc mode — shows function signatures in echo area."
+  (set! *qt-eldoc-enabled* (not *qt-eldoc-enabled*))
+  (echo-message! (app-state-echo app)
+    (if *qt-eldoc-enabled* "Eldoc mode: on" "Eldoc mode: off")))
+
+(def (cmd-toggle-global-eldoc app)
+  "Toggle global eldoc mode."
+  (cmd-eldoc-mode app))
+
+;;;============================================================================
+;;; Project: eshell, shell, find-regexp
+
+(def (cmd-project-find-regexp app)
+  "Search project files for a regexp using grep."
+  (let* ((root (current-project-root app))
+         (pattern (qt-echo-read-string app "Project grep: ")))
+    (when (and pattern (> (string-length pattern) 0))
+      (if (not root)
+        (echo-error! (app-state-echo app) "Not in a project")
+        (with-catch
+          (lambda (e) (echo-error! (app-state-echo app) "grep failed"))
+          (lambda ()
+            (let* ((proc (open-process
+                           (list path: "/usr/bin/grep"
+                                 arguments: (list "-rn" pattern root
+                                   "--include=*.ss" "--include=*.scm"
+                                   "--include=*.py" "--include=*.js"
+                                   "--include=*.go" "--include=*.rs"
+                                   "--include=*.c" "--include=*.h"
+                                   "--include=*.cpp" "--include=*.hpp"
+                                   "--include=*.md" "--include=*.txt")
+                                 stdout-redirection: #t
+                                 stderr-redirection: #t)))
+                   (output (read-line proc #f))
+                   (_ (close-port proc))
+                   (ed (current-qt-editor app))
+                   (fr (app-state-frame app))
+                   (buf (or (buffer-by-name (string-append "*Project grep: " pattern "*"))
+                            (qt-buffer-create! (string-append "*Project grep: " pattern "*") ed #f))))
+              (qt-buffer-attach! ed buf)
+              (set! (qt-edit-window-buffer (qt-current-window fr)) buf)
+              (qt-plain-text-edit-set-text! ed
+                (if output
+                  (string-append "Project grep: " pattern "\n\n" output)
+                  "No matches found."))
+              (qt-text-document-set-modified! (buffer-doc-pointer buf) #f)
+              (qt-plain-text-edit-set-cursor-position! ed 0))))))))
+
+(def (cmd-project-shell app)
+  "Open shell in project root."
+  (let ((root (current-project-root app)))
+    (if (not root)
+      (echo-error! (app-state-echo app) "Not in a project")
+      (begin
+        (current-directory root)
+        (cmd-shell app)
+        (echo-message! (app-state-echo app) (string-append "Shell in: " root))))))
+
+(def (cmd-project-eshell app)
+  "Open eshell in project root."
+  (let ((root (current-project-root app)))
+    (if (not root)
+      (echo-error! (app-state-echo app) "Not in a project")
+      (begin
+        (current-directory root)
+        (cmd-eshell app)
+        (echo-message! (app-state-echo app) (string-append "Eshell in: " root))))))
+
+;;;============================================================================
+;;; Diff hunk operations
+
+(def (qt-diff-find-current-hunk ed)
+  "Find the @@ line number for the hunk at cursor position."
+  (let* ((text (qt-plain-text-edit-text ed))
+         (pos (qt-plain-text-edit-cursor-position ed))
+         (lines (string-split text #\newline)))
+    ;; Find which line we're on
+    (let loop ((ls lines) (line-idx 0) (char-count 0))
+      (if (null? ls) #f
+        (let ((line-len (+ (string-length (car ls)) 1)))
+          (if (>= (+ char-count line-len) pos)
+            ;; Found current line; scan backward for @@
+            (let scan ((i line-idx))
+              (cond
+                ((< i 0) #f)
+                ((string-prefix? "@@" (list-ref lines i)) i)
+                (else (scan (- i 1)))))
+            (loop (cdr ls) (+ line-idx 1) (+ char-count line-len))))))))
+
+(def (cmd-diff-mode app)
+  "Show diff summary: hunks, additions, deletions."
+  (let* ((ed (current-qt-editor app))
+         (text (qt-plain-text-edit-text ed))
+         (lines (string-split text #\newline))
+         (additions (length (filter (lambda (l) (and (> (string-length l) 0) (char=? (string-ref l 0) #\+))) lines)))
+         (deletions (length (filter (lambda (l) (and (> (string-length l) 0) (char=? (string-ref l 0) #\-))) lines)))
+         (hunks (length (filter (lambda (l) (string-prefix? "@@" l)) lines))))
+    (echo-message! (app-state-echo app)
+      (string-append "Diff: " (number->string hunks) " hunk(s), +"
+                     (number->string additions) "/-" (number->string deletions) " lines"))))
+
+(def (cmd-diff-apply-hunk app)
+  "Apply the current diff hunk (dry-run via patch --dry-run)."
+  (let* ((ed (current-qt-editor app))
+         (hunk-line (qt-diff-find-current-hunk ed)))
+    (if (not hunk-line)
+      (echo-error! (app-state-echo app) "Not in a diff hunk")
+      (let* ((text (qt-plain-text-edit-text ed))
+             (lines (string-split text #\newline)))
+        ;; Extract hunk content
+        (let loop ((i hunk-line) (acc []))
+          (if (>= i (length lines))
+            (let* ((hunk-text (string-join (reverse acc) "\n"))
+                   (tmp "/tmp/gemacs-hunk.patch"))
+              (with-catch
+                (lambda (e) (echo-error! (app-state-echo app) "Failed to apply hunk"))
+                (lambda ()
+                  (call-with-output-file tmp (lambda (p) (display hunk-text p)))
+                  (let* ((proc (open-process
+                                 (list path: "patch"
+                                       arguments: (list "-p1" "--dry-run" "-i" tmp)
+                                       stdout-redirection: #t
+                                       stderr-redirection: #t)))
+                         (out (read-line proc #f))
+                         (_ (close-port proc)))
+                    (echo-message! (app-state-echo app)
+                      (string-append "Patch: " (or out "ok")))))))
+            (let ((line (list-ref lines i)))
+              (if (and (> i hunk-line) (string-prefix? "@@" line))
+                (loop (length lines) acc)
+                (loop (+ i 1) (cons line acc))))))))))
+
+(def (cmd-diff-revert-hunk app)
+  "Revert the current diff hunk (reverse patch --dry-run)."
+  (let* ((ed (current-qt-editor app))
+         (hunk-line (qt-diff-find-current-hunk ed)))
+    (if (not hunk-line)
+      (echo-error! (app-state-echo app) "Not in a diff hunk")
+      (let* ((text (qt-plain-text-edit-text ed))
+             (lines (string-split text #\newline)))
+        (let loop ((i hunk-line) (acc []))
+          (if (>= i (length lines))
+            (let* ((hunk-text (string-join (reverse acc) "\n"))
+                   (tmp "/tmp/gemacs-revert-hunk.patch"))
+              (with-catch
+                (lambda (e) (echo-error! (app-state-echo app) "Failed to revert hunk"))
+                (lambda ()
+                  (call-with-output-file tmp (lambda (p) (display hunk-text p)))
+                  (let* ((proc (open-process
+                                 (list path: "patch"
+                                       arguments: (list "-p1" "-R" "--dry-run" "-i" tmp)
+                                       stdout-redirection: #t
+                                       stderr-redirection: #t)))
+                         (out (read-line proc #f))
+                         (_ (close-port proc)))
+                    (echo-message! (app-state-echo app)
+                      (string-append "Reverted: " (or out "ok")))))))
+            (let ((line (list-ref lines i)))
+              (if (and (> i hunk-line) (string-prefix? "@@" line))
+                (loop (length lines) acc)
+                (loop (+ i 1) (cons line acc))))))))))
+

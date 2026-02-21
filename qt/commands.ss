@@ -1619,7 +1619,21 @@
   (register-command! 'xref-back cmd-xref-back)
   (register-command! 'xref-find-definitions cmd-xref-find-definitions)
   (register-command! 'xref-find-references cmd-xref-find-references)
+  (register-command! 'xref-find-apropos cmd-xref-find-apropos)
+  (register-command! 'xref-go-back cmd-xref-go-back)
+  (register-command! 'xref-go-forward cmd-xref-go-forward)
   (register-command! 'number-to-register cmd-number-to-register)
+  ;; Eldoc
+  (register-command! 'eldoc-mode cmd-eldoc-mode)
+  (register-command! 'toggle-global-eldoc cmd-toggle-global-eldoc)
+  ;; Project
+  (register-command! 'project-find-regexp cmd-project-find-regexp)
+  (register-command! 'project-shell cmd-project-shell)
+  (register-command! 'project-eshell cmd-project-eshell)
+  ;; Diff
+  (register-command! 'diff-mode cmd-diff-mode)
+  (register-command! 'diff-apply-hunk cmd-diff-apply-hunk)
+  (register-command! 'diff-revert-hunk cmd-diff-revert-hunk)
   (register-command! 'imenu cmd-imenu)
   (register-command! 'show-word-count cmd-show-word-count)
   (register-command! 'show-char-count cmd-show-char-count)
