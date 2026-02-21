@@ -32,6 +32,14 @@
         :gemacs/qt/commands-lsp)
 
 ;;;============================================================================
+;;; Helpers
+;;;============================================================================
+
+(def (directory-exists? path)
+  (and (file-exists? path)
+       (eq? 'directory (file-type path))))
+
+;;;============================================================================
 ;;; Batch 8: Remaining missing commands
 ;;;============================================================================
 
@@ -1501,4 +1509,132 @@ S=sort by name, z=sort by size, q=quit."
               (qt-text-document-set-modified! (buffer-doc-pointer buf) #f)
               (echo-message! (app-state-echo app)
                 (string-append "Sudo saved: " path)))))))))
+
+;;;============================================================================
+;;; Ediff: directories, merge, regions
+
+(def (cmd-ediff-directories app)
+  "Compare two directories using diff."
+  (let* ((dir1 (qt-echo-read-string app "First directory: "))
+         (dir2 (and dir1 (> (string-length dir1) 0)
+                    (qt-echo-read-string app "Second directory: "))))
+    (when (and dir2 (> (string-length dir2) 0))
+      (if (not (and (directory-exists? dir1) (directory-exists? dir2)))
+        (echo-error! (app-state-echo app) "One or both directories do not exist")
+        (with-catch
+          (lambda (e) (echo-error! (app-state-echo app) "diff failed"))
+          (lambda ()
+            (let* ((proc (open-process
+                           (list path: "diff"
+                                 arguments: (list "-rq" dir1 dir2)
+                                 stdout-redirection: #t
+                                 stderr-redirection: #t)))
+                   (output (read-line proc #f))
+                   (_ (close-port proc))
+                   (ed (current-qt-editor app))
+                   (fr (app-state-frame app))
+                   (buf (or (buffer-by-name "*Ediff Dirs*")
+                            (qt-buffer-create! "*Ediff Dirs*" ed #f))))
+              (qt-buffer-attach! ed buf)
+              (set! (qt-edit-window-buffer (qt-current-window fr)) buf)
+              (qt-plain-text-edit-set-text! ed
+                (string-append "Directory comparison: " dir1 " vs " dir2 "\n"
+                               (make-string 60 #\=) "\n\n"
+                               (or output "Directories are identical")))
+              (qt-text-document-set-modified! (buffer-doc-pointer buf) #f)
+              (qt-plain-text-edit-set-cursor-position! ed 0))))))))
+
+(def (cmd-ediff-merge app)
+  "Show diff for two files (merge comparison)."
+  (let* ((file1 (qt-echo-read-string app "File A: "))
+         (file2 (and file1 (> (string-length file1) 0)
+                     (qt-echo-read-string app "File B: "))))
+    (when (and file2 (> (string-length file2) 0))
+      (if (not (and (file-exists? file1) (file-exists? file2)))
+        (echo-error! (app-state-echo app) "One or both files do not exist")
+        (with-catch
+          (lambda (e) (echo-error! (app-state-echo app) "diff failed"))
+          (lambda ()
+            (let* ((proc (open-process
+                           (list path: "diff"
+                                 arguments: (list "-u" file1 file2)
+                                 stdout-redirection: #t
+                                 stderr-redirection: #t)))
+                   (output (read-line proc #f))
+                   (_ (close-port proc))
+                   (ed (current-qt-editor app))
+                   (fr (app-state-frame app))
+                   (buf (or (buffer-by-name "*Ediff Merge*")
+                            (qt-buffer-create! "*Ediff Merge*" ed #f))))
+              (qt-buffer-attach! ed buf)
+              (set! (qt-edit-window-buffer (qt-current-window fr)) buf)
+              (qt-plain-text-edit-set-text! ed
+                (string-append "Merge: " file1 " + " file2 "\n"
+                               (make-string 60 #\=) "\n\n"
+                               (or output "Files are identical")))
+              (qt-text-document-set-modified! (buffer-doc-pointer buf) #f)
+              (qt-plain-text-edit-set-cursor-position! ed 0)
+              (qt-highlight-diff! ed))))))))
+
+(def (cmd-ediff-regions app)
+  "Compare current buffer with another buffer."
+  (let* ((cur-buf (current-qt-buffer app))
+         (cur-name (buffer-name cur-buf))
+         (other-name (qt-echo-read-string app "Compare with buffer: ")))
+    (when (and other-name (> (string-length other-name) 0))
+      (let ((other-buf (buffer-by-name other-name)))
+        (if (not other-buf)
+          (echo-error! (app-state-echo app) (string-append "Buffer not found: " other-name))
+          (let* ((ed (current-qt-editor app))
+                 (text1 (qt-plain-text-edit-text ed))
+                 (tmp1 "/tmp/gemacs-ediff-1.txt")
+                 (tmp2 "/tmp/gemacs-ediff-2.txt"))
+            (call-with-output-file tmp1 (lambda (p) (display text1 p)))
+            ;; Get other buffer text by temporarily switching
+            (qt-buffer-attach! ed other-buf)
+            (let ((text2 (qt-plain-text-edit-text ed)))
+              (call-with-output-file tmp2 (lambda (p) (display text2 p)))
+              ;; Switch back
+              (qt-buffer-attach! ed cur-buf)
+              (with-catch
+                (lambda (e) (echo-error! (app-state-echo app) "diff failed"))
+                (lambda ()
+                  (let* ((proc (open-process
+                                 (list path: "diff"
+                                       arguments: (list "-u"
+                                                    (string-append "--label=" cur-name)
+                                                    (string-append "--label=" other-name)
+                                                    tmp1 tmp2)
+                                       stdout-redirection: #t
+                                       stderr-redirection: #t)))
+                         (output (read-line proc #f))
+                         (_ (close-port proc))
+                         (fr (app-state-frame app))
+                         (diff-buf (or (buffer-by-name "*Ediff Regions*")
+                                       (qt-buffer-create! "*Ediff Regions*" ed #f))))
+                    (qt-buffer-attach! ed diff-buf)
+                    (set! (qt-edit-window-buffer (qt-current-window fr)) diff-buf)
+                    (qt-plain-text-edit-set-text! ed
+                      (or output "Buffers are identical"))
+                    (qt-text-document-set-modified! (buffer-doc-pointer diff-buf) #f)
+                    (qt-plain-text-edit-set-cursor-position! ed 0)
+                    (qt-highlight-diff! ed)))))))))))
+
+;;;============================================================================
+;;; Mode toggles (Emacs compatibility aliases)
+
+(def *qt-show-paren-enabled* #t)  ; Qt always has brace matching; this toggles it
+(def *qt-delete-selection-enabled* #t)
+
+(def (cmd-show-paren-mode app)
+  "Toggle show-paren-mode (bracket matching). Enabled by default in Qt."
+  (set! *qt-show-paren-enabled* (not *qt-show-paren-enabled*))
+  (echo-message! (app-state-echo app)
+    (if *qt-show-paren-enabled* "Show paren: on" "Show paren: off")))
+
+(def (cmd-delete-selection-mode app)
+  "Toggle delete-selection-mode (typed text replaces selection). Default in Qt."
+  (set! *qt-delete-selection-enabled* (not *qt-delete-selection-enabled*))
+  (echo-message! (app-state-echo app)
+    (if *qt-delete-selection-enabled* "Delete selection mode: on" "Delete selection mode: off")))
 

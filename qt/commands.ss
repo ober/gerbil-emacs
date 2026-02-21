@@ -1397,8 +1397,14 @@
   (register-command! 'consult-line cmd-consult-line)
   (register-command! 'consult-grep cmd-consult-grep)
   (register-command! 'consult-buffer cmd-consult-buffer)
-  ;; Ediff buffers
+  ;; Ediff
   (register-command! 'ediff-buffers cmd-ediff-buffers)
+  (register-command! 'ediff-directories cmd-ediff-directories)
+  (register-command! 'ediff-merge cmd-ediff-merge)
+  (register-command! 'ediff-regions cmd-ediff-regions)
+  ;; Mode toggles
+  (register-command! 'show-paren-mode cmd-show-paren-mode)
+  (register-command! 'delete-selection-mode cmd-delete-selection-mode)
   ;; Highlight symbol / clear
   (register-command! 'highlight-symbol cmd-highlight-symbol)
   (register-command! 'highlight-symbol-next cmd-highlight-symbol-next)
