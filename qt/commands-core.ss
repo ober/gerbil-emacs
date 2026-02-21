@@ -8,6 +8,8 @@
         :std/sort
         :std/srfi/13
         :std/text/base64
+        :std/text/json
+        :std/net/uri
         :gemacs/qt/sci-shim
         :gemacs/core
         :gemacs/editor
@@ -1445,4 +1447,314 @@ Returns (path . line) or #f. Handles file:line format."
               (string-append "Tab width: " (number->string n))))
           (echo-error! (app-state-echo app) "Invalid tab width (1-16)"))))))
 
+;;;============================================================================
+;;; JSON format / minify / pretty-print
+;;;============================================================================
 
+(def (qt-json-pretty-print obj indent)
+  "Pretty-print a JSON value with indentation."
+  (let ((out (open-output-string)))
+    (let pp ((val obj) (level 0))
+      (let ((prefix (make-string (* level indent) #\space)))
+        (cond
+          ((hash-table? val)
+           (display "{\n" out)
+           (let ((keys (sort (hash-keys val) string<?))
+                 (first #t))
+             (for-each
+               (lambda (k)
+                 (unless first (display ",\n" out))
+                 (display (make-string (* (+ level 1) indent) #\space) out)
+                 (write k out)
+                 (display ": " out)
+                 (pp (hash-ref val k) (+ level 1))
+                 (set! first #f))
+               keys))
+           (display "\n" out)
+           (display prefix out)
+           (display "}" out))
+          ((list? val)
+           (if (null? val)
+             (display "[]" out)
+             (begin
+               (display "[\n" out)
+               (let ((first #t))
+                 (for-each
+                   (lambda (item)
+                     (unless first (display ",\n" out))
+                     (display (make-string (* (+ level 1) indent) #\space) out)
+                     (pp item (+ level 1))
+                     (set! first #f))
+                   val))
+               (display "\n" out)
+               (display prefix out)
+               (display "]" out))))
+          ((string? val) (write val out))
+          ((number? val) (display val out))
+          ((boolean? val) (display (if val "true" "false") out))
+          ((not val) (display "null" out))
+          (else (write val out)))))
+    (get-output-string out)))
+
+(def (cmd-json-format-buffer app)
+  "Pretty-print JSON in the current buffer."
+  (let* ((ed (current-qt-editor app))
+         (echo (app-state-echo app))
+         (text (qt-plain-text-edit-text ed)))
+    (with-catch
+      (lambda (e) (echo-error! echo "Invalid JSON"))
+      (lambda ()
+        (let* ((obj (call-with-input-string text read-json))
+               (formatted (qt-json-pretty-print obj 2))
+               (pos (qt-plain-text-edit-cursor-position ed)))
+          (qt-plain-text-edit-set-text! ed (string-append formatted "\n"))
+          (qt-plain-text-edit-set-cursor-position! ed (min pos (string-length formatted)))
+          (echo-message! echo "JSON formatted"))))))
+
+(def (cmd-json-minify-buffer app)
+  "Minify JSON in the current buffer (remove whitespace)."
+  (let* ((ed (current-qt-editor app))
+         (echo (app-state-echo app))
+         (text (qt-plain-text-edit-text ed)))
+    (with-catch
+      (lambda (e) (echo-error! echo "Invalid JSON"))
+      (lambda ()
+        (let* ((obj (call-with-input-string text read-json))
+               (minified (call-with-output-string
+                           (lambda (port) (write-json obj port))))
+               (pos (qt-plain-text-edit-cursor-position ed)))
+          (qt-plain-text-edit-set-text! ed minified)
+          (qt-plain-text-edit-set-cursor-position! ed (min pos (string-length minified)))
+          (echo-message! echo
+            (string-append "JSON minified (" (number->string (string-length minified)) " bytes)")))))))
+
+(def (cmd-json-pretty-print-region app)
+  "Pretty-print JSON in selected region using python3."
+  (let* ((ed (current-qt-editor app))
+         (sel-start (qt-plain-text-edit-selection-start ed))
+         (sel-end (qt-plain-text-edit-selection-end ed)))
+    (if (= sel-start sel-end)
+      (echo-message! (app-state-echo app) "Select JSON region first")
+      (let* ((text (qt-plain-text-edit-text ed))
+             (region (substring text sel-start sel-end)))
+        (with-catch
+          (lambda (e) (echo-error! (app-state-echo app) "Invalid JSON"))
+          (lambda ()
+            (let* ((obj (call-with-input-string region read-json))
+                   (formatted (qt-json-pretty-print obj 2))
+                   (new-text (string-append
+                               (substring text 0 sel-start)
+                               formatted
+                               (substring text sel-end (string-length text)))))
+              (qt-plain-text-edit-set-text! ed new-text)
+              (qt-plain-text-edit-set-cursor-position! ed sel-start)
+              (echo-message! (app-state-echo app) "JSON formatted"))))))))
+
+;;;============================================================================
+;;; URL encode / decode
+;;;============================================================================
+
+(def (cmd-url-encode-region app)
+  "URL-encode the selected region."
+  (let* ((ed (current-qt-editor app))
+         (sel-start (qt-plain-text-edit-selection-start ed))
+         (sel-end (qt-plain-text-edit-selection-end ed)))
+    (if (= sel-start sel-end)
+      (echo-error! (app-state-echo app) "No region selected")
+      (let* ((text (qt-plain-text-edit-text ed))
+             (region (substring text sel-start sel-end))
+             (encoded (uri-encode region))
+             (new-text (string-append
+                         (substring text 0 sel-start)
+                         encoded
+                         (substring text sel-end (string-length text)))))
+        (qt-plain-text-edit-set-text! ed new-text)
+        (qt-plain-text-edit-set-cursor-position! ed (+ sel-start (string-length encoded)))
+        (echo-message! (app-state-echo app) "URL encoded")))))
+
+(def (cmd-url-decode-region app)
+  "URL-decode the selected region."
+  (let* ((ed (current-qt-editor app))
+         (sel-start (qt-plain-text-edit-selection-start ed))
+         (sel-end (qt-plain-text-edit-selection-end ed)))
+    (if (= sel-start sel-end)
+      (echo-error! (app-state-echo app) "No region selected")
+      (let* ((text (qt-plain-text-edit-text ed))
+             (region (substring text sel-start sel-end))
+             (decoded (uri-decode region))
+             (new-text (string-append
+                         (substring text 0 sel-start)
+                         decoded
+                         (substring text sel-end (string-length text)))))
+        (qt-plain-text-edit-set-text! ed new-text)
+        (qt-plain-text-edit-set-cursor-position! ed (+ sel-start (string-length decoded)))
+        (echo-message! (app-state-echo app) "URL decoded")))))
+
+;;;============================================================================
+;;; Reverse / shuffle lines
+;;;============================================================================
+
+(def (qt-reverse-lines-in-string text)
+  "Reverse order of lines in a string."
+  (let* ((lines (string-split text #\newline))
+         (reversed (reverse lines)))
+    (string-join reversed "\n")))
+
+(def (cmd-reverse-lines app)
+  "Reverse the order of lines in region or entire buffer."
+  (let* ((ed (current-qt-editor app))
+         (sel-start (qt-plain-text-edit-selection-start ed))
+         (sel-end (qt-plain-text-edit-selection-end ed)))
+    (if (= sel-start sel-end)
+      ;; No selection => reverse entire buffer
+      (let* ((text (qt-plain-text-edit-text ed))
+             (result (qt-reverse-lines-in-string text)))
+        (qt-plain-text-edit-set-text! ed result)
+        (qt-plain-text-edit-set-cursor-position! ed 0)
+        (echo-message! (app-state-echo app) "Reversed all lines"))
+      ;; Selection => reverse selected region
+      (let* ((text (qt-plain-text-edit-text ed))
+             (region (substring text sel-start sel-end))
+             (result (qt-reverse-lines-in-string region))
+             (new-text (string-append
+                         (substring text 0 sel-start)
+                         result
+                         (substring text sel-end (string-length text)))))
+        (qt-plain-text-edit-set-text! ed new-text)
+        (qt-plain-text-edit-set-cursor-position! ed sel-start)
+        (echo-message! (app-state-echo app) "Reversed selected lines")))))
+
+(def (qt-shuffle lst)
+  "Fisher-Yates shuffle of a list."
+  (let ((vec (list->vector lst)))
+    (let loop ((i (- (vector-length vec) 1)))
+      (when (> i 0)
+        (let* ((j (random-integer (+ i 1)))
+               (tmp (vector-ref vec i)))
+          (vector-set! vec i (vector-ref vec j))
+          (vector-set! vec j tmp)
+          (loop (- i 1)))))
+    (vector->list vec)))
+
+(def (cmd-shuffle-lines app)
+  "Randomly shuffle lines in region or entire buffer."
+  (let* ((ed (current-qt-editor app))
+         (sel-start (qt-plain-text-edit-selection-start ed))
+         (sel-end (qt-plain-text-edit-selection-end ed)))
+    (if (= sel-start sel-end)
+      (let* ((text (qt-plain-text-edit-text ed))
+             (lines (string-split text #\newline))
+             (shuffled (qt-shuffle lines))
+             (result (string-join shuffled "\n")))
+        (qt-plain-text-edit-set-text! ed result)
+        (qt-plain-text-edit-set-cursor-position! ed 0)
+        (echo-message! (app-state-echo app) "Shuffled all lines"))
+      (let* ((text (qt-plain-text-edit-text ed))
+             (region (substring text sel-start sel-end))
+             (lines (string-split region #\newline))
+             (shuffled (qt-shuffle lines))
+             (result (string-join shuffled "\n"))
+             (new-text (string-append
+                         (substring text 0 sel-start)
+                         result
+                         (substring text sel-end (string-length text)))))
+        (qt-plain-text-edit-set-text! ed new-text)
+        (qt-plain-text-edit-set-cursor-position! ed sel-start)
+        (echo-message! (app-state-echo app) "Shuffled selected lines")))))
+
+;;;============================================================================
+;;; XML format
+;;;============================================================================
+
+(def (cmd-xml-format app)
+  "Format XML in the current buffer using xmllint."
+  (let* ((ed (current-qt-editor app))
+         (text (qt-plain-text-edit-text ed)))
+    (with-catch
+      (lambda (e) (echo-error! (app-state-echo app) "xmllint not available"))
+      (lambda ()
+        (let* ((proc (open-process
+                       (list path: "xmllint"
+                             arguments: '("--format" "-")
+                             stdin-redirection: #t stdout-redirection: #t
+                             stderr-redirection: #t)))
+               (_ (begin (display text proc) (close-output-port proc)))
+               (result (read-line proc #f)))
+          (process-status proc)
+          (if (and result (> (string-length result) 0))
+            (begin
+              (qt-plain-text-edit-set-text! ed result)
+              (qt-plain-text-edit-set-cursor-position! ed 0)
+              (echo-message! (app-state-echo app) "XML formatted"))
+            (echo-error! (app-state-echo app) "XML format failed")))))))
+
+;;;============================================================================
+;;; Open URL at point
+;;;============================================================================
+
+(def (qt-find-url-at-point text pos)
+  "Find URL boundaries at position in text."
+  (let ((len (string-length text)))
+    ;; Scan backward from pos to find start of URL-like string
+    (let find-start ((i pos))
+      (if (or (<= i 0)
+              (memv (string-ref text (- i 1)) '(#\space #\tab #\newline #\( #\) #\[ #\] #\" #\')))
+        ;; Check if this looks like a URL
+        (let ((candidate (let find-end ((j (max i pos)))
+                           (if (or (>= j len)
+                                   (memv (string-ref text j) '(#\space #\tab #\newline #\) #\] #\" #\')))
+                             (substring text i j)
+                             (find-end (+ j 1))))))
+          (if (or (string-prefix? "http://" candidate)
+                  (string-prefix? "https://" candidate)
+                  (string-prefix? "ftp://" candidate))
+            (cons i (+ i (string-length candidate)))
+            #f))
+        (find-start (- i 1))))))
+
+(def (cmd-open-url-at-point app)
+  "Open URL at point in external browser."
+  (let* ((ed (current-qt-editor app))
+         (text (qt-plain-text-edit-text ed))
+         (pos (qt-plain-text-edit-cursor-position ed)))
+    (let ((url-bounds (qt-find-url-at-point text pos)))
+      (if (not url-bounds)
+        (echo-error! (app-state-echo app) "No URL at point")
+        (let ((url (substring text (car url-bounds) (cdr url-bounds))))
+          (with-catch
+            (lambda (e) (echo-error! (app-state-echo app) "Failed to open URL"))
+            (lambda ()
+              (open-process
+                (list path: "xdg-open" arguments: (list url)
+                      stdin-redirection: #f stdout-redirection: #f
+                      stderr-redirection: #f))
+              (echo-message! (app-state-echo app) (string-append "Opening: " url)))))))))
+
+;;;============================================================================
+;;; Compare windows
+;;;============================================================================
+
+(def (cmd-compare-windows app)
+  "Compare text in two visible windows and jump to first difference."
+  (let* ((fr (app-state-frame app))
+         (wins (qt-frame-windows fr)))
+    (if (< (length wins) 2)
+      (echo-error! (app-state-echo app) "Need at least 2 windows")
+      (let* ((w1 (car wins))
+             (w2 (cadr wins))
+             (e1 (qt-edit-window-editor w1))
+             (e2 (qt-edit-window-editor w2))
+             (t1 (qt-plain-text-edit-text e1))
+             (t2 (qt-plain-text-edit-text e2))
+             (len (min (string-length t1) (string-length t2))))
+        (let loop ((i 0))
+          (cond
+            ((>= i len)
+             (if (= (string-length t1) (string-length t2))
+               (echo-message! (app-state-echo app) "Windows are identical")
+               (echo-message! (app-state-echo app)
+                 (string-append "Differ at pos " (number->string i) " (one buffer is shorter)"))))
+            ((not (char=? (string-ref t1 i) (string-ref t2 i)))
+             (echo-message! (app-state-echo app)
+               (string-append "First difference at position " (number->string i))))
+            (else (loop (+ i 1)))))))))
