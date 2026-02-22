@@ -1433,13 +1433,6 @@
             (string-append "GPTel: Set OPENAI_API_KEY to enable API calls. Prompt: "
                            (substring prompt 0 (min 50 (string-length prompt))))))))))
 
-;; Evil mode — vi-like modal editing
-(def (cmd-evil-mode app)
-  "Toggle evil mode — vi-like modal editing."
-  (let ((on (toggle-mode! 'evil)))
-    (echo-message! (app-state-echo app)
-      (if on "Evil mode: on (vi keybindings)" "Evil mode: off (emacs keybindings)"))))
-
 ;; Meow modal editing
 (def (cmd-meow-mode app)
   "Toggle meow modal editing — selection-first editing."

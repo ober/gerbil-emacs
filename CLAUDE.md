@@ -64,6 +64,23 @@ HOME=/home/user LD_LIBRARY_PATH=/home/linuxbrew/.linuxbrew/opt/openssl@3/lib \
 
 Every command implemented in the Qt layer (`qt/commands-*.ss`) **MUST** have a corresponding implementation in the TUI layer (`editor-*.ss`), and vice versa. When adding a new `cmd-*` function to one layer, always check the other layer and add the equivalent there too. Both layers should expose the same set of user-facing commands via `M-x`.
 
+## Feature Comparison: MANDATORY After Major Features
+
+After implementing any major new feature or completing a significant milestone, you **MUST** regenerate `gemacs-vs-emacs.md` to reflect the current state of the project. This file is the canonical feature comparison between gemacs and GNU Emacs.
+
+To update it:
+1. Review the feature area(s) affected by recent changes
+2. Update the status symbols and notes in the relevant sections
+3. Update the "Last updated" date and commit hash at the top
+4. Update the Critical Feature Gap Summary if gaps have been closed
+5. Update the Recommended Development Roadmap if priorities have shifted
+
+This file should always accurately reflect what gemacs can and cannot do today.
+
+## NO Evil Mode
+
+Gemacs is an Emacs-keybinding editor. There is **NO** Evil mode (Vim emulation) and there never will be. Do not add Evil mode commands, variables, keymaps, or any Vim-style modal editing. If you encounter any remaining Evil mode references in the codebase, remove them.
+
 ## File size limit
 
 All source files must stay below 2000 lines. If a file approaches this limit, split it following the existing `commands-*.ss` chain pattern.

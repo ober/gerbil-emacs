@@ -634,7 +634,6 @@
   (register-command! 'gptel cmd-gptel)
   (register-command! 'gptel-send cmd-gptel-send)
   ;; Modal editing
-  (register-command! 'evil-mode cmd-evil-mode)
   (register-command! 'meow-mode cmd-meow-mode)
   ;; Terminals
   (register-command! 'eat cmd-eat)
@@ -1011,7 +1010,6 @@
   (register-command! 'toggle-ivy-mode cmd-toggle-ivy-mode)
   (register-command! 'toggle-helm-mode cmd-toggle-helm-mode)
   (register-command! 'toggle-projectile-mode cmd-toggle-projectile-mode)
-  (register-command! 'toggle-evil-mode cmd-toggle-evil-mode)
   (register-command! 'toggle-doom-modeline cmd-toggle-doom-modeline)
   (register-command! 'toggle-treesit-mode cmd-toggle-treesit-mode)
   (register-command! 'toggle-eglot-mode cmd-toggle-eglot-mode)
@@ -1454,9 +1452,6 @@
   (register-command! 'undo-tree-mode cmd-undo-history)
   (register-command! 'treemacs-toggle cmd-treemacs)
   (register-command! 'treemacs-select-window cmd-treemacs)
-  (register-command! 'evil-normal-state cmd-evil-mode)
-  (register-command! 'evil-insert-state cmd-evil-mode)
-  (register-command! 'evil-visual-state cmd-evil-mode)
   (register-command! 'magit-branch-create cmd-magit-branch)
   (register-command! 'magit-branch-delete cmd-magit-branch)
   (register-command! 'org-set-tags-command cmd-org-set-tags)

@@ -255,7 +255,7 @@
                  *flyspell-prog-mode* *auto-save-buffers-mode*
                  *global-linum-mode*
                  *company-mode* *ivy-mode* *helm-mode*
-                 *projectile-mode* *evil-mode* *doom-modeline*
+                 *projectile-mode* *doom-modeline*
                  *treesit-mode* *eglot-mode*
                  *display-time* *display-battery*
                  *auto-save-on-idle* *delete-active-region*
@@ -2375,7 +2375,6 @@
       (check *ivy-mode* => #f)
       (check *helm-mode* => #f)
       (check *projectile-mode* => #f)
-      (check *evil-mode* => #f)
       (check *doom-modeline* => #f)
       (check *treesit-mode* => #f)
       (check *eglot-mode* => #f)
@@ -2389,7 +2388,6 @@
       (check (procedure? (find-command 'toggle-ivy-mode)) => #t)
       (check (procedure? (find-command 'toggle-helm-mode)) => #t)
       (check (procedure? (find-command 'toggle-projectile-mode)) => #t)
-      (check (procedure? (find-command 'toggle-evil-mode)) => #t)
       (check (procedure? (find-command 'toggle-doom-modeline)) => #t)
       (check (procedure? (find-command 'toggle-treesit-mode)) => #t)
       (check (procedure? (find-command 'toggle-eglot-mode)) => #t)

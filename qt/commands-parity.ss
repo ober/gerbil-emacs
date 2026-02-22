@@ -692,14 +692,6 @@
         (qt-plain-text-edit-set-text! ed text)
         (qt-plain-text-edit-set-cursor-position! ed 0)))))
 
-;;; --- Evil mode ---
-(def *qt-evil-mode* #f)
-(def (cmd-evil-mode app)
-  "Toggle evil mode — vi-like modal editing."
-  (set! *qt-evil-mode* (not *qt-evil-mode*))
-  (echo-message! (app-state-echo app)
-    (if *qt-evil-mode* "Evil mode: on (vi keybindings)" "Evil mode: off (emacs keybindings)")))
-
 ;;; --- Org set tags ---
 (def (cmd-org-set-tags app)
   "Prompt for tags and set on current org heading."

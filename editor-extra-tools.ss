@@ -1551,7 +1551,6 @@
 (def *ivy-mode* #f)
 (def *helm-mode* #f)
 (def *projectile-mode* #f)
-(def *evil-mode* #f)
 (def *doom-modeline* #f)
 (def *treesit-mode* #f)
 (def *eglot-mode* #f)
@@ -1585,13 +1584,6 @@
     (set! *projectile-mode* (not *projectile-mode*))
     (echo-message! echo (if *projectile-mode*
                           "Projectile mode ON" "Projectile mode OFF"))))
-
-(def (cmd-toggle-evil-mode app)
-  "Toggle evil-mode (vim emulation)."
-  (let ((echo (app-state-echo app)))
-    (set! *evil-mode* (not *evil-mode*))
-    (echo-message! echo (if *evil-mode*
-                          "Evil mode ON" "Evil mode OFF"))))
 
 (def (cmd-toggle-doom-modeline app)
   "Toggle doom-modeline (fancy mode line)."
