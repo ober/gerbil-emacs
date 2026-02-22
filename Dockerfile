@@ -14,7 +14,7 @@ FROM gerbil/gerbilxx:${ARCH}-master
 
 # ── Phase 1: Alpine build deps ──────────────────────────────────────────
 RUN apk add --no-cache \
-    cmake ninja-build perl python3 linux-headers \
+    cmake samurai perl python3 linux-headers \
     libxcb-dev xcb-util-dev xcb-util-image-dev \
     xcb-util-keysyms-dev xcb-util-renderutil-dev \
     xcb-util-wm-dev xcb-util-cursor-dev \
@@ -41,7 +41,7 @@ RUN wget -q https://download.qt.io/official_releases/qt/6.8/${QT6_VERSION}/submo
       -DFEATURE_sql=OFF \
       -DFEATURE_network=OFF \
       -DFEATURE_testlib=OFF \
-      -DFEATURE_printsupport=OFF \
+      -DFEATURE_printsupport=ON \
       -DFEATURE_dbus=OFF \
       -DFEATURE_opengl=OFF \
       -DFEATURE_vulkan=OFF && \
@@ -59,6 +59,58 @@ RUN wget -q https://www.riverbankcomputing.com/static/Downloads/QScintilla/${QSC
     make -j$(nproc) && \
     make install && \
     cd / && rm -rf QScintilla_src-${QSCI_VERSION}
+
+# ── Phase 3b: Create pkg-config files (static Qt6 cmake doesn't generate them) ─
+RUN mkdir -p /opt/qt6-static/lib/pkgconfig && \
+    printf '%s\n' \
+      'prefix=/opt/qt6-static' \
+      'includedir=${prefix}/include' \
+      'libdir=${prefix}/lib' \
+      '' \
+      'Name: Qt6Core' 'Description: Qt6 Core' 'Version: 6.8.3' \
+      'Cflags: -I${includedir} -I${includedir}/QtCore' \
+      'Libs: -L${libdir} -lQt6Core' \
+      > /opt/qt6-static/lib/pkgconfig/Qt6Core.pc && \
+    printf '%s\n' \
+      'prefix=/opt/qt6-static' \
+      'includedir=${prefix}/include' \
+      'libdir=${prefix}/lib' \
+      '' \
+      'Name: Qt6Gui' 'Description: Qt6 Gui' 'Version: 6.8.3' \
+      'Requires: Qt6Core' \
+      'Cflags: -I${includedir} -I${includedir}/QtGui' \
+      'Libs: -L${libdir} -lQt6Gui' \
+      > /opt/qt6-static/lib/pkgconfig/Qt6Gui.pc && \
+    printf '%s\n' \
+      'prefix=/opt/qt6-static' \
+      'includedir=${prefix}/include' \
+      'libdir=${prefix}/lib' \
+      '' \
+      'Name: Qt6Widgets' 'Description: Qt6 Widgets' 'Version: 6.8.3' \
+      'Requires: Qt6Gui' \
+      'Cflags: -I${includedir} -I${includedir}/QtWidgets -I${includedir}/QtGui -I${includedir}/QtCore' \
+      'Libs: -L${libdir} -lQt6Widgets' \
+      > /opt/qt6-static/lib/pkgconfig/Qt6Widgets.pc && \
+    printf '%s\n' \
+      'prefix=/opt/qt6-static' \
+      'includedir=${prefix}/include' \
+      'libdir=${prefix}/lib' \
+      '' \
+      'Name: Qt6PrintSupport' 'Description: Qt6 PrintSupport' 'Version: 6.8.3' \
+      'Requires: Qt6Widgets' \
+      'Cflags: -I${includedir} -I${includedir}/QtPrintSupport' \
+      'Libs: -L${libdir} -lQt6PrintSupport' \
+      > /opt/qt6-static/lib/pkgconfig/Qt6PrintSupport.pc && \
+    printf '%s\n' \
+      'prefix=/opt/qt6-static' \
+      'includedir=${prefix}/include' \
+      'libdir=${prefix}/lib' \
+      '' \
+      'Name: QScintilla' 'Description: QScintilla for Qt6' 'Version: 2.14.1' \
+      'Requires: Qt6Widgets Qt6PrintSupport' \
+      'Cflags: -I${includedir} -I${includedir}/Qsci' \
+      'Libs: -L${libdir} -lqscintilla2_qt6' \
+      > /opt/qt6-static/lib/pkgconfig/QScintilla.pc
 
 # ── Phase 4: Gerbil dependencies ────────────────────────────────────────
 ENV PKG_CONFIG_PATH=/opt/qt6-static/lib/pkgconfig
