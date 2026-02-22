@@ -1,4 +1,4 @@
-.PHONY: all build clean test test-qt test-lsp test-lsp-protocol test-split-comprehensive test-org test-all install install-qt \
+.PHONY: all help build clean test test-qt test-lsp test-lsp-protocol test-split-comprehensive test-org test-all install install-qt \
         static static-qt clean-docker check-root build-static build-static-qt linux-static-docker linux-static-qt-docker \
         docker-deps build-gemacs-static build-gemacs-static-qt linux-static-docker-full linux-static-qt-docker-full
 
@@ -9,7 +9,35 @@ OPENSSL_RPATH = /home/linuxbrew/.linuxbrew/opt/openssl@3/lib
 SCI_RPATH = $(HOME)/.gerbil/lib/gerbil-scintilla
 QT_SHIM_RPATH = $(HOME)/.gerbil/lib/gerbil-qt
 
-all: build
+all: help
+
+help:
+	@echo "Usage: make <target>"
+	@echo ""
+	@echo "Build targets:"
+	@echo "  build                       Build TUI and Qt binaries (with patchelf)"
+	@echo "  clean                       Clean local and global build artifacts"
+	@echo ""
+	@echo "Test targets:"
+	@echo "  test                        Build + run TUI tests"
+	@echo "  test-qt                     Build + run Qt headless tests"
+	@echo "  test-lsp                    Build + run LSP functional tests"
+	@echo "  test-lsp-protocol           Build + run LSP protocol tests (interpreter)"
+	@echo "  test-split-comprehensive    Build + run window split tests"
+	@echo "  test-org                    Build + run org-mode tests"
+	@echo "  test-all                    Build + run all tests"
+	@echo ""
+	@echo "Install targets:"
+	@echo "  install                     Install TUI + Qt to PREFIX (default: ~/.local)"
+	@echo "  install-qt                  Install Qt only to PREFIX"
+	@echo ""
+	@echo "Static/Docker targets:"
+	@echo "  docker-deps                 Build intermediate deps Docker image"
+	@echo "  static                      Static TUI binary via Docker (needs docker-deps)"
+	@echo "  static-qt                   Static Qt binary via Docker (needs docker-deps)"
+	@echo "  linux-static-docker-full    Self-contained static TUI build (no deps image)"
+	@echo "  linux-static-qt-docker-full Self-contained static Qt build (no deps image)"
+	@echo "  clean-docker                Clean .gerbil dir via Docker"
 
 QT_TEST_TIMEOUT ?= 600
 QT_TEST_ENV = QT_QPA_PLATFORM=offscreen LD_LIBRARY_PATH=$(OPENSSL_RPATH):$(SCI_RPATH):$(QT_SHIM_RPATH)
