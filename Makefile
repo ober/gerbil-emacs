@@ -1,5 +1,6 @@
 .PHONY: all build clean test test-qt test-lsp test-lsp-protocol test-split-comprehensive test-org test-all install install-qt \
-        static static-qt clean-docker check-root build-static build-static-qt linux-static-docker linux-static-qt-docker
+        static static-qt clean-docker check-root build-static build-static-qt linux-static-docker linux-static-qt-docker \
+        docker-deps build-gemacs-static build-gemacs-static-qt linux-static-docker-full linux-static-qt-docker-full
 
 export GERBIL_LOADPATH := $(HOME)/.gerbil/lib
 export GERBIL_BUILD_CORES := $(shell echo $$(( $$(nproc) / 2 )))
@@ -103,6 +104,8 @@ GERBIL_PATH ?= $(HOME)/.gerbil
 SCI_SRC ?= $(shell readlink -f $(GERBIL_PATH)/pkg/gerbil-scintilla 2>/dev/null || echo $(GERBIL_PATH)/pkg/github.com/ober/gerbil-scintilla)
 QT_SRC  ?= $(shell readlink -f $(GERBIL_PATH)/pkg/gerbil-qt 2>/dev/null || echo $(GERBIL_PATH)/pkg/github.com/ober/gerbil-qt)
 
+DEPS_IMAGE := gemacs-deps:$(ARCH)
+
 static: linux-static-docker
 
 static-qt: linux-static-qt-docker
@@ -116,7 +119,71 @@ check-root:
 	  git config --global --add safe.directory '*'; \
 	fi
 
-# Build static TUI binary inside Docker container
+# -----------------------------------------------------------------------------
+# Intermediate deps image (run once, or when dependencies change)
+# -----------------------------------------------------------------------------
+docker-deps:
+	DOCKER_BUILDKIT=1 docker build \
+	  --build-arg ARCH=$(ARCH) \
+	  --build-context sci-src=$(SCI_SRC) \
+	  --build-context qt-src=$(QT_SRC) \
+	  -t $(DEPS_IMAGE) \
+	  $(CURDIR)
+
+# -----------------------------------------------------------------------------
+# In-container targets (for use inside the deps image)
+# -----------------------------------------------------------------------------
+
+# Build only gemacs TUI inside the pre-built deps image
+build-gemacs-static: check-root
+	cd /src && \
+	  GEMACS_BUILD_TUI_ONLY=1 \
+	  GEMACS_STATIC=1 \
+	  GEMACS_SCI_BASE=/deps/gerbil-scintilla \
+	  GERBIL_LOADPATH=/deps/gerbil-scintilla/.gerbil/lib:/root/.gerbil/lib \
+	  gerbil build
+
+# Build gemacs TUI + Qt inside the pre-built deps image
+build-gemacs-static-qt: check-root
+	cd /src && \
+	  GEMACS_STATIC=1 \
+	  GEMACS_SCI_BASE=/deps/gerbil-scintilla \
+	  GEMACS_QT_BASE=/deps/gerbil-qt \
+	  PKG_CONFIG_PATH=/opt/qt6-static/lib/pkgconfig \
+	  GERBIL_LOADPATH=/deps/gerbil-scintilla/.gerbil/lib:/deps/gerbil-qt/.gerbil/lib:/root/.gerbil/lib \
+	  gerbil build
+
+# -----------------------------------------------------------------------------
+# Fast Docker builds (require deps image from `make docker-deps`)
+# -----------------------------------------------------------------------------
+
+# Static TUI binary via Docker (fast — uses pre-built deps image)
+linux-static-docker: clean-docker
+	@docker image inspect $(DEPS_IMAGE) >/dev/null 2>&1 || \
+	  { echo "ERROR: Deps image '$(DEPS_IMAGE)' not found. Run 'make docker-deps' first."; exit 1; }
+	docker run --rm \
+	  --ulimit nofile=1024:1024 \
+	  -v $(CURDIR):/src:z \
+	  $(DEPS_IMAGE) \
+	  sh -c "cd /src && make build-gemacs-static && \
+	         chown -R $(UID):$(GID) .gerbil"
+
+# Static Qt binary via Docker (fast — uses pre-built deps image)
+linux-static-qt-docker: clean-docker
+	@docker image inspect $(DEPS_IMAGE) >/dev/null 2>&1 || \
+	  { echo "ERROR: Deps image '$(DEPS_IMAGE)' not found. Run 'make docker-deps' first."; exit 1; }
+	docker run --rm \
+	  --ulimit nofile=1024:1024 \
+	  -v $(CURDIR):/src:z \
+	  $(DEPS_IMAGE) \
+	  sh -c "cd /src && make build-gemacs-static-qt && \
+	         chown -R $(UID):$(GID) .gerbil"
+
+# -----------------------------------------------------------------------------
+# Self-contained fallbacks (build everything from scratch in one container)
+# -----------------------------------------------------------------------------
+
+# Build static TUI binary inside Docker container (self-contained)
 # NOTE: vendor .a files from host are glibc-compiled; must rebuild with musl
 build-static: check-root
 	@echo "=== Copying gerbil-scintilla and rebuilding vendor for musl ==="
@@ -137,10 +204,8 @@ build-static: check-root
 	  GERBIL_LOADPATH=/tmp/gerbil-scintilla/.gerbil/lib:$(HOME)/.gerbil/lib \
 	  gerbil build
 
-# Build static Qt binary inside Docker container
+# Build static Qt binary inside Docker container (self-contained)
 # NOTE: Requires Qt6 development packages in the container.
-# Alpine qt6-qtbase-dev provides shared libs; fully static Qt requires
-# building Qt6 from source with -DBUILD_SHARED_LIBS=OFF (~1 hour build).
 build-static-qt: check-root
 	@echo "=== Copying gerbil-scintilla and rebuilding vendor for musl ==="
 	cp -a /deps/gerbil-scintilla /tmp/gerbil-scintilla
@@ -162,11 +227,12 @@ build-static-qt: check-root
 	  GEMACS_STATIC=1 \
 	  GEMACS_SCI_BASE=/tmp/gerbil-scintilla \
 	  GEMACS_QT_BASE=/deps/gerbil-qt \
+	  PKG_CONFIG_PATH=/opt/qt6-static/lib/pkgconfig \
 	  GERBIL_LOADPATH=/tmp/gerbil-scintilla/.gerbil/lib:/deps/gerbil-qt/.gerbil/lib:$(HOME)/.gerbil/lib \
 	  gerbil build
 
-# Static TUI binary via Docker
-linux-static-docker: clean-docker
+# Self-contained static TUI binary via Docker (no deps image needed)
+linux-static-docker-full: clean-docker
 	docker run --rm \
 	  --ulimit nofile=1024:1024 \
 	  -v $(CURDIR):/src:z \
@@ -180,11 +246,8 @@ linux-static-docker: clean-docker
 	         cd /src && make build-static && \
 	         chown -R $(UID):$(GID) .gerbil"
 
-# Static Qt binary via Docker
-# Requires: Qt6 static libraries in the container.
-# Alpine packages qt6-qtbase-dev + qt6-qtbase-static (if available),
-# or build Qt6 from source first. QScintilla must also be built as static.
-linux-static-qt-docker: clean-docker
+# Self-contained static Qt binary via Docker (no deps image needed)
+linux-static-qt-docker-full: clean-docker
 	docker run --rm \
 	  --ulimit nofile=1024:1024 \
 	  -v $(CURDIR):/src:z \
@@ -194,6 +257,6 @@ linux-static-qt-docker: clean-docker
 	  sh -c "apk add --no-cache g++ git curl make \
 	           pcre2-dev pcre2-static \
 	           qt6-qtbase-dev \
-	           libqscintilla2-qt6-dev 2>/dev/null; \
+	           qscintilla-dev 2>/dev/null; \
 	         cd /src && make build-static-qt && \
 	         chown -R $(UID):$(GID) .gerbil"

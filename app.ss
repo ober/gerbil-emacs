@@ -38,6 +38,7 @@
 
   ;; Set up keybindings and commands
   (setup-default-bindings!)
+  (setup-command-docs!)
   (register-all-commands!)
 
   ;; Load init file (applies settings like scroll-margin)

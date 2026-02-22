@@ -678,13 +678,18 @@ Returns (file line col message) or #f."
 ;;;============================================================================
 
 (def (cmd-eval-buffer app)
+  "Evaluate all top-level forms in the current buffer.
+   Full Gerbil syntax supported (def, defstruct, hash, match, etc.)."
   (let* ((echo (app-state-echo app))
          (ed (current-qt-editor app))
-         (text (qt-plain-text-edit-text ed)))
-    (let-values (((result error?) (eval-expression-string text)))
-      (if error?
-        (echo-error! echo result)
-        (echo-message! echo (string-append "=> " result))))))
+         (buf (current-qt-buffer app))
+         (text (qt-plain-text-edit-text ed))
+         (name (buffer-name buf)))
+    (let-values (((count err) (load-user-string! text name)))
+      (if err
+        (echo-error! echo (string-append "Error: " err))
+        (echo-message! echo (string-append "Evaluated " (number->string count)
+                                           " forms in " name))))))
 
 (def (cmd-eval-region app)
   (let* ((echo (app-state-echo app))

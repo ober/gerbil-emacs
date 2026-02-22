@@ -896,17 +896,29 @@
   (echo-message! (app-state-echo app) "QPlainTextEdit uses uniform styling"))
 
 (def (cmd-describe-function app)
-  "Describe a function/command."
-  (let ((name (qt-echo-read-string app "Describe function: ")))
-    (when name
-      (let ((sym (string->symbol name)))
-        (if (find-command sym)
-          (echo-message! (app-state-echo app) (string-append name " is a registered command"))
+  "Describe a command/function, showing help in *Help* buffer."
+  (let* ((cmd-names (sort (map symbol->string (hash-keys *all-commands*)) string<?))
+         (name (qt-echo-read-string-with-completion app "Describe function: " cmd-names)))
+    (when (and name (> (string-length name) 0))
+      (let* ((sym (string->symbol name))
+             (cmd (find-command sym)))
+        (if cmd
+          (let* ((ed (current-qt-editor app))
+                 (fr (app-state-frame app))
+                 (text (qt-format-command-help sym))
+                 (buf (or (buffer-by-name "*Help*")
+                          (qt-buffer-create! "*Help*" ed #f))))
+            (qt-buffer-attach! ed buf)
+            (set! (qt-edit-window-buffer (qt-current-window fr)) buf)
+            (qt-plain-text-edit-set-text! ed text)
+            (qt-text-document-set-modified! (buffer-doc-pointer buf) #f)
+            (qt-plain-text-edit-set-cursor-position! ed 0)
+            (echo-message! (app-state-echo app) (string-append "Help for " name)))
           (echo-error! (app-state-echo app) (string-append name " is not a command")))))))
 
 (def (cmd-describe-variable app)
   "Describe a variable."
-  (echo-message! (app-state-echo app) "Variable inspection not available"))
+  (echo-message! (app-state-echo app) "Use C-h f for command help"))
 
 (def (cmd-describe-syntax app)
   "Describe syntax and style at point."

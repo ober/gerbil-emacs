@@ -41,22 +41,41 @@
 ;; --- Help system enhancements ---
 
 (def (cmd-describe-function app)
-  "Describe a function by name."
+  "Describe a command/function by name, showing help in *Help* buffer."
   (let ((name (app-read-string app "Describe function: ")))
     (when (and name (not (string-empty? name)))
-      (let ((cmd (find-command (string->symbol name))))
+      (let* ((sym (string->symbol name))
+             (cmd (find-command sym)))
         (if cmd
-          (echo-message! (app-state-echo app)
-                         (string-append name ": command registered"))
-          (echo-message! (app-state-echo app)
-                         (string-append name ": not found")))))))
+          (let* ((fr (app-state-frame app))
+                 (ed (current-editor app))
+                 (doc (command-doc sym))
+                 (binding (find-keybinding-for-command sym))
+                 (text (string-append
+                         name "\n"
+                         (make-string (string-length name) #\=) "\n\n"
+                         "Type: Interactive command\n"
+                         (if binding
+                           (string-append "Key:  " binding "\n")
+                           "Key:  (not bound)\n")
+                         "\n" doc "\n"))
+                 (buf (or (buffer-by-name "*Help*")
+                          (buffer-create! "*Help*" ed #f))))
+            (buffer-attach! ed buf)
+            (set! (edit-window-buffer (current-window fr)) buf)
+            (editor-set-text ed text)
+            (editor-set-save-point ed)
+            (editor-goto-pos ed 0)
+            (echo-message! (app-state-echo app) (string-append "Help for " name)))
+          (echo-error! (app-state-echo app)
+                       (string-append name ": not found")))))))
 
 (def (cmd-describe-variable app)
   "Describe a variable by name."
   (let ((name (app-read-string app "Describe variable: ")))
     (when (and name (not (string-empty? name)))
       (echo-message! (app-state-echo app)
-                     (string-append name ": (use describe-function for commands)")))))
+                     (string-append name ": (use C-h f for commands)")))))
 
 (def (cmd-describe-key-briefly app)
   "Describe what a key is bound to."

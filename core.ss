@@ -36,6 +36,12 @@
   register-command!
   find-command
   execute-command!
+  *command-docs*
+  register-command-doc!
+  command-doc
+  command-name->description
+  find-keybinding-for-command
+  setup-command-docs!
 
   ;; Echo state (pure state mutations)
   (struct-out echo-state)
@@ -77,6 +83,9 @@
   repl-buffer?
   *repl-state*
   eval-expression-string
+  ensure-gerbil-eval!
+  load-user-file!
+  load-user-string!
 
   ;; Fuzzy matching
   fuzzy-match?
@@ -140,6 +149,8 @@
 (import :std/sugar
         :std/sort
         :std/srfi/13
+        :gerbil/runtime/init
+        :gerbil/expander
         :gemacs/face
         :gemacs/themes)
 
@@ -1076,6 +1087,53 @@
 (def (find-command name)
   (hash-get *commands* name))
 
+;; Command documentation registry
+(def *command-docs* (make-hash-table))
+
+(def (register-command-doc! name doc)
+  "Register a docstring for a command."
+  (hash-put! *command-docs* name doc))
+
+(def (command-name->description name)
+  "Convert a command symbol to a human-readable description.
+   E.g. 'find-file -> \"Find file\", 'toggle-auto-revert -> \"Toggle auto revert\""
+  (let* ((s (symbol->string name))
+         (words (string-split s #\-))
+         (capitalized (if (pair? words)
+                       (cons (let ((w (car words)))
+                               (if (> (string-length w) 0)
+                                 (string-append (string (char-upcase (string-ref w 0)))
+                                                (substring w 1 (string-length w)))
+                                 w))
+                             (cdr words))
+                       words)))
+    (string-join capitalized " ")))
+
+(def (command-doc name)
+  "Get the documentation for a command.
+   Returns the registered docstring, or auto-generates one from the name."
+  (or (hash-get *command-docs* name)
+      (command-name->description name)))
+
+(def (find-keybinding-for-command name)
+  "Find the first keybinding for a command symbol. Returns key string or #f."
+  (let ((result #f))
+    (for-each
+      (lambda (entry)
+        (unless result
+          (let ((key (car entry)) (val (cdr entry)))
+            (cond
+              ((eq? val name) (set! result key))
+              ((hash-table? val)
+               (for-each
+                 (lambda (sub)
+                   (unless result
+                     (when (eq? (cdr sub) name)
+                       (set! result (string-append key " " (car sub))))))
+                 (keymap-entries val)))))))
+      (keymap-entries *global-keymap*))
+    result))
+
 (def (execute-command! app name)
   (let ((cmd (find-command name)))
     (if cmd
@@ -1095,6 +1153,141 @@
           (set! (app-state-prefix-digit-mode? app) #f))))
       (echo-error! (app-state-echo app)
                    (string-append (symbol->string name) " is undefined"))))
+
+(def (setup-command-docs!)
+  "Register docstrings for commonly used commands."
+  ;; File operations
+  (register-command-doc! 'find-file "Visit a file in its own buffer. Prompts for a file path.")
+  (register-command-doc! 'save-buffer "Save the current buffer to its file.")
+  (register-command-doc! 'save-some-buffers "Save all modified file-visiting buffers.")
+  (register-command-doc! 'write-file "Write the current buffer to a different file (Save As).")
+  (register-command-doc! 'revert-buffer "Revert the buffer to the last saved version of its file.")
+  (register-command-doc! 'revert-buffer-quick "Revert the buffer without confirmation.")
+  ;; Buffer operations
+  (register-command-doc! 'switch-buffer "Switch to a different buffer by name, with completion.")
+  (register-command-doc! 'kill-buffer-cmd "Kill (close) a buffer. Prompts if modified.")
+  (register-command-doc! 'list-buffers "Display a list of all buffers in a *Buffer List* buffer.")
+  (register-command-doc! 'next-buffer "Switch to the next buffer in the buffer list.")
+  (register-command-doc! 'previous-buffer "Switch to the previous buffer in the buffer list.")
+  ;; Navigation
+  (register-command-doc! 'forward-char "Move point right one character.")
+  (register-command-doc! 'backward-char "Move point left one character.")
+  (register-command-doc! 'forward-word "Move point forward one word.")
+  (register-command-doc! 'backward-word "Move point backward one word.")
+  (register-command-doc! 'next-line "Move point down one line, keeping the same column if possible.")
+  (register-command-doc! 'previous-line "Move point up one line, keeping the same column if possible.")
+  (register-command-doc! 'beginning-of-line "Move point to the beginning of the current line.")
+  (register-command-doc! 'end-of-line "Move point to the end of the current line.")
+  (register-command-doc! 'beginning-of-buffer "Move point to the beginning of the buffer.")
+  (register-command-doc! 'end-of-buffer "Move point to the end of the buffer.")
+  (register-command-doc! 'goto-line "Go to a specific line number.")
+  (register-command-doc! 'goto-char "Go to a specific character position.")
+  (register-command-doc! 'forward-paragraph "Move forward to the end of the next paragraph.")
+  (register-command-doc! 'backward-paragraph "Move backward to the start of the previous paragraph.")
+  (register-command-doc! 'scroll-up "Scroll the buffer up (forward) one screenful.")
+  (register-command-doc! 'scroll-down "Scroll the buffer down (backward) one screenful.")
+  (register-command-doc! 'recenter "Center the display around point.")
+  ;; Editing
+  (register-command-doc! 'self-insert "Insert the character that was typed.")
+  (register-command-doc! 'newline "Insert a newline at point.")
+  (register-command-doc! 'delete-char "Delete the character after point.")
+  (register-command-doc! 'delete-backward-char "Delete the character before point.")
+  (register-command-doc! 'kill-line "Kill from point to end of line. If at end, kill the newline.")
+  (register-command-doc! 'kill-word "Kill characters forward to end of the next word.")
+  (register-command-doc! 'backward-kill-word "Kill characters backward to beginning of the previous word.")
+  (register-command-doc! 'kill-region "Kill the region (text between point and mark).")
+  (register-command-doc! 'copy-region-as-kill "Copy the region to the kill ring without deleting it.")
+  (register-command-doc! 'yank "Reinsert the last stretch of killed text.")
+  (register-command-doc! 'yank-pop "Replace the just-yanked text with an earlier item from the kill ring.")
+  (register-command-doc! 'undo "Undo the last editing change.")
+  (register-command-doc! 'redo "Redo the last undone change.")
+  (register-command-doc! 'indent-or-complete "Indent the current line or trigger completion.")
+  ;; Search
+  (register-command-doc! 'isearch-forward "Incremental search forward. Type characters to search.")
+  (register-command-doc! 'isearch-backward "Incremental search backward.")
+  (register-command-doc! 'query-replace "Interactively replace occurrences of a string.")
+  (register-command-doc! 'query-replace-regexp "Interactively replace occurrences matching a regexp.")
+  (register-command-doc! 'occur "Show all lines matching a pattern in an *Occur* buffer.")
+  (register-command-doc! 'grep "Run grep and display results in a *Grep* buffer.")
+  (register-command-doc! 'project-search "Search for a string across all files in the current project.")
+  ;; Mark and region
+  (register-command-doc! 'set-mark "Set the mark at point, starting a region.")
+  (register-command-doc! 'exchange-point-and-mark "Swap point and mark, jumping to the other end of the region.")
+  (register-command-doc! 'mark-whole-buffer "Mark the entire buffer as the region.")
+  ;; Window management
+  (register-command-doc! 'split-window-below "Split the current window into two, one above the other.")
+  (register-command-doc! 'split-window-right "Split the current window into two side by side.")
+  (register-command-doc! 'delete-window "Remove the current window from the frame.")
+  (register-command-doc! 'delete-other-windows "Make the current window fill the entire frame.")
+  (register-command-doc! 'other-window "Select the next window in cyclic order.")
+  (register-command-doc! 'balance-windows "Make all windows the same height.")
+  ;; M-x and help
+  (register-command-doc! 'execute-extended-command "Read a command name with completion and execute it (M-x).")
+  (register-command-doc! 'describe-key "Show what command a key is bound to, with documentation.")
+  (register-command-doc! 'describe-command "Describe a command by name, showing its keybinding and documentation.")
+  (register-command-doc! 'describe-function "Describe a function/command by name.")
+  (register-command-doc! 'list-bindings "Display all keybindings in a *Help* buffer.")
+  (register-command-doc! 'keyboard-quit "Abort the current operation.")
+  ;; Shell and REPL
+  (register-command-doc! 'eshell "Open or switch to the built-in Gerbil shell (eshell).")
+  (register-command-doc! 'shell "Open or switch to an external shell buffer.")
+  (register-command-doc! 'gerbil-repl "Open or switch to a Gerbil REPL (gxi) buffer.")
+  (register-command-doc! 'eval-expression "Evaluate a Gerbil expression and show the result.")
+  (register-command-doc! 'eval-buffer "Evaluate all forms in the current buffer.")
+  (register-command-doc! 'load-file "Load and evaluate a Gerbil (.ss) file.")
+  (register-command-doc! 'compile "Run a compilation command and display results.")
+  ;; Dired
+  (register-command-doc! 'dired "Open a directory editor (dired) for the given path.")
+  (register-command-doc! 'dired-jump "Jump to the directory of the current file in dired.")
+  ;; VCS
+  (register-command-doc! 'magit-status "Show the git status of the current project (magit).")
+  (register-command-doc! 'magit-log "Show the git log for the current project.")
+  (register-command-doc! 'magit-diff "Show git diff for the current project.")
+  (register-command-doc! 'magit-commit "Commit staged changes with a message.")
+  (register-command-doc! 'magit-push "Push the current branch to the remote.")
+  (register-command-doc! 'magit-pull "Pull from the remote into the current branch.")
+  (register-command-doc! 'magit-blame "Show git blame annotations for the current file.")
+  ;; Org-mode
+  (register-command-doc! 'org-todo-cycle "Cycle the TODO state of the current org heading.")
+  (register-command-doc! 'org-cycle "Cycle visibility of the current org heading subtree.")
+  (register-command-doc! 'org-promote "Promote the current org heading (decrease level).")
+  (register-command-doc! 'org-demote "Demote the current org heading (increase level).")
+  (register-command-doc! 'org-schedule "Insert a SCHEDULED timestamp for the current heading.")
+  (register-command-doc! 'org-deadline "Insert a DEADLINE timestamp for the current heading.")
+  (register-command-doc! 'org-export "Export the current org buffer (HTML, Markdown, text, or LaTeX).")
+  (register-command-doc! 'org-agenda "Open the org agenda view.")
+  ;; Modes and toggles
+  (register-command-doc! 'toggle-electric-pair "Toggle auto-pairing of brackets and quotes.")
+  (register-command-doc! 'toggle-auto-revert "Toggle auto-revert mode: automatically reload files changed on disk.")
+  (register-command-doc! 'toggle-line-numbers "Toggle display of line numbers in the editor margin.")
+  (register-command-doc! 'toggle-whitespace-mode "Toggle whitespace visualization mode.")
+  (register-command-doc! 'toggle-word-wrap "Toggle word wrapping of long lines.")
+  ;; Completion and minibuffer
+  (register-command-doc! 'switch-buffer "Switch to another buffer by name, with fuzzy completion.")
+  (register-command-doc! 'recentf-open-files "Show recently opened files in a numbered list.")
+  (register-command-doc! 'bookmark-set "Set a bookmark at the current position.")
+  (register-command-doc! 'bookmark-jump "Jump to a named bookmark.")
+  ;; Rectangle
+  (register-command-doc! 'kill-rectangle "Kill the text in a rectangular region.")
+  (register-command-doc! 'yank-rectangle "Insert the last killed rectangle.")
+  (register-command-doc! 'string-rectangle "Replace each line of a rectangular region with a string.")
+  ;; Other common commands
+  (register-command-doc! 'comment-line "Comment or uncomment the current line or region.")
+  (register-command-doc! 'fill-paragraph "Fill (reflow) the current paragraph to fill-column width.")
+  (register-command-doc! 'sort-lines "Sort lines in the region alphabetically.")
+  (register-command-doc! 'align-regexp "Align text in the region based on a regular expression.")
+  (register-command-doc! 'narrow-to-region "Narrow the buffer to show only the region between point and mark.")
+  (register-command-doc! 'widen "Widen from a narrowed region to show the full buffer again.")
+  (register-command-doc! 'show-kill-ring "Display the kill ring contents in a buffer.")
+  (register-command-doc! 'universal-argument "Begin a numeric argument for the next command (C-u).")
+  ;; LSP
+  (register-command-doc! 'lsp-start "Start the Language Server Protocol client for the current file type.")
+  (register-command-doc! 'lsp-stop "Stop the running LSP server connection.")
+  ;; Session
+  (register-command-doc! 'session-save "Save the current session (open buffers) to disk.")
+  (register-command-doc! 'session-restore "Restore a previously saved session.")
+  (register-command-doc! 'desktop-save "Save the desktop (open buffers) for later restoration.")
+  (register-command-doc! 'desktop-read "Restore a previously saved desktop."))
 
 ;;;============================================================================
 ;;; Shared helpers
@@ -1234,9 +1427,21 @@
 ;; tables break when fields like buffer-modified change after hash-put!.
 (def *repl-state* (make-hash-table-eq))
 
+(def *gerbil-eval-initialized* #f)
+
+(def (ensure-gerbil-eval!)
+  "Initialize the Gerbil expander on first use so eval supports full
+   Gerbil syntax (def, defstruct, hash, match, import, etc.).
+   Called lazily to avoid startup cost."
+  (unless *gerbil-eval-initialized*
+    (set! *gerbil-eval-initialized* #t)
+    (__load-gxi)))
+
 (def (eval-expression-string str)
   "In-process eval: read+eval an expression string, capture output.
-   Returns (values result-string error?)."
+   Returns (values result-string error?).
+   Full Gerbil syntax supported (def, hash, match, etc.)."
+  (ensure-gerbil-eval!)
   (with-catch
     (lambda (e)
       (values (with-output-to-string (lambda () (display-exception e))) #t))
@@ -1245,6 +1450,41 @@
              (result (eval expr))
              (output (with-output-to-string (lambda () (write result)))))
         (values output #f)))))
+
+(def (load-user-file! path)
+  "Load a .ss file by reading and evaluating each top-level form.
+   Full Gerbil syntax supported after expander init.
+   Returns (values num-loaded error-msg) where error-msg is #f on success."
+  (ensure-gerbil-eval!)
+  (with-catch
+    (lambda (e)
+      (values 0 (with-output-to-string (lambda () (display-exception e)))))
+    (lambda ()
+      (let ((port (open-input-file path)))
+        (let loop ((count 0))
+          (let ((form (read port)))
+            (if (eof-object? form)
+              (begin (close-input-port port)
+                     (values count #f))
+              (begin (eval form)
+                     (loop (+ count 1))))))))))
+
+(def (load-user-string! str (source "buffer"))
+  "Eval all top-level forms in a string.
+   Full Gerbil syntax supported after expander init.
+   Returns (values num-loaded error-msg) where error-msg is #f on success."
+  (ensure-gerbil-eval!)
+  (with-catch
+    (lambda (e)
+      (values 0 (with-output-to-string (lambda () (display-exception e)))))
+    (lambda ()
+      (let ((port (open-input-string str)))
+        (let loop ((count 0))
+          (let ((form (read port)))
+            (if (eof-object? form)
+              (values count #f)
+              (begin (eval form)
+                     (loop (+ count 1))))))))))
 
 ;;;============================================================================
 ;;; Fuzzy matching

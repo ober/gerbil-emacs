@@ -95,6 +95,7 @@
   ;; REPL
   (register-command! 'repl cmd-repl)
   (register-command! 'eval-expression cmd-eval-expression)
+  (register-command! 'load-file cmd-load-file)
   ;; Eshell
   (register-command! 'eshell cmd-eshell)
   ;; Shell

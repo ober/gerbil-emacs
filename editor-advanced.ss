@@ -761,14 +761,18 @@
 ;;;============================================================================
 
 (def (cmd-eval-buffer app)
-  "Evaluate the entire buffer as a Gerbil expression."
+  "Evaluate all top-level forms in the current buffer.
+   Full Gerbil syntax supported (def, defstruct, hash, match, etc.)."
   (let* ((ed (current-editor app))
          (echo (app-state-echo app))
-         (text (editor-get-text ed)))
-    (let-values (((result error?) (eval-expression-string text)))
-      (if error?
-        (echo-error! echo (string-append "Error: " result))
-        (echo-message! echo (string-append "=> " result))))))
+         (buf (current-buffer-from-app app))
+         (text (editor-get-text ed))
+         (name (buffer-name buf)))
+    (let-values (((count err) (load-user-string! text name)))
+      (if err
+        (echo-error! echo (string-append "Error: " err))
+        (echo-message! echo (string-append "Evaluated " (number->string count)
+                                           " forms in " name))))))
 
 (def (cmd-eval-region app)
   "Evaluate the selected region as a Gerbil expression."

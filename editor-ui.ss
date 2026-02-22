@@ -69,8 +69,21 @@
 ;;; Help commands
 ;;;============================================================================
 
+(def (format-command-help name)
+  "Format help text for a command, including keybinding and description."
+  (let* ((doc (command-doc name))
+         (binding (find-keybinding-for-command name))
+         (name-str (symbol->string name)))
+    (string-append
+      name-str "\n"
+      (make-string (string-length name-str) #\=) "\n\n"
+      (if binding
+        (string-append "Key binding: " binding "\n\n")
+        "Not bound to any key.\n\n")
+      "Description:\n  " doc "\n")))
+
 (def (cmd-describe-key app)
-  "Prompt for a key, display its binding."
+  "Prompt for a key, display its binding and description in *Help* buffer."
   (let* ((echo (app-state-echo app))
          (fr (app-state-frame app))
          (row (- (frame-height fr) 1))
@@ -88,24 +101,47 @@
             ((hash-table? binding)
              (echo-message! echo (string-append key-str " is a prefix key")))
             ((symbol? binding)
-             (echo-message! echo
-               (string-append key-str " runs " (symbol->string binding))))
+             (let* ((ed (current-editor app))
+                    (text (string-append key-str " runs the command "
+                                         (symbol->string binding) "\n\n"
+                                         (format-command-help binding)))
+                    (buf (or (buffer-by-name "*Help*")
+                             (buffer-create! "*Help*" ed #f))))
+               (buffer-attach! ed buf)
+               (set! (edit-window-buffer (current-window fr)) buf)
+               (editor-set-text ed text)
+               (editor-set-save-point ed)
+               (editor-goto-pos ed 0)
+               (echo-message! echo (string-append key-str " runs "
+                                                  (symbol->string binding)))))
             (else
              (echo-message! echo
                (string-append key-str " is not bound")))))))))
 
 (def (cmd-describe-command app)
-  "Prompt for a command name, show if it exists."
+  "Prompt for a command name, show its help in *Help* buffer."
   (let* ((echo (app-state-echo app))
          (fr (app-state-frame app))
          (row (- (frame-height fr) 1))
          (width (frame-width fr))
-         (input (echo-read-string echo "Describe command: " row width)))
+         (cmd-names (sort (map symbol->string (hash-keys *all-commands*)) string<?))
+         (input (echo-read-string-with-completion echo "Describe command: "
+                                                  cmd-names row width)))
     (when (and input (> (string-length input) 0))
-      (let ((cmd (find-command (string->symbol input))))
+      (let* ((sym (string->symbol input))
+             (cmd (find-command sym)))
         (if cmd
-          (echo-message! echo (string-append input " is a command"))
-          (echo-error! echo (string-append input " is not a command")))))))
+          (let* ((ed (current-editor app))
+                 (text (format-command-help sym))
+                 (buf (or (buffer-by-name "*Help*")
+                          (buffer-create! "*Help*" ed #f))))
+            (buffer-attach! ed buf)
+            (set! (edit-window-buffer (current-window fr)) buf)
+            (editor-set-text ed text)
+            (editor-set-save-point ed)
+            (editor-goto-pos ed 0)
+            (echo-message! echo (string-append "Help for " input)))
+          (echo-error! echo (string-append input " is not a known command")))))))
 
 (def (cmd-list-bindings app)
   "Display all keybindings in a *Help* buffer."
@@ -758,6 +794,28 @@
         (if error?
           (echo-error! echo result)
           (echo-message! echo result))))))
+
+;;;============================================================================
+;;; Load file (M-x load-file)
+;;;============================================================================
+
+(def (cmd-load-file app)
+  "Prompt for a .ss file path and evaluate all its forms."
+  (let* ((echo (app-state-echo app))
+         (fr (app-state-frame app))
+         (row (- (frame-height fr) 1))
+         (width (frame-width fr))
+         (filename (echo-read-file-with-completion echo "Load file: "
+                     row width)))
+    (when (and filename (> (string-length filename) 0))
+      (let ((path (expand-filename filename)))
+        (if (file-exists? path)
+          (let-values (((count err) (load-user-file! path)))
+            (if err
+              (echo-error! echo (string-append "Error: " err))
+              (echo-message! echo (string-append "Loaded " (number->string count)
+                                                 " forms from " path))))
+          (echo-error! echo (string-append "File not found: " path)))))))
 
 ;;;============================================================================
 ;;; Yank-pop (M-y) — rotate through kill ring

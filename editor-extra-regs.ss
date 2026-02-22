@@ -177,6 +177,7 @@
   (register-command! 'indent-or-complete cmd-indent-or-complete)
   (register-command! 'keyboard-quit cmd-keyboard-quit)
   (register-command! 'kill-word cmd-kill-word)
+  (register-command! 'load-file cmd-load-file)
   (register-command! 'list-bindings cmd-list-bindings)
   (register-command! 'list-buffers cmd-list-buffers)
   (register-command! 'occur cmd-occur)

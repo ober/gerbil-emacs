@@ -1156,12 +1156,27 @@
 ;;; Describe key / describe command
 ;;;============================================================================
 
+(def (qt-format-command-help name)
+  "Format help text for a command, including keybinding and description."
+  (let* ((doc (command-doc name))
+         (binding (find-keybinding-for-command name))
+         (name-str (symbol->string name)))
+    (string-append
+      name-str "\n"
+      (make-string (string-length name-str) #\=) "\n\n"
+      "Type: Interactive command\n"
+      (if binding
+        (string-append "Key:  " binding "\n")
+        "Key:  (not bound)\n")
+      "\n" doc "\n")))
+
 (def (cmd-describe-key app)
   "Show what command a key sequence runs."
   (echo-message! (app-state-echo app)
     "Press a key... (use C-h b for all bindings)"))
 
 (def (cmd-describe-command app)
+  "Describe a command, showing help in *Help* buffer."
   (let* ((echo (app-state-echo app))
          (cmd-names (sort (map symbol->string (hash-keys *all-commands*)) string<?))
          (input (qt-echo-read-string-with-completion app "Describe command: " cmd-names)))
@@ -1169,23 +1184,17 @@
       (let* ((sym (string->symbol input))
              (proc (find-command sym)))
         (if proc
-          ;; Find the keybinding
-          (let ((binding #f))
-            (for-each
-              (lambda (entry)
-                (let ((key (car entry)) (val (cdr entry)))
-                  (cond
-                    ((eq? val sym) (set! binding key))
-                    ((hash-table? val)
-                     (for-each
-                       (lambda (sub) (when (eq? (cdr sub) sym)
-                                       (set! binding (string-append key " " (car sub)))))
-                       (keymap-entries val))))))
-              (keymap-entries *global-keymap*))
-            (echo-message! echo
-              (string-append input
-                (if binding (string-append " is on " binding)
-                  " is not on any key"))))
+          (let* ((ed (current-qt-editor app))
+                 (fr (app-state-frame app))
+                 (text (qt-format-command-help sym))
+                 (buf (or (buffer-by-name "*Help*")
+                          (qt-buffer-create! "*Help*" ed #f))))
+            (qt-buffer-attach! ed buf)
+            (set! (qt-edit-window-buffer (qt-current-window fr)) buf)
+            (qt-plain-text-edit-set-text! ed text)
+            (qt-text-document-set-modified! (buffer-doc-pointer buf) #f)
+            (qt-plain-text-edit-set-cursor-position! ed 0)
+            (echo-message! echo (string-append "Help for " input)))
           (echo-error! echo (string-append input " is not a known command")))))))
 
 ;;;============================================================================

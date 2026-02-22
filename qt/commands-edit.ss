@@ -873,6 +873,24 @@
           (echo-message! echo result))))))
 
 ;;;============================================================================
+;;; Load file (M-x load-file)
+;;;============================================================================
+
+(def (cmd-load-file app)
+  "Prompt for a .ss file path and evaluate all its forms."
+  (let* ((echo (app-state-echo app))
+         (filename (qt-echo-read-file-with-completion app "Load file: ")))
+    (when (and filename (> (string-length filename) 0))
+      (let ((path (expand-filename filename)))
+        (if (file-exists? path)
+          (let-values (((count err) (load-user-file! path)))
+            (if err
+              (echo-error! echo (string-append "Error: " err))
+              (echo-message! echo (string-append "Loaded " (number->string count)
+                                                 " forms from " path))))
+          (echo-error! echo (string-append "File not found: " path)))))))
+
+;;;============================================================================
 ;;; Zoom commands
 ;;;============================================================================
 

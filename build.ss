@@ -9,6 +9,10 @@
 (def static-build? (getenv "GEMACS_STATIC" #f))
 (def build-tui-only? (getenv "GEMACS_BUILD_TUI_ONLY" #f))
 
+;; Helper: call pkg-config --static --libs for full transitive deps (static linking)
+(def (static-pkg-config-libs lib)
+  (run-process ["pkg-config" "--static" "--libs" lib] coprocess: read-line))
+
 ;; Resolve package source directory (linked or GitHub-installed)
 ;; NOTE: GERBIL_PATH points to the project-local .gerbil during builds,
 ;; but packages are installed/linked under $HOME/.gerbil/pkg/.
@@ -85,9 +89,12 @@
 
 (def qsci-ldflags
   (if have-qscintilla?
-    (with-catch (lambda (_) "-lqscintilla2_qt6")
-      (lambda () (run-process ["pkg-config" "--libs" "QScintilla"]
-                              coprocess: read-line)))
+    (if static-build?
+      (with-catch (lambda (_) "-lqscintilla2_qt6")
+        (lambda () (static-pkg-config-libs "QScintilla")))
+      (with-catch (lambda (_) "-lqscintilla2_qt6")
+        (lambda () (run-process ["pkg-config" "--libs" "QScintilla"]
+                                coprocess: read-line))))
     ""))
 
 ;; Qt modules also need scintilla headers (editor.ss transitively includes them)
@@ -106,16 +113,30 @@
 (def qt-ld-opts
   (string-append
    (if static-build? "-static " "")
-   "-L" openssl-lib-dir " "
-   "-Wl,-rpath," openssl-lib-dir " "
-   "-L" qt-vendor-dir " -lqt_shim "
-   "-Wl,-rpath," qt-vendor-dir " "
-   (ldflags "Qt6Widgets" "-lQt6Widgets") " "
+   (if static-build? "" (string-append "-L" openssl-lib-dir " "))
+   (if static-build? "" (string-append "-Wl,-rpath," openssl-lib-dir " "))
+   "-L" qt-vendor-dir " "
+   (if static-build?
+     ;; Static: link libqt_shim.a directly (no rpath needed)
+     (string-append (path-expand "libqt_shim.a" qt-vendor-dir) " ")
+     ;; Shared: link libqt_shim.so with rpath
+     (string-append "-lqt_shim -Wl,-rpath," qt-vendor-dir " "))
+   ;; Qt6 libraries: use --static for full transitive deps
+   (if static-build?
+     (with-catch (lambda (_) "-lQt6Widgets -lQt6Gui -lQt6Core")
+       (lambda () (static-pkg-config-libs "Qt6Widgets")))
+     (ldflags "Qt6Widgets" "-lQt6Widgets"))
+   " "
    qsci-ldflags " "
    (path-expand "bin/scintilla.a" sci-dir) " "
    (path-expand "bin/liblexilla.a" lexilla-dir) " "
    (path-expand "bin/termbox.a" termbox-dir) " "
-   "-lstdc++ -lpthread -lpcre2-8"))
+   "-lstdc++ "
+   ;; musl's pthread_once is a weak symbol; --whole-archive ensures it resolves
+   (if static-build?
+     "-Wl,--whole-archive -lpthread -Wl,--no-whole-archive"
+     "-lpthread")
+   " -lpcre2-8"))
 
 (defbuild-script
   `(;; Macros (must be compiled first - no dependencies)

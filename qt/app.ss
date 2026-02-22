@@ -249,6 +249,7 @@
 
       ;; Set up keybindings and commands
       (setup-default-bindings!)
+      (setup-command-docs!)
       (qt-register-all-commands!)
 
       ;; Set up post-buffer-attach hook for image/text display toggling
