@@ -150,7 +150,7 @@ install-static-qt:
 # =============================================================================
 
 ARCH := $(shell uname -m)
-DOCKER_IMAGE := gerbil/gerbilxx:$(ARCH)-master
+DOCKER_IMAGE := gerbil/gerbil:$(ARCH)-master
 UID := $(shell id -u)
 GID := $(shell id -g)
 

@@ -10,7 +10,7 @@
 # copying them into the project directory.
 
 ARG ARCH=x86_64
-FROM gerbil/gerbilxx:${ARCH}-master
+FROM gerbil/gerbil:${ARCH}-master
 
 # ── Phase 1: Alpine build deps ──────────────────────────────────────────
 RUN apk add --no-cache \
