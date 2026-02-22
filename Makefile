@@ -29,8 +29,8 @@ help:
 	@echo "  test-all                    Build + run all tests"
 	@echo ""
 	@echo "Install targets:"
-	@echo "  install                     Install TUI + Qt to PREFIX (default: ~/.local)"
-	@echo "  install-qt                  Install Qt only to PREFIX"
+	@echo "  install                     Install TUI + Qt to PREFIX (builds only if needed)"
+	@echo "  install-qt                  Install Qt only to PREFIX (builds only if needed)"
 	@echo "  install-static              Install static TUI + Qt to PREFIX (no rebuild)"
 	@echo "  install-static-qt           Install static Qt only to PREFIX (no rebuild)"
 	@echo ""
@@ -104,7 +104,11 @@ test-all: build test test-qt test-lsp test-lsp-protocol test-split-comprehensive
 
 PREFIX ?= $(HOME)/.local
 
-install: build
+install:
+	@if [ ! -f .gerbil/bin/gemacs ] || [ ! -f .gerbil/bin/gemacs-qt ]; then \
+	  echo "No existing binaries found, building..."; \
+	  $(MAKE) build; \
+	fi
 	@# Remove stale global static artifacts before install
 	rm -f $(HOME)/.gerbil/lib/static/gemacs__*.scm
 	rm -f $(HOME)/.gerbil/lib/static/gemacs__*.c
@@ -114,7 +118,11 @@ install: build
 	cp -f .gerbil/bin/gemacs-qt $(PREFIX)/bin/
 	@echo "Installed to $(PREFIX)/bin"
 
-install-qt: build
+install-qt:
+	@if [ ! -f .gerbil/bin/gemacs-qt ]; then \
+	  echo "No existing binary found, building..."; \
+	  $(MAKE) build; \
+	fi
 	rm -f $(HOME)/.gerbil/lib/static/gemacs__*.scm
 	rm -f $(HOME)/.gerbil/lib/static/gemacs__*.c
 	rm -f $(HOME)/.gerbil/lib/static/gemacs__*.o
