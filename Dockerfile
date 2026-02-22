@@ -38,6 +38,15 @@ RUN apk add --no-cache libxau-dev && \
     make -j$(nproc) && make install && \
     cd / && rm -rf /tmp/libXau-1.0.12*
 
+# Build static libxcb-util (no Alpine -static package; needed by xcb-image)
+RUN cd /tmp && \
+    wget -q https://xcb.freedesktop.org/dist/xcb-util-0.4.1.tar.xz && \
+    tar xf xcb-util-0.4.1.tar.xz && \
+    cd xcb-util-0.4.1 && \
+    ./configure --prefix=/usr --enable-static --disable-shared && \
+    make -j$(nproc) && make install && \
+    cd / && rm -rf /tmp/xcb-util-0.4.1*
+
 # ── Phase 2: Build Qt6 qtbase static (~7-10 min, cached) ────────────────
 ARG QT6_VERSION=6.8.3
 RUN wget -q https://download.qt.io/official_releases/qt/6.8/${QT6_VERSION}/submodules/qtbase-everywhere-src-${QT6_VERSION}.tar.xz && \
@@ -93,11 +102,12 @@ RUN mkdir -p /opt/qt6-static/lib/pkgconfig && \
     # Add transitive deps that .prl files don't include:
     #   harfbuzz → graphite2       freetype → bz2, brotlidec, brotlicommon
     #   fontconfig → expat         libpng → zlib
-    #   xcb → Xau, Xdmcp          libX11 → xcb
+    #   xcb-image → xcb-util       xcb → Xau, Xdmcp
     # Filter out glib/intl (Qt6 built with -DFEATURE_glib=OFF)
     TRANSITIVE="-lgraphite2 -lbz2 -lbrotlidec -lbrotlicommon -lexpat -lXau -lXdmcp" && \
     GUI_PRIVATE="$GUI_PRL $TRANSITIVE" && \
-    XCB_PRIVATE="$XCB_PRL $TRANSITIVE -lxcb -lXau -lXdmcp" && \
+    XCB_TRANSITIVE="-lxcb-util -lxcb -lXau -lXdmcp" && \
+    XCB_PRIVATE="$XCB_PRL $TRANSITIVE $XCB_TRANSITIVE" && \
     # Debug: show resolved deps
     echo "Core deps: $CORE_PRIVATE" && \
     echo "Gui deps: $GUI_PRIVATE" && \
@@ -188,7 +198,10 @@ RUN gxpkg link gerbil-qt /deps/gerbil-qt && \
     GERBIL_LOADPATH=/deps/gerbil-scintilla/.gerbil/lib:/root/.gerbil/lib \
     gerbil build
 
-# Build static libqt_shim.a with Q_IMPORT_PLUGIN for XCB platform
+# Build static libqt_shim.a + qt_static_plugins.o (kept separate)
+# The plugins .o must NOT be in the .a archive — it contains Q_IMPORT_PLUGIN
+# static constructors that the linker would drop from an archive unless
+# --whole-archive is used (which pulls in unwanted transitive deps).
 RUN cd /deps/gerbil-qt && \
     QT_CFLAGS=$(pkg-config --cflags Qt6Widgets 2>/dev/null || echo "-I/opt/qt6-static/include -I/opt/qt6-static/include/QtCore -I/opt/qt6-static/include/QtGui -I/opt/qt6-static/include/QtWidgets") && \
     QSCI_FLAGS="-DQT_SCINTILLA_AVAILABLE $(pkg-config --cflags QScintilla 2>/dev/null || echo "-I/opt/qt6-static/include/Qsci -I/opt/qt6-static/include")" && \
@@ -196,10 +209,10 @@ RUN cd /deps/gerbil-qt && \
       $QT_CFLAGS $QSCI_FLAGS \
       -I/deps/gerbil-scintilla/vendor/scintilla/include \
       vendor/qt_shim.cpp -o vendor/qt_shim_static.o && \
+    ar rcs vendor/libqt_shim.a vendor/qt_shim_static.o && \
     printf '#include <QtPlugin>\nQ_IMPORT_PLUGIN(QXcbIntegrationPlugin)\n' \
       > vendor/qt_static_plugins.cpp && \
     g++ -c -fPIC -std=c++17 $QT_CFLAGS \
-      vendor/qt_static_plugins.cpp -o vendor/qt_static_plugins.o && \
-    ar rcs vendor/libqt_shim.a vendor/qt_shim_static.o vendor/qt_static_plugins.o
+      vendor/qt_static_plugins.cpp -o vendor/qt_static_plugins.o
 
 WORKDIR /src

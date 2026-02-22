@@ -1,4 +1,5 @@
 .PHONY: all help build clean test test-qt test-lsp test-lsp-protocol test-split-comprehensive test-org test-all install install-qt \
+        install-static install-static-qt \
         static static-qt clean-docker check-root build-static build-static-qt linux-static-docker linux-static-qt-docker \
         docker-deps build-gemacs-static build-gemacs-static-qt linux-static-docker-full linux-static-qt-docker-full
 
@@ -30,6 +31,8 @@ help:
 	@echo "Install targets:"
 	@echo "  install                     Install TUI + Qt to PREFIX (default: ~/.local)"
 	@echo "  install-qt                  Install Qt only to PREFIX"
+	@echo "  install-static              Install static TUI + Qt to PREFIX (no rebuild)"
+	@echo "  install-static-qt           Install static Qt only to PREFIX (no rebuild)"
 	@echo ""
 	@echo "Static/Docker targets:"
 	@echo "  docker-deps                 Build intermediate deps Docker image"
@@ -118,6 +121,22 @@ install-qt: build
 	mkdir -p $(PREFIX)/bin
 	cp -f .gerbil/bin/gemacs-qt $(PREFIX)/bin/
 
+# Install pre-built static binaries (from `make static` / `make static-qt`)
+install-static:
+	@test -f .gerbil/bin/gemacs || { echo "ERROR: No static binary found. Run 'make static-qt' first."; exit 1; }
+	@file .gerbil/bin/gemacs | grep -q 'statically linked' || { echo "ERROR: .gerbil/bin/gemacs is not static. Run 'make static-qt' first."; exit 1; }
+	mkdir -p $(PREFIX)/bin
+	cp -f .gerbil/bin/gemacs $(PREFIX)/bin/
+	cp -f .gerbil/bin/gemacs-qt $(PREFIX)/bin/ 2>/dev/null || true
+	@echo "Installed static binaries to $(PREFIX)/bin"
+
+install-static-qt:
+	@test -f .gerbil/bin/gemacs-qt || { echo "ERROR: No static binary found. Run 'make static-qt' first."; exit 1; }
+	@file .gerbil/bin/gemacs-qt | grep -q 'statically linked' || { echo "ERROR: .gerbil/bin/gemacs-qt is not static. Run 'make static-qt' first."; exit 1; }
+	mkdir -p $(PREFIX)/bin
+	cp -f .gerbil/bin/gemacs-qt $(PREFIX)/bin/
+	@echo "Installed static gemacs-qt to $(PREFIX)/bin"
+
 # =============================================================================
 # Static binary builds (Docker-based, following gerbil-charts pattern)
 # =============================================================================
@@ -186,6 +205,7 @@ build-gemacs-static-qt: check-root
 # -----------------------------------------------------------------------------
 
 # Static TUI binary via Docker (fast — uses pre-built deps image)
+# Always chown .gerbil back to host user, even on build failure
 linux-static-docker: clean-docker
 	@docker image inspect $(DEPS_IMAGE) >/dev/null 2>&1 || \
 	  { echo "ERROR: Deps image '$(DEPS_IMAGE)' not found. Run 'make docker-deps' first."; exit 1; }
@@ -193,8 +213,8 @@ linux-static-docker: clean-docker
 	  --ulimit nofile=1024:1024 \
 	  -v $(CURDIR):/src:z \
 	  $(DEPS_IMAGE) \
-	  sh -c "cd /src && make build-gemacs-static && \
-	         chown -R $(UID):$(GID) .gerbil"
+	  sh -c "cd /src && make build-gemacs-static; \
+	         RC=\$$?; chown -R $(UID):$(GID) .gerbil 2>/dev/null; exit \$$RC"
 
 # Static Qt binary via Docker (fast — uses pre-built deps image)
 linux-static-qt-docker: clean-docker
@@ -204,8 +224,8 @@ linux-static-qt-docker: clean-docker
 	  --ulimit nofile=1024:1024 \
 	  -v $(CURDIR):/src:z \
 	  $(DEPS_IMAGE) \
-	  sh -c "cd /src && make build-gemacs-static-qt && \
-	         chown -R $(UID):$(GID) .gerbil"
+	  sh -c "cd /src && make build-gemacs-static-qt; \
+	         RC=\$$?; chown -R $(UID):$(GID) .gerbil 2>/dev/null; exit \$$RC"
 
 # -----------------------------------------------------------------------------
 # Self-contained fallbacks (build everything from scratch in one container)
@@ -271,8 +291,8 @@ linux-static-docker-full: clean-docker
 	           openssl-dev openssl-libs-static \
 	           sqlite-dev sqlite-static \
 	           zlib-static && \
-	         cd /src && make build-static && \
-	         chown -R $(UID):$(GID) .gerbil"
+	         cd /src && make build-static; \
+	         RC=\$$?; chown -R $(UID):$(GID) .gerbil 2>/dev/null; exit \$$RC"
 
 # Self-contained static Qt binary via Docker (no deps image needed)
 linux-static-qt-docker-full: clean-docker
@@ -286,5 +306,5 @@ linux-static-qt-docker-full: clean-docker
 	           pcre2-dev pcre2-static \
 	           qt6-qtbase-dev \
 	           qscintilla-dev 2>/dev/null; \
-	         cd /src && make build-static-qt && \
-	         chown -R $(UID):$(GID) .gerbil"
+	         cd /src && make build-static-qt; \
+	         RC=\$$?; chown -R $(UID):$(GID) .gerbil 2>/dev/null; exit \$$RC"

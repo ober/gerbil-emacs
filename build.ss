@@ -136,8 +136,11 @@
    (if static-build? "" (string-append "-Wl,-rpath," openssl-lib-dir " "))
    "-L" qt-vendor-dir " "
    (if static-build?
-     ;; Static: link libqt_shim.a directly (includes Q_IMPORT_PLUGIN)
-     (string-append (path-expand "libqt_shim.a" qt-vendor-dir) " ")
+     ;; Static: link libqt_shim.a + qt_static_plugins.o separately.
+     ;; The .o must not be in an archive — it contains Q_IMPORT_PLUGIN
+     ;; static constructors that the linker would otherwise drop.
+     (string-append (path-expand "libqt_shim.a" qt-vendor-dir) " "
+                    (path-expand "qt_static_plugins.o" qt-vendor-dir) " ")
      ;; Shared: link libqt_shim.so with rpath
      (string-append "-lqt_shim -Wl,-rpath," qt-vendor-dir " "))
    ;; Qt resource objects (static only — styles, PDF support, shaders)
