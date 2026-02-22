@@ -770,9 +770,11 @@
          (name (buffer-name buf)))
     (let-values (((count err) (load-user-string! text name)))
       (if err
-        (echo-error! echo (string-append "Error: " err))
-        (echo-message! echo (string-append "Evaluated " (number->string count)
-                                           " forms in " name))))))
+        (echo-error! echo (string-append "Error: " err " (see *Errors*)"))
+        (echo-message! echo
+          (string-append "Evaluated " (number->string count)
+                         " forms in " name
+                         (if (has-captured-output?) " (see *Output*/*Errors*)" "")))))))
 
 (def (cmd-eval-region app)
   "Evaluate the selected region as a Gerbil expression."
@@ -1177,6 +1179,40 @@
     (editor-goto-pos ed (string-length text))
     (editor-set-read-only ed #t)
     (echo-message! echo "*Messages*")))
+
+;;;============================================================================
+;;; View errors / view output (captured eval logs)
+;;;============================================================================
+
+(def (cmd-view-errors app)
+  "Show *Errors* buffer with captured stderr from eval."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app))
+         (fr (app-state-frame app))
+         (text (get-error-log))
+         (buf (buffer-create! "*Errors*" ed #f)))
+    (buffer-attach! ed buf)
+    (set! (edit-window-buffer (current-window fr)) buf)
+    (editor-set-text ed (if (string=? text "") "(no errors)\n" text))
+    (editor-set-save-point ed)
+    (editor-goto-pos ed (string-length text))
+    (editor-set-read-only ed #t)
+    (echo-message! echo "*Errors*")))
+
+(def (cmd-view-output app)
+  "Show *Output* buffer with captured stdout from eval."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app))
+         (fr (app-state-frame app))
+         (text (get-output-log))
+         (buf (buffer-create! "*Output*" ed #f)))
+    (buffer-attach! ed buf)
+    (set! (edit-window-buffer (current-window fr)) buf)
+    (editor-set-text ed (if (string=? text "") "(no output)\n" text))
+    (editor-set-save-point ed)
+    (editor-goto-pos ed (string-length text))
+    (editor-set-read-only ed #t)
+    (echo-message! echo "*Output*")))
 
 ;;;============================================================================
 ;;; Auto-fill mode toggle

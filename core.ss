@@ -79,6 +79,12 @@
   strip-trailing-slash
   dired-format-listing
 
+  ;; Captured output logs
+  append-error-log! append-output-log!
+  get-error-log get-output-log
+  clear-error-log! clear-output-log!
+  has-captured-output?
+
   ;; REPL shared logic
   repl-buffer?
   *repl-state*
@@ -1415,6 +1421,25 @@
     (values text paths)))
 
 ;;;============================================================================
+;;; Captured output logs (for eval stdout/stderr in Qt)
+;;;============================================================================
+
+(def *captured-errors* "")
+(def *captured-output* "")
+
+(def (append-error-log! text)
+  (set! *captured-errors* (string-append *captured-errors* text)))
+(def (append-output-log! text)
+  (set! *captured-output* (string-append *captured-output* text)))
+(def (get-error-log) *captured-errors*)
+(def (get-output-log) *captured-output*)
+(def (clear-error-log!) (set! *captured-errors* ""))
+(def (clear-output-log!) (set! *captured-output* ""))
+(def (has-captured-output?)
+  (or (> (string-length *captured-errors*) 0)
+      (> (string-length *captured-output*) 0)))
+
+;;;============================================================================
 ;;; REPL shared logic
 ;;;============================================================================
 
@@ -1440,51 +1465,94 @@
 (def (eval-expression-string str)
   "In-process eval: read+eval an expression string, capture output.
    Returns (values result-string error?).
+   Stdout/stderr side effects are appended to the captured output/error logs.
    Full Gerbil syntax supported (def, hash, match, etc.)."
   (ensure-gerbil-eval!)
   (with-catch
     (lambda (e)
-      (values (with-output-to-string (lambda () (display-exception e))) #t))
+      (let ((msg (with-output-to-string (lambda () (display-exception e)))))
+        (append-error-log! msg)
+        (values msg #t)))
     (lambda ()
-      (let* ((expr (with-input-from-string str read))
-             (result (eval expr))
+      (let* ((out-port (open-output-string))
+             (err-port (open-output-string))
+             (expr (with-input-from-string str read))
+             (result (parameterize ((current-output-port out-port)
+                                    (current-error-port err-port))
+                       (eval expr)))
+             (stdout-text (get-output-string out-port))
+             (stderr-text (get-output-string err-port))
              (output (with-output-to-string (lambda () (write result)))))
+        (when (> (string-length stdout-text) 0)
+          (append-output-log! stdout-text))
+        (when (> (string-length stderr-text) 0)
+          (append-error-log! stderr-text))
         (values output #f)))))
 
 (def (load-user-file! path)
   "Load a .ss file by reading and evaluating each top-level form.
    Full Gerbil syntax supported after expander init.
+   Stdout/stderr side effects are appended to the captured output/error logs.
    Returns (values num-loaded error-msg) where error-msg is #f on success."
   (ensure-gerbil-eval!)
   (with-catch
     (lambda (e)
-      (values 0 (with-output-to-string (lambda () (display-exception e)))))
+      (let ((msg (with-output-to-string (lambda () (display-exception e)))))
+        (append-error-log! msg)
+        (values 0 msg)))
     (lambda ()
-      (let ((port (open-input-file path)))
+      (let ((port (open-input-file path))
+            (out-port (open-output-string))
+            (err-port (open-output-string)))
         (let loop ((count 0))
           (let ((form (read port)))
             (if (eof-object? form)
-              (begin (close-input-port port)
-                     (values count #f))
-              (begin (eval form)
-                     (loop (+ count 1))))))))))
+              (begin
+                (close-input-port port)
+                (let ((stdout-text (get-output-string out-port))
+                      (stderr-text (get-output-string err-port)))
+                  (when (> (string-length stdout-text) 0)
+                    (append-output-log! stdout-text))
+                  (when (> (string-length stderr-text) 0)
+                    (append-error-log! stderr-text)))
+                (values count #f))
+              (begin
+                (parameterize ((current-output-port out-port)
+                               (current-error-port err-port))
+                  (eval form))
+                (loop (+ count 1))))))))))
 
 (def (load-user-string! str (source "buffer"))
   "Eval all top-level forms in a string.
    Full Gerbil syntax supported after expander init.
+   Stdout/stderr side effects are appended to the captured output/error logs.
    Returns (values num-loaded error-msg) where error-msg is #f on success."
   (ensure-gerbil-eval!)
   (with-catch
     (lambda (e)
-      (values 0 (with-output-to-string (lambda () (display-exception e)))))
+      (let ((msg (with-output-to-string (lambda () (display-exception e)))))
+        (append-error-log! msg)
+        (values 0 msg)))
     (lambda ()
-      (let ((port (open-input-string str)))
+      (let ((port (open-input-string str))
+            (out-port (open-output-string))
+            (err-port (open-output-string)))
         (let loop ((count 0))
           (let ((form (read port)))
             (if (eof-object? form)
-              (values count #f)
-              (begin (eval form)
-                     (loop (+ count 1))))))))))
+              (begin
+                (let ((stdout-text (get-output-string out-port))
+                      (stderr-text (get-output-string err-port)))
+                  (when (> (string-length stdout-text) 0)
+                    (append-output-log! stdout-text))
+                  (when (> (string-length stderr-text) 0)
+                    (append-error-log! stderr-text)))
+                (values count #f))
+              (begin
+                (parameterize ((current-output-port out-port)
+                               (current-error-port err-port))
+                  (eval form))
+                (loop (+ count 1))))))))))
 
 ;;;============================================================================
 ;;; Fuzzy matching

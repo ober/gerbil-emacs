@@ -1274,8 +1274,10 @@
   (register-command! 'buffer-stats cmd-buffer-stats)
   ;; List processes
   (register-command! 'list-processes cmd-list-processes)
-  ;; View messages
+  ;; View messages / errors / output
   (register-command! 'view-messages cmd-view-messages)
+  (register-command! 'view-errors cmd-view-errors)
+  (register-command! 'view-output cmd-view-output)
   ;; What buffer / what face
   (register-command! 'what-buffer cmd-what-buffer)
   (register-command! 'what-face cmd-what-face)

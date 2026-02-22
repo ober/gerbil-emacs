@@ -282,6 +282,8 @@
   (register-command! 'untabify cmd-untabify)
   (register-command! 'view-lossage cmd-view-lossage)
   (register-command! 'view-messages cmd-view-messages)
+  (register-command! 'view-errors cmd-view-errors)
+  (register-command! 'view-output cmd-view-output)
   (register-command! 'what-encoding cmd-what-encoding)
   (register-command! 'what-face cmd-what-face)
   (register-command! 'what-page cmd-what-page)

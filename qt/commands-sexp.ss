@@ -145,6 +145,37 @@
     (qt-plain-text-edit-set-cursor-position! ed 0)))
 
 ;;;============================================================================
+;;; View errors / view output (captured eval logs)
+;;;============================================================================
+
+(def (cmd-view-errors app)
+  "Show *Errors* buffer with captured stderr from eval."
+  (let* ((ed (current-qt-editor app))
+         (fr (app-state-frame app))
+         (text (get-error-log))
+         (buf (qt-buffer-create! "*Errors*" ed #f)))
+    (qt-buffer-attach! ed buf)
+    (set! (qt-edit-window-buffer (qt-current-window fr)) buf)
+    (qt-plain-text-edit-set-text! ed
+      (if (string=? text "") "(no errors)\n" text))
+    (qt-text-document-set-modified! (buffer-doc-pointer buf) #f)
+    ;; Go to end to see latest
+    (qt-plain-text-edit-set-cursor-position! ed (string-length text))))
+
+(def (cmd-view-output app)
+  "Show *Output* buffer with captured stdout from eval."
+  (let* ((ed (current-qt-editor app))
+         (fr (app-state-frame app))
+         (text (get-output-log))
+         (buf (qt-buffer-create! "*Output*" ed #f)))
+    (qt-buffer-attach! ed buf)
+    (set! (qt-edit-window-buffer (qt-current-window fr)) buf)
+    (qt-plain-text-edit-set-text! ed
+      (if (string=? text "") "(no output)\n" text))
+    (qt-text-document-set-modified! (buffer-doc-pointer buf) #f)
+    (qt-plain-text-edit-set-cursor-position! ed (string-length text))))
+
+;;;============================================================================
 ;;; What buffer / what face
 ;;;============================================================================
 

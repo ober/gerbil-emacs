@@ -687,9 +687,11 @@ Returns (file line col message) or #f."
          (name (buffer-name buf)))
     (let-values (((count err) (load-user-string! text name)))
       (if err
-        (echo-error! echo (string-append "Error: " err))
-        (echo-message! echo (string-append "Evaluated " (number->string count)
-                                           " forms in " name))))))
+        (echo-error! echo (string-append "Error: " err " (see *Errors*)"))
+        (echo-message! echo
+          (string-append "Evaluated " (number->string count)
+                         " forms in " name
+                         (if (has-captured-output?) " (see *Output*/*Errors*)" "")))))))
 
 (def (cmd-eval-region app)
   (let* ((echo (app-state-echo app))

@@ -341,8 +341,10 @@
   (register-command! 'what-face cmd-what-face)
   ;; List processes
   (register-command! 'list-processes cmd-list-processes)
-  ;; Messages
+  ;; Messages / errors / output
   (register-command! 'view-messages cmd-view-messages)
+  (register-command! 'view-errors cmd-view-errors)
+  (register-command! 'view-output cmd-view-output)
   ;; Auto fill
   (register-command! 'toggle-auto-fill cmd-toggle-auto-fill)
   ;; Rename file
