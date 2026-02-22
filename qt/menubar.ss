@@ -87,10 +87,16 @@
 ;;;============================================================================
 
 (def (add-menu-command! menu win app label shortcut command-name)
-  "Add a menu action that executes a named command."
-  (let ((action (qt-action-create label parent: win)))
-    (when (and (string? shortcut) (> (string-length shortcut) 0))
-      (qt-action-set-shortcut! action shortcut))
+  "Add a menu action that executes a named command.
+   Shortcut text is shown in the menu label but NOT registered as a Qt shortcut,
+   because the custom keymap system handles all key bindings. Registering Qt
+   shortcuts would cause Ctrl+X prefix keys to be intercepted before the
+   custom handler sees them."
+  (let* ((display-label (if (and (string? shortcut) (> (string-length shortcut) 0))
+                          (string-append label "\t" shortcut)
+                          label))
+         (action (qt-action-create display-label parent: win)))
+    ;; Do NOT call qt-action-set-shortcut! — it conflicts with the custom keymap.
     (qt-on-triggered! action
       (lambda () (execute-command! app command-name)))
     (qt-menu-add-action! menu action)
