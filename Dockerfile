@@ -14,7 +14,7 @@ FROM gerbil/gerbilxx:${ARCH}-master
 
 # ── Phase 1: Alpine build deps ──────────────────────────────────────────
 RUN apk add --no-cache \
-    cmake samurai perl python3 linux-headers \
+    cmake samurai perl python3 linux-headers patchelf \
     libxcb-dev xcb-util-dev xcb-util-image-dev \
     xcb-util-keysyms-dev xcb-util-renderutil-dev \
     xcb-util-wm-dev xcb-util-cursor-dev \
@@ -23,9 +23,22 @@ RUN apk add --no-cache \
     libpng-dev zlib-dev mesa-dev \
     pcre2-dev pcre2-static \
     at-spi2-core-dev libdrm-dev \
-    zlib-static libxcb-static
+    zlib-static libxcb-static \
+    fontconfig-static freetype-static harfbuzz-static \
+    libpng-static bzip2-static expat-static brotli-static \
+    libx11-static graphite2-static libxkbcommon-static
 
-# ── Phase 2: Build Qt6 qtbase static (~1-3 hours, cached) ──────────────
+# Build static libXau (no Alpine -static package available)
+RUN apk add --no-cache libxau-dev && \
+    cd /tmp && \
+    wget -q https://xorg.freedesktop.org/releases/individual/lib/libXau-1.0.12.tar.xz && \
+    tar xf libXau-1.0.12.tar.xz && \
+    cd libXau-1.0.12 && \
+    ./configure --prefix=/usr --enable-static --disable-shared && \
+    make -j$(nproc) && make install && \
+    cd / && rm -rf /tmp/libXau-1.0.12*
+
+# ── Phase 2: Build Qt6 qtbase static (~7-10 min, cached) ────────────────
 ARG QT6_VERSION=6.8.3
 RUN wget -q https://download.qt.io/official_releases/qt/6.8/${QT6_VERSION}/submodules/qtbase-everywhere-src-${QT6_VERSION}.tar.xz && \
     tar xf qtbase-everywhere-src-${QT6_VERSION}.tar.xz && \
@@ -44,7 +57,9 @@ RUN wget -q https://download.qt.io/official_releases/qt/6.8/${QT6_VERSION}/submo
       -DFEATURE_printsupport=ON \
       -DFEATURE_dbus=OFF \
       -DFEATURE_opengl=OFF \
-      -DFEATURE_vulkan=OFF && \
+      -DFEATURE_vulkan=OFF \
+      -DFEATURE_glib=OFF \
+      -DFEATURE_icu=OFF && \
     cmake --build qt6-build --parallel && \
     cmake --install qt6-build && \
     rm -rf qtbase-everywhere-src-${QT6_VERSION} qt6-build
@@ -60,8 +75,33 @@ RUN wget -q https://www.riverbankcomputing.com/static/Downloads/QScintilla/${QSC
     make install && \
     cd / && rm -rf QScintilla_src-${QSCI_VERSION}
 
-# ── Phase 3b: Create pkg-config files (static Qt6 cmake doesn't generate them) ─
+# ── Phase 3b: Generate pkg-config files with full transitive deps ─────
+# Static Qt6 cmake doesn't generate .pc files.  We extract direct deps
+# from .prl files, then add known transitive deps manually (because
+# Alpine's system harfbuzz was built with glib, but our Qt6 was not).
 RUN mkdir -p /opt/qt6-static/lib/pkgconfig && \
+    # Helper: extract -l flags from .prl, skip Qt internal refs
+    prl_libs() { \
+      grep '^QMAKE_PRL_LIBS ' "$1" | \
+        sed 's/^QMAKE_PRL_LIBS *= *//' | \
+        tr ' ' '\n' | grep '^-l' | \
+        grep -v '^-lQt6' | tr '\n' ' '; \
+    } && \
+    CORE_PRIVATE=$(prl_libs /opt/qt6-static/lib/libQt6Core.prl) && \
+    GUI_PRL=$(prl_libs /opt/qt6-static/lib/libQt6Gui.prl) && \
+    XCB_PRL=$(prl_libs /opt/qt6-static/plugins/platforms/libqxcb.prl) && \
+    # Add transitive deps that .prl files don't include:
+    #   harfbuzz → graphite2       freetype → bz2, brotlidec, brotlicommon
+    #   fontconfig → expat         libpng → zlib
+    #   xcb → Xau, Xdmcp          libX11 → xcb
+    # Filter out glib/intl (Qt6 built with -DFEATURE_glib=OFF)
+    TRANSITIVE="-lgraphite2 -lbz2 -lbrotlidec -lbrotlicommon -lexpat -lXau -lXdmcp" && \
+    GUI_PRIVATE="$GUI_PRL $TRANSITIVE" && \
+    XCB_PRIVATE="$XCB_PRL $TRANSITIVE -lxcb -lXau -lXdmcp" && \
+    # Debug: show resolved deps
+    echo "Core deps: $CORE_PRIVATE" && \
+    echo "Gui deps: $GUI_PRIVATE" && \
+    echo "XCB deps: $XCB_PRIVATE" && \
     printf '%s\n' \
       'prefix=/opt/qt6-static' \
       'includedir=${prefix}/include' \
@@ -69,7 +109,8 @@ RUN mkdir -p /opt/qt6-static/lib/pkgconfig && \
       '' \
       'Name: Qt6Core' 'Description: Qt6 Core' 'Version: 6.8.3' \
       'Cflags: -I${includedir} -I${includedir}/QtCore' \
-      'Libs: -L${libdir} -lQt6Core' \
+      "Libs: -L\${libdir} -lQt6Core" \
+      "Libs.private: $CORE_PRIVATE" \
       > /opt/qt6-static/lib/pkgconfig/Qt6Core.pc && \
     printf '%s\n' \
       'prefix=/opt/qt6-static' \
@@ -79,7 +120,8 @@ RUN mkdir -p /opt/qt6-static/lib/pkgconfig && \
       'Name: Qt6Gui' 'Description: Qt6 Gui' 'Version: 6.8.3' \
       'Requires: Qt6Core' \
       'Cflags: -I${includedir} -I${includedir}/QtGui' \
-      'Libs: -L${libdir} -lQt6Gui' \
+      "Libs: -L\${libdir} -lQt6Gui" \
+      "Libs.private: $GUI_PRIVATE" \
       > /opt/qt6-static/lib/pkgconfig/Qt6Gui.pc && \
     printf '%s\n' \
       'prefix=/opt/qt6-static' \
@@ -89,7 +131,7 @@ RUN mkdir -p /opt/qt6-static/lib/pkgconfig && \
       'Name: Qt6Widgets' 'Description: Qt6 Widgets' 'Version: 6.8.3' \
       'Requires: Qt6Gui' \
       'Cflags: -I${includedir} -I${includedir}/QtWidgets -I${includedir}/QtGui -I${includedir}/QtCore' \
-      'Libs: -L${libdir} -lQt6Widgets' \
+      "Libs: -L\${libdir} -lQt6Widgets" \
       > /opt/qt6-static/lib/pkgconfig/Qt6Widgets.pc && \
     printf '%s\n' \
       'prefix=/opt/qt6-static' \
@@ -99,8 +141,19 @@ RUN mkdir -p /opt/qt6-static/lib/pkgconfig && \
       'Name: Qt6PrintSupport' 'Description: Qt6 PrintSupport' 'Version: 6.8.3' \
       'Requires: Qt6Widgets' \
       'Cflags: -I${includedir} -I${includedir}/QtPrintSupport' \
-      'Libs: -L${libdir} -lQt6PrintSupport' \
+      "Libs: -L\${libdir} -lQt6PrintSupport" \
       > /opt/qt6-static/lib/pkgconfig/Qt6PrintSupport.pc && \
+    printf '%s\n' \
+      'prefix=/opt/qt6-static' \
+      'includedir=${prefix}/include' \
+      'libdir=${prefix}/lib' \
+      'plugindir=${prefix}/plugins' \
+      '' \
+      'Name: Qt6XcbPlugin' 'Description: Qt6 XCB platform plugin' 'Version: 6.8.3' \
+      'Requires: Qt6Gui' \
+      "Libs: -L\${libdir} -L\${plugindir}/platforms -lqxcb -lQt6XcbQpa" \
+      "Libs.private: $XCB_PRIVATE" \
+      > /opt/qt6-static/lib/pkgconfig/Qt6XcbPlugin.pc && \
     printf '%s\n' \
       'prefix=/opt/qt6-static' \
       'includedir=${prefix}/include' \
@@ -109,8 +162,9 @@ RUN mkdir -p /opt/qt6-static/lib/pkgconfig && \
       'Name: QScintilla' 'Description: QScintilla for Qt6' 'Version: 2.14.1' \
       'Requires: Qt6Widgets Qt6PrintSupport' \
       'Cflags: -I${includedir} -I${includedir}/Qsci' \
-      'Libs: -L${libdir} -lqscintilla2_qt6' \
-      > /opt/qt6-static/lib/pkgconfig/QScintilla.pc
+      "Libs: -L\${libdir} -lqscintilla2_qt6" \
+      > /opt/qt6-static/lib/pkgconfig/QScintilla.pc && \
+    echo "Generated .pc files:" && ls /opt/qt6-static/lib/pkgconfig/
 
 # ── Phase 4: Gerbil dependencies ────────────────────────────────────────
 ENV PKG_CONFIG_PATH=/opt/qt6-static/lib/pkgconfig
@@ -134,7 +188,7 @@ RUN gxpkg link gerbil-qt /deps/gerbil-qt && \
     GERBIL_LOADPATH=/deps/gerbil-scintilla/.gerbil/lib:/root/.gerbil/lib \
     gerbil build
 
-# Build static libqt_shim.a alongside the shared .so
+# Build static libqt_shim.a with Q_IMPORT_PLUGIN for XCB platform
 RUN cd /deps/gerbil-qt && \
     QT_CFLAGS=$(pkg-config --cflags Qt6Widgets 2>/dev/null || echo "-I/opt/qt6-static/include -I/opt/qt6-static/include/QtCore -I/opt/qt6-static/include/QtGui -I/opt/qt6-static/include/QtWidgets") && \
     QSCI_FLAGS="-DQT_SCINTILLA_AVAILABLE $(pkg-config --cflags QScintilla 2>/dev/null || echo "-I/opt/qt6-static/include/Qsci -I/opt/qt6-static/include")" && \
@@ -142,6 +196,10 @@ RUN cd /deps/gerbil-qt && \
       $QT_CFLAGS $QSCI_FLAGS \
       -I/deps/gerbil-scintilla/vendor/scintilla/include \
       vendor/qt_shim.cpp -o vendor/qt_shim_static.o && \
-    ar rcs vendor/libqt_shim.a vendor/qt_shim_static.o
+    printf '#include <QtPlugin>\nQ_IMPORT_PLUGIN(QXcbIntegrationPlugin)\n' \
+      > vendor/qt_static_plugins.cpp && \
+    g++ -c -fPIC -std=c++17 $QT_CFLAGS \
+      vendor/qt_static_plugins.cpp -o vendor/qt_static_plugins.o && \
+    ar rcs vendor/libqt_shim.a vendor/qt_shim_static.o vendor/qt_static_plugins.o
 
 WORKDIR /src

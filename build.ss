@@ -3,7 +3,8 @@
 ;;; Build script for gemacs
 
 (import :std/build-script
-        :std/make)
+        :std/make
+        :std/misc/process)
 
 ;; Static build support: env vars for Docker/CI overrides
 (def static-build? (getenv "GEMACS_STATIC" #f))
@@ -109,18 +110,43 @@
 ;; to avoid linking against system OpenSSL 3.0 (missing newer symbols)
 (def openssl-lib-dir "/home/linuxbrew/.linuxbrew/opt/openssl@3/lib")
 
-;; Qt exe also links scintilla/termbox/lexilla because editor.ss pulls them in
-(def qt-ld-opts
+;; Qt resource objects needed for static linking (styles, PDF, shaders, etc.)
+(def qt-prefix (or (getenv "QT_STATIC_PREFIX" #f) "/opt/qt6-static"))
+
+(def (qt-resource-objects)
+  "Collect Qt resource .o files from the static Qt installation."
+  (if (not static-build?) ""
+    (let ((objs-dir (path-expand "lib/objects-Release" qt-prefix)))
+      (if (not (file-exists? objs-dir)) ""
+        (let ((objects
+               (with-catch (lambda (_) [])
+                 (lambda ()
+                   (run-process ["find" objs-dir "-name" "*.o" "-type" "f"]
+                                coprocess: read-all-as-lines)))))
+          (string-join objects " "))))))
+
+;; Qt link flags (shared between gxc: modules and exe: targets).
+;; NOTE: -static must NOT appear in gxc: module ld-options — it causes
+;; "relocation R_X86_64_32 against hidden symbol __TMC_END__" on musl
+;; because gsc compiles modules to .o files that need PIC.
+;; Only exe: targets get -static for the final link step.
+(def qt-ld-opts-base
   (string-append
-   (if static-build? "-static " "")
    (if static-build? "" (string-append "-L" openssl-lib-dir " "))
    (if static-build? "" (string-append "-Wl,-rpath," openssl-lib-dir " "))
    "-L" qt-vendor-dir " "
    (if static-build?
-     ;; Static: link libqt_shim.a directly (no rpath needed)
+     ;; Static: link libqt_shim.a directly (includes Q_IMPORT_PLUGIN)
      (string-append (path-expand "libqt_shim.a" qt-vendor-dir) " ")
      ;; Shared: link libqt_shim.so with rpath
      (string-append "-lqt_shim -Wl,-rpath," qt-vendor-dir " "))
+   ;; Qt resource objects (static only — styles, PDF support, shaders)
+   (if static-build? (string-append (qt-resource-objects) " ") "")
+   ;; XCB platform plugin (static only)
+   (if static-build?
+     (with-catch (lambda (_) "")
+       (lambda () (string-append (static-pkg-config-libs "Qt6XcbPlugin") " ")))
+     "")
    ;; Qt6 libraries: use --static for full transitive deps
    (if static-build?
      (with-catch (lambda (_) "-lQt6Widgets -lQt6Gui -lQt6Core")
@@ -137,6 +163,13 @@
      "-Wl,--whole-archive -lpthread -Wl,--no-whole-archive"
      "-lpthread")
    " -lpcre2-8"))
+
+;; For gxc: module compilation (no -static)
+(def qt-ld-opts qt-ld-opts-base)
+
+;; For exe: final linking (add -static for static builds)
+(def qt-exe-ld-opts
+  (string-append (if static-build? "-static " "") qt-ld-opts-base))
 
 (defbuild-script
   `(;; Macros (must be compiled first - no dependencies)
@@ -254,23 +287,23 @@
           (gxc: "qt/app"      "-cc-options" ,qt-cc-opts "-ld-options" ,qt-ld-opts)
           (exe: "qt-highlight-test" bin: "qt-highlight-test"
                 "-cc-options" ,qt-cc-opts
-                "-ld-options" ,qt-ld-opts)
+                "-ld-options" ,qt-exe-ld-opts)
           (exe: "qt-functional-test" bin: "qt-functional-test"
                 "-cc-options" ,qt-cc-opts
-                "-ld-options" ,qt-ld-opts)
+                "-ld-options" ,qt-exe-ld-opts)
           (exe: "lsp-functional-test" bin: "lsp-functional-test"
                 "-cc-options" ,qt-cc-opts
-                "-ld-options" ,qt-ld-opts)
+                "-ld-options" ,qt-exe-ld-opts)
           ;; (exe: "qt-split-comprehensive-test" bin: "qt-split-comprehensive-test"
           ;;       "-cc-options" ,qt-cc-opts
-          ;;       "-ld-options" ,qt-ld-opts)
+          ;;       "-ld-options" ,qt-exe-ld-opts)
           ;; (exe: "qt-split-debug-test" bin: "qt-split-debug-test"
           ;;       "-cc-options" ,qt-cc-opts
-          ;;       "-ld-options" ,qt-ld-opts)
+          ;;       "-ld-options" ,qt-exe-ld-opts)
           (exe: "qt-split-simple-test" bin: "qt-split-simple-test"
                 "-cc-options" ,qt-cc-opts
-                "-ld-options" ,qt-ld-opts)
+                "-ld-options" ,qt-exe-ld-opts)
           (exe: "qt/main" bin: "gemacs-qt"
                 "-cc-options" ,qt-cc-opts
-                "-ld-options" ,qt-ld-opts))))
+                "-ld-options" ,qt-exe-ld-opts))))
   parallelize: (max 1 (quotient (##cpu-count) 2)))
