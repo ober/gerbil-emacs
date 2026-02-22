@@ -32,13 +32,26 @@ Org-mode `<s TAB` has regressed 5 times. Each time, the leaf-function tests in `
 3. **Key sequences**: Test via `(sim-key! app ev)` for single keys, or multiple `sim-key!` calls for multi-key sequences.
 4. **Command registration**: Always call `(register-all-commands!)` and `(setup-default-bindings!)` at the start of functional tests.
 
-## Build
+## Build Verification: MANDATORY Before Commit
+
+**You MUST verify ALL builds and run tests BEFORE committing and pushing.** Never commit code that hasn't been verified to build and pass tests. Follow this checklist in order:
+
+1. **`make build`** — must complete without errors
+2. **Verify binaries**: `.gerbil/bin/gemacs --version` and `QT_QPA_PLATFORM=offscreen .gerbil/bin/gemacs-qt --version`
+3. **`make test`** — all TUI tests must pass
+4. **`make static-qt`** — static Qt Docker build must complete and produce a working binary
+5. **Verify static binary**: `QT_QPA_PLATFORM=offscreen .gerbil/bin/gemacs-qt --version`
+
+If any step fails, **fix it before committing**. Do not push broken builds.
+
+### Build commands
 
 ```bash
-make build    # Build TUI and Qt binaries
-make test     # Build + run all tests
-make test-qt  # Build + run Qt headless tests
-make test-all # Build + run all tests (TUI + Qt)
+make build      # Build TUI and Qt binaries (dynamic)
+make test       # Build + run all TUI tests
+make test-qt    # Build + run Qt headless tests
+make test-all   # Build + run all tests (TUI + Qt)
+make static-qt  # Static Qt binary via Docker (requires docker-deps image)
 ```
 
 Individual test file:

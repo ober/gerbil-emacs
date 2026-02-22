@@ -48,7 +48,7 @@ QT_TEST_ENV = QT_QPA_PLATFORM=offscreen LD_LIBRARY_PATH=$(OPENSSL_RPATH):$(SCI_R
 build:
 	chmod +x build.ss
 	LD_LIBRARY_PATH=$(OPENSSL_RPATH) gerbil build
-	patchelf --set-rpath $(OPENSSL_RPATH):$(SCI_RPATH) .gerbil/bin/gemacs
+	-patchelf --set-rpath $(OPENSSL_RPATH):$(SCI_RPATH) .gerbil/bin/gemacs
 	-patchelf --set-rpath $(OPENSSL_RPATH):$(SCI_RPATH):$(QT_SHIM_RPATH) .gerbil/bin/gemacs-qt
 	-patchelf --set-rpath $(OPENSSL_RPATH):$(SCI_RPATH):$(QT_SHIM_RPATH) .gerbil/bin/qt-highlight-test
 	-patchelf --set-rpath $(OPENSSL_RPATH):$(SCI_RPATH):$(QT_SHIM_RPATH) .gerbil/bin/qt-functional-test
