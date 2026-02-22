@@ -79,6 +79,10 @@
   strip-trailing-slash
   dired-format-listing
 
+  ;; Runtime error log file
+  init-gemacs-log!
+  gemacs-log!
+
   ;; Captured output logs
   append-error-log! append-output-log!
   get-error-log get-output-log
@@ -917,7 +921,8 @@
 
 (def (echo-error! echo msg)
   (set! (echo-state-message echo) msg)
-  (set! (echo-state-error? echo) #t))
+  (set! (echo-state-error? echo) #t)
+  (gemacs-log! "ERROR: " msg))
 
 (def (echo-clear! echo)
   (set! (echo-state-message echo) #f)
@@ -1147,9 +1152,10 @@
         (set! (app-state-last-command app) name)
         (with-catch
           (lambda (e)
-            (echo-error! (app-state-echo app)
-              (string-append (symbol->string name) ": "
-                             (with-output-to-string "" (lambda () (display-exception e))))))
+            (let ((msg (with-output-to-string "" (lambda () (display-exception e)))))
+              (gemacs-log! "COMMAND-ERROR: " (symbol->string name) ": " msg)
+              (echo-error! (app-state-echo app)
+                (string-append (symbol->string name) ": " msg))))
           (lambda () (cmd app)))
         ;; Reset prefix-arg unless the command was a prefix-building command
         (unless (memq name '(universal-argument digit-argument-0 digit-argument-1 digit-argument-2
@@ -1421,6 +1427,40 @@
     (values text paths)))
 
 ;;;============================================================================
+;;; Runtime error log file (~/.gemacs-errors.log)
+;;;============================================================================
+
+(def *gemacs-log-port* #f)
+(def *gemacs-original-stderr* #f)
+
+(def (init-gemacs-log!)
+  "Initialize the runtime error log. Opens ~/.gemacs-errors.log for append,
+   redirects current-error-port so Scheme-level stderr writes go to the log.
+   Call once at startup (Qt or TUI)."
+  (let ((log-path (string-append (getenv "HOME" "/tmp") "/.gemacs-errors.log")))
+    ;; Save original stderr for fallback
+    (set! *gemacs-original-stderr* (current-error-port))
+    ;; Open log file in append mode
+    (set! *gemacs-log-port* (open-output-file [path: log-path append: #t]))
+    ;; Redirect Scheme current-error-port to the log file
+    ;; This captures Gambit's display-exception, warning messages, etc.
+    (current-error-port *gemacs-log-port*)
+    (gemacs-log! "gemacs started")))
+
+(def (gemacs-log! . args)
+  "Write a timestamped line to the gemacs error log.
+   Arguments are concatenated as strings."
+  (when *gemacs-log-port*
+    (let ((port *gemacs-log-port*)
+          (ts (number->string (inexact->exact (floor (time->seconds (current-time)))))))
+      (display "[" port)
+      (display ts port)
+      (display "] " port)
+      (for-each (lambda (arg) (display arg port)) args)
+      (newline port)
+      (force-output port))))
+
+;;;============================================================================
 ;;; Captured output logs (for eval stdout/stderr in Qt)
 ;;;============================================================================
 
@@ -1428,7 +1468,8 @@
 (def *captured-output* "")
 
 (def (append-error-log! text)
-  (set! *captured-errors* (string-append *captured-errors* text)))
+  (set! *captured-errors* (string-append *captured-errors* text))
+  (gemacs-log! "EVAL-STDERR: " text))
 (def (append-output-log! text)
   (set! *captured-output* (string-append *captured-output* text)))
 (def (get-error-log) *captured-errors*)
@@ -1460,7 +1501,17 @@
    Called lazily to avoid startup cost."
   (unless *gerbil-eval-initialized*
     (set! *gerbil-eval-initialized* #t)
-    (__load-gxi)))
+    (gemacs-log! "ensure-gerbil-eval!: initializing expander via __load-gxi")
+    (with-catch
+      (lambda (e)
+        (let ((msg (with-output-to-string (lambda () (display-exception e)))))
+          (gemacs-log! "ensure-gerbil-eval! FAILED: " msg)
+          (append-error-log! (string-append "Expander init failed: " msg "\n"))
+          ;; Reset so user can retry
+          (set! *gerbil-eval-initialized* #f)))
+      (lambda ()
+        (__load-gxi)
+        (gemacs-log! "ensure-gerbil-eval!: expander initialized OK")))))
 
 (def (eval-expression-string str)
   "In-process eval: read+eval an expression string, capture output.

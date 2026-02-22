@@ -170,6 +170,8 @@
 
 (def (qt-main . args)
   (with-qt-app qt-app
+    ;; Initialize runtime error log (~/.gemacs-errors.log)
+    (init-gemacs-log!)
     ;; Initialize face system with standard faces
     (define-standard-faces!)
     ;; Load saved theme and font settings from ~/.gemacs-theme
@@ -251,6 +253,8 @@
       (setup-default-bindings!)
       (setup-command-docs!)
       (qt-register-all-commands!)
+      (gemacs-log! "commands registered: "
+                   (number->string (hash-length *all-commands*)) " total")
 
       ;; Set up post-buffer-attach hook for image/text display toggling
       (set! *post-buffer-attach-hook*
