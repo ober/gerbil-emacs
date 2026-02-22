@@ -1923,6 +1923,68 @@
       (setup-default-bindings!)
       (check (keymap-lookup *ctrl-x-r-map* "d") => 'delete-rectangle))
 
+    ;; ==================================================================
+    ;; Regression tests for the execute-command! paren bug
+    ;; (echo-error! was running unconditionally for ALL commands)
+    ;; ==================================================================
+
+    (test-case "dispatch: found command does NOT show 'undefined' error"
+      (let-values (((ed app) (make-test-app "paren-bug-test")))
+        (editor-set-text ed "hello")
+        (editor-goto-pos ed 0)
+        (execute-command! app 'forward-char)
+        (let* ((echo (app-state-echo app))
+               (msg (echo-state-message echo))
+               (err? (echo-state-error? echo)))
+          ;; After a found command, echo should NOT contain "is undefined"
+          (check (not (and msg (string-contains msg "is undefined"))) => #t))))
+
+    (test-case "dispatch: unfound command shows 'undefined' error"
+      (let-values (((ed app) (make-test-app "paren-bug-test2")))
+        (execute-command! app 'nonexistent-command-xyz)
+        (let* ((echo (app-state-echo app))
+               (msg (echo-state-message echo)))
+          (check (not (not (and msg (string-contains msg "is undefined")))) => #t))))
+
+    (test-case "dispatch: multiple commands don't accumulate errors"
+      (let-values (((ed app) (make-test-app "multi-cmd-test")))
+        (editor-set-text ed "hello world")
+        (editor-goto-pos ed 0)
+        (execute-command! app 'forward-char)
+        (execute-command! app 'forward-char)
+        (execute-command! app 'forward-char)
+        (let ((err? (echo-state-error? (app-state-echo app))))
+          (check (not err?) => #t))))
+
+    (test-case "dispatch: save-buffer via execute-command! writes file"
+      (let* ((tmp-path "/tmp/gemacs-func-test-save.ss"))
+        (write-string-to-file tmp-path "original\n")
+        (let-values (((ed app) (make-test-app-with-file tmp-path)))
+          (editor-set-text ed "(+ 1 2)\n")
+          (execute-command! app 'save-buffer)
+          (let ((saved (call-with-input-file tmp-path
+                         (lambda (p) (read-line p #f)))))
+            (check (not (not (string-contains saved "(+ 1 2)"))) => #t))
+          (with-catch (lambda (e) #f)
+            (lambda () (delete-file tmp-path))))))
+
+    (test-case "dispatch: eval-last-sexp via execute-command! evaluates sexp"
+      (let-values (((ed app) (make-test-app "eval-test.ss")))
+        (editor-set-text ed "(+ 1 2)")
+        (editor-goto-pos ed 7)  ;; after the closing )
+        (execute-command! app 'eval-last-sexp)
+        (let* ((echo (app-state-echo app))
+               (msg (echo-state-message echo)))
+          (check (not (not (and msg (string-contains msg "3")))) => #t))))
+
+    (test-case "dispatch: C-x C-s bound to save-buffer"
+      (setup-default-bindings!)
+      (check (keymap-lookup *ctrl-x-map* "C-s") => 'save-buffer))
+
+    (test-case "dispatch: C-x C-e bound to eval-last-sexp"
+      (setup-default-bindings!)
+      (check (keymap-lookup *ctrl-x-map* "C-e") => 'eval-last-sexp))
+
 ))
 
 (def main

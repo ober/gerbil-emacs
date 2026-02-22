@@ -1162,9 +1162,9 @@
                             digit-argument-3 digit-argument-4 digit-argument-5 digit-argument-6
                             digit-argument-7 digit-argument-8 digit-argument-9 negative-argument))
           (set! (app-state-prefix-arg app) #f)
-          (set! (app-state-prefix-digit-mode? app) #f))))
+          (set! (app-state-prefix-digit-mode? app) #f)))
       (echo-error! (app-state-echo app)
-                   (string-append (symbol->string name) " is undefined"))))
+                   (string-append (symbol->string name) " is undefined")))))
 
 (def (setup-command-docs!)
   "Register docstrings for commonly used commands."

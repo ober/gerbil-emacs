@@ -39,9 +39,15 @@
                  make-buffer
                  buffer-name
                  buffer-mark
+                 buffer-file-path
                  app-state-frame
+                 app-state-echo
+                 echo-state-message
+                 echo-state-error?
                  app-state-last-command
-                 app-state-prefix-arg)
+                 app-state-prefix-arg
+                 write-string-to-file
+                 eval-expression-string)
         (only-in :gemacs/qt/window
                  make-qt-edit-window
                  make-qt-frame
@@ -2979,6 +2985,136 @@
   (displayln "Group 21 complete"))
 
 ;;;============================================================================
+;;; Group 22: Save-Buffer and Eval-Last-Sexp dispatch (regression: paren bug)
+;;;============================================================================
+
+(def (run-group-22-save-and-eval-dispatch)
+  (displayln "=== Group 22: Save-Buffer and Eval-Last-Sexp Dispatch ===")
+
+  ;; Test 1: execute-command! does NOT show "undefined" for found commands
+  ;; Regression test for the paren bug where echo-error! ran unconditionally.
+  (displayln "Test: found commands do not show 'undefined' error")
+  (let-values (((ed _w app) (make-qt-test-app "test.ss")))
+    (qt-plain-text-edit-set-text! ed "hello")
+    (qt-plain-text-edit-set-cursor-position! ed 0)
+    (execute-command! app 'forward-char)
+    (let* ((echo (app-state-echo app))
+           (msg (echo-state-message echo))
+           (err? (echo-state-error? echo)))
+      (if (and msg (string-contains msg "is undefined"))
+        (fail! "found command shows undefined" msg "no error")
+        (pass! "found command does NOT show undefined error"))))
+
+  ;; Test 2: unfound commands DO show "undefined" error
+  (displayln "Test: unfound commands show 'undefined' error")
+  (let-values (((ed _w app) (make-qt-test-app "test.ss")))
+    (execute-command! app 'nonexistent-command-xyz)
+    (let* ((echo (app-state-echo app))
+           (msg (echo-state-message echo)))
+      (if (and msg (string-contains msg "is undefined"))
+        (pass! "unfound command shows undefined error")
+        (fail! "unfound command error" msg "contains 'is undefined'"))))
+
+  ;; Test 3: save-buffer dispatches via execute-command! and writes file
+  (displayln "Test: save-buffer writes file via dispatch chain")
+  (let ((tmp-path "/tmp/gemacs-test-save-buffer.ss"))
+    ;; Write initial content
+    (write-string-to-file tmp-path "original\n")
+    (let-values (((ed _w app) (make-qt-test-app-with-file tmp-path)))
+      ;; Set new content in editor
+      (qt-plain-text-edit-set-text! ed "(+ 1 2)\n")
+      ;; Save through dispatch chain
+      (execute-command! app 'save-buffer)
+      ;; Verify file was written with new content
+      (let* ((saved (call-with-input-file tmp-path (lambda (p) (read-line p #f))))
+             (echo (app-state-echo app))
+             (msg (echo-state-message echo))
+             (err? (echo-state-error? echo)))
+        (cond
+          ((and err? msg (string-contains msg "is undefined"))
+           (fail! "save-buffer dispatch" msg "Wrote ..."))
+          ((string-contains (or saved "") "(+ 1 2)")
+           (pass! "save-buffer writes file via dispatch chain"))
+          (else
+           (fail! "save-buffer file content" saved "(+ 1 2)")))
+        ;; Cleanup
+        (with-catch (lambda (e) #f) (lambda () (delete-file tmp-path))))))
+
+  ;; Test 4: save-buffer shows echo message (not error) after save
+  (displayln "Test: save-buffer echo message after save")
+  (let ((tmp-path "/tmp/gemacs-test-save-echo.ss"))
+    (write-string-to-file tmp-path "test\n")
+    (let-values (((ed _w app) (make-qt-test-app-with-file tmp-path)))
+      (qt-plain-text-edit-set-text! ed "updated\n")
+      (execute-command! app 'save-buffer)
+      (let* ((echo (app-state-echo app))
+             (msg (echo-state-message echo))
+             (err? (echo-state-error? echo)))
+        (if (and msg (not err?) (string-contains msg "Wrote"))
+          (pass! "save-buffer shows 'Wrote' message (not error)")
+          (fail! "save-buffer echo" (list msg err?) "'Wrote ...' with no error")))
+      (with-catch (lambda (e) #f) (lambda () (delete-file tmp-path)))))
+
+  ;; Test 5: eval-last-sexp registered and dispatches
+  (displayln "Test: eval-last-sexp registered")
+  (if (find-command 'eval-last-sexp)
+    (pass! "eval-last-sexp command registered")
+    (fail! "eval-last-sexp command" "not found" "registered"))
+
+  ;; Test 6: eval-last-sexp evaluates sexp in .ss file via dispatch
+  (displayln "Test: eval-last-sexp evaluates sexp via dispatch chain")
+  (let-values (((ed _w app) (make-qt-test-app "test.ss")))
+    ;; Set text with a simple expression and position cursor after closing paren
+    (qt-plain-text-edit-set-text! ed "(+ 1 2)")
+    (qt-plain-text-edit-set-cursor-position! ed 7)  ;; after the closing )
+    (execute-command! app 'eval-last-sexp)
+    (let* ((echo (app-state-echo app))
+           (msg (echo-state-message echo))
+           (err? (echo-state-error? echo)))
+      (cond
+        ((and err? msg (string-contains msg "is undefined"))
+         (fail! "eval-last-sexp dispatch" msg "=> 3"))
+        ((and msg (string-contains msg "3"))
+         (pass! "eval-last-sexp evaluates (+ 1 2) => 3 via dispatch"))
+        (else
+         (fail! "eval-last-sexp result" (list msg err?) "contains '3'")))))
+
+  ;; Test 7: eval-last-sexp handles atom before point
+  (displayln "Test: eval-last-sexp evaluates atom")
+  (let-values (((ed _w app) (make-qt-test-app "test.ss")))
+    (qt-plain-text-edit-set-text! ed "42")
+    (qt-plain-text-edit-set-cursor-position! ed 2)
+    (execute-command! app 'eval-last-sexp)
+    (let* ((echo (app-state-echo app))
+           (msg (echo-state-message echo)))
+      (if (and msg (string-contains msg "42"))
+        (pass! "eval-last-sexp evaluates atom 42 via dispatch")
+        (fail! "eval-last-sexp atom" msg "contains '42'"))))
+
+  ;; Test 8: write-file command registered
+  (if (find-command 'write-file)
+    (pass! "write-file command registered")
+    (fail! "write-file command" "not found" "registered"))
+
+  ;; Test 9: Multiple commands don't accumulate "undefined" errors
+  ;; This was the key symptom of the paren bug: every command logged an error
+  (displayln "Test: multiple commands don't accumulate errors")
+  (let-values (((ed _w app) (make-qt-test-app "test.ss")))
+    (qt-plain-text-edit-set-text! ed "hello world")
+    (qt-plain-text-edit-set-cursor-position! ed 0)
+    (execute-command! app 'forward-char)
+    (execute-command! app 'forward-char)
+    (execute-command! app 'forward-char)
+    (let* ((echo (app-state-echo app))
+           (msg (echo-state-message echo))
+           (err? (echo-state-error? echo)))
+      (if err?
+        (fail! "multiple commands error state" (list msg err?) "no error")
+        (pass! "multiple forward-char dispatches without error"))))
+
+  (displayln "Group 22 complete"))
+
+;;;============================================================================
 ;;; Main
 ;;;============================================================================
 
@@ -3007,6 +3143,7 @@
     (run-group-18-stub-replacements)
     (run-group-19-new-features)
     (run-group-20-multiple-cursors)
+    (run-group-22-save-and-eval-dispatch)
     (run-group-21-theme-split-lsp)
 
     (displayln "---")
