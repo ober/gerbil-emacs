@@ -1581,3 +1581,168 @@
     (if (or (null? l) (>= i n))
       (reverse acc)
       (loop (cdr l) (+ i 1) (cons (car l) acc)))))
+
+;;;============================================================================
+;;; Workspace tabs (Emacs tab-bar equivalent)
+;;;============================================================================
+;; Each workspace tab remembers which buffers were in each window and which
+;; window was active.  Tab data: (name buffer-names window-idx)
+
+(def (qt-tab-save-current! app)
+  "Save current Qt window state to current tab."
+  (let* ((tabs (app-state-tabs app))
+         (idx (app-state-current-tab-idx app))
+         (fr (app-state-frame app))
+         (wins (qt-frame-windows fr))
+         (buffers (map (lambda (w)
+                         (let ((buf (qt-edit-window-buffer w)))
+                           (if buf (buffer-name buf) "*scratch*")))
+                       wins))
+         (win-idx (qt-frame-current-idx fr)))
+    (when (< idx (length tabs))
+      (let* ((old-tab (list-ref tabs idx))
+             (name (car old-tab))
+             (new-tab (list name buffers win-idx)))
+        (set! (app-state-tabs app)
+          (append (take tabs idx)
+                  (list new-tab)
+                  (if (< (+ idx 1) (length tabs))
+                    (list-tail tabs (+ idx 1))
+                    '())))))))
+
+(def (qt-tab-restore! app tab)
+  "Restore Qt window state from a tab."
+  (let* ((buffers (cadr tab))
+         (win-idx (caddr tab))
+         (fr (app-state-frame app))
+         (wins (qt-frame-windows fr)))
+    ;; Restore buffers to windows
+    (for-each
+      (lambda (win buf-name)
+        (let ((buf (buffer-by-name buf-name)))
+          (when buf
+            (qt-buffer-attach! (qt-edit-window-editor win) buf)
+            (set! (qt-edit-window-buffer win) buf))))
+      wins
+      (take buffers (min (length buffers) (length wins))))
+    ;; Set current window
+    (let ((max-idx (- (length wins) 1)))
+      (set! (qt-frame-current-idx fr) (min win-idx max-idx)))
+    ;; Update visuals
+    (qt-update-visual-decorations! (qt-current-editor fr))
+    (qt-modeline-update! app)))
+
+(def (cmd-tab-new app)
+  "Create a new workspace tab with current buffer."
+  (let* ((echo (app-state-echo app))
+         (tabs (app-state-tabs app))
+         (fr (app-state-frame app))
+         (win (qt-current-window fr))
+         (buf (qt-edit-window-buffer win))
+         (buf-name (if buf (buffer-name buf) "*scratch*"))
+         (new-tab-num (+ (length tabs) 1))
+         (new-tab-name (string-append "Tab " (number->string new-tab-num)))
+         (new-tab (list new-tab-name (list buf-name) 0)))
+    ;; Save current tab state first
+    (qt-tab-save-current! app)
+    ;; Add new tab
+    (set! (app-state-tabs app) (append tabs (list new-tab)))
+    (set! (app-state-current-tab-idx app) (- (length (app-state-tabs app)) 1))
+    (echo-message! echo (string-append "Created " new-tab-name))))
+
+(def (cmd-tab-close app)
+  "Close current workspace tab."
+  (let* ((echo (app-state-echo app))
+         (tabs (app-state-tabs app))
+         (idx (app-state-current-tab-idx app)))
+    (if (<= (length tabs) 1)
+      (echo-message! echo "Cannot close last tab")
+      (let* ((tab-name (car (list-ref tabs idx)))
+             (new-tabs (append (take tabs idx)
+                               (if (< (+ idx 1) (length tabs))
+                                 (list-tail tabs (+ idx 1))
+                                 '())))
+             (new-idx (min idx (- (length new-tabs) 1))))
+        (set! (app-state-tabs app) new-tabs)
+        (set! (app-state-current-tab-idx app) new-idx)
+        ;; Restore the now-current tab
+        (qt-tab-restore! app (list-ref new-tabs new-idx))
+        (echo-message! echo (string-append "Closed " tab-name))))))
+
+(def (cmd-tab-next app)
+  "Switch to next workspace tab."
+  (let* ((echo (app-state-echo app))
+         (tabs (app-state-tabs app))
+         (idx (app-state-current-tab-idx app)))
+    (if (<= (length tabs) 1)
+      (echo-message! echo "Only one tab")
+      (begin
+        ;; Save current tab state
+        (qt-tab-save-current! app)
+        ;; Switch to next
+        (let ((new-idx (modulo (+ idx 1) (length tabs))))
+          (set! (app-state-current-tab-idx app) new-idx)
+          (let ((tab (list-ref tabs new-idx)))
+            (qt-tab-restore! app tab)
+            (echo-message! echo (string-append "Tab: " (car tab)
+                                              " [" (number->string (+ new-idx 1))
+                                              "/" (number->string (length tabs)) "]"))))))))
+
+(def (cmd-tab-previous app)
+  "Switch to previous workspace tab."
+  (let* ((echo (app-state-echo app))
+         (tabs (app-state-tabs app))
+         (idx (app-state-current-tab-idx app)))
+    (if (<= (length tabs) 1)
+      (echo-message! echo "Only one tab")
+      (begin
+        ;; Save current tab state
+        (qt-tab-save-current! app)
+        ;; Switch to previous
+        (let ((new-idx (modulo (- idx 1) (length tabs))))
+          (set! (app-state-current-tab-idx app) new-idx)
+          (let ((tab (list-ref tabs new-idx)))
+            (qt-tab-restore! app tab)
+            (echo-message! echo (string-append "Tab: " (car tab)
+                                              " [" (number->string (+ new-idx 1))
+                                              "/" (number->string (length tabs)) "]"))))))))
+
+(def (cmd-tab-rename app)
+  "Rename current workspace tab."
+  (let* ((echo (app-state-echo app))
+         (tabs (app-state-tabs app))
+         (idx (app-state-current-tab-idx app))
+         (old-name (car (list-ref tabs idx)))
+         (new-name (qt-echo-read-string app "Rename tab to: ")))
+    (when (and new-name (not (string=? new-name "")))
+      (let* ((old-tab (list-ref tabs idx))
+             (new-tab (cons new-name (cdr old-tab))))
+        (set! (app-state-tabs app)
+          (append (take tabs idx)
+                  (list new-tab)
+                  (if (< (+ idx 1) (length tabs))
+                    (list-tail tabs (+ idx 1))
+                    '())))
+        (echo-message! echo (string-append "Renamed to: " new-name))))))
+
+(def (cmd-tab-move app)
+  "Move current workspace tab left or right (with prefix arg for direction)."
+  (let* ((echo (app-state-echo app))
+         (tabs (app-state-tabs app))
+         (idx (app-state-current-tab-idx app))
+         (n (get-prefix-arg app 1)))
+    (if (<= (length tabs) 1)
+      (echo-message! echo "Only one tab")
+      (let* ((new-idx (modulo (+ idx n) (length tabs)))
+             (tab (list-ref tabs idx))
+             (tabs-without (append (take tabs idx)
+                                   (if (< (+ idx 1) (length tabs))
+                                     (list-tail tabs (+ idx 1))
+                                     '())))
+             (new-tabs (append (take tabs-without new-idx)
+                               (list tab)
+                               (list-tail tabs-without new-idx))))
+        (set! (app-state-tabs app) new-tabs)
+        (set! (app-state-current-tab-idx app) new-idx)
+        (echo-message! echo (string-append "Moved tab to position "
+                                          (number->string (+ new-idx 1))))))))

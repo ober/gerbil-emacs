@@ -342,7 +342,7 @@
 | Tool bar | :red_circle: | Not implemented |
 | Scroll bar | :red_circle: | Scintilla handles internally |
 | Mode line (status bar) | :white_check_mark: | Shows mode, file, position, modified status |
-| Tab bar | :yellow_circle: | Registered but minimal |
+| Tab bar | :green_circle: | Qt visual buffer tab bar + workspace tabs (both layers) |
 | Header line | :red_circle: | Not implemented |
 | Fringe indicators | :yellow_circle: | Line numbers; no bitmap fringes |
 | Display tables | :red_circle: | Not implemented |
@@ -933,14 +933,16 @@
 
 | Feature | Status | Notes |
 |---------|--------|-------|
-| Tab bar mode | :yellow_circle: | Registered |
-| Create/close tabs | :red_circle: | Not functional |
-| Switch tabs | :red_circle: | Not functional |
-| Tab-line (per-window) | :red_circle: | Not implemented |
-| Workspace/perspective | :yellow_circle: | Session save/restore provides basic workspace support |
-| Named workspaces | :red_circle: | Not implemented |
+| Tab bar mode | :green_circle: | Qt: visual buffer tab bar with click-to-switch; TUI: workspace tabs |
+| Create/close tabs | :green_circle: | `tab-new`, `tab-close` (both layers) |
+| Switch tabs | :green_circle: | `tab-next`, `tab-previous` with wrap-around (both layers) |
+| Rename tabs | :green_circle: | `tab-rename` (both layers) |
+| Move tabs | :green_circle: | `tab-move` with prefix arg direction (both layers) |
+| Tab-line (per-window) | :yellow_circle: | Qt has visual buffer tab bar; no per-window tab line |
+| Workspace/perspective | :green_circle: | Workspace tabs save/restore window buffer state per tab |
+| Named workspaces | :green_circle: | Tabs have names, renameable via `tab-rename` |
 
-**Summary:** No functional tab bar. Session management provides basic workspace persistence.
+**Summary:** Full workspace tab system with create/close/switch/rename/move. Qt has visual buffer tab bar (clickable buttons). Both layers save/restore window buffer configurations per workspace tab. Emacs aliases (`tab-bar-new-tab`, `tab-bar-close-tab`, `tab-bar-switch-to-tab`) registered.
 
 ---
 
@@ -999,7 +1001,7 @@
 | Gap | Impact | Effort |
 |-----|--------|--------|
 | **TRAMP (remote editing)** | Can't edit files over SSH/Docker | Large |
-| **Tab bar / workspaces** | No visual workspace management | Medium |
+| ~~Tab bar / workspaces~~ | ~~No visual workspace management~~ Implemented: workspace tabs (create/close/switch/rename/move), Qt visual buffer tab bar | ~~Medium~~ Done |
 | **Tree-sitter highlighting** | Less accurate highlighting than modern Emacs | Large |
 | **Package/plugin system** | Users can't extend gemacs easily | Large |
 | ~~Org capture buffer~~ | ~~No interactive capture~~ Implemented: template selection, `*Org Capture*` buffer, C-c C-c / C-c C-k | ~~Small~~ Done |
@@ -1187,5 +1189,5 @@
 ### Phase 4: Ecosystem
 15. **Extension API** — A well-documented API for users to write custom modes in Gerbil. The user wrote 28 custom Elisp modes; they'll want to do the same in Gerbil.
 16. ~~Interactive ediff~~ — ~~Hunk navigation and merge resolution.~~ Done: smerge-mode with conflict marker resolution.
-17. **Tab bar / workspaces** — Named workspaces (the user has DOOM workspaces enabled).
+17. ~~Tab bar / workspaces~~ — ~~Named workspaces (the user has DOOM workspaces enabled).~~ Done: workspace tabs with create/close/switch/rename/move in both layers.
 18. **TRAMP-like remote editing** — SSH/Docker file editing.
