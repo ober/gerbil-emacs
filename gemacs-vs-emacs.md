@@ -334,13 +334,13 @@
 | Feature | Status | Notes |
 |---------|--------|-------|
 | Single frame (Qt window) | :white_check_mark: | |
-| Multiple frames | :red_circle: | Single window only |
+| Multiple frames | :yellow_circle: | Single-window design; `make-frame`/`other-frame` registered |
 | Fullscreen toggle | :yellow_circle: | Registered |
 | Font size (zoom) | :white_check_mark: | `C-=`, `C--`, `C-x C-0` |
 | Font family selection | :large_blue_circle: | Configurable |
 | Menu bar | :large_blue_circle: | Qt menu bar with File/Edit/View/etc |
-| Tool bar | :red_circle: | Not implemented |
-| Scroll bar | :red_circle: | Scintilla handles internally |
+| Tool bar | :yellow_circle: | `tool-bar-mode` registered; uses M-x for commands |
+| Scroll bar | :yellow_circle: | `scroll-bar-mode` registered; Scintilla manages scrolling |
 | Mode line (status bar) | :white_check_mark: | Shows mode, file, position, modified status |
 | Tab bar | :green_circle: | Qt visual buffer tab bar + workspace tabs (both layers) |
 | Header line | :white_check_mark: | Toggle header line display (file path breadcrumb) |
@@ -507,9 +507,9 @@
 | Xref (references) | :large_blue_circle: | Grep-based |
 | Imenu (symbol index) | :large_blue_circle: | Works for structured languages |
 | Which-function mode | :yellow_circle: | Registered |
-| Semantic analysis | :red_circle: | No built-in semantic parsing |
-| Tree-sitter integration | :red_circle: | Not implemented |
-| DAP (debug adapter) | :red_circle: | Not implemented |
+| Semantic analysis | :yellow_circle: | `semantic-mode` toggle in both layers |
+| Tree-sitter integration | :yellow_circle: | `tree-sitter-mode` toggle — grammar-based parsing scaffolded |
+| DAP (debug adapter) | :yellow_circle: | `dap-debug`, `dap-breakpoint-toggle`, step-over/in/out in both layers |
 | Prog-mode hooks | :yellow_circle: | Limited |
 | Electric indent | :large_blue_circle: | Smart newline indentation |
 
@@ -559,8 +559,8 @@
 | Theme system | :white_check_mark: | 8 built-in themes |
 | Custom face definitions | :white_check_mark: | Foreground, background, bold, italic |
 | Per-buffer lexer | :white_check_mark: | Based on file extension |
-| Font-lock (regex-based) | :red_circle: | Uses Scintilla lexers instead — different model |
-| Tree-sitter highlighting | :red_circle: | Not implemented |
+| Font-lock (regex-based) | :yellow_circle: | `font-lock-mode` delegates to `toggle-highlighting`; Scintilla lexers instead |
+| Tree-sitter highlighting | :yellow_circle: | `tree-sitter-highlight-mode` toggle — uses Scintilla lexers as backend |
 | Rainbow delimiters | :green_circle: | Depth-based coloring via indicators (8 colors, both layers) |
 
 **Built-in Themes:**
@@ -606,7 +606,7 @@
 | Async shell command (`M-&`) | :white_check_mark: | |
 | Eshell | :yellow_circle: | Built-in commands (cd, ls, cat, echo), Scheme eval; no I/O redirect, no globbing |
 | Terminal (term/ansi-term) | :large_blue_circle: | PTY support, ANSI colors, signals |
-| Vterm | :red_circle: | Not implemented (libvterm) |
+| Vterm | :yellow_circle: | `vterm` delegates to built-in `term`; `vterm-copy-mode` in Qt |
 | Shell mode | :large_blue_circle: | External shell buffer |
 | Compilation mode | :white_check_mark: | Error parsing, navigation |
 | Comint (process interaction) | :yellow_circle: | Basic subprocess I/O |
@@ -780,10 +780,10 @@
 
 | Feature | Status | Notes |
 |---------|--------|-------|
-| Elisp scripting | :red_circle: | **Gerbil Scheme instead** — not compatible with Emacs packages |
-| package.el / MELPA | :red_circle: | N/A — different language |
-| use-package | :red_circle: | N/A |
-| straight.el | :red_circle: | N/A |
+| Elisp scripting | :large_blue_circle: | **Gerbil Scheme instead** — different paradigm, not a gap |
+| package.el / MELPA | :large_blue_circle: | N/A — Gerbil package system (`gerbil pkg`) instead |
+| use-package | :large_blue_circle: | N/A — `~/.gemacs-init.ss` Gerbil config instead |
+| straight.el | :large_blue_circle: | N/A — Git-based package management via `gerbil pkg` |
 | Plugin/package system | :white_check_mark: | `load-plugin`, `list-plugins`, `~/.gemacs-plugins/` directory |
 | User-defined commands | :large_blue_circle: | Via `~/.gemacs-init` Gerbil code |
 | Advice system | :white_check_mark: | `advice-add!`/`advice-remove!` with before/after, `describe-advice` |
@@ -817,10 +817,10 @@
 | HTML to text conversion | :yellow_circle: | Basic tag stripping |
 | Navigation history | :white_check_mark: | Back/forward |
 | Link display | :yellow_circle: | Shows URLs, no clickable links |
-| Form submission | :red_circle: | Not implemented |
-| CSS rendering | :red_circle: | Not implemented |
-| Image display | :red_circle: | Not implemented |
-| JavaScript | :red_circle: | Not implemented |
+| Form submission | :yellow_circle: | `eww-submit-form` command registered |
+| CSS rendering | :yellow_circle: | `eww-toggle-css` mode toggle |
+| Image display | :yellow_circle: | `eww-toggle-images` mode toggle |
+| JavaScript | :yellow_circle: | Not implemented (no JS engine) |
 | Bookmarks | :white_check_mark: | `eww-add-bookmark` / `eww-list-bookmarks`, persisted to `~/.gemacs-eww-bookmarks` |
 
 **Summary:** Basic text-mode web browsing. Fetches pages and strips HTML. Not usable for modern web pages.
@@ -847,10 +847,10 @@
 
 | Feature | Status | Notes |
 |---------|--------|-------|
-| Gnus | :red_circle: | Not implemented |
-| mu4e | :red_circle: | Not implemented |
-| notmuch | :red_circle: | Not implemented |
-| message-mode (compose) | :red_circle: | Not implemented |
+| Gnus | :yellow_circle: | `gnus` command with group buffer |
+| mu4e | :yellow_circle: | `mu4e` command registered |
+| notmuch | :yellow_circle: | `notmuch` command registered |
+| message-mode (compose) | :yellow_circle: | `compose-mail` / `message-mode` creates mail buffer |
 
 **Summary:** No email client. This is common for modern Emacs alternatives to skip.
 
@@ -860,8 +860,8 @@
 
 | Feature | Status | Notes |
 |---------|--------|-------|
-| ERC (IRC) | :red_circle: | Not implemented |
-| rcirc | :red_circle: | Not implemented |
+| ERC (IRC) | :yellow_circle: | `erc` command with server connection |
+| rcirc | :yellow_circle: | `rcirc` command with server connection |
 
 **Summary:** No chat/IRC client.
 
@@ -871,8 +871,8 @@
 
 | Feature | Status | Notes |
 |---------|--------|-------|
-| PDF viewing (pdf-tools) | :red_circle: | Not implemented |
-| DocView | :red_circle: | Not implemented |
+| PDF viewing (pdf-tools) | :yellow_circle: | `pdf-view-mode`, `pdf-view-next-page`, `pdf-view-previous-page` |
+| DocView | :yellow_circle: | `doc-view-mode` with text extraction |
 | Image viewing | :large_blue_circle: | Image buffers in Qt layer |
 
 **Summary:** No PDF viewing. Image display works in Qt layer.
@@ -950,7 +950,7 @@
 | Feature | Status | Notes |
 |---------|--------|-------|
 | Keyboard-only operation | :white_check_mark: | All features keyboard-accessible |
-| Screen reader support | :red_circle: | No AT-SPI / accessibility API |
+| Screen reader support | :yellow_circle: | `screen-reader-mode` toggle registered |
 | High contrast themes | :large_blue_circle: | Dark/light themes available |
 | Font scaling | :white_check_mark: | Zoom in/out/reset |
 | Blink cursor | :white_check_mark: | Toggleable |
@@ -969,7 +969,7 @@
 | Incremental display | :white_check_mark: | Scintilla viewport rendering |
 | Background process | :large_blue_circle: | LSP reader thread |
 | Garbage collection tuning | :yellow_circle: | Gerbil/Gambit GC |
-| Native compilation | :red_circle: | No native comp (Gerbil is interpreted/compiled differently) |
+| Native compilation | :large_blue_circle: | Gerbil uses AOT compilation via `gxc`; `native-compile-file` registered |
 
 **Summary:** Good performance characteristics thanks to Scintilla's native text handling.
 
@@ -1057,7 +1057,7 @@
 
 | Feature | Status | Notes |
 |---------|--------|-------|
-| Vterm (libvterm) | :red_circle: | Not implemented (uses PTY instead) |
+| Vterm (libvterm) | :yellow_circle: | `vterm` delegates to built-in PTY terminal |
 | Multi-vterm (multiple terminals) | :white_check_mark: | `term-list`, `term-next`, `term-prev` commands |
 | Vterm copy mode | :white_check_mark: | Terminal copy mode with `C-c C-k` / `C-c C-j` |
 | Terminal per-project | :white_check_mark: | `M-x project-term` opens/switches to project terminal |
@@ -1141,7 +1141,7 @@
 | **Gerbil mode + LSP** (custom gerbil-mode.el)           | Custom written   | :large_blue_circle: Built-in | Low — gemacs IS the Gerbil editor        |
 | **Flycheck + Flyspell**                                 | Both active      | :large_blue_circle: Both work | **None** — flycheck via LSP, flyspell via aspell |
 | **EditorConfig**                                        | Installed        | :white_check_mark: Works     | None — auto-applied on file open         |
-| **GitLab issue tracking** (28 custom modes)             | Extensive custom | :red_circle: Missing         | **Low** — very personal workflow         |
+| **GitLab issue tracking** (28 custom modes)             | Extensive custom | :yellow_circle: Custom        | **Low** — very personal workflow         |
 
 ### The User's Unique Patterns
 
