@@ -2043,8 +2043,8 @@
                   (check (not (eq? #f (find-command name))) => #t))
         '(helm-M-x helm-mini helm-buffers-list helm-find-files
           helm-occur helm-imenu helm-show-kill-ring helm-bookmarks
-          helm-mark-ring helm-register helm-apropos helm-resume
-          helm-mode toggle-helm-mode)))
+          helm-mark-ring helm-register helm-apropos helm-grep helm-man
+          helm-resume helm-mode toggle-helm-mode)))
 
     (test-case "helm: multi-match engine"
       (check (helm-multi-match? "foo bar" "foobar baz") => #t)
@@ -2064,6 +2064,47 @@
         (helm-session-store! session)
         (let ((resumed (helm-session-resume)))
           (check (eq? resumed session) => #t))))
+
+    (test-case "helm: match positions for highlighting"
+      ;; Substring match
+      (let ((pos (helm-match-positions "foo" "hello foobar")))
+        (check (pair? pos) => #t)
+        (check (car pos) => 6)
+        (check (length pos) => 3))
+      ;; Prefix match
+      (let ((pos (helm-match-positions "^hel" "hello world")))
+        (check (pair? pos) => #t)
+        (check (car pos) => 0)
+        (check (length pos) => 3))
+      ;; Empty pattern
+      (check (helm-match-positions "" "anything") => [])
+      ;; No match
+      (check (helm-match-positions "xyz" "hello") => [])
+      ;; Negation tokens produce no positions
+      (check (helm-match-positions "!test" "production") => []))
+
+    (test-case "helm: follow mode and mark-all in session"
+      (let* ((src (make-simple-source "test"
+                    (lambda () '("one" "two" "three"))
+                    (lambda (app val) val)
+                    #t   ;; fuzzy?
+                    #f   ;; persistent-action
+                    #f   ;; display-fn
+                    #f   ;; real-fn
+                    #f   ;; volatile?
+                    #t)) ;; follow?
+             (session (make-new-session (list src) "*follow-test*")))
+        ;; Follow mode should be initialized from source
+        (check (helm-source-follow? src) => #t)
+        ;; Session follow? starts as #f (set by renderer on init)
+        (check (boolean? (helm-session-follow? session)) => #t)
+        ;; Mark all candidates
+        (let ((cand-count (vector-length (helm-session-candidates session))))
+          (set! (helm-session-marked session)
+            (let gen ((i 0) (acc []))
+              (if (>= i cand-count) acc
+                (gen (+ i 1) (cons i acc)))))
+          (check (= (length (helm-session-marked session)) cand-count) => #t))))
 
 ))
 

@@ -82,10 +82,15 @@
                  qt-register-helm-commands!)
         (only-in :gemacs/helm
                  helm-multi-match?
+                 helm-match-positions
                  make-new-session
                  make-simple-source
                  helm-session-buffer-name
                  helm-session-sources
+                 helm-session-candidates
+                 helm-session-marked helm-session-marked-set!
+                 helm-session-follow? helm-session-follow?-set!
+                 helm-source-follow?
                  helm-session-store!
                  helm-session-resume)
         (only-in :gemacs/qt/magit
@@ -3137,8 +3142,8 @@
   ;; Test 1: All helm commands registered
   (let ((helm-cmds '(helm-M-x helm-mini helm-buffers-list helm-find-files
                      helm-occur helm-imenu helm-show-kill-ring helm-bookmarks
-                     helm-mark-ring helm-register helm-apropos helm-resume
-                     helm-mode toggle-helm-mode)))
+                     helm-mark-ring helm-register helm-apropos helm-grep helm-man
+                     helm-resume helm-mode toggle-helm-mode)))
     (let loop ((cmds helm-cmds) (all-ok #t))
       (if (null? cmds)
         (if all-ok
@@ -3175,6 +3180,48 @@
       (if (eq? resumed session)
         (pass! "helm session resume returns stored session")
         (fail! "helm resume" "wrong session" "same session object"))))
+
+  ;; Test 4: Match positions for highlighting
+  (let ((pos (helm-match-positions "foo" "hello foobar")))
+    (if (and (pair? pos) (= (car pos) 6) (= (length pos) 3))
+      (pass! "helm match-positions substring highlight")
+      (fail! "helm match-positions"
+             (with-output-to-string (lambda () (write pos)))
+             "positions (6 7 8)")))
+
+  ;; Test 5: Prefix match positions
+  (let ((pos (helm-match-positions "^hel" "hello world")))
+    (if (and (pair? pos) (= (car pos) 0) (= (length pos) 3))
+      (pass! "helm match-positions prefix highlight")
+      (fail! "helm match-positions prefix"
+             (with-output-to-string (lambda () (write pos)))
+             "positions (0 1 2)")))
+
+  ;; Test 6: Empty/no-match positions
+  (if (and (null? (helm-match-positions "" "anything"))
+           (null? (helm-match-positions "xyz" "hello"))
+           (null? (helm-match-positions "!test" "production")))
+    (pass! "helm match-positions edge cases")
+    (fail! "helm match-positions edge" "non-empty" "empty lists"))
+
+  ;; Test 7: Follow mode and mark-all
+  (let* ((src (make-simple-source "test"
+                (lambda () '("one" "two" "three"))
+                (lambda (val) val)
+                #t #f #f #f #f #t))  ;; follow?=#t
+         (session (make-new-session (list src) "*follow-test*")))
+    (if (helm-source-follow? src)
+      (pass! "helm source follow? flag set")
+      (fail! "helm follow?" "false" "true"))
+    ;; Test mark-all
+    (let ((cand-count (vector-length (helm-session-candidates session))))
+      (helm-session-marked-set! session
+        (let gen ((i 0) (acc []))
+          (if (>= i cand-count) acc (gen (+ i 1) (cons i acc)))))
+      (if (= (length (helm-session-marked session)) cand-count)
+        (pass! "helm mark-all sets all candidates")
+        (fail! "helm mark-all" (number->string (length (helm-session-marked session)))
+               (number->string cand-count)))))
 
   (displayln "Group 23 complete"))
 

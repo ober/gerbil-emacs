@@ -17,6 +17,8 @@
   qt-cmd-helm-mark-ring
   qt-cmd-helm-register
   qt-cmd-helm-apropos
+  qt-cmd-helm-grep
+  qt-cmd-helm-man
   qt-cmd-helm-resume
   qt-cmd-helm-toggle-mode)
 
@@ -133,9 +135,16 @@
 
 (def (qt-cmd-helm-find-files app)
   "Find files with helm-style narrowing (Qt)."
-  ;; Delegate to existing find-file for now — helm file browser needs
-  ;; directory traversal support in the Qt narrowing UI
-  (execute-command! app 'find-file))
+  (let* ((echo (app-state-echo app))
+         (cur-buf (qt-edit-window-buffer (qt-current-window (app-state-frame app))))
+         (start-dir (if (and cur-buf (buffer-file-path cur-buf))
+                      (path-directory (buffer-file-path cur-buf))
+                      (current-directory)))
+         (src (helm-source-files app start-dir))
+         (session (make-new-session (list src) "*helm find files*"))
+         (result (helm-qt-run! session app)))
+    (when (and result (string? result))
+      (echo-message! echo (string-append "Open: " result)))))
 
 ;;;============================================================================
 ;;; Helm Occur
@@ -272,6 +281,48 @@
         (echo-message! (app-state-echo app)
           (string-append name ": " (command-doc (string->symbol name))))))))
 
+(def (qt-cmd-helm-grep app)
+  "Search with grep/rg using helm narrowing (Qt)."
+  (let* ((echo (app-state-echo app))
+         (cur-buf (qt-edit-window-buffer (qt-current-window (app-state-frame app))))
+         (search-dir (if (and cur-buf (buffer-file-path cur-buf))
+                       (path-directory (buffer-file-path cur-buf))
+                       (current-directory)))
+         (src (helm-source-grep app search-dir))
+         (session (make-new-session (list src) "*helm grep*"))
+         (result (helm-qt-run! session app)))
+    (when (and result (string? result))
+      (let ((colon1 (string-index result #\:)))
+        (if colon1
+          (let* ((file (substring result 0 colon1))
+                 (rest (substring result (+ colon1 1) (string-length result)))
+                 (colon2 (string-index rest #\:))
+                 (line-num (if colon2
+                             (string->number (substring rest 0 colon2))
+                             #f)))
+            (echo-message! echo
+              (string-append "Open: " file
+                (if line-num (string-append " line " (number->string line-num)) ""))))
+          (echo-message! echo (string-append "Grep: " result)))))))
+
+(def (qt-cmd-helm-man app)
+  "Browse man pages with helm narrowing (Qt)."
+  (let* ((src (helm-source-man app))
+         (session (make-new-session (list src) "*helm man*"))
+         (result (helm-qt-run! session app)))
+    (when (and result (string? result))
+      (let ((paren-pos (string-index result #\()))
+        (if paren-pos
+          (let* ((name (string-trim-right (substring result 0 paren-pos)))
+                 (close-paren (string-index result #\)))
+                 (section (if close-paren
+                            (substring result (+ paren-pos 1) close-paren)
+                            "")))
+            (echo-message! (app-state-echo app)
+              (string-append "man " section " " name)))
+          (echo-message! (app-state-echo app)
+            (string-append "man: " result)))))))
+
 (def (qt-cmd-helm-resume app)
   "Resume last helm session (Qt)."
   (let ((session (helm-session-resume)))
@@ -325,6 +376,8 @@
   (register-command! 'helm-mark-ring qt-cmd-helm-mark-ring)
   (register-command! 'helm-register qt-cmd-helm-register)
   (register-command! 'helm-apropos qt-cmd-helm-apropos)
+  (register-command! 'helm-grep qt-cmd-helm-grep)
+  (register-command! 'helm-man qt-cmd-helm-man)
   (register-command! 'helm-resume qt-cmd-helm-resume)
   (register-command! 'helm-mode qt-cmd-helm-toggle-mode)
   (register-command! 'toggle-helm-mode qt-cmd-helm-toggle-mode)
@@ -341,5 +394,7 @@
   (register-command-doc! 'helm-mark-ring "Browse mark ring with helm.")
   (register-command-doc! 'helm-register "Browse registers with helm.")
   (register-command-doc! 'helm-apropos "Search commands with descriptions.")
+  (register-command-doc! 'helm-grep "Search with grep/rg using helm narrowing.")
+  (register-command-doc! 'helm-man "Browse man pages with helm narrowing.")
   (register-command-doc! 'helm-resume "Resume the last helm session.")
   (register-command-doc! 'helm-mode "Toggle helm-mode for incremental completion."))

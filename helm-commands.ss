@@ -18,6 +18,8 @@
   cmd-helm-mark-ring
   cmd-helm-register
   cmd-helm-apropos
+  cmd-helm-grep
+  cmd-helm-man
   cmd-helm-resume
   cmd-helm-toggle-mode)
 
@@ -317,6 +319,63 @@
           (string-append name ": " (command-doc (string->symbol name))))))))
 
 ;;;============================================================================
+;;; Helm Grep
+;;;============================================================================
+
+(def (cmd-helm-grep app)
+  "Search with grep/rg using helm narrowing. Pattern becomes the search query."
+  (let* ((echo (app-state-echo app))
+         (bufs *buffer-list*)
+         (cur-buf (and (pair? bufs)
+                       (let ((idx (frame-current-idx (app-state-frame app))))
+                         (if (< idx (length bufs))
+                           (list-ref bufs idx)
+                           (car bufs)))))
+         (search-dir (if (and cur-buf (buffer-file-path cur-buf))
+                       (path-directory (buffer-file-path cur-buf))
+                       (current-directory)))
+         (src (helm-source-grep app search-dir))
+         (session (make-new-session (list src) "*helm grep*"))
+         (result (helm-tui-run! session)))
+    (when (and result (string? result))
+      ;; Result is a grep line: file:line:content
+      (let ((colon1 (string-index result #\:)))
+        (if colon1
+          (let* ((file (substring result 0 colon1))
+                 (rest (substring result (+ colon1 1) (string-length result)))
+                 (colon2 (string-index rest #\:))
+                 (line-num (if colon2
+                             (string->number (substring rest 0 colon2))
+                             #f)))
+            (echo-message! echo
+              (string-append "Open: " file
+                (if line-num (string-append " line " (number->string line-num)) ""))))
+          (echo-message! echo (string-append "Grep: " result)))))))
+
+;;;============================================================================
+;;; Helm Man
+;;;============================================================================
+
+(def (cmd-helm-man app)
+  "Browse man pages with helm narrowing."
+  (let* ((src (helm-source-man app))
+         (session (make-new-session (list src) "*helm man*"))
+         (result (helm-tui-run! session)))
+    (when (and result (string? result))
+      ;; Extract man page name and section
+      (let ((paren-pos (string-index result #\()))
+        (if paren-pos
+          (let* ((name (string-trim-right (substring result 0 paren-pos)))
+                 (close-paren (string-index result #\)))
+                 (section (if close-paren
+                            (substring result (+ paren-pos 1) close-paren)
+                            "")))
+            (echo-message! (app-state-echo app)
+              (string-append "man " section " " name)))
+          (echo-message! (app-state-echo app)
+            (string-append "man: " result)))))))
+
+;;;============================================================================
 ;;; Helm Resume
 ;;;============================================================================
 
@@ -378,6 +437,8 @@
   (register-command! 'helm-mark-ring cmd-helm-mark-ring)
   (register-command! 'helm-register cmd-helm-register)
   (register-command! 'helm-apropos cmd-helm-apropos)
+  (register-command! 'helm-grep cmd-helm-grep)
+  (register-command! 'helm-man cmd-helm-man)
   (register-command! 'helm-resume cmd-helm-resume)
   (register-command! 'helm-mode cmd-helm-toggle-mode)
   (register-command! 'toggle-helm-mode cmd-helm-toggle-mode)
@@ -394,5 +455,7 @@
   (register-command-doc! 'helm-mark-ring "Browse mark ring with helm.")
   (register-command-doc! 'helm-register "Browse registers with helm.")
   (register-command-doc! 'helm-apropos "Search commands with descriptions.")
+  (register-command-doc! 'helm-grep "Search with grep/rg using helm narrowing.")
+  (register-command-doc! 'helm-man "Browse man pages with helm narrowing.")
   (register-command-doc! 'helm-resume "Resume the last helm session.")
   (register-command-doc! 'helm-mode "Toggle helm-mode for incremental completion."))

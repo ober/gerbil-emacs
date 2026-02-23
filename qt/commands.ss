@@ -48,6 +48,8 @@
         check-so-long!
         savehist-save!
         savehist-load!
+        gsh-history-save!
+        gsh-history-load!
         save-place-load!
         save-place-save!
         auto-fill-check!
@@ -92,6 +94,7 @@
         :gemacs/repl
         :gemacs/eshell
         :gemacs/shell
+        :gemacs/shell-history
         :gemacs/terminal
         :gemacs/chat
         :gemacs/qt/buffer
@@ -951,6 +954,7 @@
         (scratch-save!)
         (savehist-save!)
         (save-place-save!)
+        (gsh-history-save!)
         (session-save! app)
         (set! (app-state-running app) #f)
         (qt-widget-close! (qt-frame-main-win fr)))
@@ -986,6 +990,7 @@
              (qt-buffer-attach! ed original-buf))
            (scratch-save!)
            (save-place-save!)
+           (gsh-history-save!)
            (session-save! app)
            (set! (app-state-running app) #f)
            (qt-widget-close! (qt-frame-main-win fr)))
@@ -993,6 +998,7 @@
            ;; Quit without saving
            (scratch-save!)
            (save-place-save!)
+           (gsh-history-save!)
            (session-save! app)
            (set! (app-state-running app) #f)
            (qt-widget-close! (qt-frame-main-win fr)))

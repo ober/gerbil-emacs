@@ -19,6 +19,8 @@
   helm-source-mark-ring
   helm-source-registers
   helm-source-apropos
+  helm-source-grep
+  helm-source-man
 
   ;; Composed sessions
   helm-mini-sources
@@ -428,6 +430,135 @@
                                            display-str)))
                               (execute-command! app (string->symbol name))))))
     #f #f #f #t #f 200 #f #f))
+
+;;;============================================================================
+;;; Source: Grep (async — uses current pattern as search query)
+;;;============================================================================
+
+(def (read-process-lines proc (max-lines 200))
+  "Read up to max-lines from a process port, return list of strings."
+  (let loop ((n 0) (acc []))
+    (if (>= n max-lines)
+      (begin (with-catch void (lambda () (close-port proc))) (reverse acc))
+      (let ((line (with-catch (lambda (e) #f) (lambda () (read-line proc)))))
+        (if (or (not line) (eof-object? line))
+          (begin (with-catch void (lambda () (process-status proc))) (reverse acc))
+          (loop (+ n 1) (cons line acc)))))))
+
+(def (shell-quote-arg str)
+  "Quote a string for safe use in shell commands."
+  (string-append "'" (string-join
+                       (string-split str #\')
+                       "'\\''")
+                 "'"))
+
+(def (helm-source-grep app dir)
+  "Helm source for grep results. Uses the helm pattern as the grep query.
+   Requires >= 3 chars in pattern to search. Prefers rg, falls back to grep."
+  (make-helm-source
+    "Grep"
+    (lambda ()
+      (let ((pat (*helm-current-pattern*)))
+        (if (< (string-length pat) 3)
+          []
+          (with-catch
+            (lambda (e) [])
+            (lambda ()
+              (let* ((cmd (string-append
+                           "rg -n --no-heading --color=never --max-count=200 "
+                           "-- " (shell-quote-arg pat) " "
+                           (shell-quote-arg dir)
+                           " 2>/dev/null || "
+                           "grep -rn -- " (shell-quote-arg pat) " "
+                           (shell-quote-arg dir)
+                           " 2>/dev/null || true"))
+                     (proc (open-process
+                             (list path: "/bin/sh"
+                                   arguments: (list "-c" cmd)
+                                   stdin-redirection: #f
+                                   stdout-redirection: #t
+                                   stderr-redirection: #f
+                                   pseudo-terminal: #f))))
+                (read-process-lines proc 200)))))))
+    ;; Actions
+    (list (cons "Open" (lambda (display-str)
+                         ;; Format: file:line:content
+                         (let ((colon1 (string-index display-str #\:)))
+                           (when colon1
+                             (let* ((file (substring display-str 0 colon1))
+                                    (rest (substring display-str (+ colon1 1)
+                                                     (string-length display-str)))
+                                    (colon2 (string-index rest #\:))
+                                    (line (if colon2
+                                            (string->number (substring rest 0 colon2))
+                                            #f)))
+                               (echo-message! (app-state-echo app)
+                                 (string-append "Open: " file
+                                   (if line
+                                     (string-append " line " (number->string line))
+                                     "")))))))))
+    #f    ;; persistent-action
+    #f    ;; display-fn
+    #f    ;; real-fn
+    #f    ;; fuzzy? — no, the pattern IS the search query
+    #t    ;; volatile? — rebuild on every pattern change
+    200   ;; candidate-limit
+    #f    ;; keymap
+    #f))  ;; follow?
+
+;;;============================================================================
+;;; Source: Man Pages
+;;;============================================================================
+
+(def *helm-man-cache* #f)
+
+(def (helm-get-man-pages)
+  "Get list of man page entries. Cached after first call."
+  (unless *helm-man-cache*
+    (set! *helm-man-cache*
+      (with-catch
+        (lambda (e) [])
+        (lambda ()
+          (let ((proc (open-process
+                        (list path: "/bin/sh"
+                              arguments: '("-c" "man -k . 2>/dev/null | head -2000 || true")
+                              stdin-redirection: #f
+                              stdout-redirection: #t
+                              stderr-redirection: #f
+                              pseudo-terminal: #f))))
+            (read-process-lines proc 2000))))))
+  *helm-man-cache*)
+
+(def (helm-source-man app)
+  "Helm source for man page browsing."
+  (make-helm-source
+    "Man Pages"
+    (lambda () (helm-get-man-pages))
+    ;; Actions
+    (list (cons "View" (lambda (display-str)
+                         ;; Format: "name (section) - description"
+                         ;; Extract name and section
+                         (let ((paren-pos (string-index display-str #\()))
+                           (if paren-pos
+                             (let* ((name (string-trim-right
+                                           (substring display-str 0 paren-pos)))
+                                    (close-paren (string-index display-str #\)))
+                                    (section (if close-paren
+                                               (substring display-str (+ paren-pos 1)
+                                                          close-paren)
+                                               "")))
+                               (echo-message! (app-state-echo app)
+                                 (string-append "man " section " " name)))
+                             (echo-message! (app-state-echo app)
+                               (string-append "man " display-str)))))))
+    #f    ;; persistent-action
+    #f    ;; display-fn
+    #f    ;; real-fn
+    #t    ;; fuzzy?
+    #f    ;; volatile?
+    200   ;; candidate-limit
+    #f    ;; keymap
+    #f))  ;; follow?
 
 ;;;============================================================================
 ;;; Composed sessions

@@ -1107,7 +1107,7 @@
 | Helm M-x                  | :white_check_mark: | Real-time filtered candidate list, command + keybinding display |
 | Helm mini                 | :white_check_mark: | Multi-source: buffers + recent files combined |
 | Helm buffers              | :white_check_mark: | MRU-ordered buffer list with modified indicator |
-| Helm find-files           | :large_blue_circle: | TUI has full helm file browser; Qt delegates to find-file |
+| Helm find-files           | :white_check_mark: | Full helm file browser in both TUI and Qt |
 | Helm occur                | :white_check_mark: | Live narrowing of buffer lines, goto-line on select |
 | Helm imenu                | :white_check_mark: | Navigate definitions (def/defstruct/defclass/define/defmethod/defrule) |
 | Helm show-kill-ring       | :white_check_mark: | Browse and insert from kill ring |
@@ -1115,15 +1115,19 @@
 | Helm mark-ring            | :white_check_mark: | Browse mark ring positions |
 | Helm register             | :white_check_mark: | Browse registers |
 | Helm apropos              | :white_check_mark: | Multi-source: commands + variables with descriptions |
+| Helm grep                 | :white_check_mark: | Volatile source using `rg` (fallback `grep`), pattern as search query |
+| Helm man                  | :white_check_mark: | Cached `man -k` results with fuzzy filtering |
 | Helm resume               | :white_check_mark: | Restore last session with pattern and candidates |
 | Helm mode toggle          | :white_check_mark: | Rebinds M-x, C-x b, C-x C-b, M-y, C-x r b |
 | Helm dash (documentation) | :white_check_mark: | `helm-dash` docset search                    |
 | Helm C-yasnippet          | :white_check_mark: | `helm-c-yasnippet` delegates to snippet-insert |
-| Helm grep (async)         | :red_circle:  | Not yet implemented — needs async source support |
-| Follow mode               | :red_circle:  | Struct has field but not wired to auto-preview |
-| Action menu / marking     | :red_circle:  | TAB action menu, C-SPC marking not implemented |
+| Follow mode               | :white_check_mark: | C-c C-f toggle, auto-preview on C-n/C-p navigation |
+| Action menu / marking     | :white_check_mark: | TAB action menu, C-SPC mark/unmark, M-a mark-all |
+| Match highlighting        | :white_check_mark: | Matched chars in yellow, brighter when selected |
+| Auto-resize               | :white_check_mark: | Helm window grows/shrinks 4–12 rows based on candidates |
+| Source headers             | :white_check_mark: | Styled `─── Source Name ───` separator lines |
 
-**Summary:** Full Helm narrowing framework with dedicated core (`helm.ss`), multi-match engine, 10 built-in sources, TUI and Qt renderers, 14 registered commands, session resume, and helm-mode keybinding override. Both TUI and Qt have feature parity. Missing: async grep, follow mode, action menu/marking, candidate highlighting.
+**Summary:** Full Helm narrowing framework: dedicated core (`helm.ss`), multi-match engine (AND tokens, `!` negation, `^` prefix, fuzzy), 14 built-in sources, TUI and Qt renderers, 16 registered commands, session resume, helm-mode keybinding override, follow mode, action menu with marking, match character highlighting, auto-resize, and styled source headers. All features have TUI and Qt parity.
 
 ---
 
@@ -1136,7 +1140,7 @@
 | Feature                                                 | Emacs Status     | Gemacs Status                | Gap Severity                             |
 |---------------------------------------------------------|------------------|------------------------------|------------------------------------------|
 | **Key-chords** (30+ bindings: AS, ZX, BV, FG, KB, etc.) | Extensive        | :white_check_mark: Works     | None — key-chord system exists           |
-| **Helm** (M-x, buffers, files, grep)                    | Primary UI       | :white_check_mark: Full framework | **None** — 14 commands, multi-match, session resume, TUI+Qt |
+| **Helm** (M-x, buffers, files, grep)                    | Primary UI       | :white_check_mark: Complete | **None** — 16 commands, 14 sources, follow mode, action menu, highlighting |
 | **Magit + Forge** (staging, commit, PR review)          | Daily driver     | :white_check_mark: Works     | None — hunk staging, inline diffs, forge PR/issue |
 | **Multi-vterm** (multiple terminals, copy mode)         | Heavy use        | :white_check_mark: Works     | None — term-list/next/prev + copy mode   |
 | **Eglot / LSP** (completion, hover, goto-def, refs)     | Working          | :white_check_mark: Works     | None — full UI wiring with keybindings   |
@@ -1160,7 +1164,7 @@
 
 1. **Key-chord power user**: 30+ two-key simultaneous bindings for common actions. Gemacs already supports this.
 
-2. **Helm-centric workflow**: Everything goes through Helm — M-x, buffers, files, grep, docs. Gemacs now has a full Helm framework with 14 commands, multi-match engine, session resume, and TUI+Qt renderers. Remaining gap: async helm-grep.
+2. **Helm-centric workflow**: Everything goes through Helm — M-x, buffers, files, grep, docs. Gemacs has a full Helm framework with 16 commands, 14 sources, multi-match engine, session resume, follow mode, action menu, match highlighting, and TUI+Qt renderers. No remaining gaps.
 
 3. **Multi-terminal workflow**: Uses multi-vterm with key-chords (`MT` = new terminal, `LK` = copy mode, `JK` = exit copy mode). Terminal management is core to their workflow.
 

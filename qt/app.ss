@@ -14,6 +14,7 @@
         :gemacs/repl
         :gemacs/eshell
         :gemacs/shell
+        :gemacs/shell-history
         :gemacs/terminal
         :gemacs/chat
         :gemacs/qt/keymap
@@ -271,6 +272,7 @@
       (abbrevs-load!)
       (savehist-load!)
       (save-place-load!)
+      (gsh-history-load!)
       (load-init-file!)
       (init-file-load!)  ;; plaintext ~/.gemacs-init (chords, key-translate, settings)
 

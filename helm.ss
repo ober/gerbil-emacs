@@ -35,6 +35,12 @@
   make-new-session
   make-simple-source
 
+  ;; Match highlighting
+  helm-match-positions
+
+  ;; Pattern access (for volatile sources like grep)
+  *helm-current-pattern*
+
   ;; Configuration
   *helm-candidate-limit*
   *helm-follow-delay*)
@@ -51,6 +57,10 @@
 ;; *helm-mode* is defined in core.ss
 (def *helm-candidate-limit* 100)
 (def *helm-follow-delay* 0.1)  ;; seconds
+
+;; Dynamic parameter: set to current pattern during helm-filter-source.
+;; Volatile sources (e.g. grep) can read this to use the pattern as a search query.
+(def *helm-current-pattern* (make-parameter ""))
 
 ;;;============================================================================
 ;;; Data structures
@@ -197,8 +207,9 @@
 (def (helm-filter-source source pattern)
   "Filter a single source's candidates against a pattern.
    Returns a list of helm-candidate structs, sorted by score."
-  (let* ((raw-candidates (let ((c (helm-source-candidates source)))
-                           (if (procedure? c) (c) c)))
+  (let* ((raw-candidates (parameterize ((*helm-current-pattern* pattern))
+                           (let ((c (helm-source-candidates source)))
+                             (if (procedure? c) (c) c))))
          (display-fn (helm-source-display-fn source))
          (real-fn (helm-source-real-fn source))
          (use-fuzzy? (helm-source-fuzzy? source))
@@ -343,3 +354,66 @@
     ;; Initial filter
     (set! (helm-session-candidates session) (helm-filter-all session))
     session))
+
+;;;============================================================================
+;;; Match highlighting
+;;;============================================================================
+
+(def (fuzzy-match-positions pattern target)
+  "Find character positions in target where pattern characters match (fuzzy).
+   Returns list of indices, or [] if no full match."
+  (let ((plen (string-length pattern))
+        (tlen (string-length target)))
+    (let loop ((pi 0) (ti 0) (acc []))
+      (cond
+        ((>= pi plen) (reverse acc))
+        ((>= ti tlen) [])
+        ((char-ci=? (string-ref pattern pi) (string-ref target ti))
+         (loop (+ pi 1) (+ ti 1) (cons ti acc)))
+        (else
+         (loop pi (+ ti 1) acc))))))
+
+(def (helm-match-positions pattern candidate-str (use-fuzzy? #f))
+  "Return a sorted list of character indices in candidate-str that match the pattern.
+   Used for visual highlighting of matched characters."
+  (let ((tokens (parse-match-tokens pattern)))
+    (if (null? tokens)
+      []
+      (let loop ((toks tokens) (positions []))
+        (if (null? toks)
+          ;; Deduplicate and sort
+          (sort (let dedup ((ps (sort positions <)) (acc []))
+                  (cond
+                    ((null? ps) (reverse acc))
+                    ((and (pair? acc) (= (car ps) (car acc)))
+                     (dedup (cdr ps) acc))
+                    (else (dedup (cdr ps) (cons (car ps) acc)))))
+                <)
+          (let ((tok (car toks)))
+            (if (match-token-negate? tok)
+              (loop (cdr toks) positions)  ;; skip negated tokens
+              (let* ((text (match-token-text tok))
+                     (text-lower (string-downcase text))
+                     (target-lower (string-downcase candidate-str))
+                     (new-positions
+                       (cond
+                         ((match-token-prefix? tok)
+                          (if (string-prefix? text-lower target-lower)
+                            (let gen ((i 0) (acc []))
+                              (if (>= i (string-length text))
+                                acc
+                                (gen (+ i 1) (cons i acc))))
+                            []))
+                         (use-fuzzy?
+                          (fuzzy-match-positions text candidate-str))
+                         (else
+                          ;; Substring match — find position
+                          (let ((pos (string-contains target-lower text-lower)))
+                            (if pos
+                              (let gen ((i 0) (acc []))
+                                (if (>= i (string-length text))
+                                  acc
+                                  (gen (+ i 1) (cons (+ pos i) acc))))
+                              []))))))
+                (loop (cdr toks) (append positions new-positions))))))))))
+

@@ -191,6 +191,8 @@
     "highlight"
     ;; Eshell (built-in Gerbil shell)
     "eshell"
+    ;; Shell history (persistent command history)
+    "shell-history"
     ;; Shell (external $SHELL subprocess)
     "shell"
     ;; Terminal (PTY-backed vterm-like terminal)

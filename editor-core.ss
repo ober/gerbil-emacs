@@ -18,6 +18,7 @@
         :gemacs/repl
         :gemacs/eshell
         :gemacs/shell
+        :gemacs/shell-history
         :gemacs/terminal
         :gemacs/chat
         :gemacs/keymap
@@ -1333,6 +1334,10 @@
              (input (if (and prompt-pos (> end-pos (+ prompt-pos (string-length eshell-prompt))))
                       (substring all-text (+ prompt-pos (string-length eshell-prompt)) end-pos)
                       "")))
+        ;; Record in shell history before processing
+        (let ((trimmed-input (string-trim-both input)))
+          (when (> (string-length trimmed-input) 0)
+            (gsh-history-add! trimmed-input cwd)))
         ;; Append newline
         (editor-append-text ed "\n")
         ;; Process the input
@@ -1410,6 +1415,10 @@
              (input (if (> end-pos prompt-pos)
                       (substring all-text prompt-pos end-pos)
                       "")))
+        ;; Record in shell history
+        (let ((trimmed-input (string-trim-both input)))
+          (when (> (string-length trimmed-input) 0)
+            (gsh-history-add! trimmed-input (current-directory))))
         ;; Append newline to buffer
         (editor-append-text ed "\n")
         ;; Send complete line to shell

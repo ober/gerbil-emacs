@@ -14,6 +14,7 @@
         :gemacs/repl
         :gemacs/eshell
         :gemacs/shell
+        :gemacs/shell-history
         :gemacs/terminal
         :gemacs/chat
         :gemacs/qt/buffer
@@ -633,6 +634,10 @@
              (input (if (and prompt-pos (> end-pos (+ prompt-pos (string-length eshell-prompt))))
                       (substring all-text (+ prompt-pos (string-length eshell-prompt)) end-pos)
                       "")))
+        ;; Record in shell history before processing
+        (let ((trimmed-input (string-trim-both input)))
+          (when (> (string-length trimmed-input) 0)
+            (gsh-history-add! trimmed-input cwd)))
         (qt-plain-text-edit-append! ed "")
         (let-values (((output new-cwd) (eshell-process-input input cwd)))
           (hash-put! *eshell-state* buf new-cwd)
@@ -699,6 +704,10 @@
              (input (if (> end-pos prompt-pos)
                       (substring all-text prompt-pos end-pos)
                       "")))
+        ;; Record in shell history
+        (let ((trimmed-input (string-trim-both input)))
+          (when (> (string-length trimmed-input) 0)
+            (gsh-history-add! trimmed-input (current-directory))))
         ;; Append newline to buffer
         (qt-plain-text-edit-append! ed "")
         ;; Send complete line to shell

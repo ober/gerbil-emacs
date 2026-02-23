@@ -22,6 +22,7 @@
         :gemacs/editor-core
         :gemacs/highlight
         :gemacs/persist
+        :gemacs/shell-history
         :gemacs/ipc
         :gemacs/helm-commands)
 
@@ -47,10 +48,11 @@
   ;; Load init file (applies settings like scroll-margin)
   (init-file-load!)
 
-  ;; Load persistent state: recent files, minibuffer history, save-place
+  ;; Load persistent state: recent files, minibuffer history, save-place, shell history
   (recent-files-load!)
   (set! *minibuffer-history* (savehist-load!))
   (save-place-load!)
+  (gsh-history-load!)
 
   ;; Install hook to restore per-buffer highlighting on every buffer switch
   (set! *post-buffer-attach-hook*
@@ -635,6 +637,7 @@
           (recent-files-save!)
           (savehist-save! *minibuffer-history*)
           (save-place-save!)
+          (gsh-history-save!)
           ;; Save scratch buffer content
           (let* ((scratch-buf (buffer-by-name "*scratch*"))
                  (fr (app-state-frame app)))
