@@ -1669,6 +1669,43 @@ Returns (file line col message) or #f."
             (qt-plain-text-edit-set-cursor-position! ed (- bwd 1))
             (qt-plain-text-edit-ensure-cursor-visible! ed)))))))
 
+(def (cmd-paredit-convolute-sexp app)
+  "Convolute: swap inner and outer sexps around point."
+  (let* ((ed (current-qt-editor app))
+         (text (qt-plain-text-edit-text ed))
+         (pos (qt-plain-text-edit-cursor-position ed))
+         (inner-open (find-enclosing-open text pos)))
+    (when inner-open
+      (let ((outer-open (find-enclosing-open text (- inner-open 1))))
+        (when outer-open
+          (let* ((inner-close (find-enclosing-close text pos))
+                 (outer-close (find-enclosing-close text (+ inner-close 1))))
+            (when (and inner-close outer-close)
+              (let* ((outer-open-char (string (string-ref text outer-open)))
+                     (outer-close-char (string (string-ref text outer-close)))
+                     (inner-open-char (string (string-ref text inner-open)))
+                     (inner-close-char (string (string-ref text inner-close)))
+                     (inner-head (substring text (+ inner-open 1) pos))
+                     (inner-tail (substring text pos inner-close))
+                     (outer-head (substring text (+ outer-open 1) inner-open))
+                     (outer-tail (substring text (+ inner-close 1) outer-close))
+                     (before (substring text 0 outer-open))
+                     (after (substring text (+ outer-close 1) (string-length text)))
+                     (new-text (string-append
+                                 before
+                                 inner-open-char
+                                 (string-trim-both inner-head)
+                                 " " outer-open-char
+                                 (string-trim-both outer-head)
+                                 inner-tail
+                                 outer-tail
+                                 outer-close-char
+                                 inner-close-char
+                                 after)))
+                (qt-plain-text-edit-set-text! ed new-text)
+                (qt-plain-text-edit-set-cursor-position! ed (+ (string-length before) 1))
+                (qt-plain-text-edit-ensure-cursor-visible! ed)))))))))
+
 ;;;============================================================================
 ;;; Grep commands (moved from ide for chain ordering)
 ;;;============================================================================

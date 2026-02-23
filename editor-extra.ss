@@ -728,6 +728,7 @@
   (register-command! 'paredit-barf-backward cmd-paredit-barf-backward)
   (register-command! 'paredit-split-sexp cmd-paredit-split-sexp)
   (register-command! 'paredit-join-sexps cmd-paredit-join-sexps)
+  (register-command! 'paredit-convolute-sexp cmd-paredit-convolute-sexp)
   ;; Number increment/decrement
   (register-command! 'increment-number cmd-increment-number)
   (register-command! 'decrement-number cmd-decrement-number)

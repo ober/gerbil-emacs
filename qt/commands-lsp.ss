@@ -835,6 +835,55 @@
                    (echo-message! (app-state-echo app)
                      "LSP: buffer formatted")))))))))))
 
+(def (cmd-lsp-format-region app)
+  "Format selected region via LSP rangeFormatting."
+  (if (not (lsp-running?))
+    (echo-error! (app-state-echo app) "LSP: not running")
+    (let* ((ed (current-qt-editor app))
+           (buf (current-qt-buffer app))
+           (path (buffer-file-path buf)))
+      (if (not path)
+        (echo-error! (app-state-echo app) "LSP: buffer has no file")
+        (let* ((sel-start (sci-send ed 2143))  ;; SCI_GETSELECTIONSTART
+               (sel-end (sci-send ed 2145))     ;; SCI_GETSELECTIONEND
+               (start-line (sci-send ed 2166 sel-start))  ;; SCI_LINEFROMPOSITION
+               (start-col (- sel-start (sci-send ed 2167 start-line)))  ;; SCI_POSITIONFROMLINE
+               (end-line (sci-send ed 2166 sel-end))
+               (end-col (- sel-end (sci-send ed 2167 end-line))))
+          (if (= sel-start sel-end)
+            (echo-message! (app-state-echo app) "LSP: no region selected, use format-buffer")
+            (let ((params (make-hash-table))
+                  (td (make-hash-table))
+                  (range (make-hash-table))
+                  (range-start (make-hash-table))
+                  (range-end (make-hash-table))
+                  (opts (make-hash-table)))
+              (hash-put! td "uri" (file-path->uri path))
+              (hash-put! range-start "line" start-line)
+              (hash-put! range-start "character" start-col)
+              (hash-put! range-end "line" end-line)
+              (hash-put! range-end "character" end-col)
+              (hash-put! range "start" range-start)
+              (hash-put! range "end" range-end)
+              (hash-put! opts "tabSize" 2)
+              (hash-put! opts "insertSpaces" #t)
+              (hash-put! params "textDocument" td)
+              (hash-put! params "range" range)
+              (hash-put! params "options" opts)
+              (lsp-send-request! "textDocument/rangeFormatting" params
+                (lambda (response)
+                  (let ((result (hash-get response "result"))
+                        (error (hash-get response "error")))
+                    (cond
+                      (error
+                       (echo-error! (app-state-echo app) "LSP range format: error"))
+                      ((or (not result) (null? result))
+                       (echo-message! (app-state-echo app) "LSP: no formatting changes"))
+                      (else
+                       (lsp-apply-text-edits! app ed result)
+                       (echo-message! (app-state-echo app)
+                         "LSP: region formatted")))))))))))))
+
 ;;;============================================================================
 ;;; Signature help (eldoc integration)
 ;;;============================================================================

@@ -760,6 +760,7 @@
   (register-command! 'lsp-document-symbols cmd-lsp-document-symbols)
   (register-command! 'lsp-workspace-symbol cmd-lsp-workspace-symbol)
   (register-command! 'lsp-format-buffer cmd-lsp-format-buffer)
+  (register-command! 'lsp-format-region cmd-lsp-format-region)
   (register-command! 'lsp-restart cmd-lsp-restart)
   (register-command! 'lsp-stop cmd-lsp-stop)
   (register-command! 'lsp-smart-goto-definition cmd-lsp-smart-goto-definition)

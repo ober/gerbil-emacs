@@ -1278,6 +1278,7 @@
   (register-command! 'paredit-raise-sexp cmd-paredit-raise-sexp)
   (register-command! 'paredit-split-sexp cmd-paredit-split-sexp)
   (register-command! 'paredit-join-sexps cmd-paredit-join-sexps)
+  (register-command! 'paredit-convolute-sexp cmd-paredit-convolute-sexp)
   ;; Avy jump
   (register-command! 'avy-goto-char cmd-avy-goto-char)
   (register-command! 'avy-goto-word cmd-avy-goto-word)

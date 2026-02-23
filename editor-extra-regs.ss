@@ -34,6 +34,7 @@
         cmd-term-list cmd-term-next cmd-term-prev)
 
 (import :std/sugar
+        :std/srfi/1
         :std/srfi/13
         :std/sort
         :std/misc/string
@@ -55,6 +56,8 @@
                  org-capture-template-template org-capture-cursor-position
                  org-capture-start org-capture-finalize org-capture-abort
                  *org-capture-templates*)
+        (only-in :gemacs/org-parse
+                 org-heading-line? org-heading-stars-of-line)
         :gemacs/editor-core
         :gemacs/editor-text
         :gemacs/editor-ui
@@ -969,10 +972,83 @@
         (echo-message! (app-state-echo app) "Capture aborted")))))
 
 (def (cmd-org-refile app)
-  "Refile current heading to another location."
-  (let ((target (app-read-string app "Refile to: ")))
-    (when (and target (not (string-empty? target)))
-      (echo-message! (app-state-echo app) (string-append "Refile: " target " (stub)")))))
+  "Refile current heading to another location with interactive selection."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app))
+         (text (editor-get-text ed))
+         (pos (editor-get-current-pos ed))
+         (lines (string-split text #\newline))
+         (total (length lines))
+         (cur-line (editor-line-from-position ed pos))
+         (heading-line (let loop ((l cur-line))
+                         (cond
+                           ((< l 0) #f)
+                           ((and (< l total) (org-heading-line? (list-ref lines l))) l)
+                           (else (loop (- l 1)))))))
+    (if (not heading-line)
+      (echo-error! echo "Not on an org heading")
+      (let* ((level (org-heading-stars-of-line (list-ref lines heading-line)))
+             (subtree-end (let loop ((i (+ heading-line 1)))
+                            (cond
+                              ((>= i total) total)
+                              ((and (org-heading-line? (list-ref lines i))
+                                    (<= (org-heading-stars-of-line (list-ref lines i)) level)) i)
+                              (else (loop (+ i 1))))))
+             (subtree-lines (let loop ((i heading-line) (acc '()))
+                              (if (>= i subtree-end) (reverse acc)
+                                (loop (+ i 1) (cons (list-ref lines i) acc)))))
+             (targets (let loop ((i 0) (acc '()))
+                        (if (>= i total) (reverse acc)
+                          (if (and (or (< i heading-line) (>= i subtree-end))
+                                   (org-heading-line? (list-ref lines i)))
+                            (let* ((hline (list-ref lines i))
+                                   (nstars (org-heading-stars-of-line hline))
+                                   (label (string-append
+                                            (make-string nstars #\*)
+                                            (substring hline nstars (string-length hline)))))
+                              (loop (+ i 1) (cons (cons label i) acc)))
+                            (loop (+ i 1) acc)))))
+             (labels (map car targets)))
+        (if (null? labels)
+          (echo-error! echo "No refile targets found")
+          (let ((chosen (app-read-string app "Refile to: ")))
+            (when (and chosen (not (string-empty? chosen)))
+              ;; Find the best matching target
+              (let ((target-pair (or (assoc chosen targets)
+                                     (find (lambda (p) (string-contains (car p) chosen)) targets))))
+                (if (not target-pair)
+                  (echo-error! echo "No matching heading found")
+                  (let* ((target-line (cdr target-pair))
+                         (before (let loop ((i 0) (acc '()))
+                                   (if (>= i heading-line) (reverse acc)
+                                     (loop (+ i 1) (cons (list-ref lines i) acc)))))
+                         (after (let loop ((i subtree-end) (acc '()))
+                                  (if (>= i total) (reverse acc)
+                                    (loop (+ i 1) (cons (list-ref lines i) acc)))))
+                         (rest-lines (append before after))
+                         (removed-count (- subtree-end heading-line))
+                         (adj-target (if (> target-line heading-line)
+                                       (- target-line removed-count) target-line))
+                         (adj-total (length rest-lines))
+                         (target-level (org-heading-stars-of-line (list-ref rest-lines adj-target)))
+                         (insert-at (let loop ((i (+ adj-target 1)))
+                                      (cond
+                                        ((>= i adj-total) adj-total)
+                                        ((and (org-heading-line? (list-ref rest-lines i))
+                                              (<= (org-heading-stars-of-line (list-ref rest-lines i))
+                                                  target-level)) i)
+                                        (else (loop (+ i 1))))))
+                         (pre (let loop ((i 0) (acc '()))
+                                (if (>= i insert-at) (reverse acc)
+                                  (loop (+ i 1) (cons (list-ref rest-lines i) acc)))))
+                         (post (let loop ((i insert-at) (acc '()))
+                                 (if (>= i adj-total) (reverse acc)
+                                   (loop (+ i 1) (cons (list-ref rest-lines i) acc)))))
+                         (new-text (string-join (append pre subtree-lines post) "\n")))
+                    (with-undo-action ed
+                      (editor-set-text ed new-text))
+                    (echo-message! echo
+                      (string-append "Refiled to: " chosen))))))))))))
 
 (def (cmd-org-time-stamp app)
   "Insert org timestamp."

@@ -469,7 +469,7 @@
 | Agenda interactive commands | :large_blue_circle: | Jump to source, toggle TODO from agenda |
 | **Capture** | :large_blue_circle: | Templates with `%?/%U/%T/%f`, template selection, `*Org Capture*` buffer |
 | Capture buffer (C-c C-c / C-c C-k) | :white_check_mark: | Interactive capture with finalize/abort keybindings |
-| Refile | :red_circle: | Not implemented |
+| Refile | :large_blue_circle: | `M-x org-refile` with narrowing target selection (Qt) |
 | **Babel** (code blocks) | :large_blue_circle: | 8 languages, execution, tangling |
 | Babel session persistence | :red_circle: | Sessions stored but not reused |
 | Babel :var evaluation | :red_circle: | Only literal values |
@@ -485,7 +485,7 @@
 | Sparse tree | :red_circle: | Not implemented |
 | Column view | :red_circle: | Not implemented |
 
-**Summary:** Org-mode is one of gemacs's strongest features with substantial coverage of the core: headings, TODO, tables, babel, export, agenda. Interactive agenda supports jump-to-source and TODO toggling. Key gaps: capture buffer UI, refile, sparse tree.
+**Summary:** Org-mode is one of gemacs's strongest features with substantial coverage of the core: headings, TODO, tables, babel, export, agenda. Interactive agenda supports jump-to-source and TODO toggling. Refile with narrowing target selection. Key gaps: sparse tree, column view.
 
 ---
 
@@ -682,7 +682,7 @@
 | Split sexp | :white_check_mark: | Break at point |
 | Join sexps | :white_check_mark: | Merge adjacent |
 | Backward slurp/barf | :white_check_mark: | `paredit-slurp-backward`, `paredit-barf-backward` |
-| Convolute sexp | :red_circle: | Not implemented |
+| Convolute sexp | :white_check_mark: | `M-x paredit-convolute-sexp` swaps inner/outer |
 | Paredit strict mode | :red_circle: | No delimiter balance enforcement |
 | Smartparens | :red_circle: | Not implemented |
 

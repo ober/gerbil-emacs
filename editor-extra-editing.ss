@@ -412,6 +412,49 @@
               (editor-set-text ed new-text)
               (editor-goto-pos ed (- bwd 1)))))))))
 
+(def (cmd-paredit-convolute-sexp app)
+  "Convolute: swap inner and outer sexps around point.
+   (a (b |c d) e) => (b (a c d e))"
+  (let* ((ed (current-editor app))
+         (text (editor-get-text ed))
+         (pos (editor-get-current-pos ed))
+         (inner-open (text-find-enclosing-open text pos)))
+    (when inner-open
+      (let ((outer-open (text-find-enclosing-open text (- inner-open 1))))
+        (when outer-open
+          (let* ((inner-close (text-find-enclosing-close text pos))
+                 (outer-close (text-find-enclosing-close text (+ inner-close 1))))
+            (when (and inner-close outer-close)
+              (let* ((outer-open-char (string (string-ref text outer-open)))
+                     (outer-close-char (string (string-ref text outer-close)))
+                     (inner-open-char (string (string-ref text inner-open)))
+                     (inner-close-char (string (string-ref text inner-close)))
+                     ;; inner head: from inner-open+1 to pos
+                     (inner-head (substring text (+ inner-open 1) pos))
+                     ;; inner tail: from pos to inner-close
+                     (inner-tail (substring text pos inner-close))
+                     ;; outer head: from outer-open+1 to inner-open
+                     (outer-head (substring text (+ outer-open 1) inner-open))
+                     ;; outer tail: from inner-close+1 to outer-close
+                     (outer-tail (substring text (+ inner-close 1) outer-close))
+                     ;; new text: inner-head (outer-head inner-tail outer-tail)
+                     (before (substring text 0 outer-open))
+                     (after (substring text (+ outer-close 1) (string-length text)))
+                     (new-text (string-append
+                                 before
+                                 inner-open-char
+                                 (string-trim-both inner-head)
+                                 " " outer-open-char
+                                 (string-trim-both outer-head)
+                                 inner-tail
+                                 outer-tail
+                                 outer-close-char
+                                 inner-close-char
+                                 after)))
+                (with-undo-action ed
+                  (editor-set-text ed new-text)
+                  (editor-goto-pos ed (+ (string-length before) 1)))))))))))
+
 ;;;============================================================================
 ;;; Number increment/decrement at point
 ;;;============================================================================

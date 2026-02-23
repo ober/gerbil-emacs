@@ -22,6 +22,8 @@
                  org-capture-template-template org-capture-cursor-position
                  org-capture-start org-capture-finalize org-capture-abort
                  *org-capture-templates*)
+        (only-in :gemacs/org-parse
+                 org-heading-line? org-heading-stars-of-line)
         :gemacs/qt/buffer
         :gemacs/qt/window
         :gemacs/qt/echo
@@ -237,11 +239,107 @@
         (echo-message! (app-state-echo app) "Capture aborted")))))
 
 (def (cmd-org-refile app)
-  "Refile current heading to another location."
-  (let ((target (qt-echo-read-string app "Refile to: ")))
-    (when (and target (not (string-empty? target)))
-      (echo-message! (app-state-echo app)
-        (string-append "Refile: " target " (stub)")))))
+  "Refile current heading to another location using narrowing selection."
+  (let* ((ed (current-qt-editor app))
+         (echo (app-state-echo app))
+         (text (qt-plain-text-edit-text ed))
+         (pos (qt-plain-text-edit-cursor-position ed))
+         (lines (string-split text #\newline))
+         (total (length lines))
+         ;; Find current line number from position
+         (cur-line (let loop ((i 0) (chars 0))
+                     (if (>= i total) (- total 1)
+                       (let ((line-len (+ (string-length (list-ref lines i)) 1)))
+                         (if (< pos (+ chars line-len)) i
+                           (loop (+ i 1) (+ chars line-len)))))))
+         ;; Walk backwards to find the heading at or before point
+         (heading-line (let loop ((l cur-line))
+                         (cond
+                           ((< l 0) #f)
+                           ((and (< l total)
+                                 (org-heading-line? (list-ref lines l))) l)
+                           (else (loop (- l 1)))))))
+    (if (not heading-line)
+      (echo-error! echo "Not on an org heading")
+      (let* ((heading-text (list-ref lines heading-line))
+             (level (org-heading-stars-of-line heading-text))
+             ;; Find subtree end
+             (subtree-end (let loop ((i (+ heading-line 1)))
+                            (cond
+                              ((>= i total) total)
+                              ((let ((l (list-ref lines i)))
+                                 (and (org-heading-line? l)
+                                      (<= (org-heading-stars-of-line l) level))) i)
+                              (else (loop (+ i 1))))))
+             ;; Extract subtree lines
+             (subtree-lines (let loop ((i heading-line) (acc '()))
+                              (if (>= i subtree-end)
+                                (reverse acc)
+                                (loop (+ i 1) (cons (list-ref lines i) acc)))))
+             (subtree-text (string-join subtree-lines "\n")))
+        ;; Collect refile targets (headings outside the current subtree)
+        (let* ((targets
+                 (let loop ((i 0) (acc '()))
+                   (if (>= i total)
+                     (reverse acc)
+                     (let ((skip? (and (>= i heading-line) (< i subtree-end))))
+                       (if (and (not skip?) (org-heading-line? (list-ref lines i)))
+                         (let* ((hline (list-ref lines i))
+                                (nstars (org-heading-stars-of-line hline))
+                                (label (string-append
+                                         (make-string nstars #\*)
+                                         (substring hline nstars (string-length hline)))))
+                           (loop (+ i 1) (cons (cons label i) acc)))
+                         (loop (+ i 1) acc))))))
+               (labels (map car targets)))
+          (if (null? labels)
+            (echo-error! echo "No refile targets found")
+            (let ((chosen (qt-echo-read-with-narrowing app "Refile to: " labels)))
+              (when chosen
+                ;; Find the target line number
+                (let ((target-pair (assoc chosen targets)))
+                  (when target-pair
+                    (let* ((target-line (cdr target-pair))
+                           ;; Remove subtree from original position
+                           (before (let loop ((i 0) (acc '()))
+                                     (if (>= i heading-line)
+                                       (reverse acc)
+                                       (loop (+ i 1) (cons (list-ref lines i) acc)))))
+                           (after (let loop ((i subtree-end) (acc '()))
+                                    (if (>= i total)
+                                      (reverse acc)
+                                      (loop (+ i 1) (cons (list-ref lines i) acc)))))
+                           (without-subtree-lines (append before after))
+                           ;; Adjust target line number if it was after the removed subtree
+                           (removed-count (- subtree-end heading-line))
+                           (adj-target (if (> target-line heading-line)
+                                         (- target-line removed-count)
+                                         target-line))
+                           ;; Find where to insert (end of target's subtree)
+                           (adj-total (length without-subtree-lines))
+                           (target-level (org-heading-stars-of-line
+                                           (list-ref without-subtree-lines adj-target)))
+                           (insert-at (let loop ((i (+ adj-target 1)))
+                                        (cond
+                                          ((>= i adj-total) adj-total)
+                                          ((let ((l (list-ref without-subtree-lines i)))
+                                             (and (org-heading-line? l)
+                                                  (<= (org-heading-stars-of-line l) target-level))) i)
+                                          (else (loop (+ i 1))))))
+                           ;; Build new text
+                           (pre (let loop ((i 0) (acc '()))
+                                  (if (>= i insert-at)
+                                    (reverse acc)
+                                    (loop (+ i 1) (cons (list-ref without-subtree-lines i) acc)))))
+                           (post (let loop ((i insert-at) (acc '()))
+                                   (if (>= i adj-total)
+                                     (reverse acc)
+                                     (loop (+ i 1) (cons (list-ref without-subtree-lines i) acc)))))
+                           (new-lines (append pre subtree-lines post))
+                           (new-text (string-join new-lines "\n")))
+                      (qt-plain-text-edit-set-text! ed new-text)
+                      (echo-message! echo
+                        (string-append "Refiled to: " chosen)))))))))))))
 
 (def (cmd-org-time-stamp app)
   "Insert org timestamp."
