@@ -16,6 +16,9 @@
         :gemacs/buffer
         :gemacs/window
         :gemacs/echo
+        (only-in :gemacs/editor-core
+          cmd-undo-region cmd-display-buffer-in-side-window cmd-toggle-side-window
+          cmd-info-reader cmd-project-tree-git)
         :gemacs/editor-extra-helpers
         :gemacs/editor-extra-org
         :gemacs/editor-extra-web
@@ -2082,4 +2085,10 @@
   ;; Batch 15: insert-tab
   (register-command! 'insert-tab cmd-insert-tab)
   ;; Batch 6: tutorial, header-line, project-keymaps, org-columns
-  (register-batch6-commands!))
+  (register-batch6-commands!)
+  ;; Batch 7: undo-region, side-window, info, project-tree-git
+  (register-command! 'undo-region cmd-undo-region)
+  (register-command! 'display-buffer-in-side-window cmd-display-buffer-in-side-window)
+  (register-command! 'toggle-side-window cmd-toggle-side-window)
+  (register-command! 'info-reader cmd-info-reader)
+  (register-command! 'project-tree-git cmd-project-tree-git))

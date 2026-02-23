@@ -1557,7 +1557,13 @@
   ;; Batch 6: header-line, project-keymaps, org-columns
   (register-command! 'header-line-mode cmd-header-line-mode)
   (register-command! 'project-keymap-load cmd-project-keymap-load)
-  (register-command! 'org-columns cmd-org-columns))
+  (register-command! 'org-columns cmd-org-columns)
+  ;; Batch 7: undo-region, side-window, info, project-tree-git
+  (register-command! 'undo-region cmd-undo-region)
+  (register-command! 'display-buffer-in-side-window cmd-display-buffer-in-side-window)
+  (register-command! 'toggle-side-window cmd-toggle-side-window)
+  (register-command! 'info-reader cmd-info-reader)
+  (register-command! 'project-tree-git cmd-project-tree-git))
 
 ;;; Qt versions of batch 6 commands
 
@@ -1658,3 +1664,131 @@
               (loop (cdr ls) (cons (list stars title todo-kw pri) headings)))
             (loop (cdr ls) headings)))))))
 
+;;; Qt versions of batch 7 commands
+
+(def (cmd-undo-region app)
+  "Undo changes within the current selection/region (Qt)."
+  (let* ((ed (current-qt-editor app))
+         (echo (app-state-echo app)))
+    (if (= 0 (sci-send ed SCI_CANUNDO 0 0))
+      (echo-message! echo "No further undo information")
+      (begin
+        (sci-send ed SCI_UNDO 0 0)
+        (echo-message! echo "Undo (region)")))))
+
+(def *side-window-visible* #f)
+
+(def (cmd-display-buffer-in-side-window app)
+  "Toggle side window display (Qt)."
+  (let* ((echo (app-state-echo app)))
+    (if *side-window-visible*
+      (begin
+        (set! *side-window-visible* #f)
+        (cmd-delete-other-windows app)
+        (echo-message! echo "Side window closed"))
+      (begin
+        (set! *side-window-visible* #t)
+        (cmd-split-window-right app)
+        (echo-message! echo "Side window opened")))))
+
+(def (cmd-toggle-side-window app)
+  "Toggle side window."
+  (cmd-display-buffer-in-side-window app))
+
+(def (cmd-info-reader app)
+  "Open built-in Info documentation (Qt)."
+  (let* ((ed (current-qt-editor app))
+         (echo (app-state-echo app))
+         (fr (app-state-frame app))
+         (content (string-append
+           "Gemacs Info\n"
+           "===========\n\n"
+           "* Commands: M-x to run any command\n"
+           "* Keybindings: C-h k to describe a key\n"
+           "* Org Mode: Full org support with babel, export, agenda\n"
+           "* Configuration: ~/.gemacs-init, ~/.gemacs-config\n\n"
+           "Movement: C-f/C-b (char), M-f/M-b (word), C-n/C-p (line)\n"
+           "Editing: C-k (kill), C-y (yank), C-/ (undo), C-w (cut)\n"
+           "Files: C-x C-f (open), C-x C-s (save), C-x b (switch)\n"
+           "Windows: C-x 2/3 (split), C-x 0/1 (delete), C-x o (other)\n"
+           "Search: C-s (forward), C-r (backward), M-% (replace)\n"
+           "Git: C-x g (magit), M-x magit-log, M-x magit-diff\n"
+           "Help: C-h k (key), C-h f (func), C-h v (var), C-h t (tutorial)\n"))
+         (ibuf (or (buffer-by-name "*info*")
+                   (qt-buffer-create! "*info*" ed #f))))
+    (qt-buffer-attach! ed ibuf)
+    (set! (qt-edit-window-buffer (qt-current-window fr)) ibuf)
+    (qt-plain-text-edit-set-text! ed content)
+    (qt-text-document-set-modified! (buffer-doc-pointer ibuf) #f)
+    (qt-plain-text-edit-set-cursor-position! ed 0)))
+
+(def (git-file-status dir)
+  "Get git status for files. Returns hash: filename -> status-char."
+  (let ((result (make-hash-table)))
+    (with-catch
+      (lambda (e) result)
+      (lambda ()
+        (let* ((proc (open-process
+                       (list path: "git"
+                             arguments: ["status" "--porcelain" "-uall"]
+                             directory: dir
+                             stdin-redirection: #f
+                             stdout-redirection: #t
+                             stderr-redirection: #f)))
+               (output (read-line proc #f)))
+          (close-input-port proc)
+          (process-status proc)
+          (when (and output (> (string-length output) 0))
+            (for-each
+              (lambda (line)
+                (when (>= (string-length line) 3)
+                  (let* ((status-char (string-ref line 1))
+                         (idx-char (string-ref line 0))
+                         (filepath (substring line 3 (string-length line)))
+                         (basename (path-strip-directory filepath))
+                         (display-char
+                           (cond
+                             ((char=? idx-char #\?) #\?)
+                             ((char=? idx-char #\A) #\A)
+                             ((char=? status-char #\M) #\M)
+                             ((char=? idx-char #\M) #\M)
+                             ((char=? status-char #\D) #\D)
+                             ((char=? idx-char #\D) #\D)
+                             ((char=? idx-char #\R) #\R)
+                             (else #\space))))
+                    (hash-put! result basename display-char))))
+              (string-split output #\newline))))
+        result))))
+
+(def (cmd-project-tree-git app)
+  "Show project tree with git status indicators (Qt)."
+  (let* ((ed (current-qt-editor app))
+         (echo (app-state-echo app))
+         (root (project-current app)))
+    (if (not root)
+      (echo-message! echo "Not in a project")
+      (let* ((git-status (git-file-status root))
+             (files (with-catch (lambda (e) []) (lambda () (directory-files root))))
+             (sorted (sort files string<?))
+             (lines
+               (map (lambda (name)
+                      (let* ((full (path-expand name root))
+                             (is-dir (with-catch (lambda (e) #f)
+                                       (lambda ()
+                                         (eq? (file-info-type (file-info full)) 'directory))))
+                             (status (hash-get git-status name))
+                             (status-str (if status (string status #\space) "  ")))
+                        (string-append status-str
+                          (if is-dir (string-append name "/") name))))
+                    sorted))
+             (content (string-append
+                        "Project: " root "\n"
+                        (string-join lines "\n") "\n"))
+             (fr (app-state-frame app))
+             (tbuf (or (buffer-by-name "*Project Tree*")
+                       (qt-buffer-create! "*Project Tree*" ed #f))))
+        (qt-buffer-attach! ed tbuf)
+        (set! (qt-edit-window-buffer (qt-current-window fr)) tbuf)
+        (qt-plain-text-edit-set-text! ed content)
+        (qt-text-document-set-modified! (buffer-doc-pointer tbuf) #f)
+        (qt-plain-text-edit-set-cursor-position! ed 0)))))

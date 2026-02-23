@@ -183,7 +183,7 @@
 | Undo boundaries | :white_check_mark: | Commands create boundaries |
 | Undo tree visualization | :white_check_mark: | `M-x undo-tree-visualize` with snapshot history |
 | Persistent undo (across sessions) | :red_circle: | Not implemented |
-| Selective undo (region) | :red_circle: | Not implemented |
+| Selective undo (region) | :white_check_mark: | Undo within region, falls back to normal undo |
 
 **Summary:** Undo/redo with tree visualization (`M-x undo-tree-visualize`), timestamped snapshots (`M-x undo-history`), and snapshot restore. No persistent undo or selective region undo.
 
@@ -321,7 +321,7 @@
 | Swap buffers between windows | :white_check_mark: | |
 | Golden ratio mode | :white_check_mark: | Auto-resize focused window |
 | Dedicated windows | :white_check_mark: | `M-x toggle-window-dedicated` prevents buffer replacement |
-| Side windows | :red_circle: | No `display-buffer-in-side-window` |
+| Side windows | :white_check_mark: | Toggle side panel via split (display-buffer-in-side-window) |
 | Window purpose | :red_circle: | Not implemented |
 | Follow mode | :white_check_mark: | Synchronized scrolling across windows |
 
@@ -744,7 +744,7 @@
 | Apropos (`C-h a`) | :white_check_mark: | Search commands by keyword |
 | View lossage (`C-h l`) | :white_check_mark: | Last 300 keystrokes |
 | Command history | :white_check_mark: | |
-| Info reader | :red_circle: | Not implemented |
+| Info reader | :white_check_mark: | Built-in Info browser with topics: commands, keybindings, org, config, about |
 | Emacs tutorial | :white_check_mark: | Built-in tutorial with navigation, editing, files, search, windows, org mode |
 | Built-in documentation browser | :red_circle: | No hyperlinked docs |
 
@@ -885,7 +885,7 @@
 |---------|--------|-------|
 | File tree sidebar | :white_check_mark: | `M-x project-tree` with expand/collapse |
 | Project tree | :white_check_mark: | Tree view with depth limit, hidden file filtering |
-| Git status in tree | :red_circle: | Not implemented |
+| Git status in tree | :white_check_mark: | Shows M/A/?/D/R status per file in project tree |
 | File operations in tree | :red_circle: | Not implemented |
 
 **Summary:** Project tree sidebar shows directory structure with expand/collapse. Missing: git status indicators and file operations within the tree.

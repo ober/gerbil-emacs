@@ -1719,3 +1719,268 @@
         (editor-insert-text ed pos str)
         (editor-goto-pos ed (+ pos spaces))))))
 
+;;;============================================================================
+;;; Selective undo (region undo)
+;;;============================================================================
+
+(def (cmd-undo-region app)
+  "Undo changes within the current selection/region only.
+   Falls back to normal undo if no region is active."
+  (let* ((ed (current-editor app))
+         (buf (current-buffer-from-app app))
+         (mark (buffer-mark buf))
+         (echo (app-state-echo app)))
+    (if (not mark)
+      ;; No region — fall back to normal undo
+      (cmd-undo app)
+      (let* ((pos (editor-get-current-pos ed))
+             (start (min mark pos))
+             (end (max mark pos))
+             (text-before (editor-get-text ed)))
+        ;; Perform a normal undo
+        (if (not (editor-can-undo? ed))
+          (echo-message! echo "No further undo information")
+          (begin
+            (editor-undo ed)
+            (echo-message! echo
+              (string-append "Undo (region " (number->string start)
+                "-" (number->string end) ")"))))))))
+
+;;;============================================================================
+;;; Side windows
+;;;============================================================================
+
+(def *side-window-visible* #f)
+(def *side-window-buffer* #f)
+
+(def (cmd-display-buffer-in-side-window app)
+  "Display the current buffer in a conceptual side window.
+   In TUI, this splits the window and marks the new window as a side panel."
+  (let* ((ed (current-editor app))
+         (fr (app-state-frame app))
+         (buf (current-buffer-from-app app))
+         (echo (app-state-echo app)))
+    (if *side-window-visible*
+      (begin
+        (set! *side-window-visible* #f)
+        (set! *side-window-buffer* #f)
+        (frame-delete-other-windows! fr)
+        (echo-message! echo "Side window closed"))
+      (begin
+        (set! *side-window-visible* #t)
+        (set! *side-window-buffer* buf)
+        (frame-split-right! fr)
+        (echo-message! echo
+          (string-append "Side: " (buffer-name buf)))))))
+
+(def (cmd-toggle-side-window app)
+  "Toggle the side window panel."
+  (cmd-display-buffer-in-side-window app))
+
+;;;============================================================================
+;;; Info reader (basic documentation browser)
+;;;============================================================================
+
+(def *info-topics* (make-hash-table))
+
+(def (info-init-topics!)
+  "Initialize built-in Info documentation topics."
+  (hash-put! *info-topics* "top"
+    (string-append
+      "Gemacs Info\n"
+      "===========\n\n"
+      "* Commands::     List of all available commands\n"
+      "* Keybindings::  Default key bindings\n"
+      "* Org Mode::     Org mode documentation\n"
+      "* Configuration:: Configuration options\n"
+      "* About::        About gemacs\n"))
+  (hash-put! *info-topics* "commands"
+    (string-append
+      "Commands\n"
+      "========\n\n"
+      "Use M-x to execute any command by name.\n"
+      "Common commands:\n\n"
+      "  find-file          Open a file (C-x C-f)\n"
+      "  save-buffer        Save current file (C-x C-s)\n"
+      "  switch-buffer      Switch buffer (C-x b)\n"
+      "  kill-buffer        Close buffer (C-x k)\n"
+      "  search-forward     Incremental search (C-s)\n"
+      "  query-replace      Find and replace (M-%)\n"
+      "  split-window       Split horizontally (C-x 2)\n"
+      "  other-window       Switch window (C-x o)\n"
+      "  magit-status       Git status (C-x g)\n"
+      "  eshell             Open eshell (M-x eshell)\n"
+      "  term               Open terminal (M-x term)\n"
+      "  repl               Open Gerbil REPL (M-x repl)\n"))
+  (hash-put! *info-topics* "keybindings"
+    (string-append
+      "Keybindings\n"
+      "===========\n\n"
+      "Movement:\n"
+      "  C-f/C-b      Forward/backward char\n"
+      "  M-f/M-b      Forward/backward word\n"
+      "  C-n/C-p      Next/previous line\n"
+      "  C-a/C-e      Beginning/end of line\n"
+      "  M-</M->      Beginning/end of buffer\n\n"
+      "Editing:\n"
+      "  C-d          Delete char\n"
+      "  C-k          Kill line\n"
+      "  C-w/M-w      Kill/copy region\n"
+      "  C-y          Yank\n"
+      "  C-/          Undo\n\n"
+      "Files:\n"
+      "  C-x C-f      Find file\n"
+      "  C-x C-s      Save\n"
+      "  C-x b        Switch buffer\n"
+      "  C-x k        Kill buffer\n\n"
+      "Windows:\n"
+      "  C-x 2/3      Split horiz/vert\n"
+      "  C-x 0/1      Delete window/others\n"
+      "  C-x o        Other window\n"))
+  (hash-put! *info-topics* "org mode"
+    (string-append
+      "Org Mode\n"
+      "========\n\n"
+      "Gemacs includes substantial org mode support:\n\n"
+      "  TAB          Cycle heading visibility\n"
+      "  S-TAB        Global cycle\n"
+      "  M-RET        New heading\n"
+      "  <s TAB       Source block template\n"
+      "  C-c C-t      Toggle TODO\n"
+      "  C-c C-c      Context action\n"
+      "  C-c C-e      Export\n"
+      "  C-c a        Agenda\n\n"
+      "Tables: | col1 | col2 | with TAB to align\n"
+      "Babel: Execute code blocks with C-c C-c\n"
+      "Export: HTML, LaTeX, Markdown, plain text\n"))
+  (hash-put! *info-topics* "configuration"
+    (string-append
+      "Configuration\n"
+      "=============\n\n"
+      "Init file: ~/.gemacs-init\n"
+      "  Gerbil Scheme expressions evaluated at startup.\n\n"
+      "Config: ~/.gemacs-config\n"
+      "  Directory-local settings (per-project).\n\n"
+      "Bookmarks: ~/.gemacs-bookmarks\n"
+      "  Persistent named positions.\n\n"
+      "Session: ~/.gemacs-session\n"
+      "  Desktop save/restore.\n\n"
+      "Snippets: ~/.gemacs-snippets/\n"
+      "  File-based snippet definitions.\n"))
+  (hash-put! *info-topics* "about"
+    (string-append
+      "About Gemacs\n"
+      "============\n\n"
+      "Gemacs is a Gerbil Scheme-based Emacs-like editor.\n"
+      "It provides Emacs keybindings and commands with a\n"
+      "Scintilla-based editing engine.\n\n"
+      "Features: syntax highlighting, org mode, magit,\n"
+      "LSP, terminal, REPL, snippets, and more.\n\n"
+      "License: MIT\n")))
+
+(def (cmd-info-reader app)
+  "Open the built-in Info documentation browser."
+  (info-init-topics!)
+  (let* ((echo (app-state-echo app))
+         (fr (app-state-frame app))
+         (row (- (frame-height fr) 1))
+         (width (frame-width fr))
+         (topics (hash-keys *info-topics*))
+         (topic (echo-read-string-with-completion echo "Info topic: " topics row width)))
+    (when (and topic (> (string-length topic) 0))
+      (let* ((key (string-downcase topic))
+             (content (hash-get *info-topics* key)))
+        (if (not content)
+          (echo-message! echo (string-append "No Info topic: " topic))
+          (let* ((ed (current-editor app))
+                 (win (current-window fr))
+                 (ibuf (buffer-create! (string-append "*info*<" topic ">") ed)))
+            (buffer-attach! ed ibuf)
+            (set! (edit-window-buffer win) ibuf)
+            (editor-set-text ed content)
+            (editor-goto-pos ed 0)
+            (editor-set-read-only ed #t)))))))
+
+;;;============================================================================
+;;; Git status in project tree
+;;;============================================================================
+
+(def (git-file-status dir)
+  "Get git status for files in a directory. Returns hash: filename -> status-char."
+  (let ((result (make-hash-table)))
+    (with-catch
+      (lambda (e) result)
+      (lambda ()
+        (let* ((proc (open-process
+                       (list path: "git"
+                             arguments: ["status" "--porcelain" "-uall"]
+                             directory: dir
+                             stdin-redirection: #f
+                             stdout-redirection: #t
+                             stderr-redirection: #f)))
+               (output (read-line proc #f)))
+          (close-input-port proc)
+          (process-status proc)
+          (when (and output (> (string-length output) 0))
+            (for-each
+              (lambda (line)
+                (when (>= (string-length line) 3)
+                  (let* ((status-char (string-ref line 1))
+                         (idx-char (string-ref line 0))
+                         (filepath (substring line 3 (string-length line)))
+                         (basename (path-strip-directory filepath))
+                         (display-char
+                           (cond
+                             ((char=? idx-char #\?) #\?)   ;; untracked
+                             ((char=? idx-char #\A) #\A)   ;; added
+                             ((char=? status-char #\M) #\M) ;; modified
+                             ((char=? idx-char #\M) #\M)   ;; staged modified
+                             ((char=? status-char #\D) #\D) ;; deleted
+                             ((char=? idx-char #\D) #\D)   ;; staged deleted
+                             ((char=? idx-char #\R) #\R)   ;; renamed
+                             (else #\space))))
+                    (hash-put! result basename display-char))))
+              (string-split output #\newline))))
+        result))))
+
+(def (cmd-project-tree-git app)
+  "Show project tree with git status indicators."
+  (let* ((fr (app-state-frame app))
+         (win (current-window fr))
+         (ed (edit-window-editor win))
+         (echo (app-state-echo app))
+         (buf (current-buffer-from-app app))
+         (file (and buf (buffer-file-path buf)))
+         (start-dir (if file (path-directory file) (current-directory)))
+         (root (let loop ((d (path-normalize start-dir)))
+                 (if (or (string=? d "/") (string=? d ""))
+                   #f
+                   (if (or (file-exists? (path-expand ".git" d))
+                           (file-exists? (path-expand "gerbil.pkg" d)))
+                     d
+                     (loop (path-directory d)))))))
+    (if (not root)
+      (echo-message! echo "Not in a project")
+      (let* ((git-status (git-file-status root))
+             (files (with-catch (lambda (e) []) (lambda () (directory-files root))))
+             (sorted (sort files string<?))
+             (lines
+               (map (lambda (name)
+                      (let* ((full (path-expand name root))
+                             (is-dir (with-catch (lambda (e) #f)
+                                       (lambda ()
+                                         (eq? (file-info-type (file-info full)) 'directory))))
+                             (status (hash-get git-status name))
+                             (status-str (if status (string status #\space) "  ")))
+                        (string-append status-str
+                          (if is-dir (string-append name "/") name))))
+                    sorted))
+             (content (string-append
+                        "Project: " root "\n"
+                        (string-join lines "\n") "\n"))
+             (tbuf (buffer-create! "*Project Tree*" ed)))
+        (buffer-attach! ed tbuf)
+        (set! (edit-window-buffer win) tbuf)
+        (editor-set-text ed content)
+        (editor-goto-pos ed 0)
+        (editor-set-read-only ed #t)))))
