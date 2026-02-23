@@ -1,7 +1,7 @@
 # Gemacs vs GNU Emacs — Feature Comparison
 
 > **Last updated:** 2026-02-22
-> **Gemacs version:** master (c39a615)
+> **Gemacs version:** master (4e74547)
 > **Compared against:** GNU Emacs 29.x / 30.x feature set
 
 ## Status Legend
@@ -415,35 +415,34 @@
 
 | Feature | Status | Notes |
 |---------|--------|-------|
-| Git status display | :orange_circle: | Shows `git status --short` output |
-| Stage / unstage hunks | :red_circle: | **Critical gap** — no interactive staging |
-| Stage / unstage files | :red_circle: | No interactive staging |
+| Git status display | :large_blue_circle: | Interactive status with inline diffs per file |
+| Stage / unstage hunks | :large_blue_circle: | Hunk-level staging via `git apply --cached` |
+| Stage / unstage files | :white_check_mark: | `s` to stage, `u` to unstage in status buffer |
 | Commit with message | :yellow_circle: | Opens editor, basic flow |
 | Amend commit | :yellow_circle: | Basic |
 | Push / pull | :yellow_circle: | Shell passthrough |
 | Log viewing | :yellow_circle: | `git log --oneline` last 50 |
-| Diff viewing | :yellow_circle: | Plain `git diff` output |
-| Branch operations | :yellow_circle: | Create, checkout, delete via prompts |
+| Diff viewing | :large_blue_circle: | Shows staged + unstaged diffs for file at point |
+| Branch operations | :large_blue_circle: | Checkout/create/delete with narrowing selection |
 | Tag management | :yellow_circle: | Create tags |
-| Stash | :yellow_circle: | Basic stash commands |
+| Stash | :large_blue_circle: | Stash create + list + pop |
 | Blame | :yellow_circle: | `git blame` output display |
-| Interactive rebase | :red_circle: | Not implemented |
-| Merge UI | :red_circle: | Not implemented |
+| Interactive rebase | :yellow_circle: | Rebase with narrowing branch selection |
+| Merge UI | :yellow_circle: | Merge with narrowing branch selection |
 | Cherry-pick | :yellow_circle: | Basic |
 | Revert commit | :yellow_circle: | Basic |
 | Forge (PR/issue management) | :red_circle: | Not implemented |
 | Diff-hl (gutter marks) | :large_blue_circle: | Git diff gutter indicators |
 | Wgrep on grep results | :white_check_mark: | Edit and save back |
+| Magit keymap | :white_check_mark: | 20 bindings: s/S/u/c/d/l/g/n/p/q/b/B/f/F/P/r/m/z/Z/k |
 | VC generic backend | :yellow_circle: | Basic git-only |
 
-**Summary:** This is the **biggest gap** for daily use. Magit in Emacs is a killer app — gemacs has only basic git command wrappers. No interactive staging, no hunk selection, no diff navigation, no commit composition buffer. Most operations are shell passthrough.
+**Summary:** Magit has been significantly enhanced. The status buffer now shows **inline diffs** per file. **Hunk-level staging/unstaging** works via `git apply --cached`. Branch operations (checkout, merge, rebase) use the **narrowing framework** for interactive selection. 20 single-key bindings in the magit keymap. Remaining gaps: commit composition buffer, interactive log with commit details, forge integration.
 
 ### Priority Improvements Needed:
-1. Interactive status buffer with staging/unstaging (file and hunk level)
-2. Commit composition buffer with diff preview
-3. Interactive log with commit details
-4. Diff buffer with hunk navigation
-5. Branch/merge/rebase UI
+1. Commit composition buffer with diff preview
+2. Interactive log with commit details
+3. Forge (PR/issue) integration
 
 ---
 
@@ -972,9 +971,7 @@
 
 | Gap | Impact | Effort |
 |-----|--------|--------|
-| **Magit / interactive Git** | Can't stage hunks, compose commits, or navigate diffs interactively | Large |
 | **Completion popup (Company/Corfu)** | No inline completion UI for code | Medium |
-| **LSP UI wiring** | LSP transport works but no user-facing features (completion, hover, goto-def) | Medium |
 | **Dired batch operations** | Can't operate on marked files | Medium |
 
 ### Tier 2 — Expected by Power Users
@@ -1118,7 +1115,7 @@
 |---------------------------------------------------------|------------------|------------------------------|------------------------------------------|
 | **Key-chords** (30+ bindings: AS, ZX, BV, FG, KB, etc.) | Extensive        | :white_check_mark: Works     | None — key-chord system exists           |
 | **Helm** (M-x, buffers, files, grep)                    | Primary UI       | :large_blue_circle: Narrowing | **Low** — M-x/buffers/bookmarks work    |
-| **Magit + Forge** (staging, commit, PR review)          | Daily driver     | :orange_circle: Minimal      | **Critical**                             |
+| **Magit + Forge** (staging, commit, PR review)          | Daily driver     | :large_blue_circle: Substantial | **Low** — hunk staging, inline diffs, narrowing branches |
 | **Multi-vterm** (multiple terminals, copy mode)         | Heavy use        | :white_check_mark: Works     | None — term-list/next/prev + copy mode   |
 | **Eglot / LSP** (completion, hover, goto-def, refs)     | Working          | :white_check_mark: Works     | None — full UI wiring with keybindings   |
 | **Copilot / AI** (gptel, claude-shell, copilot)         | Active           | :yellow_circle: Chat works   | **Medium** — chat OK, no inline AI      |
