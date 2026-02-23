@@ -396,18 +396,19 @@
 | Hide details | :white_check_mark: | |
 | Hide dotfiles | :white_check_mark: | |
 | Refresh | :white_check_mark: | |
-| Batch delete (flagged) | :red_circle: | No `D` flag + `x` execute workflow |
-| Batch rename (marked) | :red_circle: | No multi-file rename |
-| Batch copy (marked) | :red_circle: | No multi-file copy |
-| Shell command on file | :red_circle: | Not implemented |
-| Wdired (edit filenames) | :red_circle: | Not implemented |
+| Batch delete (marked) | :white_check_mark: | Delete all marked files with confirmation |
+| Batch rename (marked) | :white_check_mark: | Move/rename marked files to destination |
+| Batch copy (marked) | :white_check_mark: | Copy marked files to destination |
+| Mark by regexp | :white_check_mark: | Mark files matching pattern |
+| Shell command on file | :large_blue_circle: | Runs command, shows output in buffer |
+| Wdired (edit filenames) | :white_check_mark: | Edit mode with rename-on-commit |
 | Image thumbnails | :red_circle: | Not implemented |
-| Dired-x extensions | :yellow_circle: | Minimal |
+| Dired-x extensions | :yellow_circle: | find-dired, find-name-dired |
 | Async operations | :red_circle: | All synchronous |
 | Virtual dired | :red_circle: | Not implemented |
 | Dired subtree | :red_circle: | Not implemented |
 
-**Summary:** Dired handles basic single-file operations and listing. Missing batch operations on marked files, wdired, and shell command integration. The gap is significant for power users.
+**Summary:** Dired is **substantially complete**. Full listing with permissions/sizes, single-file and batch operations on marked files, wdired for inline renaming, find integration. Missing: image thumbnails, async operations, dired subtree.
 
 ---
 
@@ -972,7 +973,6 @@
 | Gap | Impact | Effort |
 |-----|--------|--------|
 | **Completion popup (Company/Corfu)** | No inline completion UI for code | Medium |
-| **Dired batch operations** | Can't operate on marked files | Medium |
 
 ### Tier 2 — Expected by Power Users
 
@@ -1128,7 +1128,7 @@
 | **iedit** (edit occurrences)                            | Installed        | :white_check_mark: Works     | None — M-x iedit-mode                    |
 | **expand-region**                                       | Installed        | :white_check_mark: Works     | None — C-= expand, C-- shrink            |
 | **Snippets** (yasnippet + file-templates)               | Active           | :red_circle: Missing         | **Medium**                               |
-| **Dired extensions** (dired-k, dired-imenu, etc.)       | Enhanced         | :yellow_circle: Basic        | **Medium**                               |
+| **Dired extensions** (dired-k, dired-imenu, etc.)       | Enhanced         | :large_blue_circle: Substantial | **Low** — batch ops, wdired, find-dired work |
 | **Gerbil mode + LSP** (custom gerbil-mode.el)           | Custom written   | :large_blue_circle: Built-in | Low — gemacs IS the Gerbil editor        |
 | **Flycheck + Flyspell**                                 | Both active      | :yellow_circle: Flycheck OK  | **Low** — flycheck via LSP, no flyspell  |
 | **EditorConfig**                                        | Installed        | :white_check_mark: Works     | None — auto-applied on file open         |
