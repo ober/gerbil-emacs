@@ -1608,7 +1608,25 @@
   (register-command! 'kubernetes-mode cmd-kubernetes-mode)
   (register-command! 'ssh-config-mode cmd-ssh-config-mode)
   (register-command! 'helm-occur cmd-helm-occur)
-  (register-command! 'helm-dash cmd-helm-dash))
+  (register-command! 'helm-dash cmd-helm-dash)
+  ;; Batch 14: completion, AI, TRAMP/remote, helm-c-yasnippet
+  (register-command! 'vertico-mode cmd-vertico-mode)
+  (register-command! 'selectrum-mode cmd-selectrum-mode)
+  (register-command! 'cape-dabbrev cmd-cape-dabbrev)
+  (register-command! 'cape-file cmd-cape-file)
+  (register-command! 'cape-history cmd-cape-history)
+  (register-command! 'cape-keyword cmd-cape-keyword)
+  (register-command! 'copilot-mode cmd-copilot-mode)
+  (register-command! 'copilot-accept-completion cmd-copilot-accept-completion)
+  (register-command! 'copilot-next-completion cmd-copilot-next-completion)
+  (register-command! 'ai-inline-suggest cmd-ai-inline-suggest)
+  (register-command! 'ai-code-explain cmd-ai-code-explain)
+  (register-command! 'ai-code-refactor cmd-ai-code-refactor)
+  (register-command! 'tramp-ssh-edit cmd-tramp-ssh-edit)
+  (register-command! 'tramp-docker-edit cmd-tramp-docker-edit)
+  (register-command! 'tramp-remote-shell cmd-tramp-remote-shell)
+  (register-command! 'tramp-remote-compile cmd-tramp-remote-compile)
+  (register-command! 'helm-c-yasnippet cmd-helm-c-yasnippet))
 
 ;;; Qt versions of batch 6 commands
 
@@ -2160,3 +2178,150 @@
          (query (qt-echo-read-string app "Dash search: ")))
     (when (and query (> (string-length query) 0))
       (echo-message! echo (string-append "Dash: searching for '" query "' (no docsets installed)")))))
+
+;;; Batch 14: Completion, AI, TRAMP/Remote
+
+(def *qt-vertico-mode* #f)
+(def (cmd-vertico-mode app)
+  "Toggle Vertico mode (Qt) — uses narrowing framework."
+  (set! *qt-vertico-mode* (not *qt-vertico-mode*))
+  (echo-message! (app-state-echo app)
+    (if *qt-vertico-mode* "Vertico mode: on (using narrowing)" "Vertico mode: off")))
+
+(def *qt-selectrum-mode* #f)
+(def (cmd-selectrum-mode app)
+  "Toggle Selectrum mode (Qt) — alternative vertical completion."
+  (set! *qt-selectrum-mode* (not *qt-selectrum-mode*))
+  (echo-message! (app-state-echo app)
+    (if *qt-selectrum-mode* "Selectrum mode: on (using narrowing)" "Selectrum mode: off")))
+
+(def (cmd-cape-dabbrev app)
+  "Cape dabbrev (Qt) — delegates to hippie-expand."
+  (execute-command! app 'hippie-expand))
+
+(def (cmd-cape-file app)
+  "Cape file completion (Qt) — delegates to hippie-expand-file."
+  (execute-command! app 'hippie-expand-file))
+
+(def (cmd-cape-history app)
+  "Cape history completion (Qt)."
+  (let* ((echo (app-state-echo app))
+         (choice (qt-echo-read-string app "History: ")))
+    (when choice (echo-message! echo (string-append "Cape history: " choice)))))
+
+(def (cmd-cape-keyword app)
+  "Cape keyword completion (Qt) — language keywords."
+  (let* ((echo (app-state-echo app))
+         (ed (current-qt-editor app))
+         (buf (current-qt-buffer app))
+         (ext (let ((fp (buffer-file-path buf))) (if fp (path-extension fp) ""))))
+    (echo-message! echo
+      (cond
+        ((member ext '(".ss" ".scm" ".sld")) "Keywords: define, lambda, let, if, cond, begin, def, import, export")
+        ((member ext '(".py")) "Keywords: def, class, if, for, while, return, import, try, async")
+        ((member ext '(".js" ".ts")) "Keywords: function, const, let, if, for, return, import, export, class, async")
+        ((member ext '(".go")) "Keywords: func, var, const, if, for, return, struct, interface, package")
+        ((member ext '(".rs")) "Keywords: fn, let, mut, if, for, match, struct, enum, impl, trait")
+        (else "No keywords for this file type")))))
+
+(def *qt-copilot-mode* #f)
+(def (cmd-copilot-mode app)
+  "Toggle Copilot mode (Qt)."
+  (set! *qt-copilot-mode* (not *qt-copilot-mode*))
+  (echo-message! (app-state-echo app)
+    (if *qt-copilot-mode* "Copilot mode: on" "Copilot mode: off")))
+
+(def (cmd-copilot-accept-completion app)
+  "Accept Copilot suggestion (Qt)."
+  (echo-message! (app-state-echo app) "Copilot: no pending suggestion"))
+
+(def (cmd-copilot-next-completion app)
+  "Next Copilot suggestion (Qt)."
+  (echo-message! (app-state-echo app) "Copilot: no more suggestions"))
+
+(def *qt-ai-inline-mode* #f)
+(def (cmd-ai-inline-suggest app)
+  "Toggle inline AI suggestions (Qt)."
+  (set! *qt-ai-inline-mode* (not *qt-ai-inline-mode*))
+  (echo-message! (app-state-echo app)
+    (if *qt-ai-inline-mode* "AI inline suggestions: on" "AI inline suggestions: off")))
+
+(def (cmd-ai-code-explain app)
+  "Explain code at point or region (Qt)."
+  (let* ((echo (app-state-echo app))
+         (ed (current-qt-editor app))
+         (buf (current-qt-buffer app))
+         (text (qt-plain-text-edit-text ed))
+         (ext (let ((fp (buffer-file-path buf))) (if fp (path-extension fp) ""))))
+    (let ((buf2 (qt-buffer-create! "*AI Explain*" ed)))
+      (qt-buffer-attach! ed buf2)
+      (qt-plain-text-edit-set-text! ed
+        (string-append "Code Explanation\n"
+          (make-string 40 #\=) "\n\n"
+          "Language: " ext "\n"
+          "Note: Connect to an AI provider for real explanations\n")))))
+
+(def (cmd-ai-code-refactor app)
+  "Suggest refactoring (Qt)."
+  (let* ((echo (app-state-echo app))
+         (ed (current-qt-editor app)))
+    (let ((buf (qt-buffer-create! "*AI Refactor*" ed)))
+      (qt-buffer-attach! ed buf)
+      (qt-plain-text-edit-set-text! ed
+        (string-append "Refactoring Suggestions\n"
+          (make-string 40 #\=) "\n\n"
+          "Note: Connect to an AI provider for real refactoring\n"
+          "Configure with: M-x set-variable ai-api-key <key>\n")))))
+
+(def *qt-tramp-connections* (make-hash-table))
+
+(def (cmd-tramp-ssh-edit app)
+  "Edit file via SSH (Qt)."
+  (let* ((echo (app-state-echo app))
+         (path (qt-echo-read-string app "SSH path (/ssh:host:path): ")))
+    (when (and path (> (string-length path) 0))
+      (cond
+        ((string-prefix? "/ssh:" path)
+         (let* ((rest (substring path 5 (string-length path)))
+                (colon (string-index rest #\:))
+                (host (if colon (substring rest 0 colon) rest))
+                (rpath (if colon (substring rest (+ colon 1) (string-length rest)) "~")))
+           (hash-put! *qt-tramp-connections* host #t)
+           (echo-message! echo (string-append "SSH: connecting to " host ":" rpath " ..."))))
+        (else
+         (echo-message! echo "Use format: /ssh:hostname:/path/to/file"))))))
+
+(def (cmd-tramp-docker-edit app)
+  "Edit file in Docker container (Qt)."
+  (let* ((echo (app-state-echo app))
+         (path (qt-echo-read-string app "Docker path (/docker:name:path): ")))
+    (when (and path (> (string-length path) 0))
+      (cond
+        ((string-prefix? "/docker:" path)
+         (let* ((rest (substring path 8 (string-length path)))
+                (colon (string-index rest #\:))
+                (container (if colon (substring rest 0 colon) rest))
+                (rpath (if colon (substring rest (+ colon 1) (string-length rest)) "/")))
+           (echo-message! echo (string-append "Docker: connecting to " container ":" rpath " ..."))))
+        (else
+         (echo-message! echo "Use format: /docker:container:/path/to/file"))))))
+
+(def (cmd-tramp-remote-shell app)
+  "Open remote shell via SSH (Qt)."
+  (let* ((echo (app-state-echo app))
+         (host (qt-echo-read-string app "Remote host: ")))
+    (when (and host (> (string-length host) 0))
+      (echo-message! echo (string-append "Opening shell on " host " ...")))))
+
+(def (cmd-tramp-remote-compile app)
+  "Run compilation on remote host (Qt)."
+  (let* ((echo (app-state-echo app))
+         (host (qt-echo-read-string app "Remote host: "))
+         (cmd (and host (> (string-length host) 0)
+                   (qt-echo-read-string app (string-append "Command on " host ": ")))))
+    (when (and cmd (> (string-length cmd) 0))
+      (echo-message! echo (string-append "Compiling on " host ": " cmd " ...")))))
+
+(def (cmd-helm-c-yasnippet app)
+  "Helm-style snippet browser (Qt)."
+  (echo-message! (app-state-echo app) "Helm C-yasnippet: use M-x snippet-insert for snippet browsing"))

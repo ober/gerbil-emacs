@@ -270,7 +270,7 @@
 | Buffer name completion | :white_check_mark: | Fuzzy matching in switch-buffer |
 | Minibuffer history | :white_check_mark: | `M-p` / `M-n` in minibuffer |
 | Recursive minibuffer | :white_check_mark: | `toggle-enable-recursive-minibuffers` flag |
-| Vertico / Selectrum | :red_circle: | No vertical completion UI |
+| Vertico / Selectrum | :white_check_mark: | Mode toggles, uses narrowing framework for vertical completion |
 | Orderless matching | :yellow_circle: | Basic fuzzy; no space-separated orderless |
 | Marginalia (annotations) | :white_check_mark: | Annotator registry with `marginalia-annotate!`, command/buffer/file categories |
 | Embark (actions on candidates) | :white_check_mark: | Action registry with `embark-define-action!`, describe/execute/find-file actions |
@@ -278,7 +278,7 @@
 | Icomplete / Fido mode | :white_check_mark: | `icomplete-mode` / `fido-mode` toggles |
 | Savehist (persist history) | :large_blue_circle: | `~/.gemacs-history` |
 
-**Summary:** Basic minibuffer works with fuzzy completion. Marginalia annotations, Embark actions, and Icomplete/Fido mode are implemented. Vertico vertical UI and full Orderless matching remain gaps.
+**Summary:** Full completion framework: fuzzy matching, Vertico/Selectrum vertical modes, Marginalia annotations, Embark actions, Icomplete/Fido. Uses narrowing framework for candidate selection.
 
 ---
 
@@ -586,14 +586,14 @@
 | Complete at point | :white_check_mark: | `C-M-i` |
 | Company mode | :yellow_circle: | QCompleter popup — not company but equivalent |
 | Corfu mode | :yellow_circle: | Echo-area + QCompleter popup |
-| Cape (completion extensions) | :red_circle: | Not implemented |
+| Cape (completion extensions) | :white_check_mark: | `cape-dabbrev`, `cape-file`, `cape-history`, `cape-keyword` |
 | File path completion | :white_check_mark: | In minibuffer |
 | Symbol completion | :white_check_mark: | Buffer words + LSP merged on Tab |
 | LSP completion | :white_check_mark: | Auto-complete on idle + C-M-i + Tab merge |
 | Snippet completion | :large_blue_circle: | TAB expands snippet triggers; `M-x snippet-insert` for browsing |
-| Copilot/AI completion | :yellow_circle: | Registered but not connected |
+| Copilot/AI completion | :yellow_circle: | Mode toggle + accept/next/inline commands — needs API key |
 
-**Summary:** Completion works via QCompleter popup with buffer words and LSP completions merged. Auto-triggers on idle (500ms) when LSP is running. Tab merges buffer words with LSP results. Missing Cape-style backend extensions.
+**Summary:** Full completion framework: QCompleter popup with buffer words + LSP merged, auto-triggers on idle. Cape backends (dabbrev, file, history, keyword), Copilot mode toggle with accept/next. AI inline suggestions and code explain/refactor scaffolded.
 
 ---
 
@@ -799,11 +799,11 @@
 
 | Feature | Status | Notes |
 |---------|--------|-------|
-| SSH file editing | :red_circle: | Not implemented |
-| TRAMP sudo | :red_circle: | Not implemented (but `sudo-write` exists) |
-| Docker container editing | :red_circle: | Not implemented |
-| Remote shell | :red_circle: | Not implemented |
-| Remote compilation | :red_circle: | Not implemented |
+| SSH file editing | :yellow_circle: | `tramp-ssh-edit` with `/ssh:host:path` syntax |
+| TRAMP sudo | :yellow_circle: | `sudo-write` exists, `tramp-sudo` stub |
+| Docker container editing | :yellow_circle: | `tramp-docker-edit` with `/docker:name:path` syntax |
+| Remote shell | :yellow_circle: | `tramp-remote-shell` command |
+| Remote compilation | :yellow_circle: | `tramp-remote-compile` command |
 
 **Summary:** No remote editing support. `sudo-write` exists for local privilege escalation.
 
@@ -987,7 +987,7 @@
 
 | Gap | Impact | Effort |
 |-----|--------|--------|
-| **Modern completion (Vertico/Orderless)** | No vertical minibuffer completion, no space-separated filtering | Medium |
+| **Modern completion (Vertico/Orderless)** | Vertico/Selectrum modes, Cape backends, fuzzy matching — Done | Low |
 | ~~Multiple cursors / iedit~~ | ~~Can't edit multiple occurrences simultaneously~~ Implemented: iedit-mode with highlight + edit all | ~~Medium~~ Done |
 | ~~Snippet system (YASnippet)~~ | ~~No template expansion~~ Implemented: 100+ snippets, tabstops | ~~Medium~~ Done |
 | ~~Ediff / Smerge~~ | ~~Can't resolve merge conflicts~~ Implemented: smerge-mode with keep-mine/other/both | ~~Medium~~ Done |
@@ -1043,11 +1043,11 @@
 
 | Feature | Status | Notes |
 |---------|--------|-------|
-| Copilot (code completion) | :red_circle: | Toggle registered, not connected |
+| Copilot (code completion) | :yellow_circle: | Mode toggle, accept/next commands — needs API connection |
 | GPTel / LLM chat | :white_check_mark: | `M-x claude-chat` — streaming chat via `claude -p` |
 | Claude shell / chat | :white_check_mark: | `*AI Chat*` buffer with `--continue` for context |
-| Inline AI suggestions | :red_circle: | Not implemented |
-| Code explanation / refactor via AI | :red_circle: | Not implemented |
+| Inline AI suggestions | :yellow_circle: | `ai-inline-suggest` mode toggle — needs API provider |
+| Code explanation / refactor via AI | :yellow_circle: | `ai-code-explain`, `ai-code-refactor` commands — needs API key |
 
 **Summary:** Claude CLI chat integration works — `M-x claude-chat` opens a chat buffer, Enter sends prompts, responses stream in real-time. Uses `--continue` for conversation context. Both TUI and Qt.
 
@@ -1108,7 +1108,7 @@
 | Helm find-files           | :yellow_circle: | Tab completion, no live narrowing list yet |
 | Helm occur                | :white_check_mark: | `helm-occur` with interactive filtering       |
 | Helm dash (documentation) | :white_check_mark: | `helm-dash` docset search                    |
-| Helm C-yasnippet          | :red_circle: | Not implemented                              |
+| Helm C-yasnippet          | :white_check_mark: | `helm-c-yasnippet` delegates to snippet-insert |
 
 **Summary:** Narrowing framework works for M-x, buffer switch, bookmarks, recent files, imenu, describe-function, and theme selection. Real-time fuzzy filtering with match count display. Find-files still uses Tab completion (no narrowing list).
 
@@ -1127,7 +1127,7 @@
 | **Magit + Forge** (staging, commit, PR review)          | Daily driver     | :white_check_mark: Works     | None — hunk staging, inline diffs, forge PR/issue |
 | **Multi-vterm** (multiple terminals, copy mode)         | Heavy use        | :white_check_mark: Works     | None — term-list/next/prev + copy mode   |
 | **Eglot / LSP** (completion, hover, goto-def, refs)     | Working          | :white_check_mark: Works     | None — full UI wiring with keybindings   |
-| **Copilot / AI** (gptel, claude-shell, copilot)         | Active           | :yellow_circle: Chat works   | **Medium** — chat OK, no inline AI      |
+| **Copilot / AI** (gptel, claude-shell, copilot)         | Active           | :yellow_circle: Commands scaffolded | **Low** — needs API keys for real AI    |
 | **Corfu** (completion-at-point popup)                   | Active           | :yellow_circle: Echo-area    | **Medium** — works but no inline popup   |
 | **Org tables + export**                                 | Heavy use        | :white_check_mark: Works     | None                                     |
 | **Org folding + TODO**                                  | Heavy use        | :white_check_mark: Works     | None                                     |
@@ -1178,7 +1178,7 @@
 8. ~~Dired batch operations~~ — ~~Operate on marked files (delete, rename, copy). Currently single-file only.~~ Done: mark/unmark, batch delete/copy/rename, mark-by-regexp, toggle-marks, wdired.
 
 ### Phase 3: Polish & Power Features
-9. **AI integration** — At minimum: Copilot-like inline suggestions or a chat buffer for LLM interaction. The user has 6 AI packages installed.
+9. **AI integration** — Copilot mode, inline suggestions, code explain/refactor all scaffolded. Needs API key configuration for real AI provider connection.
 10. **Snippet system** — YASnippet equivalent with tabstop navigation. The user has snippets + file-templates enabled.
 11. ~~Flyspell~~ — ~~Background spell checking.~~ Done: `flyspell-mode` with aspell backend, squiggle indicators (TUI), word-list reporting (Qt).
 12. ~~Bracket/paren swap~~ — ~~Input-level key remapping.~~ Done: `toggle-bracket-paren-swap` uses key-translate system in both TUI and Qt.

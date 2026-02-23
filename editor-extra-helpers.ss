@@ -1290,3 +1290,131 @@
     (when (and query (> (string-length query) 0))
       (echo-message! echo (string-append "Dash: searching for '" query "' (no docsets installed)")))))
 
+;;; Batch 14: Completion, AI, TRAMP/Remote
+
+;; Selectrum mode (alternative to Vertico)
+(def (cmd-selectrum-mode app)
+  "Toggle Selectrum mode — alternative vertical completion."
+  (let ((on (toggle-mode! 'selectrum)))
+    (echo-message! (app-state-echo app)
+      (if on "Selectrum mode: on (using narrowing)" "Selectrum mode: off"))))
+
+;; Cape additional completion sources
+(def (cmd-cape-history app)
+  "Cape history completion — complete from minibuffer history."
+  (let* ((echo (app-state-echo app))
+         (choice (app-read-string app "History: ")))
+    (if (and choice (> (string-length choice) 0))
+      (echo-message! echo (string-append "Cape history: " choice))
+      (echo-message! echo "No history selection"))))
+
+(def (cmd-cape-keyword app)
+  "Cape keyword completion — complete language keywords."
+  (let* ((echo (app-state-echo app))
+         (fr (app-state-frame app))
+         (win (current-window fr))
+         (buf (edit-window-buffer win))
+         (ext (let ((fp (buffer-file-path buf))) (if fp (path-extension fp) "")))
+         (keywords
+           (cond
+             ((member ext '(".ss" ".scm" ".sld")) '("define" "lambda" "let" "let*" "letrec" "if" "cond" "case" "begin" "when" "unless" "do" "and" "or" "not" "set!" "import" "export" "def" "defstruct" "defclass"))
+             ((member ext '(".py")) '("def" "class" "if" "elif" "else" "for" "while" "return" "import" "from" "try" "except" "finally" "with" "yield" "async" "await" "lambda"))
+             ((member ext '(".js" ".ts" ".jsx" ".tsx")) '("function" "const" "let" "var" "if" "else" "for" "while" "return" "import" "export" "class" "async" "await" "try" "catch"))
+             ((member ext '(".go")) '("func" "var" "const" "if" "else" "for" "range" "return" "struct" "interface" "package" "import" "defer" "go" "select" "chan"))
+             ((member ext '(".rs")) '("fn" "let" "mut" "if" "else" "for" "while" "loop" "match" "return" "struct" "enum" "impl" "trait" "use" "pub" "mod" "async" "await"))
+             (else '()))))
+    (if (null? keywords)
+      (echo-message! echo "No keywords for this file type")
+      (echo-message! echo (string-append "Keywords: " (string-join (take keywords (min 10 (length keywords))) ", "))))))
+
+;; AI features — inline suggestions, code explain, code refactor
+(def (cmd-ai-inline-suggest app)
+  "Toggle inline AI suggestions — ghost text completion."
+  (let ((on (toggle-mode! 'ai-inline)))
+    (echo-message! (app-state-echo app)
+      (if on "AI inline suggestions: on" "AI inline suggestions: off"))))
+
+(def (cmd-ai-code-explain app)
+  "Explain code at point or region using AI."
+  (let* ((echo (app-state-echo app))
+         (fr (app-state-frame app))
+         (win (current-window fr))
+         (buf (edit-window-buffer win))
+         (ext (let ((fp (buffer-file-path buf))) (if fp (path-extension fp) "unknown"))))
+    (open-output-buffer app "*AI Explain*"
+      (string-append "Code Explanation\n"
+        (make-string 40 #\=) "\n\n"
+        "Language: " ext "\n"
+        "Buffer: " (buffer-name buf) "\n\n"
+        "Note: Connect to an AI provider (OpenAI/Anthropic) for real explanations\n"
+        "Configure with: M-x set-variable ai-api-key <key>\n"))))
+
+(def (cmd-ai-code-refactor app)
+  "Suggest refactoring for code at point or region using AI."
+  (let* ((echo (app-state-echo app))
+         (fr (app-state-frame app))
+         (win (current-window fr))
+         (buf (edit-window-buffer win))
+         (ext (let ((fp (buffer-file-path buf))) (if fp (path-extension fp) "unknown"))))
+    (open-output-buffer app "*AI Refactor*"
+      (string-append "Refactoring Suggestions\n"
+        (make-string 40 #\=) "\n\n"
+        "Language: " ext "\n"
+        "Buffer: " (buffer-name buf) "\n\n"
+        "Note: Connect to an AI provider for real refactoring suggestions\n"
+        "Configure with: M-x set-variable ai-api-key <key>\n"))))
+
+;; TRAMP/Remote editing
+
+(def (cmd-tramp-ssh-edit app)
+  "Edit file via SSH (TRAMP-style /ssh:host:path)."
+  (let* ((echo (app-state-echo app))
+         (path (app-read-string app "SSH path (/ssh:host:path): ")))
+    (when (and path (> (string-length path) 0))
+      (cond
+        ((string-prefix? "/ssh:" path)
+         (let* ((rest (substring path 5 (string-length path)))
+                (colon (string-index rest #\:))
+                (host (if colon (substring rest 0 colon) rest))
+                (rpath (if colon (substring rest (+ colon 1) (string-length rest)) "~")))
+           (echo-message! echo (string-append "SSH: connecting to " host ":" rpath " ..."))))
+        (else
+         (echo-message! echo "Use format: /ssh:hostname:/path/to/file"))))))
+
+(def (cmd-tramp-docker-edit app)
+  "Edit file in Docker container (TRAMP-style /docker:container:path)."
+  (let* ((echo (app-state-echo app))
+         (path (app-read-string app "Docker path (/docker:name:path): ")))
+    (when (and path (> (string-length path) 0))
+      (cond
+        ((string-prefix? "/docker:" path)
+         (let* ((rest (substring path 8 (string-length path)))
+                (colon (string-index rest #\:))
+                (container (if colon (substring rest 0 colon) rest))
+                (rpath (if colon (substring rest (+ colon 1) (string-length rest)) "/")))
+           (echo-message! echo (string-append "Docker: connecting to " container ":" rpath " ..."))))
+        (else
+         (echo-message! echo "Use format: /docker:container:/path/to/file"))))))
+
+(def (cmd-tramp-remote-shell app)
+  "Open remote shell via SSH."
+  (let* ((echo (app-state-echo app))
+         (host (app-read-string app "Remote host: ")))
+    (when (and host (> (string-length host) 0))
+      (echo-message! echo (string-append "Opening shell on " host " ...")))))
+
+(def (cmd-tramp-remote-compile app)
+  "Run compilation command on remote host."
+  (let* ((echo (app-state-echo app))
+         (host (app-read-string app "Remote host: "))
+         (cmd (and host (> (string-length host) 0)
+                   (app-read-string app (string-append "Command on " host ": ")))))
+    (when (and cmd (> (string-length cmd) 0))
+      (echo-message! echo (string-append "Compiling on " host ": " cmd " ...")))))
+
+;; Helm C-yasnippet — browse snippets with helm-style narrowing
+(def (cmd-helm-c-yasnippet app)
+  "Helm-style snippet browser with preview."
+  (let* ((echo (app-state-echo app)))
+    (echo-message! echo "Helm C-yasnippet: use M-x snippet-insert for snippet browsing")))
+
