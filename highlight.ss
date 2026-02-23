@@ -1077,6 +1077,8 @@
            ((string=? ext ".mk") 'makefile)
            ;; XML
            ((member ext '(".xml" ".xsl" ".xsd" ".plist" ".svg")) 'html)
+           ;; Terraform / HCL
+           ((member ext '(".tf" ".tfvars" ".hcl")) 'c)
            ;; Conf / INI
            ((member ext '(".ini" ".conf" ".cfg" ".properties")) 'toml)
            ;; Dockerfile

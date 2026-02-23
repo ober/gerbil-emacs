@@ -90,6 +90,7 @@
         ((member ext '(".swift")) 'swift)
         ((member ext '(".nim")) 'python)
         ((member ext '(".svelte" ".vue")) 'xml)
+        ((member ext '(".tf" ".tfvars" ".hcl")) 'c)
         ((member ext '(".dockerfile")) 'shell)
         ((member ext '(".diff" ".patch")) 'diff)
         ((member ext '(".ini" ".conf" ".cfg" ".properties")) 'toml)
