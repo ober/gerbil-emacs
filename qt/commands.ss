@@ -78,6 +78,8 @@
         :gemacs/qt/sci-shim
         :gemacs/core
         :gemacs/editor
+        (only-in :gemacs/editor-extra-final
+                 find-editorconfig)
         (only-in :gemacs/persist
                  buffer-local-set!
                  save-place-save! save-place-load!
@@ -155,6 +157,49 @@
                       ((auto-pair-mode)
                        (set! *auto-pair-mode* (and val #t)))))))
               settings)))))))
+
+(def (qt-apply-editorconfig! app file-path)
+  "Apply .editorconfig settings for FILE-PATH in Qt mode."
+  (when file-path
+    (let ((settings (find-editorconfig file-path)))
+      (when (> (hash-length settings) 0)
+        (let ((ed (current-qt-editor app))
+              (indent-style (hash-get settings "indent_style"))
+              (indent-size (hash-get settings "indent_size"))
+              (tab-width-val (hash-get settings "tab_width")))
+          ;; Indent style
+          (when indent-style
+            (let ((use-tabs (string=? indent-style "tab")))
+              (set! *indent-tabs-mode* use-tabs)
+              (sci-send ed SCI_SETUSETABS (if use-tabs 1 0))))
+          ;; Indent size
+          (when indent-size
+            (let ((size (string->number indent-size)))
+              (when (and size (> size 0))
+                (set! *tab-width* size)
+                (sci-send ed SCI_SETINDENT size)
+                (sci-send ed SCI_SETTABWIDTH
+                  (or (and tab-width-val (string->number tab-width-val)) size)))))
+          ;; Tab width only
+          (when (and tab-width-val (not indent-size))
+            (let ((tw (string->number tab-width-val)))
+              (when (and tw (> tw 0))
+                (set! *tab-width* tw)
+                (sci-send ed SCI_SETTABWIDTH tw)))))))))
+
+(def (cmd-editorconfig-apply app)
+  "Apply .editorconfig settings to current buffer (Qt)."
+  (let ((path (buffer-file-path (current-qt-buffer app))))
+    (if (not path)
+      (echo-error! (app-state-echo app) "Buffer has no file")
+      (let ((settings (find-editorconfig path)))
+        (if (= (hash-length settings) 0)
+          (echo-message! (app-state-echo app) "No .editorconfig found")
+          (begin
+            (qt-apply-editorconfig! app path)
+            (echo-message! (app-state-echo app)
+              (string-append "Applied editorconfig ("
+                (number->string (hash-length settings)) " settings)"))))))))
 
 (def (cmd-show-dir-locals app)
   "Show directory-local settings for the current buffer's file."
@@ -246,6 +291,7 @@
             (file-mtime-record! filename))
           (qt-setup-highlighting! app buf)
           (apply-dir-locals! app filename)
+          (qt-apply-editorconfig! app filename)
           (echo-message! echo (string-append "Opened: " filename))))))))
 
 (def (qt-list-directory-files dir)
@@ -1396,6 +1442,7 @@
   (register-command! 'iedit-mode cmd-iedit-mode)
   ;; Cross-cutting commands (defined in facade, not in chain modules)
   (register-command! 'show-dir-locals cmd-show-dir-locals)
+  (register-command! 'editorconfig-apply cmd-editorconfig-apply)
   (register-command! 'delete-file-and-buffer cmd-delete-file-and-buffer)
   (register-command! 'find-file-literally cmd-find-file-literally)
   (register-command! 'org-mode cmd-org-mode)

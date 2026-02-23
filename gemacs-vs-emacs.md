@@ -1,7 +1,7 @@
 # Gemacs vs GNU Emacs — Feature Comparison
 
 > **Last updated:** 2026-02-22
-> **Gemacs version:** master (058df3a)
+> **Gemacs version:** master (c39a615)
 > **Compared against:** GNU Emacs 29.x / 30.x feature set
 
 ## Status Legend
@@ -1138,14 +1138,14 @@
 | **Org folding + TODO**                                  | Heavy use        | :white_check_mark: Works     | None                                     |
 | **Golden ratio** (window auto-sizing)                   | Enabled          | :white_check_mark: Works     | None                                     |
 | **Browse kill ring**                                    | Installed        | :white_check_mark: Works     | None                                     |
-| **Bracket/paren swap** (`[`↔`(`)                        | Configured       | :red_circle: Missing         | **Medium**                               |
-| **iedit** (edit occurrences)                            | Installed        | :red_circle: Missing         | **Medium**                               |
-| **expand-region**                                       | Installed        | :red_circle: Missing         | **Medium**                               |
+| **Bracket/paren swap** (`[`↔`(`)                        | Configured       | :white_check_mark: Works     | None — key-translate system              |
+| **iedit** (edit occurrences)                            | Installed        | :white_check_mark: Works     | None — M-x iedit-mode                    |
+| **expand-region**                                       | Installed        | :white_check_mark: Works     | None — C-= expand, C-- shrink            |
 | **Snippets** (yasnippet + file-templates)               | Active           | :red_circle: Missing         | **Medium**                               |
 | **Dired extensions** (dired-k, dired-imenu, etc.)       | Enhanced         | :yellow_circle: Basic        | **Medium**                               |
 | **Gerbil mode + LSP** (custom gerbil-mode.el)           | Custom written   | :large_blue_circle: Built-in | Low — gemacs IS the Gerbil editor        |
 | **Flycheck + Flyspell**                                 | Both active      | :yellow_circle: Partial      | **Medium**                               |
-| **EditorConfig**                                        | Installed        | :red_circle: Missing         | **Low**                                  |
+| **EditorConfig**                                        | Installed        | :white_check_mark: Works     | None — auto-applied on file open         |
 | **GitLab issue tracking** (28 custom modes)             | Extensive custom | :red_circle: Missing         | **Low** — very personal workflow         |
 
 ### The User's Unique Patterns
