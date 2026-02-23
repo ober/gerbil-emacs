@@ -100,6 +100,8 @@
   (register-command! 'eshell cmd-eshell)
   ;; Shell
   (register-command! 'shell cmd-shell)
+  ;; AI Chat
+  (register-command! 'claude-chat cmd-chat)
   ;; Terminal (PTY-backed vterm-like)
   (register-command! 'term cmd-term)
   (register-command! 'term-interrupt cmd-term-interrupt)

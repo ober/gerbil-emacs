@@ -12,6 +12,7 @@
         :gemacs/repl
         :gemacs/shell
         :gemacs/terminal
+        :gemacs/chat
         :gemacs/keymap
         :gemacs/buffer
         :gemacs/window
@@ -263,6 +264,43 @@
     (buffer-list)))
 
 ;;;============================================================================
+;;; Chat output polling (Claude CLI streaming responses)
+;;;============================================================================
+
+(def (poll-chat-output! app)
+  "Check all chat buffers for new output from Claude CLI and insert it."
+  (for-each
+    (lambda (buf)
+      (when (chat-buffer? buf)
+        (let ((cs (hash-get *chat-state* buf)))
+          (when (and cs (chat-busy? cs))
+            (let ((result (chat-read-available cs)))
+              (when result
+                (let ((win (find-window-for-buffer (app-state-frame app) buf)))
+                  (when win
+                    (let ((ed (edit-window-editor win)))
+                      (cond
+                        ;; String chunk — append it
+                        ((string? result)
+                         (editor-append-text ed result)
+                         (editor-goto-pos ed (editor-get-text-length ed))
+                         (editor-scroll-caret ed))
+                        ;; (string . done) — final chunk + done
+                        ((and (pair? result) (string? (car result)))
+                         (editor-append-text ed (car result))
+                         (editor-append-text ed "\n\nYou: ")
+                         (set! (chat-state-prompt-pos cs) (editor-get-text-length ed))
+                         (editor-goto-pos ed (editor-get-text-length ed))
+                         (editor-scroll-caret ed))
+                        ;; 'done — response complete
+                        ((eq? result 'done)
+                         (editor-append-text ed "\n\nYou: ")
+                         (set! (chat-state-prompt-pos cs) (editor-get-text-length ed))
+                         (editor-goto-pos ed (editor-get-text-length ed))
+                         (editor-scroll-caret ed))))))))))))
+    (buffer-list)))
+
+;;;============================================================================
 ;;; Event loop
 ;;;============================================================================
 
@@ -287,6 +325,9 @@
 
       ;; Poll terminal PTY output
       (poll-terminal-output! app)
+
+      ;; Poll AI chat output
+      (poll-chat-output! app)
 
       ;; Poll IPC queue for files opened via gemacs-client
       (poll-ipc-files! app)

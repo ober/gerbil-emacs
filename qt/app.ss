@@ -15,6 +15,7 @@
         :gemacs/eshell
         :gemacs/shell
         :gemacs/terminal
+        :gemacs/chat
         :gemacs/qt/keymap
         :gemacs/qt/buffer
         :gemacs/qt/window
@@ -604,6 +605,42 @@
                                       (qt-plain-text-edit-move-cursor! ed QT_CURSOR_END)
                                       (qt-plain-text-edit-ensure-cursor-visible! ed))
                                     (loop (cdr wins)))))))))))))
+              (buffer-list))
+            ;; Also poll chat buffers (Claude CLI)
+            (for-each
+              (lambda (buf)
+                (when (chat-buffer? buf)
+                  (let ((cs (hash-get *chat-state* buf)))
+                    (when (and cs (chat-busy? cs))
+                      (let ((result (chat-read-available cs)))
+                        (when result
+                          (let loop ((wins (qt-frame-windows fr)))
+                            (when (pair? wins)
+                              (if (eq? (qt-edit-window-buffer (car wins)) buf)
+                                (let ((ed (qt-edit-window-editor (car wins))))
+                                  (cond
+                                    ;; String chunk — append it
+                                    ((string? result)
+                                     (sci-send/string ed SCI_APPENDTEXT result (string-length result))
+                                     (qt-plain-text-edit-move-cursor! ed QT_CURSOR_END)
+                                     (qt-plain-text-edit-ensure-cursor-visible! ed))
+                                    ;; (string . done) — final chunk + done
+                                    ((and (pair? result) (string? (car result)))
+                                     (let ((chunk (car result)))
+                                       (sci-send/string ed SCI_APPENDTEXT chunk (string-length chunk)))
+                                     (qt-plain-text-edit-append! ed "\nYou: ")
+                                     (set! (chat-state-prompt-pos cs)
+                                       (string-length (qt-plain-text-edit-text ed)))
+                                     (qt-plain-text-edit-move-cursor! ed QT_CURSOR_END)
+                                     (qt-plain-text-edit-ensure-cursor-visible! ed))
+                                    ;; 'done — response complete
+                                    ((eq? result 'done)
+                                     (qt-plain-text-edit-append! ed "\nYou: ")
+                                     (set! (chat-state-prompt-pos cs)
+                                       (string-length (qt-plain-text-edit-text ed)))
+                                     (qt-plain-text-edit-move-cursor! ed QT_CURSOR_END)
+                                     (qt-plain-text-edit-ensure-cursor-visible! ed))))
+                                (loop (cdr wins)))))))))))
               (buffer-list))))
         (qt-timer-start! repl-timer 50))
 

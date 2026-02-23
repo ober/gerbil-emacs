@@ -15,6 +15,7 @@
         :gemacs/eshell
         :gemacs/shell
         :gemacs/terminal
+        :gemacs/chat
         :gemacs/qt/buffer
         :gemacs/qt/window
         :gemacs/qt/echo
@@ -709,6 +710,63 @@
           (string-length (qt-plain-text-edit-text ed)))
         (qt-plain-text-edit-move-cursor! ed QT_CURSOR_END)
         (qt-plain-text-edit-ensure-cursor-visible! ed)))))
+;;;============================================================================
+;;; AI Chat commands (Claude CLI integration)
+;;;============================================================================
+
+(def qt-chat-buffer-name "*AI Chat*")
+(def qt-chat-prompt "\n\nYou: ")
+
+(def (cmd-chat app)
+  "Open or switch to the *AI Chat* buffer."
+  (let ((existing (buffer-by-name qt-chat-buffer-name)))
+    (if existing
+      (let* ((fr (app-state-frame app))
+             (ed (current-qt-editor app)))
+        (buffer-touch! existing)
+        (qt-buffer-attach! ed existing)
+        (set! (qt-edit-window-buffer (qt-current-window fr)) existing)
+        (echo-message! (app-state-echo app) qt-chat-buffer-name))
+      (let* ((fr (app-state-frame app))
+             (ed (current-qt-editor app))
+             (buf (qt-buffer-create! qt-chat-buffer-name ed #f)))
+        (set! (buffer-lexer-lang buf) 'chat)
+        (qt-buffer-attach! ed buf)
+        (set! (qt-edit-window-buffer (qt-current-window fr)) buf)
+        (let ((cs (chat-start! (current-directory))))
+          (hash-put! *chat-state* buf cs)
+          (let ((greeting "Claude AI Chat — Type your message and press Enter.\n\nYou: "))
+            (qt-plain-text-edit-set-text! ed greeting)
+            (set! (chat-state-prompt-pos cs) (string-length greeting))
+            (qt-plain-text-edit-move-cursor! ed QT_CURSOR_END)
+            (qt-plain-text-edit-ensure-cursor-visible! ed)))
+        (echo-message! (app-state-echo app) "AI Chat started")))))
+
+(def (cmd-chat-send app)
+  "Extract typed text since prompt and send to Claude CLI."
+  (let* ((buf (current-qt-buffer app))
+         (cs (hash-get *chat-state* buf)))
+    (when cs
+      (if (chat-busy? cs)
+        (echo-message! (app-state-echo app) "Waiting for response...")
+        (let* ((ed (current-qt-editor app))
+               (all-text (qt-plain-text-edit-text ed))
+               (prompt-pos (chat-state-prompt-pos cs))
+               (end-pos (string-length all-text))
+               (input (if (> end-pos prompt-pos)
+                        (substring all-text prompt-pos end-pos)
+                        "")))
+          (when (> (string-length (string-trim input)) 0)
+            ;; Append label for AI response
+            (qt-plain-text-edit-append! ed "\n\nClaude: ")
+            ;; Update prompt-pos
+            (set! (chat-state-prompt-pos cs)
+              (string-length (qt-plain-text-edit-text ed)))
+            (qt-plain-text-edit-move-cursor! ed QT_CURSOR_END)
+            (qt-plain-text-edit-ensure-cursor-visible! ed)
+            ;; Send to claude
+            (chat-send! cs input)))))))
+
 ;;;============================================================================
 ;;; Dired (directory listing) support
 ;;;============================================================================

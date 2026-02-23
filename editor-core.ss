@@ -19,6 +19,7 @@
         :gemacs/eshell
         :gemacs/shell
         :gemacs/terminal
+        :gemacs/chat
         :gemacs/keymap
         :gemacs/buffer
         :gemacs/window
@@ -585,6 +586,7 @@
       ((eshell-buffer? buf)      (cmd-eshell-send app))
       ((shell-buffer? buf)       (cmd-shell-send app))
       ((terminal-buffer? buf)    (cmd-terminal-send app))
+      ((chat-buffer? buf)        (cmd-chat-send app))
       (else
        ;; Electric indent: match previous line's indentation
        (let* ((ed (current-editor app))
@@ -985,6 +987,11 @@
                     (when ss
                       (shell-stop! ss)
                       (hash-remove! *shell-state* buf)))
+                  ;; Clean up chat state if applicable
+                  (let ((cs (hash-get *chat-state* buf)))
+                    (when cs
+                      (chat-stop! cs)
+                      (hash-remove! *chat-state* buf)))
                   (buffer-kill! ed buf)
                   (echo-message! echo (string-append "Killed " target-name))))))
           (echo-error! echo (string-append "No buffer: " target-name)))))))
@@ -1369,6 +1376,63 @@
         (set! (shell-state-prompt-pos ss) (editor-get-text-length ed))
         (editor-goto-pos ed (editor-get-text-length ed))
         (editor-scroll-caret ed)))))
+
+;;;============================================================================
+;;; AI Chat commands (Claude CLI integration)
+;;;============================================================================
+
+(def chat-buffer-name "*AI Chat*")
+(def chat-prompt "\nYou: ")
+
+(def (cmd-chat app)
+  "Open or switch to the *AI Chat* buffer."
+  (let ((existing (buffer-by-name chat-buffer-name)))
+    (if existing
+      ;; Switch to existing chat buffer
+      (let* ((fr (app-state-frame app))
+             (ed (current-editor app)))
+        (buffer-attach! ed existing)
+        (set! (edit-window-buffer (current-window fr)) existing)
+        (echo-message! (app-state-echo app) chat-buffer-name))
+      ;; Create new chat buffer
+      (let* ((fr (app-state-frame app))
+             (ed (current-editor app))
+             (buf (buffer-create! chat-buffer-name ed #f)))
+        (set! (buffer-lexer-lang buf) 'chat)
+        (buffer-attach! ed buf)
+        (set! (edit-window-buffer (current-window fr)) buf)
+        (let ((cs (chat-start! (current-directory))))
+          (hash-put! *chat-state* buf cs)
+          (let ((greeting "Claude AI Chat — Type your message and press Enter.\n\nYou: "))
+            (editor-set-text ed greeting)
+            (set! (chat-state-prompt-pos cs) (string-length greeting))
+            (editor-goto-pos ed (string-length greeting))
+            (editor-scroll-caret ed)))
+        (echo-message! (app-state-echo app) "AI Chat started")))))
+
+(def (cmd-chat-send app)
+  "Extract typed text since prompt and send to Claude CLI."
+  (let* ((buf (current-buffer-from-app app))
+         (cs (hash-get *chat-state* buf)))
+    (when cs
+      (if (chat-busy? cs)
+        (echo-message! (app-state-echo app) "Waiting for response...")
+        (let* ((ed (current-editor app))
+               (all-text (editor-get-text ed))
+               (prompt-pos (chat-state-prompt-pos cs))
+               (end-pos (string-length all-text))
+               (input (if (> end-pos prompt-pos)
+                        (substring all-text prompt-pos end-pos)
+                        "")))
+          (when (> (string-length (string-trim input)) 0)
+            ;; Add newline after user input
+            (editor-append-text ed "\n\nClaude: ")
+            ;; Update prompt-pos — response will be appended after this
+            (set! (chat-state-prompt-pos cs) (editor-get-text-length ed))
+            (editor-goto-pos ed (editor-get-text-length ed))
+            (editor-scroll-caret ed)
+            ;; Send to claude
+            (chat-send! cs input)))))))
 
 ;;;============================================================================
 ;;; Terminal commands (PTY-backed vterm-like terminal)

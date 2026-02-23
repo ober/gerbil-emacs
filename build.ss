@@ -195,6 +195,8 @@
     "shell"
     ;; Terminal (PTY-backed vterm-like terminal)
     "terminal"
+    ;; AI Chat (Claude CLI integration)
+    "chat"
     ;; TUI backend
     "keymap"
     "buffer"

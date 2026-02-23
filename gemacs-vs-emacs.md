@@ -523,30 +523,24 @@
 | Feature | Status | Notes |
 |---------|--------|-------|
 | JSON-RPC transport | :white_check_mark: | Content-Length framing, background thread |
-| Server lifecycle | :white_check_mark: | Start/stop/restart |
+| Server lifecycle | :white_check_mark: | Start/stop/restart with auto-start on file open |
 | Document sync | :white_check_mark: | didOpen/didChange/didSave/didClose |
-| Diagnostics display | :large_blue_circle: | Collected and stored |
-| Completion | :red_circle: | Backend exists but no UI integration |
-| Hover (tooltip) | :red_circle: | Not connected to UI |
-| Go-to-definition | :red_circle: | Not connected to UI |
-| Find references | :red_circle: | Not connected to UI |
-| Rename refactoring | :red_circle: | Not connected to UI |
-| Code actions | :red_circle: | Not connected to UI |
-| Formatting | :yellow_circle: | Registered |
+| Diagnostics display | :white_check_mark: | Scintilla indicators + margin markers + modeline |
+| Completion | :white_check_mark: | QCompleter popup, auto-complete on idle, Tab merge |
+| Hover (tooltip) | :white_check_mark: | Echo area display on `C-c l h` |
+| Go-to-definition | :white_check_mark: | `M-.` with smart dispatch, `M-,` to pop back |
+| Find references | :white_check_mark: | `C-c l r` shows in compilation buffer |
+| Rename refactoring | :white_check_mark: | `C-c l R` with echo prompt |
+| Code actions | :white_check_mark: | `C-c l a` with selection popup |
+| Formatting | :white_check_mark: | `C-c l f` format buffer/region |
 | Semantic tokens | :red_circle: | Not implemented |
 | Call hierarchy | :red_circle: | Not implemented |
 | Type hierarchy | :red_circle: | Not implemented |
 | Inlay hints | :red_circle: | Not implemented |
-| Workspace symbols | :yellow_circle: | Registered |
+| Workspace symbols | :white_check_mark: | `C-c l s` with completion |
 | Multi-server support | :red_circle: | Single server per project |
 
-**Summary:** The LSP transport layer is solid (JSON-RPC, background thread, document sync). However, **none of the user-facing features actually work** — completion, hover, go-to-definition, references, rename, and code actions are all registered as commands but not wired to the LSP backend. This is a critical gap.
-
-### Priority Improvements Needed:
-1. Wire completion to LSP completionProvider
-2. Wire go-to-definition to LSP definitionProvider
-3. Wire hover to display in echo area
-4. Wire diagnostics to flycheck-style inline display
+**Summary:** LSP is fully functional — auto-starts on file open, provides completion (auto + Tab + C-M-i), diagnostics with inline indicators, go-to-definition (M-.), hover, references, rename, code actions, formatting, and workspace symbols. All under `C-c l` prefix. Missing semantic tokens, call/type hierarchy, and inlay hints.
 5. Wire find-references to results buffer
 
 ---
@@ -591,21 +585,16 @@
 | Dabbrev (dynamic abbrev) | :white_check_mark: | `M-/` word completion from buffer |
 | Hippie-expand | :yellow_circle: | Registered |
 | Complete at point | :white_check_mark: | `C-M-i` |
-| Company mode | :red_circle: | **Stub** — toggle flag only, no popup UI |
-| Corfu mode | :red_circle: | **Stub** — toggle flag only |
+| Company mode | :yellow_circle: | QCompleter popup — not company but equivalent |
+| Corfu mode | :yellow_circle: | Echo-area + QCompleter popup |
 | Cape (completion extensions) | :red_circle: | Not implemented |
 | File path completion | :white_check_mark: | In minibuffer |
-| Symbol completion | :yellow_circle: | Basic — no ranked/contextual |
-| LSP completion | :red_circle: | Backend exists but no frontend |
+| Symbol completion | :white_check_mark: | Buffer words + LSP merged on Tab |
+| LSP completion | :white_check_mark: | Auto-complete on idle + C-M-i + Tab merge |
 | Snippet completion | :red_circle: | No YASnippet integration |
 | Copilot/AI completion | :yellow_circle: | Registered but not connected |
 
-**Summary:** Only dabbrev and basic completion-at-point work. **No popup completion UI** (company/corfu equivalent). This is a major gap for programming workflows.
-
-### Priority Improvements Needed:
-1. Implement a completion popup (company/corfu equivalent)
-2. Wire to LSP completionProvider
-3. Add file-path and symbol backends
+**Summary:** Completion works via QCompleter popup with buffer words and LSP completions merged. Auto-triggers on idle (500ms) when LSP is running. Tab merges buffer words with LSP results. Missing Cape-style backend extensions.
 
 ---
 
@@ -1062,13 +1051,13 @@
 
 | Feature | Status | Notes |
 |---------|--------|-------|
-| Vterm (libvterm) | :red_circle: | Not implemented |
-| Multi-vterm (multiple terminals) | :red_circle: | Not implemented |
-| Vterm copy mode | :red_circle: | Not implemented |
+| Vterm (libvterm) | :red_circle: | Not implemented (uses PTY instead) |
+| Multi-vterm (multiple terminals) | :white_check_mark: | `term-list`, `term-next`, `term-prev` commands |
+| Vterm copy mode | :white_check_mark: | Terminal copy mode with `C-c C-k` / `C-c C-j` |
 | Terminal per-project | :red_circle: | Not implemented |
-| Term / ansi-term | :large_blue_circle: | Basic PTY terminal exists |
+| Term / ansi-term | :large_blue_circle: | Basic PTY terminal with ANSI support |
 
-**Summary:** The user uses multi-vterm extensively with key-chord shortcuts for copy mode. Gemacs has basic terminal support but no vterm or multi-terminal management.
+**Summary:** Multi-terminal management works — create, list, cycle, and copy mode. Uses PTY instead of libvterm but functionally equivalent for most workflows.
 
 ---
 
@@ -1130,7 +1119,7 @@
 | **Key-chords** (30+ bindings: AS, ZX, BV, FG, KB, etc.) | Extensive        | :white_check_mark: Works     | None — key-chord system exists           |
 | **Helm** (M-x, buffers, files, grep)                    | Primary UI       | :red_circle: Missing         | **Critical** — core interaction paradigm |
 | **Magit + Forge** (staging, commit, PR review)          | Daily driver     | :orange_circle: Minimal      | **Critical**                             |
-| **Multi-vterm** (multiple terminals, copy mode)         | Heavy use        | :red_circle: Missing         | **High**                                 |
+| **Multi-vterm** (multiple terminals, copy mode)         | Heavy use        | :white_check_mark: Works     | None — term-list/next/prev + copy mode   |
 | **Eglot / LSP** (completion, hover, goto-def, refs)     | Working          | :white_check_mark: Works     | None — full UI wiring with keybindings   |
 | **Copilot / AI** (gptel, claude-shell, copilot)         | Active           | :red_circle: Missing         | **High**                                 |
 | **Corfu** (completion-at-point popup)                   | Active           | :yellow_circle: Echo-area    | **Medium** — works but no inline popup   |

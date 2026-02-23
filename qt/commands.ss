@@ -90,6 +90,7 @@
         :gemacs/eshell
         :gemacs/shell
         :gemacs/terminal
+        :gemacs/chat
         :gemacs/qt/buffer
         :gemacs/qt/window
         :gemacs/qt/echo
@@ -237,6 +238,7 @@
       ((repl-buffer? buf)   (cmd-repl-send app))
       ((eshell-buffer? buf) (cmd-eshell-send app))
       ((shell-buffer? buf)  (cmd-shell-send app))
+      ((chat-buffer? buf)   (cmd-chat-send app))
       (else
         (let ((ed (current-qt-editor app)))
           (if *auto-indent*
@@ -480,6 +482,11 @@
                 (when ts
                   (terminal-stop! ts)
                   (hash-remove! *terminal-state* buf)))
+              ;; Clean up chat state if applicable
+              (let ((cs (hash-get *chat-state* buf)))
+                (when cs
+                  (chat-stop! cs)
+                  (hash-remove! *chat-state* buf)))
               ;; Remove from MRU list
               (set! *buffer-recent*
                 (filter (lambda (n) (not (string=? n target-name)))
@@ -1067,6 +1074,8 @@
   (register-command! 'term-list cmd-term-list)
   (register-command! 'term-next cmd-term-next)
   (register-command! 'term-prev cmd-term-prev)
+  ;; AI Chat
+  (register-command! 'claude-chat cmd-chat)
   ;; Goto line / M-x
   (register-command! 'goto-line cmd-goto-line)
   (register-command! 'execute-extended-command cmd-execute-extended-command)
