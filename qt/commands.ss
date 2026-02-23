@@ -1064,6 +1064,9 @@
   (register-command! 'term-interrupt cmd-term-interrupt)
   (register-command! 'term-send-eof cmd-term-send-eof)
   (register-command! 'term-send-tab cmd-term-send-tab)
+  (register-command! 'term-list cmd-term-list)
+  (register-command! 'term-next cmd-term-next)
+  (register-command! 'term-prev cmd-term-prev)
   ;; Goto line / M-x
   (register-command! 'goto-line cmd-goto-line)
   (register-command! 'execute-extended-command cmd-execute-extended-command)

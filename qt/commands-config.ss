@@ -861,6 +861,71 @@
       (qt-plain-text-edit-set-read-only! ed #f)
       (echo-message! echo "Terminal copy mode OFF"))))
 
+(def (get-terminal-buffers)
+  "Return list of terminal buffers from buffer-list."
+  (filter terminal-buffer? *buffer-list*))
+
+(def (qt-switch-to-terminal! app buf)
+  "Switch to terminal buffer BUF in the current window."
+  (let* ((fr (app-state-frame app))
+         (ed (current-qt-editor app)))
+    (buffer-touch! buf)
+    (qt-buffer-attach! ed buf)
+    (set! (qt-edit-window-buffer (qt-current-window fr)) buf)))
+
+(def (cmd-term-list app)
+  "Switch between terminal buffers via completion."
+  (let ((terms (get-terminal-buffers)))
+    (if (null? terms)
+      (echo-message! (app-state-echo app) "No terminal buffers")
+      (let* ((names (map buffer-name terms))
+             (choice (qt-echo-read-string-with-completion
+                       app "Terminal: " names)))
+        (when (and choice (not (string=? choice "")))
+          (let ((target (find (lambda (b) (string=? (buffer-name b) choice)) terms)))
+            (when target
+              (qt-switch-to-terminal! app target))))))))
+
+(def (cmd-term-next app)
+  "Switch to the next terminal buffer, cycling around."
+  (let* ((terms (get-terminal-buffers))
+         (cur (current-qt-buffer app)))
+    (cond
+      ((null? terms)
+       (echo-message! (app-state-echo app) "No terminal buffers"))
+      ((not (terminal-buffer? cur))
+       ;; Not in a terminal — switch to the first one
+       (qt-switch-to-terminal! app (car terms)))
+      (else
+       (let loop ((rest terms))
+         (cond
+           ((null? rest)
+            (qt-switch-to-terminal! app (car terms)))
+           ((eq? (car rest) cur)
+            (if (null? (cdr rest))
+              (qt-switch-to-terminal! app (car terms))
+              (qt-switch-to-terminal! app (cadr rest))))
+           (else (loop (cdr rest)))))))))
+
+(def (cmd-term-prev app)
+  "Switch to the previous terminal buffer, cycling around."
+  (let* ((terms (get-terminal-buffers))
+         (cur (current-qt-buffer app))
+         (last-term (and (pair? terms) (list-ref terms (- (length terms) 1)))))
+    (cond
+      ((null? terms)
+       (echo-message! (app-state-echo app) "No terminal buffers"))
+      ((not (terminal-buffer? cur))
+       (qt-switch-to-terminal! app last-term))
+      (else
+       (let loop ((rest terms) (prev last-term))
+         (cond
+           ((null? rest)
+            (qt-switch-to-terminal! app prev))
+           ((eq? (car rest) cur)
+            (qt-switch-to-terminal! app prev))
+           (else (loop (cdr rest) (car rest)))))))))
+
 ;;;============================================================================
 ;;; Buffer-local keybindings (mode keymaps)
 ;;;============================================================================

@@ -28,7 +28,9 @@
         ;; Batch 12
         register-batch12-aliases!
         ;; iedit
-        cmd-iedit-mode)
+        cmd-iedit-mode
+        ;; multi-terminal
+        cmd-term-list cmd-term-next cmd-term-prev)
 
 (import :std/sugar
         :std/srfi/13
@@ -53,7 +55,8 @@
         :gemacs/editor-advanced
         :gemacs/editor-cmds-a
         :gemacs/editor-cmds-b
-        :gemacs/editor-cmds-c)
+        :gemacs/editor-cmds-c
+        (only-in :gemacs/terminal terminal-buffer?))
 
 (def (register-parity-commands!)
   ;;; From editor-core.ss
@@ -101,6 +104,9 @@
   (register-command! 'term-interrupt cmd-term-interrupt)
   (register-command! 'term-send-eof cmd-term-send-eof)
   (register-command! 'term-send-tab cmd-term-send-tab)
+  (register-command! 'term-list cmd-term-list)
+  (register-command! 'term-next cmd-term-next)
+  (register-command! 'term-prev cmd-term-prev)
   (register-command! 'undo cmd-undo)
   (register-command! 'write-file cmd-write-file)
   (register-command! 'yank cmd-yank)
@@ -1569,4 +1575,73 @@
                 (string-append "iedit: replaced "
                   (number->string replaced) " occurrences")))))))))
 
+;;;============================================================================
+;;; Multi-terminal management (multi-vterm parity)
+;;;============================================================================
 
+(def (get-tui-terminal-buffers)
+  "Return list of terminal buffers."
+  (filter terminal-buffer? *buffer-list*))
+
+(def (tui-switch-to-terminal! app buf)
+  "Switch to terminal buffer BUF in the current window."
+  (let* ((fr (app-state-frame app))
+         (ed (current-editor app)))
+    (buffer-attach! ed buf)
+    (set! (edit-window-buffer (current-window fr)) buf)))
+
+(def (cmd-term-list app)
+  "Switch between terminal buffers via completion."
+  (let ((terms (get-tui-terminal-buffers)))
+    (if (null? terms)
+      (echo-message! (app-state-echo app) "No terminal buffers")
+      (let* ((echo (app-state-echo app))
+             (fr (app-state-frame app))
+             (row (- (frame-height fr) 1))
+             (width (frame-width fr))
+             (names (map buffer-name terms))
+             (choice (echo-read-string-with-completion
+                       echo "Terminal: " names row width)))
+        (when (and choice (not (string=? choice "")))
+          (let ((target (find (lambda (b) (string=? (buffer-name b) choice)) terms)))
+            (when target
+              (tui-switch-to-terminal! app target))))))))
+
+(def (cmd-term-next app)
+  "Switch to the next terminal buffer, cycling around."
+  (let* ((terms (get-tui-terminal-buffers))
+         (cur (current-buffer-from-app app)))
+    (cond
+      ((null? terms)
+       (echo-message! (app-state-echo app) "No terminal buffers"))
+      ((not (terminal-buffer? cur))
+       (tui-switch-to-terminal! app (car terms)))
+      (else
+       (let loop ((rest terms))
+         (cond
+           ((null? rest)
+            (tui-switch-to-terminal! app (car terms)))
+           ((eq? (car rest) cur)
+            (if (null? (cdr rest))
+              (tui-switch-to-terminal! app (car terms))
+              (tui-switch-to-terminal! app (cadr rest))))
+           (else (loop (cdr rest)))))))))
+
+(def (cmd-term-prev app)
+  "Switch to the previous terminal buffer, cycling around."
+  (let* ((terms (get-tui-terminal-buffers))
+         (cur (current-buffer-from-app app))
+         (last-term (and (pair? terms) (list-ref terms (- (length terms) 1)))))
+    (cond
+      ((null? terms)
+       (echo-message! (app-state-echo app) "No terminal buffers"))
+      ((not (terminal-buffer? cur))
+       (tui-switch-to-terminal! app last-term))
+      (else
+       (let loop ((rest terms) (prev last-term))
+         (cond
+           ((null? rest)
+            (tui-switch-to-terminal! app prev))
+           ((eq? (car rest) cur)
+            (tui-switch-to-terminal! app prev))
+           (else (loop (cdr rest) (car rest)))))))))
