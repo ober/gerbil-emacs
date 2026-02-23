@@ -204,6 +204,11 @@
   (register-command! 'start-kbd-macro cmd-start-kbd-macro)
   (register-command! 'end-kbd-macro cmd-end-kbd-macro)
   (register-command! 'call-last-kbd-macro cmd-call-last-kbd-macro)
+  (register-command! 'name-last-kbd-macro cmd-name-last-kbd-macro)
+  (register-command! 'call-named-kbd-macro cmd-call-named-kbd-macro)
+  (register-command! 'list-kbd-macros cmd-list-kbd-macros)
+  (register-command! 'save-kbd-macros cmd-save-kbd-macros)
+  (register-command! 'load-kbd-macros cmd-load-kbd-macros)
   ;; Mark ring
   (register-command! 'pop-mark cmd-pop-mark)
   ;; Registers
@@ -804,8 +809,7 @@
   (register-command! 'unfold-all cmd-unfold-all)
   (register-command! 'toggle-fold cmd-toggle-fold)
   (register-command! 'fold-level cmd-fold-level)
-  ;; Macros
-  (register-command! 'name-last-kbd-macro cmd-name-last-kbd-macro)
+  ;; Macros (name-last-kbd-macro registered above with other macro commands)
   (register-command! 'insert-kbd-macro cmd-insert-kbd-macro)
   ;; VC extras
   (register-command! 'vc-annotate cmd-vc-annotate)

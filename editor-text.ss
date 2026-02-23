@@ -763,6 +763,88 @@
       (set! (app-state-macro-recording app)
         (cons step (app-state-macro-recording app))))))
 
+(def (cmd-name-last-kbd-macro app)
+  "Give a name to the last recorded keyboard macro."
+  (let ((macro (app-state-macro-last app)))
+    (if (or (not macro) (null? macro))
+      (echo-error! (app-state-echo app) "No macro defined")
+      (let* ((echo (app-state-echo app))
+             (frame (app-state-frame app))
+             (row (- (frame-height frame) 1))
+             (width (frame-width frame))
+             (name (echo-read-string echo "Name for macro: " row width)))
+        (when (and name (> (string-length name) 0))
+          (hash-put! (app-state-macro-named app) name macro)
+          (echo-message! echo (string-append "Macro saved as '" name "'")))))))
+
+(def (cmd-call-named-kbd-macro app)
+  "Execute a named keyboard macro."
+  (let* ((named (app-state-macro-named app))
+         (names (map car (hash->list named))))
+    (if (null? names)
+      (echo-error! (app-state-echo app) "No named macros")
+      (let* ((echo (app-state-echo app))
+             (frame (app-state-frame app))
+             (row (- (frame-height frame) 1))
+             (width (frame-width frame))
+             (name (echo-read-string echo "Macro name: " row width)))
+        (when (and name (> (string-length name) 0))
+          (let ((macro (hash-get named name)))
+            (if macro
+              (begin
+                (for-each
+                  (lambda (step)
+                    (case (car step)
+                      ((command) (execute-command! app (cdr step)))
+                      ((self-insert) (cmd-self-insert! app (cdr step)))))
+                  macro)
+                (echo-message! echo (string-append "Macro '" name "' executed")))
+              (echo-error! echo (string-append "No macro named '" name "'")))))))))
+
+(def (cmd-list-kbd-macros app)
+  "List all named keyboard macros."
+  (let* ((named (app-state-macro-named app))
+         (names (sort (map car (hash->list named)) string<?)))
+    (if (null? names)
+      (echo-message! (app-state-echo app) "No named macros")
+      (echo-message! (app-state-echo app)
+        (string-append "Macros: " (string-join names ", "))))))
+
+(def (cmd-save-kbd-macros app)
+  "Save named keyboard macros to ~/.gemacs-macros."
+  (let ((named (app-state-macro-named app)))
+    (if (= (hash-length named) 0)
+      (echo-message! (app-state-echo app) "No macros to save")
+      (with-catch
+        (lambda (e) (echo-error! (app-state-echo app) "Error saving macros"))
+        (lambda ()
+          (call-with-output-file "~/.gemacs-macros"
+            (lambda (port)
+              (for-each
+                (lambda (pair)
+                  (write (cons (car pair) (cdr pair)) port)
+                  (newline port))
+                (hash->list named))))
+          (echo-message! (app-state-echo app)
+            (string-append "Saved " (number->string (hash-length named)) " macros")))))))
+
+(def (cmd-load-kbd-macros app)
+  "Load named keyboard macros from ~/.gemacs-macros."
+  (with-catch
+    (lambda (e) (echo-message! (app-state-echo app) "No saved macros found"))
+    (lambda ()
+      (let ((named (app-state-macro-named app)))
+        (call-with-input-file "~/.gemacs-macros"
+          (lambda (port)
+            (let loop ()
+              (let ((datum (read port)))
+                (when (not (eof-object? datum))
+                  (when (pair? datum)
+                    (hash-put! named (car datum) (cdr datum)))
+                  (loop))))))
+        (echo-message! (app-state-echo app)
+          (string-append "Loaded " (number->string (hash-length named)) " macros"))))))
+
 ;;;============================================================================
 ;;; Mark ring
 ;;;============================================================================

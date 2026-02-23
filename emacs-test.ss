@@ -193,7 +193,7 @@
                  parse-editorconfig find-editorconfig
                  find-url-at-point collect-buffer-words
                  *command-history* command-history-add!
-                 *named-macros* *buffer-access-times*
+                 *buffer-access-times*
                  record-buffer-access!
                  *regex-builder-pattern* *last-edit-positions*
                  record-edit-position! *persistent-scratch-file*
@@ -1743,10 +1743,11 @@
 
     ;; -- Named macros --
     (test-case "named-macros: store and retrieve"
-      (set! *named-macros* (make-hash-table))
-      (hash-put! *named-macros* "test-macro" '((command . forward-char)))
-      (check (hash-get *named-macros* "test-macro") => '((command . forward-char)))
-      (check (hash-get *named-macros* "nonexistent") => #f))
+      (let* ((app (new-app-state #f))
+             (named (app-state-macro-named app)))
+        (hash-put! named "test-macro" '((command . forward-char)))
+        (check (hash-get named "test-macro") => '((command . forward-char)))
+        (check (hash-get named "nonexistent") => #f)))
 
     ;; -- Command registration batch 23 --
     (test-case "command registration: batch 23 features"

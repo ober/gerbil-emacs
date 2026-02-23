@@ -251,13 +251,13 @@
 | Start recording (`F3` / `C-x (`) | :white_check_mark: | |
 | Stop recording (`F4` / `C-x )`) | :white_check_mark: | |
 | Execute last macro (`F4` / `C-x e`) | :white_check_mark: | |
-| Named macros | :red_circle: | Only last-recorded macro |
+| Named macros | :white_check_mark: | `M-x name-last-kbd-macro`, `M-x call-named-kbd-macro` with narrowing |
 | Macro counter | :red_circle: | No `C-x C-k C-i` counter |
 | Edit macro | :red_circle: | No `C-x C-k C-e` editor |
-| Save macros to file | :red_circle: | No persistence |
+| Save macros to file | :white_check_mark: | `M-x save-kbd-macros` / `load-kbd-macros` persists to `~/.gemacs-macros` |
 | Execute with count prefix | :yellow_circle: | Basic repeat support |
 
-**Summary:** Basic macro recording/playback works. Missing named macros, editing, counters, and persistence.
+**Summary:** Macro recording/playback with named macros and persistence. Named macros stored in `app-state`, saved/loaded from disk. Qt uses narrowing for macro selection.
 
 ---
 
@@ -1003,7 +1003,7 @@
 | **Tree-sitter highlighting** | Less accurate highlighting than modern Emacs | Large |
 | **Package/plugin system** | Users can't extend gemacs easily | Large |
 | **Org capture buffer** | No interactive capture with C-c C-c | Small |
-| **Named keyboard macros** | Only last-recorded macro available | Small |
+| ~~Named keyboard macros~~ | ~~Only last-recorded macro~~ Implemented: name, call, save/load | ~~Small~~ Done |
 | **Info reader** | Can't browse GNU documentation | Medium |
 | **PDF viewing** | No document viewer | Large |
 

@@ -1161,6 +1161,11 @@
   (register-command! 'start-kbd-macro cmd-start-kbd-macro)
   (register-command! 'end-kbd-macro cmd-end-kbd-macro)
   (register-command! 'call-last-kbd-macro cmd-call-last-kbd-macro)
+  (register-command! 'name-last-kbd-macro cmd-name-last-kbd-macro)
+  (register-command! 'call-named-kbd-macro cmd-call-named-kbd-macro)
+  (register-command! 'list-kbd-macros cmd-list-kbd-macros)
+  (register-command! 'save-kbd-macros cmd-save-kbd-macros)
+  (register-command! 'load-kbd-macros cmd-load-kbd-macros)
   ;; Repeat
   (register-command! 'repeat cmd-repeat)
   ;; Mark ring

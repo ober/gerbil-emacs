@@ -1803,6 +1803,102 @@
             (loop (+ i 1)))))
       (echo-error! (app-state-echo app) "No keyboard macro defined"))))
 
+(def (cmd-name-last-kbd-macro app)
+  "Give a name to the last recorded keyboard macro."
+  (let ((macro (app-state-macro-last app)))
+    (if (or (not macro) (null? macro))
+      (echo-error! (app-state-echo app) "No macro defined")
+      (let ((name (qt-echo-read-string app "Name for macro: ")))
+        (when (and name (> (string-length name) 0))
+          (hash-put! (app-state-macro-named app) name macro)
+          (echo-message! (app-state-echo app)
+            (string-append "Macro saved as '" name "'")))))))
+
+(def (cmd-call-named-kbd-macro app)
+  "Execute a named keyboard macro."
+  (let* ((named (app-state-macro-named app))
+         (names (sort (map car (hash->list named)) string<?)))
+    (if (null? names)
+      (echo-error! (app-state-echo app) "No named macros")
+      (let ((name (qt-echo-read-with-narrowing app "Run macro:" names)))
+        (when (and name (> (string-length name) 0))
+          (let ((macro (hash-get named name)))
+            (if macro
+              (for-each
+                (lambda (event)
+                  (case (car event)
+                    ((self-insert)
+                     (qt-plain-text-edit-insert-text!
+                       (current-qt-editor app) (cdr event)))
+                    ((command)
+                     (execute-command! app (cdr event)))))
+                macro)
+              (echo-error! (app-state-echo app)
+                (string-append "No macro named '" name "'")))))))))
+
+(def (cmd-list-kbd-macros app)
+  "List all named keyboard macros."
+  (let* ((named (app-state-macro-named app))
+         (names (sort (map car (hash->list named)) string<?)))
+    (if (null? names)
+      (echo-message! (app-state-echo app) "No named macros")
+      (echo-message! (app-state-echo app)
+        (string-append "Macros: " (string-join names ", "))))))
+
+(def (cmd-save-kbd-macros app)
+  "Save named keyboard macros to ~/.gemacs-macros."
+  (let ((named (app-state-macro-named app)))
+    (if (= (hash-length named) 0)
+      (echo-message! (app-state-echo app) "No macros to save")
+      (with-catch
+        (lambda (e) (echo-error! (app-state-echo app) "Error saving macros"))
+        (lambda ()
+          (let ((path (path-expand ".gemacs-macros"
+                        (user-info-home (user-info (user-name))))))
+            (call-with-output-file path
+              (lambda (port)
+                (for-each
+                  (lambda (pair)
+                    (write (cons (car pair) (cdr pair)) port)
+                    (newline port))
+                  (hash->list named)))))
+          (echo-message! (app-state-echo app)
+            (string-append "Saved " (number->string (hash-length named)) " macros")))))))
+
+(def (cmd-load-kbd-macros app)
+  "Load named keyboard macros from ~/.gemacs-macros."
+  (with-catch
+    (lambda (e) (echo-message! (app-state-echo app) "No saved macros found"))
+    (lambda ()
+      (let* ((path (path-expand ".gemacs-macros"
+                     (user-info-home (user-info (user-name)))))
+             (named (app-state-macro-named app)))
+        (call-with-input-file path
+          (lambda (port)
+            (let loop ()
+              (let ((datum (read port)))
+                (when (not (eof-object? datum))
+                  (when (pair? datum)
+                    (hash-put! named (car datum) (cdr datum)))
+                  (loop))))))
+        (echo-message! (app-state-echo app)
+          (string-append "Loaded " (number->string (hash-length named)) " macros"))))))
+
+(def (cmd-insert-kbd-macro app)
+  "Insert the last keyboard macro as text."
+  (let ((macro (app-state-macro-last app)))
+    (if macro
+      (let* ((ed (current-qt-editor app))
+             (text (with-output-to-string
+                     (lambda ()
+                       (for-each (lambda (entry)
+                                   (display "(") (display (car entry))
+                                   (display " . ") (display (cdr entry))
+                                   (display ")\n"))
+                                 macro)))))
+        (qt-plain-text-edit-insert-text! ed text))
+      (echo-error! (app-state-echo app) "No macro recorded"))))
+
 ;;;============================================================================
 ;;; Repeat last command
 ;;;============================================================================

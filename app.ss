@@ -536,7 +536,9 @@
       ((command)
        ;; Record macro step (skip macro control commands themselves)
        (when (and (app-state-macro-recording app)
-                  (not (memq data '(start-kbd-macro end-kbd-macro call-last-kbd-macro))))
+                  (not (memq data '(start-kbd-macro end-kbd-macro call-last-kbd-macro
+                                    call-named-kbd-macro name-last-kbd-macro
+                                    list-kbd-macros save-kbd-macros load-kbd-macros))))
          (set! (app-state-macro-recording app)
            (cons (cons 'command data)
                  (app-state-macro-recording app))))

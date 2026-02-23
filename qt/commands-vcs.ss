@@ -1754,27 +1754,7 @@ Returns list of (name . line-number) pairs."
         (set! (buffer-mark buf) #f))
       (echo-error! (app-state-echo app) "No mark set"))))
 
-(def (cmd-insert-kbd-macro app)
-  "Insert the last keyboard macro as text."
-  (let ((macro (app-state-macro-last app)))
-    (if macro
-      (let* ((ed (current-qt-editor app))
-             (text (with-output-to-string
-                     (lambda ()
-                       (for-each (lambda (entry)
-                                   (display "(") (display (car entry))
-                                   (display " . ") (display (cdr entry))
-                                   (display ")\n"))
-                                 macro)))))
-        (qt-plain-text-edit-insert-text! ed text))
-      (echo-error! (app-state-echo app) "No macro recorded"))))
-
-(def (cmd-name-last-kbd-macro app)
-  "Name the last keyboard macro."
-  (let ((name (qt-echo-read-string app "Name for macro: ")))
-    (when name
-      (echo-message! (app-state-echo app)
-        (string-append "Macro named: " name " (naming not fully supported)")))))
+;; cmd-insert-kbd-macro and cmd-name-last-kbd-macro moved to qt/commands-edit.ss
 
 (def (cmd-show-environment app)
   "Show environment variables."

@@ -884,37 +884,33 @@
                       (number->string (- end start)) " chars")))))))))))
 
 ;;;============================================================================
-;;; Named keyboard macros (supplement existing cmd-name-last-kbd-macro)
+;;; Named keyboard macros — uses app-state-macro-named hash table
 ;;;============================================================================
-
-(def *named-macros* (make-hash-table))
 
 (def (cmd-execute-named-macro app)
   "Execute a previously named keyboard macro."
-  (let* ((echo (app-state-echo app))
-         (fr (app-state-frame app))
-         (row (- (frame-height fr) 1))
-         (width (frame-width fr))
-         (names (sort (hash-keys *named-macros*) string<?)))
+  (let* ((named (app-state-macro-named app))
+         (names (sort (map car (hash->list named)) string<?)))
     (if (null? names)
-      (echo-error! echo "No named macros")
-      (let ((choice (echo-read-string-with-completion echo "Macro name: "
-                      names row width)))
+      (echo-error! (app-state-echo app) "No named macros")
+      (let* ((echo (app-state-echo app))
+             (fr (app-state-frame app))
+             (row (- (frame-height fr) 1))
+             (width (frame-width fr))
+             (choice (echo-read-string echo "Macro name: " row width)))
         (when (and choice (> (string-length choice) 0))
-          (let ((macro (hash-get *named-macros* choice)))
+          (let ((macro (hash-get named choice)))
             (if (not macro)
               (echo-error! echo (string-append "No macro: " choice))
-              ;; Replay the macro
               (for-each
                 (lambda (step)
-                  (let ((type (car step))
-                        (data (cdr step)))
-                    (case type
-                      ((command) (execute-command! app data))
-                      ((self-insert) (let* ((ed2 (current-editor app))
-                                            (pos (editor-get-current-pos ed2)))
-                                       (editor-insert-text ed2 pos (string data)))))))
-                (reverse macro)))))))))
+                  (case (car step)
+                    ((command) (execute-command! app (cdr step)))
+                    ((self-insert)
+                     (let* ((ed (current-editor app))
+                            (pos (editor-get-current-pos ed)))
+                       (editor-insert-text ed pos (string (cdr step)))))))
+                macro))))))))
 
 ;;;============================================================================
 ;;; Apply macro to each line in region

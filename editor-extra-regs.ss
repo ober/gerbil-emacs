@@ -668,6 +668,7 @@
   (register-command! 'scroll-other-window-down cmd-scroll-other-window-up)
   (register-command! 'kmacro-start-macro cmd-start-kbd-macro)
   (register-command! 'kmacro-end-macro cmd-end-kbd-macro)
+  (register-command! 'kmacro-name-last cmd-name-last-kbd-macro)
   (register-command! 'tab-bar-mode cmd-toggle-tab-bar-mode)
   (register-command! 'clipboard-yank cmd-yank)
   (register-command! 'clipboard-kill-region cmd-kill-region)

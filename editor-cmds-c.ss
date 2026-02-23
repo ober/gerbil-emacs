@@ -789,16 +789,7 @@
                            (string-append "Folded to level " level))))))))
 
 ;; --- Macro enhancements ---
-
-(def (cmd-name-last-kbd-macro app)
-  "Name the last keyboard macro."
-  (let ((name (app-read-string app "Name for last macro: ")))
-    (when (and name (not (string-empty? name)))
-      (let ((macro (app-state-macro-last app)))
-        (if (and macro (not (null? macro)))
-          (echo-message! (app-state-echo app)
-                         (string-append "Macro '" name "' saved (" (number->string (length macro)) " steps)"))
-          (echo-message! (app-state-echo app) "No macro recorded to name"))))))
+;; Named macro commands moved to editor-text.ss (cmd-name-last-kbd-macro, etc.)
 
 (def (cmd-insert-kbd-macro app)
   "Insert the last keyboard macro as text."

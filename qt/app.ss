@@ -353,7 +353,9 @@
                           ;; Record for keyboard macro
                           (when (and (app-state-macro-recording app)
                                      (not (memq data '(start-kbd-macro end-kbd-macro
-                                                       call-last-kbd-macro))))
+                                                       call-last-kbd-macro call-named-kbd-macro
+                                                       name-last-kbd-macro list-kbd-macros
+                                                       save-kbd-macros load-kbd-macros))))
                             (set! (app-state-macro-recording app)
                               (cons (cons 'command data)
                                     (app-state-macro-recording app))))

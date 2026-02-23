@@ -995,6 +995,7 @@
    dabbrev-state ; list or #f: (prefix matches-remaining last-pos last-len)
    macro-recording ; list or #f: list of (action . data) being recorded
    macro-last    ; list or #f: last recorded macro
+   macro-named   ; hash-table: name -> list of (action . data) — named macros
    mark-ring     ; list of (buffer-name . position) for mark history
    registers     ; hash-table: char -> string or (buffer-name . position)
    last-command  ; symbol or #f: name of last executed command
@@ -1025,6 +1026,7 @@
    #f                    ; dabbrev-state
    #f                    ; macro-recording
    #f                    ; macro-last
+   (make-hash-table)     ; macro-named
    []                    ; mark-ring
    (make-hash-table)     ; registers
    #f                    ; last-command
