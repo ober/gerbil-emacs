@@ -19,6 +19,10 @@
         (only-in :gemacs/editor-core
           cmd-undo-region cmd-display-buffer-in-side-window cmd-toggle-side-window
           cmd-info-reader cmd-project-tree-git)
+        (only-in :gemacs/editor-cmds-a
+          cmd-project-tree-create-file cmd-project-tree-delete-file
+          cmd-project-tree-rename-file cmd-gemacs-doc
+          cmd-dired-async-copy cmd-dired-async-move)
         :gemacs/editor-extra-helpers
         :gemacs/editor-extra-org
         :gemacs/editor-extra-web
@@ -2091,4 +2095,12 @@
   (register-command! 'display-buffer-in-side-window cmd-display-buffer-in-side-window)
   (register-command! 'toggle-side-window cmd-toggle-side-window)
   (register-command! 'info-reader cmd-info-reader)
-  (register-command! 'project-tree-git cmd-project-tree-git))
+  (register-command! 'project-tree-git cmd-project-tree-git)
+  ;; Batch 8: file ops, window purpose, doc browser, async dired
+  (register-command! 'project-tree-create-file cmd-project-tree-create-file)
+  (register-command! 'project-tree-delete-file cmd-project-tree-delete-file)
+  (register-command! 'project-tree-rename-file cmd-project-tree-rename-file)
+  (register-command! 'set-window-dedicated cmd-set-window-dedicated)
+  (register-command! 'gemacs-doc cmd-gemacs-doc)
+  (register-command! 'dired-async-copy cmd-dired-async-copy)
+  (register-command! 'dired-async-move cmd-dired-async-move))

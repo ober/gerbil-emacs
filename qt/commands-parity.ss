@@ -1958,6 +1958,16 @@
 
 (def *qt-dedicated-windows* (make-hash-table))
 
+(def (cmd-set-window-dedicated app)
+  "Mark current window as dedicated to its buffer."
+  (let* ((fr (app-state-frame app))
+         (win (qt-current-window fr))
+         (echo (app-state-echo app))
+         (buf-name (buffer-name (qt-edit-window-buffer win))))
+    (hash-put! *qt-dedicated-windows* buf-name #t)
+    (echo-message! echo
+      (string-append "Window dedicated to: " buf-name))))
+
 (def (cmd-toggle-window-dedicated app)
   "Toggle whether the current window is dedicated to its buffer."
   (let* ((fr (app-state-frame app))
@@ -1970,10 +1980,7 @@
         (hash-remove! *qt-dedicated-windows* buf-name)
         (echo-message! echo
           (string-append "Window undedicated from: " buf-name)))
-      (begin
-        (hash-put! *qt-dedicated-windows* buf-name #t)
-        (echo-message! echo
-          (string-append "Window dedicated to: " buf-name))))))
+      (cmd-set-window-dedicated app))))
 
 ;;; ---- Org Sparse Tree ----
 

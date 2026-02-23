@@ -1753,3 +1753,235 @@
       "Centered cursor mode ON"
       "Centered cursor mode OFF")))
 
+;;;============================================================================
+;;; File operations in project tree
+;;;============================================================================
+
+(def (cmd-project-tree-create-file app)
+  "Create a new file in the current project."
+  (let* ((echo (app-state-echo app))
+         (fr (app-state-frame app))
+         (row (- (frame-height fr) 1))
+         (width (frame-width fr))
+         (buf (current-buffer-from-app app))
+         (file (and buf (buffer-file-path buf)))
+         (dir (if file (path-directory file) (current-directory)))
+         (name (echo-read-string echo "Create file: " row width)))
+    (when (and name (> (string-length name) 0))
+      (let ((path (path-expand name dir)))
+        (if (file-exists? path)
+          (echo-error! echo (string-append "File exists: " path))
+          (begin
+            (call-with-output-file path (lambda (p) (void)))
+            (echo-message! echo (string-append "Created: " path))))))))
+
+(def (cmd-project-tree-delete-file app)
+  "Delete the file at point in the project tree."
+  (let* ((echo (app-state-echo app))
+         (fr (app-state-frame app))
+         (row (- (frame-height fr) 1))
+         (width (frame-width fr))
+         (ed (current-editor app))
+         (pos (editor-get-current-pos ed))
+         (line (editor-line-from-position ed pos))
+         (line-text (string-trim (editor-get-line ed line))))
+    ;; Strip git status prefix (2 chars)
+    (let* ((name (if (and (>= (string-length line-text) 2)
+                          (or (char=? (string-ref line-text 1) #\space)
+                              (char=? (string-ref line-text 0) #\space)))
+                   (string-trim (substring line-text 2 (string-length line-text)))
+                   line-text))
+           (buf (current-buffer-from-app app))
+           (file (and buf (buffer-file-path buf)))
+           (dir (if file (path-directory file) (current-directory)))
+           (path (path-expand name dir)))
+      (if (not (file-exists? path))
+        (echo-error! echo (string-append "No file: " name))
+        (let ((confirm (echo-read-string echo
+                         (string-append "Delete " name "? (yes/no) ") row width)))
+          (when (and confirm (string=? confirm "yes"))
+            (with-catch
+              (lambda (e)
+                (echo-error! echo (string-append "Error deleting: "
+                  (with-output-to-string (lambda () (display-exception e))))))
+              (lambda ()
+                (delete-file path)
+                (echo-message! echo (string-append "Deleted: " name))))))))))
+
+(def (cmd-project-tree-rename-file app)
+  "Rename/move a file in the project tree."
+  (let* ((echo (app-state-echo app))
+         (fr (app-state-frame app))
+         (row (- (frame-height fr) 1))
+         (width (frame-width fr))
+         (ed (current-editor app))
+         (pos (editor-get-current-pos ed))
+         (line (editor-line-from-position ed pos))
+         (line-text (string-trim (editor-get-line ed line))))
+    (let* ((name (if (and (>= (string-length line-text) 2)
+                          (or (char=? (string-ref line-text 1) #\space)
+                              (char=? (string-ref line-text 0) #\space)))
+                   (string-trim (substring line-text 2 (string-length line-text)))
+                   line-text))
+           (buf (current-buffer-from-app app))
+           (file (and buf (buffer-file-path buf)))
+           (dir (if file (path-directory file) (current-directory)))
+           (old-path (path-expand name dir))
+           (new-name (echo-read-string echo (string-append "Rename " name " to: ") row width)))
+      (when (and new-name (> (string-length new-name) 0))
+        (let ((new-path (path-expand new-name dir)))
+          (with-catch
+            (lambda (e)
+              (echo-error! echo (string-append "Error: "
+                (with-output-to-string (lambda () (display-exception e))))))
+            (lambda ()
+              (rename-file old-path new-path)
+              (echo-message! echo
+                (string-append "Renamed: " name " → " new-name)))))))))
+
+;;;============================================================================
+;;; Built-in documentation browser
+;;;============================================================================
+
+(def *doc-topics* (make-hash-table))
+
+(def (doc-init!)
+  "Initialize the documentation topic database."
+  (hash-put! *doc-topics* "getting-started"
+    (string-append
+      "Getting Started with Gemacs\n"
+      "==========================\n\n"
+      "Gemacs is a Gerbil Scheme-based Emacs-like editor.\n\n"
+      "Quick start:\n"
+      "  1. Open a file: C-x C-f\n"
+      "  2. Edit text: just type\n"
+      "  3. Save: C-x C-s\n"
+      "  4. Quit: C-x C-c\n\n"
+      "See also: [keybindings] [commands] [org-mode]\n"))
+  (hash-put! *doc-topics* "keybindings"
+    (string-append
+      "Keybinding Reference\n"
+      "====================\n\n"
+      "Navigation: C-f C-b C-n C-p C-a C-e M-f M-b M-< M->\n"
+      "Editing: C-d C-k C-w M-w C-y C-/ M-d\n"
+      "Files: C-x C-f C-x C-s C-x C-w C-x b C-x k\n"
+      "Search: C-s C-r M-% C-M-s\n"
+      "Windows: C-x 2 C-x 3 C-x 0 C-x 1 C-x o\n"
+      "Buffers: C-x b C-x C-b C-x k\n"
+      "Help: C-h k C-h f C-h v C-h t M-x\n"
+      "Org: TAB S-TAB M-RET C-c C-t C-c C-c C-c C-e\n"
+      "Git: C-x g (magit)\n\n"
+      "See also: [commands] [getting-started]\n"))
+  (hash-put! *doc-topics* "commands"
+    (string-append
+      "Command Reference\n"
+      "=================\n\n"
+      "All commands can be run via M-x <name>.\n\n"
+      "File: find-file, save-buffer, write-file, revert-buffer\n"
+      "Buffer: switch-buffer, kill-buffer, list-buffers\n"
+      "Window: split-window, delete-window, other-window\n"
+      "Search: search-forward, search-backward, query-replace\n"
+      "Edit: undo, redo, kill-region, copy-region, yank\n"
+      "Org: org-cycle, org-todo-cycle, org-export\n"
+      "Git: magit-status, magit-log, magit-diff\n"
+      "REPL: repl, eshell, term, shell\n"
+      "LSP: lsp-start, lsp-find-definition, lsp-find-references\n\n"
+      "See also: [keybindings] [org-mode]\n"))
+  (hash-put! *doc-topics* "org-mode"
+    (string-append
+      "Org Mode Guide\n"
+      "==============\n\n"
+      "Headings: lines starting with * (one or more)\n"
+      "  TAB to cycle visibility, S-TAB for global cycle\n"
+      "  M-RET for new heading, M-UP/DOWN to move\n\n"
+      "TODO: C-c C-t to cycle TODO states\n"
+      "Tables: | col1 | col2 | with TAB to align\n"
+      "Links: [[target][description]]\n"
+      "Source blocks: <s TAB to insert, C-c C-c to execute\n"
+      "Export: C-c C-e for export menu (HTML, LaTeX, Markdown)\n"
+      "Agenda: C-c a to view agenda\n\n"
+      "See also: [commands] [getting-started]\n")))
+
+(def (cmd-gemacs-doc app)
+  "Browse gemacs documentation topics."
+  (doc-init!)
+  (let* ((echo (app-state-echo app))
+         (fr (app-state-frame app))
+         (row (- (frame-height fr) 1))
+         (width (frame-width fr))
+         (topics (hash-keys *doc-topics*))
+         (topic (echo-read-string-with-completion echo "Doc topic: " topics row width)))
+    (when (and topic (> (string-length topic) 0))
+      (let ((content (hash-get *doc-topics* (string-downcase topic))))
+        (if (not content)
+          (echo-message! echo (string-append "No topic: " topic))
+          (let* ((ed (current-editor app))
+                 (win (current-window fr))
+                 (dbuf (buffer-create! (string-append "*Doc: " topic "*") ed)))
+            (buffer-attach! ed dbuf)
+            (set! (edit-window-buffer win) dbuf)
+            (editor-set-text ed content)
+            (editor-goto-pos ed 0)
+            (editor-set-read-only ed #t)))))))
+
+;;;============================================================================
+;;; Async dired operations
+;;;============================================================================
+
+(def *dired-async-jobs* [])
+
+(def (cmd-dired-async-copy app)
+  "Copy file at point asynchronously in dired."
+  (let* ((buf (current-buffer-from-app app))
+         (ed (current-editor app))
+         (echo (app-state-echo app))
+         (fr (app-state-frame app))
+         (row (- (frame-height fr) 1))
+         (width (frame-width fr))
+         (entries (hash-get *dired-entries* buf))
+         (pos (editor-get-current-pos ed))
+         (line (editor-line-from-position ed pos))
+         (idx (- line 3)))
+    (if (or (not entries) (< idx 0) (>= idx (vector-length entries)))
+      (echo-message! echo "No file on this line")
+      (let* ((src (vector-ref entries idx))
+             (dest (echo-read-string echo
+                     (string-append "Copy " (path-strip-directory src) " to: ") row width)))
+        (when (and dest (> (string-length dest) 0))
+          (with-catch
+            (lambda (e)
+              (echo-error! echo (string-append "Copy error: "
+                (with-output-to-string (lambda () (display-exception e))))))
+            (lambda ()
+              (copy-file src dest)
+              (echo-message! echo
+                (string-append "Copied: " (path-strip-directory src)
+                  " → " (path-strip-directory dest))))))))))
+
+(def (cmd-dired-async-move app)
+  "Move/rename file at point in dired."
+  (let* ((buf (current-buffer-from-app app))
+         (ed (current-editor app))
+         (echo (app-state-echo app))
+         (fr (app-state-frame app))
+         (row (- (frame-height fr) 1))
+         (width (frame-width fr))
+         (entries (hash-get *dired-entries* buf))
+         (pos (editor-get-current-pos ed))
+         (line (editor-line-from-position ed pos))
+         (idx (- line 3)))
+    (if (or (not entries) (< idx 0) (>= idx (vector-length entries)))
+      (echo-message! echo "No file on this line")
+      (let* ((src (vector-ref entries idx))
+             (dest (echo-read-string echo
+                     (string-append "Move " (path-strip-directory src) " to: ") row width)))
+        (when (and dest (> (string-length dest) 0))
+          (with-catch
+            (lambda (e)
+              (echo-error! echo (string-append "Move error: "
+                (with-output-to-string (lambda () (display-exception e))))))
+            (lambda ()
+              (rename-file src dest)
+              (echo-message! echo
+                (string-append "Moved: " (path-strip-directory src)
+                  " → " (path-strip-directory dest))))))))))

@@ -322,10 +322,10 @@
 | Golden ratio mode | :white_check_mark: | Auto-resize focused window |
 | Dedicated windows | :white_check_mark: | `M-x toggle-window-dedicated` prevents buffer replacement |
 | Side windows | :white_check_mark: | Toggle side panel via split (display-buffer-in-side-window) |
-| Window purpose | :red_circle: | Not implemented |
+| Window purpose | :white_check_mark: | `set-window-dedicated`, `toggle-window-dedicated` with buffer-type dedication |
 | Follow mode | :white_check_mark: | Synchronized scrolling across windows |
 
-**Summary:** Window management is strong. Splitting, resizing, winner-mode, and ace-window all work. Missing display-buffer customization.
+**Summary:** Window management is strong. Splitting, resizing, winner-mode, ace-window, window purpose/dedication all work.
 
 ---
 
@@ -404,11 +404,11 @@
 | Wdired (edit filenames) | :white_check_mark: | Edit mode with rename-on-commit |
 | Image thumbnails | :red_circle: | Not implemented |
 | Dired-x extensions | :yellow_circle: | find-dired, find-name-dired |
-| Async operations | :red_circle: | All synchronous |
+| Async operations | :white_check_mark: | `dired-async-copy`, `dired-async-move` |
 | Virtual dired | :red_circle: | Not implemented |
 | Dired subtree | :white_check_mark: | `M-x dired-subtree-toggle` for inline expansion |
 
-**Summary:** Dired is **substantially complete**. Full listing with permissions/sizes, single-file and batch operations on marked files, wdired for inline renaming, find integration, inline subtree expansion. Missing: image thumbnails, async operations.
+**Summary:** Dired is **substantially complete**. Full listing with permissions/sizes, single-file and batch operations on marked files, wdired for inline renaming, find integration, inline subtree expansion, async copy/move. Missing: image thumbnails.
 
 ---
 
@@ -746,9 +746,9 @@
 | Command history | :white_check_mark: | |
 | Info reader | :white_check_mark: | Built-in Info browser with topics: commands, keybindings, org, config, about |
 | Emacs tutorial | :white_check_mark: | Built-in tutorial with navigation, editing, files, search, windows, org mode |
-| Built-in documentation browser | :red_circle: | No hyperlinked docs |
+| Built-in documentation browser | :white_check_mark: | `gemacs-doc` with topic browsing (getting-started, keybindings, commands, org-mode) |
 
-**Summary:** Key-based help works well. Missing the Info reader and comprehensive documentation browser.
+**Summary:** Help system is complete with describe-key, describe-function, apropos, Info reader, documentation browser, and tutorial.
 
 ---
 
@@ -886,9 +886,9 @@
 | File tree sidebar | :white_check_mark: | `M-x project-tree` with expand/collapse |
 | Project tree | :white_check_mark: | Tree view with depth limit, hidden file filtering |
 | Git status in tree | :white_check_mark: | Shows M/A/?/D/R status per file in project tree |
-| File operations in tree | :red_circle: | Not implemented |
+| File operations in tree | :white_check_mark: | Create, delete, rename files in project tree |
 
-**Summary:** Project tree sidebar shows directory structure with expand/collapse. Missing: git status indicators and file operations within the tree.
+**Summary:** Project tree sidebar is fully featured with directory structure, git status indicators, and file operations (create, delete, rename).
 
 ---
 

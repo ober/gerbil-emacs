@@ -1373,9 +1373,20 @@
       (editor-set-text ed "")
       (echo-message! echo (string-append "Created new buffer: " name)))))
 
-;;; --- Toggle window dedicated ---
+;;; --- Window dedication ---
 
 (def *dedicated-windows* (make-hash-table))
+
+(def (cmd-set-window-dedicated app)
+  "Mark the current window as dedicated to its buffer type."
+  (let* ((fr (app-state-frame app))
+         (win (current-window fr))
+         (buf (edit-window-buffer win))
+         (echo (app-state-echo app))
+         (buf-name (buffer-name buf)))
+    (hash-put! *dedicated-windows* buf-name #t)
+    (echo-message! echo
+      (string-append "Window dedicated to: " buf-name))))
 
 (def (cmd-toggle-window-dedicated app)
   "Toggle whether the current window is dedicated to its buffer."
@@ -1389,10 +1400,7 @@
         (hash-remove! *dedicated-windows* buf-name)
         (echo-message! echo
           (string-append "Window undedicated from: " buf-name)))
-      (begin
-        (hash-put! *dedicated-windows* buf-name #t)
-        (echo-message! echo
-          (string-append "Window dedicated to: " buf-name))))))
+      (cmd-set-window-dedicated app))))
 
 ;;; --- Which-key mode: show available prefixed key bindings ---
 

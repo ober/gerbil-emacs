@@ -1563,7 +1563,15 @@
   (register-command! 'display-buffer-in-side-window cmd-display-buffer-in-side-window)
   (register-command! 'toggle-side-window cmd-toggle-side-window)
   (register-command! 'info-reader cmd-info-reader)
-  (register-command! 'project-tree-git cmd-project-tree-git))
+  (register-command! 'project-tree-git cmd-project-tree-git)
+  ;; Batch 8: file ops, window purpose, doc browser, async dired
+  (register-command! 'project-tree-create-file cmd-project-tree-create-file)
+  (register-command! 'project-tree-delete-file cmd-project-tree-delete-file)
+  (register-command! 'project-tree-rename-file cmd-project-tree-rename-file)
+  (register-command! 'set-window-dedicated cmd-set-window-dedicated)
+  (register-command! 'gemacs-doc cmd-gemacs-doc)
+  (register-command! 'dired-async-copy cmd-dired-async-copy)
+  (register-command! 'dired-async-move cmd-dired-async-move))
 
 ;;; Qt versions of batch 6 commands
 
@@ -1792,3 +1800,110 @@
         (qt-plain-text-edit-set-text! ed content)
         (qt-text-document-set-modified! (buffer-doc-pointer tbuf) #f)
         (qt-plain-text-edit-set-cursor-position! ed 0)))))
+
+;;; Qt versions of batch 8 commands
+
+(def (cmd-project-tree-create-file app)
+  "Create a new file in the current project (Qt)."
+  (let* ((echo (app-state-echo app))
+         (name (qt-echo-read-string app "Create file: ")))
+    (when (and name (> (string-length name) 0))
+      (let* ((buf (current-qt-buffer app))
+             (file (and buf (buffer-file-path buf)))
+             (dir (if file (path-directory file) (current-directory)))
+             (path (path-expand name dir)))
+        (if (file-exists? path)
+          (echo-error! echo (string-append "File exists: " path))
+          (begin
+            (call-with-output-file path (lambda (p) (void)))
+            (echo-message! echo (string-append "Created: " path))))))))
+
+(def (cmd-project-tree-delete-file app)
+  "Delete a file by name (Qt)."
+  (let* ((echo (app-state-echo app))
+         (name (qt-echo-read-string app "Delete file: ")))
+    (when (and name (> (string-length name) 0))
+      (let* ((buf (current-qt-buffer app))
+             (file (and buf (buffer-file-path buf)))
+             (dir (if file (path-directory file) (current-directory)))
+             (path (path-expand name dir)))
+        (if (not (file-exists? path))
+          (echo-error! echo (string-append "No file: " name))
+          (let ((confirm (qt-echo-read-string app (string-append "Delete " name "? (yes/no) "))))
+            (when (and confirm (string=? confirm "yes"))
+              (with-catch
+                (lambda (e) (echo-error! echo "Delete failed"))
+                (lambda ()
+                  (delete-file path)
+                  (echo-message! echo (string-append "Deleted: " name)))))))))))
+
+(def (cmd-project-tree-rename-file app)
+  "Rename a file (Qt)."
+  (let* ((echo (app-state-echo app))
+         (old-name (qt-echo-read-string app "Rename file: ")))
+    (when (and old-name (> (string-length old-name) 0))
+      (let* ((new-name (qt-echo-read-string app (string-append "Rename to: ")))
+             (buf (current-qt-buffer app))
+             (file (and buf (buffer-file-path buf)))
+             (dir (if file (path-directory file) (current-directory))))
+        (when (and new-name (> (string-length new-name) 0))
+          (with-catch
+            (lambda (e) (echo-error! echo "Rename failed"))
+            (lambda ()
+              (rename-file (path-expand old-name dir) (path-expand new-name dir))
+              (echo-message! echo (string-append "Renamed: " old-name " → " new-name)))))))))
+
+(def (cmd-gemacs-doc app)
+  "Browse gemacs documentation (Qt)."
+  (let* ((ed (current-qt-editor app))
+         (echo (app-state-echo app))
+         (fr (app-state-frame app))
+         (topic (qt-echo-read-string app "Doc topic (getting-started/keybindings/commands/org-mode): ")))
+    (when (and topic (> (string-length topic) 0))
+      (let* ((key (string-downcase topic))
+             (content
+               (cond
+                 ((string=? key "getting-started")
+                  "Getting Started with Gemacs\n==========================\n\nOpen: C-x C-f | Save: C-x C-s | Quit: C-x C-c\nSearch: C-s | Replace: M-% | Undo: C-/\nWindows: C-x 2 (split), C-x o (other), C-x 1 (unsplit)\nBuffers: C-x b (switch), C-x k (kill)\nHelp: C-h k (describe key), M-x (run command)\n")
+                 ((string=? key "keybindings")
+                  "Keybinding Reference\n====================\n\nC-f/C-b Forward/Back | M-f/M-b Word | C-n/C-p Line\nC-a/C-e BOL/EOL | M-</M-> BOB/EOB | C-v/M-v Page\nC-d Del | C-k Kill line | C-w Cut | M-w Copy | C-y Yank\nC-x C-f Open | C-x C-s Save | C-x b Switch | C-x k Kill\nC-s Search | C-r Reverse | M-% Replace\nC-x 2/3 Split | C-x 0/1 Delete | C-x o Other\n")
+                 ((string=? key "commands")
+                  "Command Reference\n=================\n\nM-x to run any command by name.\nFile: find-file, save-buffer, write-file, revert-buffer\nBuffer: switch-buffer, kill-buffer, list-buffers\nSearch: search-forward, query-replace, occur\nGit: magit-status, magit-log, magit-diff\nLSP: lsp-start, lsp-find-definition, lsp-find-references\n")
+                 ((string=? key "org-mode")
+                  "Org Mode Guide\n==============\n\nTAB: cycle visibility | S-TAB: global cycle\nM-RET: new heading | C-c C-t: toggle TODO\n<s TAB: source block | C-c C-c: execute block\nC-c C-e: export | C-c a: agenda\nTables: | col | col | with TAB to align\n")
+                 (else #f))))
+        (if (not content)
+          (echo-message! echo (string-append "No topic: " topic))
+          (let ((dbuf (or (buffer-by-name (string-append "*Doc: " topic "*"))
+                          (qt-buffer-create! (string-append "*Doc: " topic "*") ed #f))))
+            (qt-buffer-attach! ed dbuf)
+            (set! (qt-edit-window-buffer (qt-current-window fr)) dbuf)
+            (qt-plain-text-edit-set-text! ed content)
+            (qt-text-document-set-modified! (buffer-doc-pointer dbuf) #f)
+            (qt-plain-text-edit-set-cursor-position! ed 0)))))))
+
+(def (cmd-dired-async-copy app)
+  "Copy file (Qt — prompt-based)."
+  (let* ((echo (app-state-echo app))
+         (src (qt-echo-read-string app "Copy from: ")))
+    (when (and src (> (string-length src) 0))
+      (let ((dest (qt-echo-read-string app "Copy to: ")))
+        (when (and dest (> (string-length dest) 0))
+          (with-catch
+            (lambda (e) (echo-error! echo "Copy failed"))
+            (lambda ()
+              (copy-file src dest)
+              (echo-message! echo (string-append "Copied to " dest)))))))))
+
+(def (cmd-dired-async-move app)
+  "Move/rename file (Qt — prompt-based)."
+  (let* ((echo (app-state-echo app))
+         (src (qt-echo-read-string app "Move from: ")))
+    (when (and src (> (string-length src) 0))
+      (let ((dest (qt-echo-read-string app "Move to: ")))
+        (when (and dest (> (string-length dest) 0))
+          (with-catch
+            (lambda (e) (echo-error! echo "Move failed"))
+            (lambda ()
+              (rename-file src dest)
+              (echo-message! echo (string-append "Moved to " dest)))))))))
