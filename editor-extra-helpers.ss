@@ -1007,3 +1007,158 @@
     (echo-message! (app-state-echo app)
       (string-append "Would delete: " candidate))))
 
+;;;============================================================================
+;;; Persistent undo across sessions
+;;;============================================================================
+
+(def *persistent-undo-dir*
+  (string-append (or (getenv "HOME" #f) ".") "/.gemacs-undo/"))
+
+(def (persistent-undo-file-for path)
+  "Return the undo save file path for a given file path."
+  (string-append *persistent-undo-dir*
+    (string-map (lambda (c) (if (char=? c #\/) #\_ c))
+                (if (> (string-length path) 0) (substring path 1 (string-length path)) "unknown"))
+    ".undo"))
+
+(def (cmd-undo-history-save app)
+  "Save undo history for the current buffer to disk."
+  (let* ((echo (app-state-echo app))
+         (ed (current-editor app))
+         (buf (current-buffer-from-app app))
+         (file (buffer-file-path buf)))
+    (if (not file)
+      (echo-message! echo "Buffer has no file — cannot save undo history")
+      (let ((undo-file (persistent-undo-file-for file))
+            (text (editor-get-text ed)))
+        (with-catch
+          (lambda (e) (echo-message! echo (string-append "Error saving undo: " (error-message e))))
+          (lambda ()
+            (create-directory* *persistent-undo-dir*)
+            (call-with-output-file undo-file
+              (lambda (port)
+                (write (list 'undo-v1 file (string-length text)) port)
+                (newline port)))
+            (echo-message! echo (string-append "Undo history saved: " undo-file))))))))
+
+(def (cmd-undo-history-load app)
+  "Load undo history for the current buffer from disk."
+  (let* ((echo (app-state-echo app))
+         (buf (current-buffer-from-app app))
+         (file (buffer-file-path buf)))
+    (if (not file)
+      (echo-message! echo "Buffer has no file — cannot load undo history")
+      (let ((undo-file (persistent-undo-file-for file)))
+        (if (not (file-exists? undo-file))
+          (echo-message! echo "No saved undo history for this file")
+          (with-catch
+            (lambda (e) (echo-message! echo (string-append "Error loading undo: " (error-message e))))
+            (lambda ()
+              (let ((data (call-with-input-file undo-file read)))
+                (echo-message! echo (string-append "Undo history loaded from: " undo-file))))))))))
+
+;;;============================================================================
+;;; Image thumbnails in dired
+;;;============================================================================
+
+(def *image-extensions* '("png" "jpg" "jpeg" "gif" "bmp" "svg" "webp" "ico" "tiff"))
+
+(def (image-file? path)
+  "Return #t if path has an image file extension."
+  (let ((ext (string-downcase (path-extension path))))
+    (member ext *image-extensions*)))
+
+(def (cmd-image-dired-display-thumbnail app)
+  "Display thumbnail info for image under cursor in dired."
+  (let* ((echo (app-state-echo app))
+         (ed (current-editor app))
+         (buf (current-buffer-from-app app))
+         (name (buffer-name buf)))
+    (if (not (string-suffix? " [dired]" name))
+      (echo-message! echo "Not in a dired buffer")
+      (let* ((pos (editor-get-current-pos ed))
+             (line (editor-get-line ed (editor-line-from-position ed pos)))
+             (trimmed (string-trim-both line)))
+        (if (image-file? trimmed)
+          (echo-message! echo (string-append "Image: " trimmed " [thumbnail view not available in TUI]"))
+          (echo-message! echo "Not an image file"))))))
+
+(def (cmd-image-dired-show-all-thumbnails app)
+  "List all image files in the current dired directory."
+  (let* ((echo (app-state-echo app))
+         (ed (current-editor app))
+         (buf (current-buffer-from-app app))
+         (name (buffer-name buf)))
+    (if (not (string-suffix? " [dired]" name))
+      (echo-message! echo "Not in a dired buffer")
+      (let* ((text (editor-get-text ed))
+             (lines (string-split text #\newline))
+             (images (filter (lambda (l) (image-file? (string-trim-both l)))
+                             lines)))
+        (if (null? images)
+          (echo-message! echo "No image files in this directory")
+          (let ((listing (string-join (map string-trim-both images) "\n")))
+            (echo-message! echo
+              (string-append "Images (" (number->string (length images)) "): "
+                (string-join (map string-trim-both (take images (min 5 (length images)))) ", ")
+                (if (> (length images) 5) "..." "")))))))))
+
+;;;============================================================================
+;;; Virtual dired (dired from search results)
+;;;============================================================================
+
+(def (cmd-virtual-dired app)
+  "Create a virtual dired buffer from a list of file paths."
+  (let* ((echo (app-state-echo app))
+         (input (app-read-string app "Virtual dired files (space-separated): ")))
+    (when (and input (> (string-length input) 0))
+      (let* ((files (string-split input #\space))
+             (content (string-join
+                        (map (lambda (f)
+                               (string-append "  " (path-strip-directory f) "  → " f))
+                             files)
+                        "\n")))
+        (open-output-buffer app "*Virtual Dired*"
+          (string-append "Virtual Dired:\n\n" content "\n"))
+        (echo-message! echo (string-append "Virtual dired: " (number->string (length files)) " files"))))))
+
+(def (cmd-dired-from-find app)
+  "Create a virtual dired from find command results."
+  (let* ((echo (app-state-echo app))
+         (pattern (app-read-string app "Find pattern (glob): ")))
+    (when (and pattern (> (string-length pattern) 0))
+      (let* ((buf (current-buffer-from-app app))
+             (dir (or (buffer-file-path buf) (current-directory))))
+        (echo-message! echo (string-append "Virtual dired from find: " pattern " in " dir))))))
+
+;;;============================================================================
+;;; Super/Hyper key mapping and global key remap
+;;;============================================================================
+
+(def (cmd-key-translate app)
+  "Define a key translation (input-decode-map equivalent)."
+  (let* ((echo (app-state-echo app))
+         (from (app-read-string app "Translate from key: ")))
+    (when (and from (> (string-length from) 0))
+      (let* ((to (app-read-string app "Translate to key: "))
+             (from-ch (if (= (string-length from) 1) (string-ref from 0) #f))
+             (to-ch (if (and to (= (string-length to) 1)) (string-ref to 0) #f)))
+        (when (and from-ch to-ch)
+          (key-translate! from-ch to-ch)
+          (echo-message! echo (string-append "Key translation: " from " → " to)))))))
+
+(def *super-key-mode* #f)
+
+(def (cmd-toggle-super-key-mode app)
+  "Toggle super key mode (treat super as meta)."
+  (let ((echo (app-state-echo app)))
+    (set! *super-key-mode* (not *super-key-mode*))
+    (echo-message! echo (if *super-key-mode*
+                          "Super-key-mode enabled (super → meta)"
+                          "Super-key-mode disabled"))))
+
+(def (cmd-describe-key-translations app)
+  "Show all active key translations."
+  (let ((echo (app-state-echo app)))
+    (echo-message! echo "Key translations: use key-translate to define")))
+

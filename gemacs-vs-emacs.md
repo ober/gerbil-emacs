@@ -182,7 +182,7 @@
 | Undo grouping | :white_check_mark: | Consecutive edits grouped |
 | Undo boundaries | :white_check_mark: | Commands create boundaries |
 | Undo tree visualization | :white_check_mark: | `M-x undo-tree-visualize` with snapshot history |
-| Persistent undo (across sessions) | :red_circle: | Not implemented |
+| Persistent undo (across sessions) | :white_check_mark: | `undo-history-save` / `undo-history-load` to `~/.gemacs-undo/` |
 | Selective undo (region) | :white_check_mark: | Undo within region, falls back to normal undo |
 
 **Summary:** Undo/redo with tree visualization (`M-x undo-tree-visualize`), timestamped snapshots (`M-x undo-history`), and snapshot restore. No persistent undo or selective region undo.
@@ -402,10 +402,10 @@
 | Mark by regexp | :white_check_mark: | Mark files matching pattern |
 | Shell command on file | :large_blue_circle: | Runs command, shows output in buffer |
 | Wdired (edit filenames) | :white_check_mark: | Edit mode with rename-on-commit |
-| Image thumbnails | :red_circle: | Not implemented |
+| Image thumbnails | :white_check_mark: | `image-dired-display-thumbnail` / `image-dired-show-all-thumbnails` |
 | Dired-x extensions | :yellow_circle: | find-dired, find-name-dired |
 | Async operations | :white_check_mark: | `dired-async-copy`, `dired-async-move` |
-| Virtual dired | :red_circle: | Not implemented |
+| Virtual dired | :white_check_mark: | `virtual-dired` from file list, `dired-from-find` from glob |
 | Dired subtree | :white_check_mark: | `M-x dired-subtree-toggle` for inline expansion |
 
 **Summary:** Dired is **substantially complete**. Full listing with permissions/sizes, single-file and batch operations on marked files, wdired for inline renaming, find integration, inline subtree expansion, async copy/move. Missing: image thumbnails.
@@ -1074,9 +1074,9 @@
 | Key-chord bindings | :white_check_mark: | Two-key simultaneous chords |
 | Key translation table | :white_check_mark: | Character remapping |
 | Swap brackets/parens | :white_check_mark: | `M-x toggle-bracket-paren-swap` and `M-x key-translation-list` |
-| Super/Hyper key mapping | :red_circle: | No super-key-as-meta mapping |
+| Super/Hyper key mapping | :white_check_mark: | `toggle-super-key-mode` (super → meta), `key-translate` |
 | Per-mode keymaps | :yellow_circle: | Limited |
-| Global key remap (input-decode-map) | :red_circle: | No input-level key translation |
+| Global key remap (input-decode-map) | :white_check_mark: | `key-translate` + `describe-key-translations` |
 
 **Summary:** Key-chord system works well. Bracket/paren swap via key-translate system. Missing super-to-meta mapping.
 

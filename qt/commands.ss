@@ -1587,7 +1587,17 @@
   (register-command! 'icomplete-mode cmd-icomplete-mode)
   (register-command! 'fido-mode cmd-fido-mode)
   (register-command! 'marginalia-mode cmd-marginalia-mode)
-  (register-command! 'embark-act cmd-embark-act))
+  (register-command! 'embark-act cmd-embark-act)
+  ;; Batch 12: persistent undo, image thumbnails, virtual dired, key translation
+  (register-command! 'undo-history-save cmd-undo-history-save)
+  (register-command! 'undo-history-load cmd-undo-history-load)
+  (register-command! 'image-dired-display-thumbnail cmd-image-dired-display-thumbnail)
+  (register-command! 'image-dired-show-all-thumbnails cmd-image-dired-show-all-thumbnails)
+  (register-command! 'virtual-dired cmd-virtual-dired)
+  (register-command! 'dired-from-find cmd-dired-from-find)
+  (register-command! 'key-translate cmd-key-translate)
+  (register-command! 'toggle-super-key-mode cmd-toggle-super-key-mode)
+  (register-command! 'describe-key-translations cmd-describe-key-translations))
 
 ;;; Qt versions of batch 6 commands
 

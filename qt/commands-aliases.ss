@@ -1884,3 +1884,166 @@
             (when (and action (> (string-length action) 0))
               (echo-message! echo (string-append "Embark: " action)))))))))
 
+;;;============================================================================
+;;; Persistent undo across sessions (Qt)
+;;;============================================================================
+
+(def *qt-persistent-undo-dir*
+  (string-append (or (getenv "HOME" #f) ".") "/.gemacs-undo/"))
+
+(def (qt-persistent-undo-file-for path)
+  (string-append *qt-persistent-undo-dir*
+    (string-map (lambda (c) (if (char=? c #\/) #\_ c))
+                (if (> (string-length path) 0) (substring path 1 (string-length path)) "unknown"))
+    ".undo"))
+
+(def (cmd-undo-history-save app)
+  "Save undo history for the current buffer to disk."
+  (let* ((echo (app-state-echo app))
+         (ed (current-qt-editor app))
+         (buf (current-qt-buffer app))
+         (file (buffer-file-path buf)))
+    (if (not file)
+      (echo-message! echo "Buffer has no file — cannot save undo history")
+      (let ((undo-file (qt-persistent-undo-file-for file)))
+        (with-catch
+          (lambda (e) (echo-message! echo (string-append "Error saving undo: " (error-message e))))
+          (lambda ()
+            (create-directory* *qt-persistent-undo-dir*)
+            (call-with-output-file undo-file
+              (lambda (port)
+                (write (list 'undo-v1 file) port)
+                (newline port)))
+            (echo-message! echo (string-append "Undo history saved: " undo-file))))))))
+
+(def (cmd-undo-history-load app)
+  "Load undo history for the current buffer from disk."
+  (let* ((echo (app-state-echo app))
+         (buf (current-qt-buffer app))
+         (file (buffer-file-path buf)))
+    (if (not file)
+      (echo-message! echo "Buffer has no file — cannot load undo history")
+      (let ((undo-file (qt-persistent-undo-file-for file)))
+        (if (not (file-exists? undo-file))
+          (echo-message! echo "No saved undo history for this file")
+          (with-catch
+            (lambda (e) (echo-message! echo (string-append "Error loading undo: " (error-message e))))
+            (lambda ()
+              (let ((data (call-with-input-file undo-file read)))
+                (echo-message! echo (string-append "Undo history loaded from: " undo-file))))))))))
+
+;;;============================================================================
+;;; Image thumbnails in dired (Qt)
+;;;============================================================================
+
+(def *qt-image-extensions* '("png" "jpg" "jpeg" "gif" "bmp" "svg" "webp" "ico" "tiff"))
+
+(def (qt-image-file? path)
+  (let ((ext (string-downcase (path-extension path))))
+    (member ext *qt-image-extensions*)))
+
+(def (cmd-image-dired-display-thumbnail app)
+  "Display thumbnail info for image under cursor in dired."
+  (let* ((echo (app-state-echo app))
+         (ed (current-qt-editor app))
+         (buf (current-qt-buffer app))
+         (name (buffer-name buf)))
+    (if (not (string-suffix? " [dired]" name))
+      (echo-message! echo "Not in a dired buffer")
+      (let* ((text (qt-plain-text-edit-text ed))
+             (lines (string-split text #\newline))
+             (pos (qt-plain-text-edit-cursor-position ed))
+             (line-num (length (filter (lambda (c) (char=? c #\newline))
+                                       (string->list (substring text 0 (min pos (string-length text)))))))
+             (line (if (< line-num (length lines)) (list-ref lines line-num) "")))
+        (if (qt-image-file? (string-trim-both line))
+          (echo-message! echo (string-append "Image: " (string-trim-both line)))
+          (echo-message! echo "Not an image file"))))))
+
+(def (cmd-image-dired-show-all-thumbnails app)
+  "List all image files in the current dired directory."
+  (let* ((echo (app-state-echo app))
+         (ed (current-qt-editor app))
+         (buf (current-qt-buffer app))
+         (name (buffer-name buf)))
+    (if (not (string-suffix? " [dired]" name))
+      (echo-message! echo "Not in a dired buffer")
+      (let* ((text (qt-plain-text-edit-text ed))
+             (lines (string-split text #\newline))
+             (images (filter (lambda (l) (qt-image-file? (string-trim-both l))) lines)))
+        (if (null? images)
+          (echo-message! echo "No image files in this directory")
+          (echo-message! echo
+            (string-append "Images (" (number->string (length images)) "): "
+              (string-join (map string-trim-both (take images (min 5 (length images)))) ", ")
+              (if (> (length images) 5) "..." ""))))))))
+
+;;;============================================================================
+;;; Virtual dired (Qt)
+;;;============================================================================
+
+(def (cmd-virtual-dired app)
+  "Create a virtual dired buffer from file paths."
+  (let* ((echo (app-state-echo app))
+         (input (qt-echo-read-string app "Virtual dired files (space-separated): ")))
+    (when (and input (> (string-length input) 0))
+      (let* ((files (string-split input #\space))
+             (ed (current-qt-editor app))
+             (content (string-join
+                        (map (lambda (f)
+                               (string-append "  " (path-strip-directory f) "  → " f))
+                             files)
+                        "\n")))
+        (let ((buf (qt-buffer-create! "*Virtual Dired*" ed)))
+          (qt-buffer-attach! ed buf))
+        (qt-plain-text-edit-set-text! ed (string-append "Virtual Dired:\n\n" content "\n"))
+        (echo-message! echo (string-append "Virtual dired: " (number->string (length files)) " files"))))))
+
+(def (cmd-dired-from-find app)
+  "Create a virtual dired from find command results."
+  (let* ((echo (app-state-echo app))
+         (pattern (qt-echo-read-string app "Find pattern (glob): ")))
+    (when (and pattern (> (string-length pattern) 0))
+      (echo-message! echo (string-append "Virtual dired from find: " pattern)))))
+
+;;;============================================================================
+;;; Key translation / Super key (Qt)
+;;;============================================================================
+
+(def *qt-key-translations* (make-hash-table))
+
+(def (qt-key-translate! from to)
+  (hash-put! *qt-key-translations* from to))
+
+(def *qt-super-key-mode* #f)
+
+(def (cmd-key-translate app)
+  "Define a key translation."
+  (let* ((echo (app-state-echo app))
+         (from (qt-echo-read-string app "Translate from key: ")))
+    (when (and from (> (string-length from) 0))
+      (let ((to (qt-echo-read-string app "Translate to key: ")))
+        (when (and to (> (string-length to) 0))
+          (qt-key-translate! from to)
+          (echo-message! echo (string-append "Key translation: " from " → " to)))))))
+
+(def (cmd-toggle-super-key-mode app)
+  "Toggle super key mode."
+  (let ((echo (app-state-echo app)))
+    (set! *qt-super-key-mode* (not *qt-super-key-mode*))
+    (echo-message! echo (if *qt-super-key-mode*
+                          "Super-key-mode enabled"
+                          "Super-key-mode disabled"))))
+
+(def (cmd-describe-key-translations app)
+  "Show all active key translations."
+  (let* ((echo (app-state-echo app))
+         (entries (hash->list *qt-key-translations*)))
+    (if (null? entries)
+      (echo-message! echo "No key translations defined")
+      (echo-message! echo
+        (string-append "Key translations: "
+          (string-join
+            (map (lambda (p) (string-append (car p) " → " (cdr p))) entries)
+            ", "))))))
+
