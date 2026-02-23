@@ -1243,6 +1243,7 @@
   (register-command! 'diff-buffer-with-file cmd-diff-buffer-with-file)
   (register-command! 'diff-next-hunk cmd-diff-next-hunk)
   (register-command! 'diff-prev-hunk cmd-diff-prev-hunk)
+  (register-command! 'diff-refine-hunk cmd-diff-refine-hunk)
   ;; Grep buffer
   (register-command! 'grep-buffer cmd-grep-buffer)
   ;; Revert quick

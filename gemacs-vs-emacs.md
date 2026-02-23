@@ -1,7 +1,7 @@
 # Gemacs vs GNU Emacs — Feature Comparison
 
 > **Last updated:** 2026-02-22
-> **Gemacs version:** master (384815e)
+> **Gemacs version:** master (e0cc774)
 > **Compared against:** GNU Emacs 29.x / 30.x feature set
 
 ## Status Legend
@@ -700,14 +700,14 @@
 | Ediff directories | :large_blue_circle: | Recursive directory comparison |
 | Ediff regions | :large_blue_circle: | Compare buffer regions |
 | Ediff merge | :large_blue_circle: | Two-file merge comparison |
-| Ediff three-way merge | :red_circle: | Not implemented |
-| Refine hunks | :red_circle: | No word-level diff |
+| Ediff three-way merge | :white_check_mark: | `diff3 -m` mine/base/theirs with conflict markers |
+| Refine hunks | :white_check_mark: | Word-level diff via `M-x diff-refine-hunk` |
 | Smerge mode | :white_check_mark: | Full conflict marker resolution |
 | Smerge navigate (n/p) | :white_check_mark: | Jump between `<<<<<<<` markers |
 | Smerge keep mine/other/both | :white_check_mark: | Resolve conflicts interactively |
 | Smerge conflict count | :white_check_mark: | Shows total conflicts in buffer |
 
-**Summary:** Diff display and smerge conflict resolution fully working. Ediff provides file/buffer/directory comparison. Missing: three-way merge and word-level hunk refinement.
+**Summary:** Diff display and smerge conflict resolution fully working. Ediff provides file/buffer/directory/three-way merge comparison. Word-level hunk refinement via `diff-refine-hunk`.
 
 ---
 
@@ -920,11 +920,11 @@
 | Default field values | :large_blue_circle: | `${1:default}` syntax supported |
 | Snippet browsing | :white_check_mark: | `M-x snippet-insert` with narrowing |
 | File-based snippets | :large_blue_circle: | Load from `~/.gemacs-snippets/<lang>/` |
-| Mirror fields | :red_circle: | Not implemented |
+| Mirror fields | :large_blue_circle: | Same $N tracked at all positions; TAB visits each |
 
 **Built-in snippet languages:** Scheme/Gerbil, Python, JavaScript, C/C++, Go, Rust, HTML, Shell/Bash, Markdown, plus global snippets.
 
-**Summary:** Full snippet system with TAB-triggered expansion, field navigation ($1→$2→$0), default values, 100+ built-in snippets, file-based loading, and narrowing-based browsing. Both TUI and Qt. Missing mirror fields (linked fields that update together).
+**Summary:** Full snippet system with TAB-triggered expansion, field navigation ($1→$2→$0), default values, mirror field tracking, 100+ built-in snippets, file-based loading, and narrowing-based browsing. Both TUI and Qt. Mirror fields track all positions of the same $N for TAB navigation (auto-sync on edit not yet implemented).
 
 ---
 

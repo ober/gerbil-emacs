@@ -1350,6 +1350,7 @@
   (register-command! 'dired-sort-toggle cmd-dired-sort-toggle)
   (register-command! 'diff-next-hunk cmd-diff-next-hunk)
   (register-command! 'diff-prev-hunk cmd-diff-prev-hunk)
+  (register-command! 'diff-refine-hunk cmd-diff-refine-hunk)
   (register-command! 'display-line-numbers-mode cmd-display-line-numbers-mode)
   ;; Parity batch 6: magit ops, markdown editing, multi-vterm
   (register-command! 'magit-refresh cmd-magit-refresh)

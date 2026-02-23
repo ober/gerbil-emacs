@@ -5,7 +5,8 @@
 (export #t)
 
 (import :std/sugar
-        :std/srfi/13)
+        :std/srfi/13
+        :std/sort)
 
 ;;; ============================================================================
 ;;; Core data structures
@@ -14,6 +15,9 @@
 (def *snippet-table* (make-hash-table)) ;; lang -> (hash trigger -> template)
 (def *snippet-active* #f)              ;; #f or #t when navigating snippet fields
 (def *snippet-field-positions* [])     ;; list of cursor positions for fields
+(def *snippet-mirror-groups* (make-hash-table)) ;; field-num -> list of (start . end) positions
+(def *snippet-current-field* #f)       ;; current field number being edited
+(def *snippet-base-offset* 0)          ;; base offset of snippet in buffer
 
 ;;; ============================================================================
 ;;; Core functions
@@ -35,26 +39,42 @@
 
 (def (snippet-expand-template template)
   "Expand template: replace $N and ${N:default} with placeholders.
-   Returns (text . field-offsets) where offsets are (n . position) pairs."
+   Returns (text . field-offsets) where offsets are (n start . end) triples.
+   Supports mirror fields: same $N appearing multiple times.
+   Sets *snippet-mirror-groups* as side effect."
   (let ((out (open-output-string))
-        (fields (make-hash-table))
+        (fields (make-hash-table))  ;; n -> list of (start . end) in reverse order
         (len (string-length template)))
     (let loop ((i 0))
       (cond
         ((>= i len)
          (let* ((text (get-output-string out))
-                (offsets
+                ;; Build mirror groups and flat offset list (all positions)
+                (mirrors (make-hash-table))
+                (all-offsets
                   (let collect ((n 1) (acc []))
                     (if (> n 9)
-                      (let ((zero-pos (hash-get fields 0)))
-                        (if zero-pos
-                          (reverse (cons (cons 0 zero-pos) acc))
+                      (let ((zero-positions (hash-get fields 0)))
+                        (if (and zero-positions (not (null? zero-positions)))
+                          (let ((p (car (reverse zero-positions))))
+                            (reverse (cons (cons 0 (car p)) acc)))
                           (reverse acc)))
-                      (let ((pos (hash-get fields n)))
-                        (if pos
-                          (collect (+ n 1) (cons (cons n pos) acc))
-                          (collect (+ n 1) acc)))))))
-           (cons text offsets)))
+                      (let ((positions (hash-get fields n)))
+                        (if (and positions (not (null? positions)))
+                          (let ((sorted (reverse positions)))
+                            ;; Store all positions in mirror groups
+                            (hash-put! mirrors n sorted)
+                            ;; Add ALL occurrences to navigation list
+                            (let add-all ((ps sorted) (a acc))
+                              (if (null? ps)
+                                (collect (+ n 1) a)
+                                (add-all (cdr ps)
+                                         (cons (cons n (car (car ps))) a)))))
+                          (collect (+ n 1) acc))))))
+                ;; Sort by position so TAB visits in document order
+                (sorted-offsets (sort all-offsets (lambda (a b) (< (cdr a) (cdr b))))))
+           (set! *snippet-mirror-groups* mirrors)
+           (cons text sorted-offsets)))
         ;; ${N:default} syntax
         ((and (char=? (string-ref template i) #\$)
               (< (+ i 2) len)
@@ -78,24 +98,28 @@
            (if (and colon-pos close-pos
                     (char=? (string-ref template colon-pos) #\:))
              ;; Has default text: ${N:default}
-             (let ((default-text (substring template (+ colon-pos 1) close-pos))
-                   (pos (string-length (get-output-string out))))
-               (hash-put! fields n pos)
+             (let* ((default-text (substring template (+ colon-pos 1) close-pos))
+                    (pos (string-length (get-output-string out)))
+                    (end-pos (+ pos (string-length default-text)))
+                    (old (or (hash-get fields n) [])))
+               (hash-put! fields n (cons (cons pos end-pos) old))
                (display default-text out)
                (loop (+ close-pos 1)))
              ;; No default: ${N} — same as $N
-             (let ((pos (string-length (get-output-string out)))
-                   (skip-to (if close-pos (+ close-pos 1) (+ i 2))))
-               (hash-put! fields n pos)
+             (let* ((pos (string-length (get-output-string out)))
+                    (skip-to (if close-pos (+ close-pos 1) (+ i 2)))
+                    (old (or (hash-get fields n) [])))
+               (hash-put! fields n (cons (cons pos pos) old))
                (loop skip-to)))))
         ;; Bare $N syntax
         ((and (char=? (string-ref template i) #\$)
               (< (+ i 1) len)
               (char-numeric? (string-ref template (+ i 1))))
-         (let ((n (- (char->integer (string-ref template (+ i 1)))
-                     (char->integer #\0)))
-               (pos (string-length (get-output-string out))))
-           (hash-put! fields n pos)
+         (let* ((n (- (char->integer (string-ref template (+ i 1)))
+                      (char->integer #\0)))
+                (pos (string-length (get-output-string out)))
+                (old (or (hash-get fields n) [])))
+           (hash-put! fields n (cons (cons pos pos) old))
            (loop (+ i 2))))
         ;; Regular character
         (else
@@ -105,7 +129,41 @@
 (def (snippet-deactivate!)
   "Deactivate snippet field navigation."
   (set! *snippet-active* #f)
-  (set! *snippet-field-positions* []))
+  (set! *snippet-field-positions* [])
+  (set! *snippet-mirror-groups* (make-hash-table))
+  (set! *snippet-current-field* #f)
+  (set! *snippet-base-offset* 0))
+
+(def (snippet-update-mirrors! get-text-fn set-text-fn field-num new-text base-offset)
+  "Update all mirror positions for FIELD-NUM with NEW-TEXT.
+   GET-TEXT-FN: () -> string, SET-TEXT-FN: string -> void.
+   BASE-OFFSET is the snippet insertion point in the buffer.
+   Returns the delta in text length caused by mirror updates."
+  (let ((positions (hash-get *snippet-mirror-groups* field-num)))
+    (if (or (not positions) (<= (length positions) 1))
+      0  ;; No mirrors to update
+      (let* ((full-text (get-text-fn))
+             (sorted-positions (sort (cdr positions) ;; skip first (primary) position
+                                     (lambda (a b) (> (car a) (car b))))) ;; reverse order
+             (total-delta 0))
+        ;; Replace each mirror position from end to start to preserve offsets
+        (for-each
+          (lambda (pos-pair)
+            (let* ((start (+ base-offset (car pos-pair)))
+                   (end (+ base-offset (cdr pos-pair)))
+                   (old-len (- end start))
+                   (new-len (string-length new-text))
+                   (delta (- new-len old-len)))
+              (when (and (<= 0 start) (<= end (string-length full-text)))
+                (set! full-text
+                  (string-append
+                    (substring full-text 0 start)
+                    new-text
+                    (substring full-text end (string-length full-text))))
+                (set! total-delta (+ total-delta delta)))))
+          sorted-positions)
+        (set-text-fn full-text)
+        total-delta))))
 
 (def (snippet-all-triggers lang)
   "Get all triggers available for a language (lang-specific + global).
