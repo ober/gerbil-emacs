@@ -8,7 +8,8 @@
         cmd-dired-jump cmd-dired-up-directory cmd-dired-do-shell-command
         cmd-apropos-emacs cmd-indent-new-comment-line
         cmd-isearch-backward-regexp cmd-replace-regexp
-        cmd-org-capture cmd-org-refile cmd-org-time-stamp
+        cmd-org-capture cmd-org-capture-finalize cmd-org-capture-abort
+        cmd-org-refile cmd-org-time-stamp
         cmd-org-insert-link cmd-org-narrow-to-subtree cmd-org-sort
         cmd-project-switch-to-buffer cmd-project-kill-buffers
         cmd-vc-next-action
@@ -49,6 +50,11 @@
         (only-in :gemacs/org-babel
                  org-babel-find-src-block org-babel-execute
                  org-babel-tangle-to-files org-babel-insert-result)
+        (only-in :gemacs/org-capture
+                 org-capture-menu-string org-capture-template-key
+                 org-capture-template-template org-capture-cursor-position
+                 org-capture-start org-capture-finalize org-capture-abort
+                 *org-capture-templates*)
         :gemacs/editor-core
         :gemacs/editor-text
         :gemacs/editor-ui
@@ -772,9 +778,10 @@
   (register-command! 'set-input-method cmd-toggle-input-method)
   ;; Batch 9: org/babel/misc/abbrev aliases
   ;; Org capture
-  (register-command! 'org-capture-finalize cmd-org-capture)
+  (register-command! 'org-capture-finalize cmd-org-capture-finalize)
   (register-command! 'org-capture-refile cmd-org-capture)
-  (register-command! 'org-capture-kill cmd-org-capture)
+  (register-command! 'org-capture-abort cmd-org-capture-abort)
+  (register-command! 'org-capture-kill cmd-org-capture-abort)
   ;; Org babel
   (register-command! 'org-babel-execute-maybe cmd-org-babel-execute-src-block)
   (register-command! 'org-babel-next-src-block cmd-next-error)
@@ -904,22 +911,62 @@
   (cmd-query-replace-regexp app))
 
 ;;; --- Org mode ---
-(def *tui-org-capture-templates* '())
-(def *tui-org-capture-file* #f)
 
 (def (cmd-org-capture app)
-  "Capture a note (org-capture)."
-  (let ((text (app-read-string app "Capture: ")))
-    (when (and text (not (string-empty? text)))
-      (let* ((file (or *tui-org-capture-file*
-                       (string-append (or (getenv "HOME") ".") "/.gemacs-capture.org")))
-             (entry (string-append "\n* " text "\n")))
-        (with-catch
-          (lambda (e) (echo-message! (app-state-echo app) "Capture error"))
-          (lambda ()
-            (call-with-output-file [path: file append: #t]
-              (lambda (p) (display entry p)))
-            (echo-message! (app-state-echo app) (string-append "Captured: " text))))))))
+  "Capture a note with template selection and interactive editing.
+   Select a template (t=TODO, n=Note, j=Journal), edit in *Org Capture* buffer,
+   then C-c C-c to finalize or C-c C-k to abort."
+  (let* ((echo (app-state-echo app))
+         (fr (app-state-frame app))
+         (row (- (frame-height fr) 1))
+         (width (frame-width fr))
+         (menu (org-capture-menu-string))
+         (key (echo-read-string echo (string-append "Template (" menu "): ") row width)))
+    (when (and key (> (string-length key) 0))
+      (let* ((buf-info (current-buffer-from-app app))
+             (source-file (or (buffer-name buf-info) ""))
+             (source-path (or (buffer-file-path buf-info) ""))
+             (tmpl-str (org-capture-template-template
+                         (or (find (lambda (t) (string=? (org-capture-template-key t) key))
+                                   *org-capture-templates*)
+                             (car *org-capture-templates*))))
+             (cursor-pos (org-capture-cursor-position tmpl-str))
+             (expanded (org-capture-start key source-file source-path)))
+        (if (not expanded)
+          (echo-error! echo (string-append "Unknown template: " key))
+          (let* ((ed (current-editor app))
+                 (buf (buffer-create! "*Org Capture*" ed)))
+            (buffer-attach! ed buf)
+            (set! (edit-window-buffer (current-window fr)) buf)
+            (editor-insert-text ed 0 expanded)
+            (when cursor-pos
+              (editor-goto-pos ed (min cursor-pos (string-length expanded))))
+            (echo-message! echo "Edit then C-c C-c to save, C-c C-k to abort")))))))
+
+(def (cmd-org-capture-finalize app)
+  "Finalize org capture: save buffer content to target file."
+  (let* ((buf (current-buffer-from-app app))
+         (name (buffer-name buf)))
+    (if (not (string=? name "*Org Capture*"))
+      (echo-error! (app-state-echo app) "Not in a capture buffer")
+      (let* ((ed (current-editor app))
+             (text (editor-get-text ed)))
+        (if (org-capture-finalize text)
+          (begin
+            (execute-command! app 'kill-buffer-cmd)
+            (echo-message! (app-state-echo app) "Capture saved"))
+          (echo-error! (app-state-echo app) "Capture failed — no active session"))))))
+
+(def (cmd-org-capture-abort app)
+  "Abort org capture: discard buffer without saving."
+  (let* ((buf (current-buffer-from-app app))
+         (name (buffer-name buf)))
+    (if (not (string=? name "*Org Capture*"))
+      (echo-error! (app-state-echo app) "Not in a capture buffer")
+      (begin
+        (org-capture-abort)
+        (execute-command! app 'kill-buffer-cmd)
+        (echo-message! (app-state-echo app) "Capture aborted")))))
 
 (def (cmd-org-refile app)
   "Refile current heading to another location."

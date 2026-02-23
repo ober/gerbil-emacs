@@ -467,8 +467,8 @@
 | Table CSV import/export | :white_check_mark: | |
 | **Agenda** | :large_blue_circle: | Daily/weekly views, date filtering, tag search |
 | Agenda interactive commands | :large_blue_circle: | Jump to source, toggle TODO from agenda |
-| **Capture** | :yellow_circle: | Templates with `%?/%U/%T/%f` placeholders |
-| Capture buffer (C-c C-c / C-c C-k) | :red_circle: | No interactive capture buffer |
+| **Capture** | :large_blue_circle: | Templates with `%?/%U/%T/%f`, template selection, `*Org Capture*` buffer |
+| Capture buffer (C-c C-c / C-c C-k) | :white_check_mark: | Interactive capture with finalize/abort keybindings |
 | Refile | :red_circle: | Not implemented |
 | **Babel** (code blocks) | :large_blue_circle: | 8 languages, execution, tangling |
 | Babel session persistence | :red_circle: | Sessions stored but not reused |
@@ -1002,7 +1002,7 @@
 | **Tab bar / workspaces** | No visual workspace management | Medium |
 | **Tree-sitter highlighting** | Less accurate highlighting than modern Emacs | Large |
 | **Package/plugin system** | Users can't extend gemacs easily | Large |
-| **Org capture buffer** | No interactive capture with C-c C-c | Small |
+| ~~Org capture buffer~~ | ~~No interactive capture~~ Implemented: template selection, `*Org Capture*` buffer, C-c C-c / C-c C-k | ~~Small~~ Done |
 | ~~Named keyboard macros~~ | ~~Only last-recorded macro~~ Implemented: name, call, save/load | ~~Small~~ Done |
 | **Info reader** | Can't browse GNU documentation | Medium |
 | **PDF viewing** | No document viewer | Large |

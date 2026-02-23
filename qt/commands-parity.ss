@@ -17,6 +17,11 @@
         (only-in :gemacs/org-babel
                  org-babel-find-src-block org-babel-execute
                  org-babel-tangle-to-files org-babel-insert-result)
+        (only-in :gemacs/org-capture
+                 org-capture-menu-string org-capture-template-key
+                 org-capture-template-template org-capture-cursor-position
+                 org-capture-start org-capture-finalize org-capture-abort
+                 *org-capture-templates*)
         :gemacs/qt/buffer
         :gemacs/qt/window
         :gemacs/qt/echo
@@ -177,24 +182,59 @@
 ;;; Org mode
 ;;;============================================================================
 
-(def *qt-org-capture-file* #f)
-
 (def (cmd-org-capture app)
-  "Capture a note (org-capture)."
-  (let ((text (qt-echo-read-string app "Capture: ")))
-    (when (and text (not (string-empty? text)))
-      (let* ((file (or *qt-org-capture-file*
-                       (string-append (or (getenv "HOME") ".")
-                                      "/.gemacs-capture.org")))
-             (entry (string-append "\n* " text "\n")))
-        (with-catch
-          (lambda (e)
-            (echo-message! (app-state-echo app) "Capture error"))
-          (lambda ()
-            (call-with-output-file [path: file append: #t]
-              (lambda (p) (display entry p)))
+  "Capture a note with template selection and interactive editing.
+   Select a template (t=TODO, n=Note, j=Journal), edit in *Org Capture* buffer,
+   then C-c C-c to finalize or C-c C-k to abort."
+  (let* ((menu (org-capture-menu-string))
+         (key (qt-echo-read-string app (string-append "Capture template (" menu "): "))))
+    (when (and key (> (string-length key) 0))
+      (let* ((buf-info (current-qt-buffer app))
+             (source-file (or (buffer-name buf-info) ""))
+             (source-path (or (buffer-file-path buf-info) ""))
+             (tmpl-str (org-capture-template-template
+                         (or (find (lambda (t) (string=? (org-capture-template-key t) key))
+                                   *org-capture-templates*)
+                             (car *org-capture-templates*))))
+             (cursor-pos (org-capture-cursor-position tmpl-str))
+             (expanded (org-capture-start key source-file source-path)))
+        (if (not expanded)
+          (echo-error! (app-state-echo app) (string-append "Unknown template: " key))
+          (let* ((fr (app-state-frame app))
+                 (ed (qt-current-editor fr))
+                 (buf (qt-buffer-create! "*Org Capture*" ed #f)))
+            (qt-buffer-attach! ed buf)
+            (set! (qt-edit-window-buffer (qt-current-window fr)) buf)
+            (qt-plain-text-edit-set-text! ed expanded)
+            (when cursor-pos
+              (qt-plain-text-edit-set-cursor-position! ed (min cursor-pos (string-length expanded))))
             (echo-message! (app-state-echo app)
-              (string-append "Captured: " text))))))))
+              "Edit then C-c C-c to save, C-c C-k to abort")))))))
+
+(def (cmd-org-capture-finalize app)
+  "Finalize org capture: save buffer content to target file."
+  (let* ((buf (current-qt-buffer app))
+         (name (buffer-name buf)))
+    (if (not (string=? name "*Org Capture*"))
+      (echo-error! (app-state-echo app) "Not in a capture buffer")
+      (let* ((ed (current-qt-editor app))
+             (text (qt-plain-text-edit-text ed)))
+        (if (org-capture-finalize text)
+          (begin
+            (execute-command! app 'kill-buffer-cmd)
+            (echo-message! (app-state-echo app) "Capture saved"))
+          (echo-error! (app-state-echo app) "Capture failed — no active session"))))))
+
+(def (cmd-org-capture-abort app)
+  "Abort org capture: discard buffer without saving."
+  (let* ((buf (current-qt-buffer app))
+         (name (buffer-name buf)))
+    (if (not (string=? name "*Org Capture*"))
+      (echo-error! (app-state-echo app) "Not in a capture buffer")
+      (begin
+        (org-capture-abort)
+        (execute-command! app 'kill-buffer-cmd)
+        (echo-message! (app-state-echo app) "Capture aborted")))))
 
 (def (cmd-org-refile app)
   "Refile current heading to another location."

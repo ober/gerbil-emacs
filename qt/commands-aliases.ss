@@ -1106,9 +1106,10 @@
   (register-command! 'set-input-method cmd-toggle-input-method)
   ;; Batch 9: org/babel/misc/abbrev aliases
   ;; Org capture
-  (register-command! 'org-capture-finalize cmd-org-capture)
+  (register-command! 'org-capture-finalize cmd-org-capture-finalize)
   (register-command! 'org-capture-refile cmd-org-capture)
-  (register-command! 'org-capture-kill cmd-org-capture)
+  (register-command! 'org-capture-abort cmd-org-capture-abort)
+  (register-command! 'org-capture-kill cmd-org-capture-abort)
   ;; Org clock
   (register-command! 'org-clock-goto cmd-org-clock-in)
   (register-command! 'org-clock-report cmd-org-clock-in)

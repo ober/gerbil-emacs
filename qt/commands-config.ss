@@ -763,6 +763,7 @@
                      ((string=? name "*calendar*") (hash-get *mode-keymaps* 'calendar))
                      ((string=? name "*eww*") (hash-get *mode-keymaps* 'eww))
                      ((string=? name "*Magit*") (hash-get *mode-keymaps* 'magit))
+                     ((string=? name "*Org Capture*") (hash-get *mode-keymaps* 'org-capture))
                      (else #f))))))
     (and km (keymap-lookup km key-str))))
 
@@ -865,7 +866,12 @@
     (keymap-bind! img-km "0" 'image-zoom-fit)
     (keymap-bind! img-km "1" 'image-zoom-reset)
     (keymap-bind! img-km "q" 'kill-buffer-cmd)
-    (hash-put! *mode-keymaps* 'image img-km)))
+    (hash-put! *mode-keymaps* 'image img-km))
+  ;; Org capture mode: C-c C-c to finalize, C-c C-k to abort
+  (let ((cap-km (make-keymap)))
+    (keymap-bind! cap-km "C-c C-c" 'org-capture-finalize)
+    (keymap-bind! cap-km "C-c C-k" 'org-capture-abort)
+    (hash-put! *mode-keymaps* 'org-capture cap-km)))
 
 ;;;============================================================================
 ;;; Ediff-files: compare two files from disk
