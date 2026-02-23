@@ -1038,12 +1038,12 @@
 | Feature | Status | Notes |
 |---------|--------|-------|
 | Copilot (code completion) | :red_circle: | Toggle registered, not connected |
-| GPTel / LLM chat | :red_circle: | Not implemented |
-| Claude shell / chat | :red_circle: | Not implemented |
+| GPTel / LLM chat | :white_check_mark: | `M-x claude-chat` — streaming chat via `claude -p` |
+| Claude shell / chat | :white_check_mark: | `*AI Chat*` buffer with `--continue` for context |
 | Inline AI suggestions | :red_circle: | Not implemented |
 | Code explanation / refactor via AI | :red_circle: | Not implemented |
 
-**Summary:** No AI integration. The user's Emacs config includes copilot, gptel, claude-shell, ellama, and chatgpt-shell — AI-assisted coding is part of their workflow.
+**Summary:** Claude CLI chat integration works — `M-x claude-chat` opens a chat buffer, Enter sends prompts, responses stream in real-time. Uses `--continue` for conversation context. Both TUI and Qt.
 
 ---
 
@@ -1121,7 +1121,7 @@
 | **Magit + Forge** (staging, commit, PR review)          | Daily driver     | :orange_circle: Minimal      | **Critical**                             |
 | **Multi-vterm** (multiple terminals, copy mode)         | Heavy use        | :white_check_mark: Works     | None — term-list/next/prev + copy mode   |
 | **Eglot / LSP** (completion, hover, goto-def, refs)     | Working          | :white_check_mark: Works     | None — full UI wiring with keybindings   |
-| **Copilot / AI** (gptel, claude-shell, copilot)         | Active           | :red_circle: Missing         | **High**                                 |
+| **Copilot / AI** (gptel, claude-shell, copilot)         | Active           | :yellow_circle: Chat works   | **Medium** — chat OK, no inline AI      |
 | **Corfu** (completion-at-point popup)                   | Active           | :yellow_circle: Echo-area    | **Medium** — works but no inline popup   |
 | **Org tables + export**                                 | Heavy use        | :white_check_mark: Works     | None                                     |
 | **Org folding + TODO**                                  | Heavy use        | :white_check_mark: Works     | None                                     |

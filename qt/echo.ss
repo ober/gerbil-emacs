@@ -8,6 +8,7 @@
         qt-echo-read-string
         qt-echo-read-string-with-completion
         qt-echo-read-file-with-completion
+        qt-echo-read-with-narrowing
         qt-minibuffer-init!)
 
 (import :std/sugar
@@ -53,6 +54,12 @@
 (def *mb-tab-idx* 0)      ; Current Tab cycle index
 (def *mb-file-mode* #f)   ; When #t, Tab does directory-aware file completion
 (def *mb-last-tab-input* "")  ; Track input at last Tab press (for cycle vs new-match detection)
+;; Narrowing framework state
+(def *mb-list* #f)            ; QListWidget for candidate display
+(def *mb-narrowing?* #f)      ; When #t, narrowing mode is active
+(def *mb-all-candidates* [])  ; Full unfiltered candidate list
+(def *mb-filtered* [])        ; Currently filtered candidates (vector for O(1) indexing)
+(def *mb-max-visible* 15)     ; Max rows shown in narrowing list
 
 (def (mb-style)
   "Generate minibuffer Qt stylesheet with current font settings."
@@ -200,6 +207,53 @@
                 (set! *mb-last-tab-input* (qt-line-edit-text input))))))))))
 
 ;;;============================================================================
+;;; Narrowing framework — real-time candidate filtering + selection
+;;;============================================================================
+
+(def (narrowing-update-list! query)
+  "Filter candidates by fuzzy match and update the QListWidget."
+  (when *mb-narrowing?*
+    (let* ((filtered (if (string=? query "")
+                       *mb-all-candidates*
+                       (fuzzy-filter-sort query *mb-all-candidates*)))
+           (shown (if (> (length filtered) (* *mb-max-visible* 3))
+                    (take filtered (* *mb-max-visible* 3))
+                    filtered)))
+      (set! *mb-filtered* (list->vector shown))
+      ;; Rebuild list widget
+      (qt-list-widget-clear! *mb-list*)
+      (for-each (lambda (c) (qt-list-widget-add-item! *mb-list* c)) shown)
+      ;; Select first item
+      (when (> (vector-length *mb-filtered*) 0)
+        (qt-list-widget-set-current-row! *mb-list* 0))
+      ;; Update prompt with count
+      (let ((total (length *mb-all-candidates*))
+            (matched (length filtered)))
+        (qt-label-set-text! *mb-prompt*
+          (string-append *mb-narrowing-prompt*
+                         " (" (number->string matched)
+                         "/" (number->string total) ") "))))))
+
+(def *mb-narrowing-prompt* "")  ; Base prompt text for narrowing
+
+(def (narrowing-move-selection! delta)
+  "Move the narrowing list selection by delta rows (positive = down)."
+  (when (and *mb-narrowing?* (> (vector-length *mb-filtered*) 0))
+    (let* ((cur (qt-list-widget-current-row *mb-list*))
+           (count (vector-length *mb-filtered*))
+           (next (modulo (+ cur delta) count)))
+      (qt-list-widget-set-current-row! *mb-list* next))))
+
+(def (narrowing-selected-text)
+  "Return the currently selected candidate text, or the input text if none."
+  (if (and *mb-narrowing?* (> (vector-length *mb-filtered*) 0))
+    (let ((row (qt-list-widget-current-row *mb-list*)))
+      (if (and (>= row 0) (< row (vector-length *mb-filtered*)))
+        (vector-ref *mb-filtered* row)
+        (qt-line-edit-text *mb-input*)))
+    (qt-line-edit-text *mb-input*)))
+
+;;;============================================================================
 ;;; Initialize inline minibuffer (called once during app startup)
 ;;;============================================================================
 
@@ -209,7 +263,9 @@
   (let* ((container (qt-widget-create))
          (hlayout (qt-hbox-layout-create container))
          (prompt (qt-label-create ""))
-         (input (qt-line-edit-create)))
+         (input (qt-line-edit-create))
+         ;; Narrowing list widget — added to parent layout (above minibuffer)
+         (list-widget (qt-list-widget-create)))
     (qt-widget-set-style-sheet! container (mb-style))
     (qt-widget-set-minimum-height! container 28)
     (qt-widget-set-size-policy! container QT_SIZE_PREFERRED QT_SIZE_FIXED)
@@ -219,31 +275,71 @@
     (qt-layout-add-widget! hlayout input)
     (qt-layout-set-stretch-factor! hlayout prompt 0)
     (qt-layout-set-stretch-factor! hlayout input 1)
-    ;; Add after the echo-label in the parent layout
+    ;; Configure narrowing list widget
+    (let ((font-css (string-append " font-family: " *default-font-family*
+                                   "; font-size: " (number->string *default-font-size*) "pt;")))
+      (qt-widget-set-style-sheet! list-widget
+        (string-append
+          "QListWidget { color: #d8d8d8; background: #1e1e1e; border: none;"
+          font-css " padding: 0; }"
+          "QListWidget::item { padding: 2px 8px; }"
+          "QListWidget::item:selected { background: #3a3a5a; color: #ffffff; }")))
+    (qt-widget-set-maximum-height! list-widget (* *mb-max-visible* 22))
+    ;; Add list widget BEFORE echo-label and container in the parent layout
+    (qt-layout-add-widget! parent-layout list-widget)
+    (qt-layout-set-stretch-factor! parent-layout list-widget 0)
+    (qt-widget-hide! list-widget)
+    ;; Add minibuffer container after the list
     (qt-layout-add-widget! parent-layout container)
     (qt-layout-set-stretch-factor! parent-layout container 0)
     ;; Initially hidden
     (qt-widget-hide! container)
-    ;; Connect Enter signal
+    ;; Connect Enter signal — in narrowing mode, use selected item
     (qt-on-return-pressed! input
       (lambda ()
-        (set! *mb-result* (list (qt-line-edit-text input)))))
-    ;; Connect key handler for Escape and Tab
+        (if *mb-narrowing?*
+          (set! *mb-result* (list (narrowing-selected-text)))
+          (set! *mb-result* (list (qt-line-edit-text input))))))
+    ;; Connect key handler for Escape, Tab, and arrow keys
     (qt-on-key-press! input
       (lambda ()
-        (let ((key (qt-last-key-code)))
+        (let ((key (qt-last-key-code))
+              (mods (qt-last-key-modifiers)))
           (cond
             ((= key QT_KEY_ESCAPE)
              (set! *mb-result* (list)))
             ((= key QT_KEY_TAB)
-             (mb-handle-tab! input))
+             (if *mb-narrowing?*
+               (narrowing-move-selection! 1)
+               (mb-handle-tab! input)))
+            ;; C-n / Down = next candidate
+            ((or (= key QT_KEY_DOWN)
+                 (and (= key QT_KEY_N) (= mods QT_MOD_CTRL)))
+             (when *mb-narrowing?*
+               (narrowing-move-selection! 1)))
+            ;; C-p / Up = previous candidate
+            ((or (= key QT_KEY_UP)
+                 (and (= key QT_KEY_P) (= mods QT_MOD_CTRL)))
+             (when *mb-narrowing?*
+               (narrowing-move-selection! -1)))
             (else (void))))))
+    ;; Connect text-changed for real-time narrowing filter
+    (qt-on-text-changed! input
+      (lambda ()
+        (when *mb-narrowing?*
+          (narrowing-update-list! (qt-line-edit-text input)))))
+    ;; Double-click on list item selects it
+    (qt-on-item-double-clicked! list-widget
+      (lambda ()
+        (when *mb-narrowing?*
+          (set! *mb-result* (list (narrowing-selected-text))))))
     ;; Store references
     (set! *mb-container* container)
     (set! *mb-prompt* prompt)
     (set! *mb-input* input)
     (set! *mb-echo-label* echo-label)
-    (set! *mb-qt-app* qt-app)))
+    (set! *mb-qt-app* qt-app)
+    (set! *mb-list* list-widget)))
 
 ;;;============================================================================
 ;;; Read a string via inline minibuffer
@@ -372,6 +468,69 @@
           (set! *mb-tab-idx* 0)
           (set! *mb-last-tab-input* "")
           ;; Restore
+          (qt-widget-hide! *mb-container*)
+          (qt-widget-show! *mb-echo-label*)
+          (let ((ed (qt-current-editor fr)))
+            (when ed (qt-widget-set-focus! ed)))
+          text)
+        (loop)))))
+
+;;;============================================================================
+;;; Narrowing read — Helm-like candidate selection with real-time filtering
+;;;============================================================================
+
+(def (qt-echo-read-with-narrowing app prompt candidates)
+  "Show a Helm-like narrowing UI: minibuffer input + live-filtered candidate list.
+   candidates is a list of strings. Returns selected string or #f if cancelled.
+   Real-time fuzzy filtering, C-n/C-p or Up/Down to navigate, Enter to select."
+  (let ((fr (app-state-frame app)))
+    ;; Set up the minibuffer
+    (set! *mb-narrowing-prompt* prompt)
+    (qt-label-set-text! *mb-prompt* prompt)
+    (qt-line-edit-set-text! *mb-input* "")
+    (qt-line-edit-set-completer! *mb-input* #f)
+    ;; Set up narrowing state
+    (set! *mb-narrowing?* #t)
+    (set! *mb-all-candidates* candidates)
+    (set! *mb-filtered* (list->vector
+                          (if (> (length candidates) (* *mb-max-visible* 3))
+                            (take candidates (* *mb-max-visible* 3))
+                            candidates)))
+    ;; Populate the list widget
+    (qt-list-widget-clear! *mb-list*)
+    (let ((shown (vector->list *mb-filtered*)))
+      (for-each (lambda (c) (qt-list-widget-add-item! *mb-list* c)) shown))
+    (when (> (vector-length *mb-filtered*) 0)
+      (qt-list-widget-set-current-row! *mb-list* 0))
+    ;; Update prompt with count
+    (let ((total (length candidates)))
+      (qt-label-set-text! *mb-prompt*
+        (string-append prompt " (" (number->string total)
+                       "/" (number->string total) ") ")))
+    ;; Hide echo label, show narrowing list + minibuffer
+    (qt-widget-hide! *mb-echo-label*)
+    (qt-widget-show! *mb-list*)
+    (qt-widget-show! *mb-container*)
+    (qt-widget-set-focus! *mb-input*)
+    ;; Blocking event loop
+    (set! *mb-result* #f)
+    (let loop ()
+      (qt-app-process-events! *mb-qt-app*)
+      (thread-sleep! 0.01)
+      (if *mb-result*
+        ;; Done — extract result
+        (let ((text (if (pair? *mb-result*)
+                      (if (null? *mb-result*) #f
+                        (let ((t (car *mb-result*)))
+                          (if (string=? t "") #f t)))
+                      #f)))
+          ;; Clean up narrowing state
+          (set! *mb-narrowing?* #f)
+          (set! *mb-all-candidates* [])
+          (set! *mb-filtered* (vector))
+          (qt-list-widget-clear! *mb-list*)
+          ;; Restore: hide list + minibuffer, show echo label
+          (qt-widget-hide! *mb-list*)
           (qt-widget-hide! *mb-container*)
           (qt-widget-show! *mb-echo-label*)
           (let ((ed (qt-current-editor fr)))

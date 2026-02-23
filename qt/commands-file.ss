@@ -811,7 +811,7 @@
 (def (cmd-bookmark-jump app)
   (let* ((echo (app-state-echo app))
          (names (sort (hash-keys (app-state-bookmarks app)) string<?))
-         (input (qt-echo-read-string-with-completion app "Jump to bookmark: " names)))
+         (input (qt-echo-read-with-narrowing app "Jump to bookmark:" names)))
     (when (and input (> (string-length input) 0))
       (let ((entry (hash-get (app-state-bookmarks app) input)))
         (if entry
@@ -1179,7 +1179,7 @@
   "Describe a command, showing help in *Help* buffer."
   (let* ((echo (app-state-echo app))
          (cmd-names (sort (map symbol->string (hash-keys *all-commands*)) string<?))
-         (input (qt-echo-read-string-with-completion app "Describe command: " cmd-names)))
+         (input (qt-echo-read-with-narrowing app "Describe command:" cmd-names)))
     (when (and input (> (string-length input) 0))
       (let* ((sym (string->symbol input))
              (proc (find-command sym)))

@@ -739,7 +739,7 @@
   "Open a recently visited file using completion."
   (if (null? *recent-files*)
     (echo-message! (app-state-echo app) "No recent files")
-    (let ((choice (qt-echo-read-string-with-completion app "Recent file: " *recent-files*)))
+    (let ((choice (qt-echo-read-with-narrowing app "Recent file:" *recent-files*)))
       (when (and choice (> (string-length choice) 0))
         (cond
           ;; Directory -> dired
@@ -898,7 +898,7 @@
 (def (cmd-describe-function app)
   "Describe a command/function, showing help in *Help* buffer."
   (let* ((cmd-names (sort (map symbol->string (hash-keys *all-commands*)) string<?))
-         (name (qt-echo-read-string-with-completion app "Describe function: " cmd-names)))
+         (name (qt-echo-read-with-narrowing app "Describe function:" cmd-names)))
     (when (and name (> (string-length name) 0))
       (let* ((sym (string->symbol name))
              (cmd (find-command sym)))
@@ -1480,7 +1480,7 @@ Returns list of (name . line-number) pairs."
       (let* ((names (map (lambda (d)
                            (string-append (car d) " (L" (number->string (cdr d)) ")"))
                          defs))
-             (choice (qt-echo-read-string-with-completion app "Go to: " names)))
+             (choice (qt-echo-read-with-narrowing app "Go to:" names)))
         (when (and choice (> (string-length choice) 0))
           ;; Find the matching definition
           (let ((found (let loop ((ds defs) (ns names))

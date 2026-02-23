@@ -852,7 +852,7 @@ Returns (path . line) or #f. Handles file:line format."
 (def (cmd-switch-buffer app)
   (let* ((echo (app-state-echo app))
          (names (buffer-names-mru))
-         (name (qt-echo-read-string-with-completion app "Switch to buffer: " names)))
+         (name (qt-echo-read-with-narrowing app "Switch to buffer:" names)))
     (when name
       (let ((buf (buffer-by-name name)))
         (if buf
@@ -1061,7 +1061,7 @@ Returns (path . line) or #f. Handles file:line format."
                                 (loop (cdr h) s)))))
          (non-recent (filter (lambda (n) (not (hash-get recent-set n))) all-names))
          (ordered (append *mx-command-history* non-recent))
-         (input (qt-echo-read-string-with-completion app "M-x " ordered)))
+         (input (qt-echo-read-with-narrowing app "M-x" ordered)))
     (when (and input (> (string-length input) 0))
       (mx-history-add! input)
       (execute-command! app (string->symbol input)))))
@@ -1069,7 +1069,7 @@ Returns (path . line) or #f. Handles file:line format."
 (def (cmd-helm-buffers-list app)
   "Fuzzy buffer switcher — like helm-buffers-list."
   (let* ((names (buffer-names-mru))
-         (name (qt-echo-read-string-with-completion app "Buffer: " names)))
+         (name (qt-echo-read-with-narrowing app "Buffer:" names)))
     (when (and name (> (string-length name) 0))
       (let ((buf (buffer-by-name name)))
         (if buf

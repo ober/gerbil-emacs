@@ -493,8 +493,7 @@
          (user-themes (discover-user-themes))
          (all-themes (append builtin-themes user-themes))
          (names (map symbol->string all-themes))
-         (input (qt-echo-read-string-with-completion app
-                  "Load theme: " names)))
+         (input (qt-echo-read-with-narrowing app "Load theme:" names)))
     (when (and input (> (string-length input) 0))
       (let ((sym (string->symbol input)))
         (cond
