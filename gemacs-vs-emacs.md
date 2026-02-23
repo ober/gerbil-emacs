@@ -987,11 +987,11 @@
 | Gap | Impact | Effort |
 |-----|--------|--------|
 | **Modern completion (Vertico/Orderless)** | No vertical minibuffer completion, no space-separated filtering | Medium |
-| **Multiple cursors / iedit** | Can't edit multiple occurrences simultaneously | Medium |
+| ~~Multiple cursors / iedit~~ | ~~Can't edit multiple occurrences simultaneously~~ Implemented: iedit-mode with highlight + edit all | ~~Medium~~ Done |
 | ~~Snippet system (YASnippet)~~ | ~~No template expansion~~ Implemented: 100+ snippets, tabstops | ~~Medium~~ Done |
 | ~~Ediff / Smerge~~ | ~~Can't resolve merge conflicts~~ Implemented: smerge-mode with keep-mine/other/both | ~~Medium~~ Done |
 | ~~Flyspell (on-the-fly spell)~~ | ~~No background spell checking~~ Implemented: flyspell-mode with aspell, squiggle indicators | ~~Small~~ Done |
-| **Undo tree** | Linear undo only, no branch visualization | Medium |
+| ~~Undo tree~~ | ~~Linear undo only~~ Implemented: undo-history with timestamped snapshots, restore by number | ~~Medium~~ Done |
 | ~~Interactive agenda~~ | ~~Can't act on agenda items~~ Implemented: goto source, toggle TODO | ~~Medium~~ Done |
 
 ### Tier 3 — Nice to Have

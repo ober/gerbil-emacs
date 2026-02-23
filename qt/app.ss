@@ -741,6 +741,7 @@
             (if (lsp-running?)
               (begin
                 (lsp-eldoc-display! app)
+                (lsp-diagnostic-at-cursor! app)
                 (lsp-document-highlight! app))
               (eldoc-display! app))))
         (qt-timer-start! eldoc-timer 300))

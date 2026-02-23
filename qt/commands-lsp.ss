@@ -858,6 +858,38 @@
                         (echo-message! (app-state-echo app) label)))))))))))))
 
 ;;;============================================================================
+;;; Diagnostic at cursor (cursor-idle echo)
+;;;============================================================================
+
+(def (lsp-diagnostic-at-cursor! app)
+  "Show diagnostic message in echo area if cursor is on a line with diagnostics."
+  (when (lsp-running?)
+    (let* ((ed (current-qt-editor app))
+           (buf (current-qt-buffer app))
+           (path (buffer-file-path buf)))
+      (when path
+        (let* ((uri (file-path->uri path))
+               (diags (or (hash-get *lsp-diagnostics* uri) []))
+               (line (qt-plain-text-edit-cursor-line ed)))
+          (let loop ((ds diags))
+            (when (pair? ds)
+              (let ((d (car ds)))
+                (if (and (hash-table? d)
+                         (let* ((range (hash-get d "range"))
+                                (start (and range (hash-get range "start")))
+                                (start-line (and start (hash-get start "line"))))
+                           (and start-line (= start-line line))))
+                  (let* ((msg (or (hash-get d "message") ""))
+                         (sev (or (hash-get d "severity") 1))
+                         (prefix (case sev
+                                   ((1) "Error: ")
+                                   ((2) "Warning: ")
+                                   ((3) "Info: ")
+                                   (else "Hint: "))))
+                    (echo-message! (app-state-echo app) (string-append prefix msg)))
+                  (loop (cdr ds)))))))))))
+
+;;;============================================================================
 ;;; Document highlight (cursor-idle)
 ;;;============================================================================
 
