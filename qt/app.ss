@@ -708,6 +708,12 @@
               (eldoc-display! app))))
         (qt-timer-start! eldoc-timer 300))
 
+      ;; LSP auto-completion timer — show completions popup while typing
+      (let ((auto-complete-timer (qt-timer-create)))
+        (qt-on-timeout! auto-complete-timer
+          (lambda () (lsp-auto-complete! app)))
+        (qt-timer-start! auto-complete-timer 500))
+
       ;; LSP UI action queue polling timer
       (let ((lsp-timer (qt-timer-create)))
         (qt-on-timeout! lsp-timer lsp-poll-ui-actions!)

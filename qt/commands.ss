@@ -850,14 +850,75 @@
                                          words))
                         (sorted (sort matches string<?)))
                    (if (null? sorted)
-                     (qt-plain-text-edit-insert-text! ed "  ")
+                     ;; No buffer-word matches — try LSP or indent
+                     (if (lsp-running?)
+                       ;; Fire async LSP completion
+                       (let ((params (lsp-current-params app)))
+                         (if params
+                           (lsp-send-request! "textDocument/completion" params
+                             (lambda (response)
+                               (let ((result (hash-get response "result")))
+                                 (when result
+                                   (let* ((items (cond
+                                                   ((list? result) result)
+                                                   ((and (hash-table? result)
+                                                         (hash-get result "items"))
+                                                    (hash-get result "items"))
+                                                   (else [])))
+                                          (labels (filter-map
+                                                    (lambda (item)
+                                                      (and (hash-table? item)
+                                                           (hash-get item "label")))
+                                                    items)))
+                                     (when (not (null? labels))
+                                       (let ((c (get-or-create-completer! ed app)))
+                                         (qt-completer-set-model-strings! c labels)
+                                         (qt-completer-set-completion-prefix!
+                                           c (get-word-prefix ed))
+                                         (qt-completer-complete-rect! c 0 0 250 20))))))))
+                           (qt-plain-text-edit-insert-text! ed "  ")))
+                       (qt-plain-text-edit-insert-text! ed "  "))
+                     ;; Have buffer-word matches — show them, also request LSP
                      (let ((c (get-or-create-completer! ed app)))
                        (qt-completer-set-model-strings! c sorted)
                        (qt-completer-set-completion-prefix! c prefix)
-                       ;; Show popup at cursor position
-                       (let* ((pos (qt-plain-text-edit-cursor-position ed))
-                              (line (qt-plain-text-edit-cursor-line ed)))
-                         (qt-completer-complete-rect! c 0 0 200 20))))))))))))))
+                       (qt-completer-complete-rect! c 0 0 200 20)
+                       ;; Also fire LSP completion async to merge results
+                       (when (lsp-running?)
+                         (let ((params (lsp-current-params app)))
+                           (when params
+                             (lsp-send-request! "textDocument/completion" params
+                               (lambda (response)
+                                 (let ((result (hash-get response "result")))
+                                   (when result
+                                     (let* ((items (cond
+                                                     ((list? result) result)
+                                                     ((and (hash-table? result)
+                                                           (hash-get result "items"))
+                                                      (hash-get result "items"))
+                                                     (else [])))
+                                            (lsp-labels (filter-map
+                                                          (lambda (item)
+                                                            (and (hash-table? item)
+                                                                 (hash-get item "label")))
+                                                          items)))
+                                       (when (not (null? lsp-labels))
+                                         ;; Merge with buffer words (deduplicated)
+                                         (let* ((all (append sorted lsp-labels))
+                                                (seen (make-hash-table))
+                                                (unique (filter
+                                                          (lambda (w)
+                                                            (if (hash-key? seen w) #f
+                                                              (begin
+                                                                (hash-put! seen w #t)
+                                                                #t)))
+                                                          all))
+                                                (final (sort unique string<?)))
+                                           (qt-completer-set-model-strings! c final)
+                                           (qt-completer-set-completion-prefix!
+                                             c (get-word-prefix ed))
+                                           (qt-completer-complete-rect!
+                                             c 0 0 250 20)))))))))))))))))))))))
 
 (def (cmd-quit app)
   ;; Check for unsaved buffers

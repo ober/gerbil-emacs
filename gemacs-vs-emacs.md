@@ -1131,9 +1131,9 @@
 | **Helm** (M-x, buffers, files, grep)                    | Primary UI       | :red_circle: Missing         | **Critical** — core interaction paradigm |
 | **Magit + Forge** (staging, commit, PR review)          | Daily driver     | :orange_circle: Minimal      | **Critical**                             |
 | **Multi-vterm** (multiple terminals, copy mode)         | Heavy use        | :red_circle: Missing         | **High**                                 |
-| **Eglot / LSP** (completion, hover, goto-def, refs)     | Working          | :red_circle: Transport only  | **Critical**                             |
+| **Eglot / LSP** (completion, hover, goto-def, refs)     | Working          | :white_check_mark: Works     | None — full UI wiring with keybindings   |
 | **Copilot / AI** (gptel, claude-shell, copilot)         | Active           | :red_circle: Missing         | **High**                                 |
-| **Corfu** (completion-at-point popup)                   | Active           | :red_circle: Stub            | **Critical**                             |
+| **Corfu** (completion-at-point popup)                   | Active           | :yellow_circle: Echo-area    | **Medium** — works but no inline popup   |
 | **Org tables + export**                                 | Heavy use        | :white_check_mark: Works     | None                                     |
 | **Org folding + TODO**                                  | Heavy use        | :white_check_mark: Works     | None                                     |
 | **Golden ratio** (window auto-sizing)                   | Enabled          | :white_check_mark: Works     | None                                     |
@@ -1144,7 +1144,7 @@
 | **Snippets** (yasnippet + file-templates)               | Active           | :red_circle: Missing         | **Medium**                               |
 | **Dired extensions** (dired-k, dired-imenu, etc.)       | Enhanced         | :yellow_circle: Basic        | **Medium**                               |
 | **Gerbil mode + LSP** (custom gerbil-mode.el)           | Custom written   | :large_blue_circle: Built-in | Low — gemacs IS the Gerbil editor        |
-| **Flycheck + Flyspell**                                 | Both active      | :yellow_circle: Partial      | **Medium**                               |
+| **Flycheck + Flyspell**                                 | Both active      | :yellow_circle: Flycheck OK  | **Low** — flycheck via LSP, no flyspell  |
 | **EditorConfig**                                        | Installed        | :white_check_mark: Works     | None — auto-applied on file open         |
 | **GitLab issue tracking** (28 custom modes)             | Extensive custom | :red_circle: Missing         | **Low** — very personal workflow         |
 

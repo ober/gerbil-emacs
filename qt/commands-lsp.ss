@@ -1147,3 +1147,46 @@
            (ed (current-qt-editor app))
            (text (qt-plain-text-edit-text ed)))
       (lsp-did-change! uri text))))
+
+;;;============================================================================
+;;; Auto-completion on idle (Corfu-like)
+;;;============================================================================
+
+(def *lsp-auto-complete-enabled* #t)
+(def *lsp-auto-complete-min-prefix* 3)
+
+(def (lsp-auto-complete! app)
+  "Request LSP completions and show in QCompleter popup if prefix is long enough."
+  (when (and *lsp-auto-complete-enabled* (lsp-running?))
+    (let* ((fr (app-state-frame app))
+           (ed (qt-current-editor fr))
+           (buf (qt-current-buffer fr)))
+      (when (and buf (buffer-file-path buf)
+                 (not (dired-buffer? buf))
+                 (not (repl-buffer? buf))
+                 (not (terminal-buffer? buf)))
+        (let ((prefix (get-word-prefix ed)))
+          (when (>= (string-length prefix) *lsp-auto-complete-min-prefix*)
+            (let ((params (lsp-current-params app)))
+              (when params
+                (lsp-send-request! "textDocument/completion" params
+                  (lambda (response)
+                    (let ((result (hash-get response "result")))
+                      (when result
+                        (let* ((items (cond
+                                        ((list? result) result)
+                                        ((and (hash-table? result)
+                                              (hash-get result "items"))
+                                         (hash-get result "items"))
+                                        (else [])))
+                               (labels (filter-map
+                                         (lambda (item)
+                                           (and (hash-table? item)
+                                                (hash-get item "label")))
+                                         items)))
+                          (when (not (null? labels))
+                            (let* ((cur-prefix (get-word-prefix ed))
+                                   (c (get-or-create-completer! ed app)))
+                              (qt-completer-set-model-strings! c labels)
+                              (qt-completer-set-completion-prefix! c cur-prefix)
+                              (qt-completer-complete-rect! c 0 0 250 20))))))))))))))))

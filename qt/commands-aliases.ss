@@ -761,6 +761,8 @@
   (keymap-bind! *ctrl-c-l-map* "q" 'lsp-stop)
   ;; M-. smart dispatch: LSP when running, else text search
   (keymap-bind! *global-keymap* "M-." 'lsp-smart-goto-definition)
+  ;; C-M-i: standard Emacs binding for completion-at-point
+  (keymap-bind! *global-keymap* "C-M-i" 'lsp-completion)
   ;; Multiple cursor keybindings in C-c m prefix map
   (keymap-bind! *ctrl-c-map* "m" *ctrl-c-m-map*)
   (keymap-bind! *ctrl-c-m-map* "n" 'mc-mark-next)
