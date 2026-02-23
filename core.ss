@@ -102,6 +102,9 @@
   fuzzy-score
   fuzzy-filter-sort
 
+  ;; Helm mode flag
+  *helm-mode*
+
   ;; Key translation map
   *key-translation-map*
   key-translate!
@@ -1665,6 +1668,9 @@
 
 ;; Paredit strict mode — prevents deleting delimiters that would unbalance
 (def *paredit-strict-mode* #f)
+
+;; Helm mode flag (shared between TUI and Qt layers)
+(def *helm-mode* #f)
 
 ;; Maps char→char for input translation (e.g., swap brackets and parens)
 (def *key-translation-map* (make-hash-table))

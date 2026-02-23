@@ -1549,7 +1549,7 @@
 ;; ── batch 41: IDE framework toggles ─────────────────────────────────
 (def *company-mode* #f)
 (def *ivy-mode* #f)
-(def *helm-mode* #f)
+;; *helm-mode* is defined in core.ss
 (def *projectile-mode* #f)
 (def *doom-modeline* #f)
 (def *treesit-mode* #f)

@@ -115,7 +115,8 @@
         :gemacs/qt/snippets
         :gemacs/qt/commands-config
         :gemacs/qt/commands-parity
-        :gemacs/qt/commands-aliases)
+        :gemacs/qt/commands-aliases
+        :gemacs/qt/helm-commands)
 
 ;;;============================================================================
 ;;; Cross-cutting functions (moved to facade due to forward references)
@@ -1653,7 +1654,9 @@
   (register-command! 'eww-toggle-images cmd-eww-toggle-images)
   (register-command! 'native-compile-file cmd-native-compile-file)
   (register-command! 'native-compile-async cmd-native-compile-async)
-  (register-command! 'screen-reader-mode cmd-screen-reader-mode))
+  (register-command! 'screen-reader-mode cmd-screen-reader-mode)
+  ;; Helm commands (real implementations)
+  (qt-register-helm-commands!))
 
 ;;; Qt versions of batch 6 commands
 

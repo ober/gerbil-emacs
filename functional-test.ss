@@ -20,7 +20,9 @@
         :gemacs/echo
         :gemacs/editor-core
         (only-in :gemacs/editor-ui cmd-indent-or-complete org-buffer?)
-        (only-in :gemacs/editor register-all-commands!))
+        (only-in :gemacs/editor register-all-commands!)
+        (only-in :gemacs/helm-commands register-helm-commands!)
+        :gemacs/helm)
 
 (export functional-test)
 
@@ -2032,6 +2034,36 @@
       (register-all-commands!)
       (check (not (eq? #f (find-command 'org-agenda-goto))) => #t)
       (check (not (eq? #f (find-command 'org-agenda-todo))) => #t))
+
+    ;; === Helm framework ===
+    (test-case "helm: all commands registered via dispatch chain"
+      (register-all-commands!)
+      (register-helm-commands!)
+      (for-each (lambda (name)
+                  (check (not (eq? #f (find-command name))) => #t))
+        '(helm-M-x helm-mini helm-buffers-list helm-find-files
+          helm-occur helm-imenu helm-show-kill-ring helm-bookmarks
+          helm-mark-ring helm-register helm-apropos helm-resume
+          helm-mode toggle-helm-mode)))
+
+    (test-case "helm: multi-match engine"
+      (check (helm-multi-match? "foo bar" "foobar baz") => #t)
+      (check (helm-multi-match? "foo baz" "foobar") => #f)
+      (check (helm-multi-match? "!test" "production") => #t)
+      (check (helm-multi-match? "!test" "testing") => #f)
+      (check (helm-multi-match? "^hel" "hello world") => #t)
+      (check (helm-multi-match? "^hel" "say hello") => #f))
+
+    (test-case "helm: session creation and resume"
+      (let* ((src (make-simple-source "test"
+                    (lambda () '("alpha" "beta" "gamma"))
+                    (lambda (app val) val)))
+             (session (make-new-session (list src) "*test*")))
+        (check (helm-session-buffer-name session) => "*test*")
+        (check (pair? (helm-session-sources session)) => #t)
+        (helm-session-store! session)
+        (let ((resumed (helm-session-resume)))
+          (check (eq? resumed session) => #t))))
 
 ))
 

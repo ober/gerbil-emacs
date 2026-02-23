@@ -22,7 +22,8 @@
         :gemacs/editor-core
         :gemacs/highlight
         :gemacs/persist
-        :gemacs/ipc)
+        :gemacs/ipc
+        :gemacs/helm-commands)
 
 ;;;============================================================================
 ;;; Application initialization
@@ -41,6 +42,7 @@
   (setup-default-bindings!)
   (setup-command-docs!)
   (register-all-commands!)
+  (register-helm-commands!)
 
   ;; Load init file (applies settings like scroll-margin)
   (init-file-load!)

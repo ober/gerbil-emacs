@@ -78,6 +78,16 @@
                  parse-hex-color)
         (only-in :gemacs/qt/commands
                  qt-register-all-commands!)
+        (only-in :gemacs/qt/helm-commands
+                 qt-register-helm-commands!)
+        (only-in :gemacs/helm
+                 helm-multi-match?
+                 make-new-session
+                 make-simple-source
+                 helm-session-buffer-name
+                 helm-session-sources
+                 helm-session-store!
+                 helm-session-resume)
         (only-in :gemacs/qt/magit
                  magit-parse-status
                  magit-format-status
@@ -3115,6 +3125,60 @@
   (displayln "Group 22 complete"))
 
 ;;;============================================================================
+;;; Group 23: Helm Framework
+;;;============================================================================
+
+(def (run-group-23-helm)
+  (displayln "\n=== Group 23: Helm Framework ===")
+
+  ;; Register helm commands (overrides stubs with real implementations)
+  (qt-register-helm-commands!)
+
+  ;; Test 1: All helm commands registered
+  (let ((helm-cmds '(helm-M-x helm-mini helm-buffers-list helm-find-files
+                     helm-occur helm-imenu helm-show-kill-ring helm-bookmarks
+                     helm-mark-ring helm-register helm-apropos helm-resume
+                     helm-mode toggle-helm-mode)))
+    (let loop ((cmds helm-cmds) (all-ok #t))
+      (if (null? cmds)
+        (if all-ok
+          (pass! (string-append "all " (number->string (length helm-cmds)) " helm commands registered"))
+          (void))
+        (let ((name (car cmds)))
+          (if (find-command name)
+            (loop (cdr cmds) all-ok)
+            (begin
+              (fail! (symbol->string name) "not found" "registered")
+              (loop (cdr cmds) #f)))))))
+
+  ;; Test 2: Multi-match engine
+  (if (and (helm-multi-match? "foo bar" "foobar baz")
+           (not (helm-multi-match? "foo baz" "foobar"))
+           (helm-multi-match? "!test" "production")
+           (not (helm-multi-match? "!test" "testing"))
+           (helm-multi-match? "^hel" "hello world")
+           (not (helm-multi-match? "^hel" "say hello")))
+    (pass! "helm multi-match engine works correctly")
+    (fail! "helm multi-match" "wrong results" "all patterns match correctly"))
+
+  ;; Test 3: Session creation and resume
+  (let* ((src (make-simple-source "test"
+                (lambda () '("alpha" "beta" "gamma"))
+                (lambda (app val) val)))
+         (session (make-new-session (list src) "*test*")))
+    (if (and (equal? (helm-session-buffer-name session) "*test*")
+             (pair? (helm-session-sources session)))
+      (pass! "helm session creation works")
+      (fail! "helm session" "wrong fields" "correct buffer-name and sources"))
+    (helm-session-store! session)
+    (let ((resumed (helm-session-resume)))
+      (if (eq? resumed session)
+        (pass! "helm session resume returns stored session")
+        (fail! "helm resume" "wrong session" "same session object"))))
+
+  (displayln "Group 23 complete"))
+
+;;;============================================================================
 ;;; Main
 ;;;============================================================================
 
@@ -3144,6 +3208,7 @@
     (run-group-19-new-features)
     (run-group-20-multiple-cursors)
     (run-group-22-save-and-eval-dispatch)
+    (run-group-23-helm)
     (run-group-21-theme-split-lsp)
 
     (displayln "---")
