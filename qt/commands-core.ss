@@ -12,6 +12,7 @@
         :std/net/uri
         :gemacs/qt/sci-shim
         :gemacs/core
+        :gemacs/subprocess
         :gemacs/editor
         :gemacs/repl
         :gemacs/eshell
@@ -1387,6 +1388,8 @@ Returns (path . line) or #f. Handles file:line format."
 ;;;============================================================================
 
 (def (cmd-keyboard-quit app)
+  (quit-flag-set!)
+  (kill-active-subprocess!)
   (echo-message! (app-state-echo app) "Quit")
   (set! (app-state-key-state app) (make-initial-key-state))
   ;; Deactivate mark and clear visual selection (Emacs C-g behavior)

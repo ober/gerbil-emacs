@@ -185,6 +185,8 @@
     "themes"
     ;; Shared core (no backend dependencies)
     "core"
+    ;; Interruptible subprocess execution (depends on core)
+    "subprocess"
     "persist"
     "repl"
     ;; Syntax highlighting (depends on gerbil-scintilla/lexer)

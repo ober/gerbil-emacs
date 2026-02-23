@@ -17,6 +17,7 @@
         :gerbil-scintilla/style
         :gerbil-scintilla/tui
         :gemacs/core
+        :gemacs/subprocess
         :gemacs/repl
         :gemacs/eshell
         :gemacs/shell
@@ -410,35 +411,24 @@
          (width (frame-width fr))
          (cmd (echo-read-string echo "Shell command: " row width)))
     (when (and cmd (> (string-length cmd) 0))
-      (let* ((ed (current-editor app))
-             (output (with-catch
-                       (lambda (e)
-                         (string-append "Error: "
-                           (with-output-to-string
-                             (lambda () (display-exception e)))))
-                       (lambda ()
-                         (let ((proc (open-process
-                                       (list path: "/bin/sh"
-                                             arguments: (list "-c" cmd)
-                                             stdin-redirection: #f
-                                             stdout-redirection: #t
-                                             stderr-redirection: #t
-                                             pseudo-terminal: #f))))
-                           (let ((result (read-line proc #f)))
-                             (process-status proc)
-                             (or result "")))))))
-        ;; If short output (1 line), show in echo area
-        (if (not (string-contains output "\n"))
-          (echo-message! echo output)
-          ;; Multi-line: show in *Shell Output* buffer
-          (let ((buf (or (buffer-by-name "*Shell Output*")
-                         (buffer-create! "*Shell Output*" ed #f))))
-            (buffer-attach! ed buf)
-            (set! (edit-window-buffer (current-window fr)) buf)
-            (editor-set-text ed output)
-            (editor-set-save-point ed)
-            (editor-goto-pos ed 0)
-            (echo-message! echo "Shell command done")))))))
+      (echo-message! echo (string-append "Running... (C-g to cancel)"))
+      (frame-refresh! fr)
+      (let-values (((output _status)
+                    (run-process-interruptible
+                      cmd tui-peek-event tui-event-key? tui-event-key)))
+        (let ((ed (current-editor app)))
+          ;; If short output (1 line), show in echo area
+          (if (not (string-contains output "\n"))
+            (echo-message! echo output)
+            ;; Multi-line: show in *Shell Output* buffer
+            (let ((buf (or (buffer-by-name "*Shell Output*")
+                           (buffer-create! "*Shell Output*" ed #f))))
+              (buffer-attach! ed buf)
+              (set! (edit-window-buffer (current-window fr)) buf)
+              (editor-set-text ed output)
+              (editor-set-save-point ed)
+              (editor-goto-pos ed 0)
+              (echo-message! echo "Shell command done"))))))))
 
 ;;;============================================================================
 ;;; Fill paragraph (M-q) — word wrap at fill-column (80)
@@ -525,38 +515,28 @@
     (when (and pattern (> (string-length pattern) 0))
       (let* ((dir (echo-read-string echo "In directory: " row width))
              (search-dir (if (or (not dir) (string=? dir "")) "." dir)))
-        (echo-message! echo (string-append "Searching..."))
+        (echo-message! echo (string-append "Searching... (C-g to cancel)"))
         (frame-refresh! fr)
         (let* ((ed (current-editor app))
-               (cmd (string-append "grep -rn --include='*.ss' --include='*.scm' "
-                                   "-- " (shell-quote pattern) " "
-                                   (shell-quote search-dir) " 2>&1 || true"))
-               (output (with-catch
-                         (lambda (e) "Error running grep")
-                         (lambda ()
-                           (let ((proc (open-process
-                                         (list path: "/bin/sh"
-                                               arguments: (list "-c" cmd)
-                                               stdin-redirection: #f
-                                               stdout-redirection: #t
-                                               stderr-redirection: #t
-                                               pseudo-terminal: #f))))
-                             (let ((result (read-line proc #f)))
-                               (process-status proc)
-                               (or result ""))))))
-               (text (string-append "-*- Grep -*-\n"
-                                    "Pattern: " pattern "\n"
-                                    "Directory: " search-dir "\n"
-                                    (make-string 60 #\-) "\n\n"
-                                    output "\n"))
-               (buf (or (buffer-by-name "*Grep*")
-                        (buffer-create! "*Grep*" ed #f))))
-          (buffer-attach! ed buf)
-          (set! (edit-window-buffer (current-window fr)) buf)
-          (editor-set-text ed text)
-          (editor-set-save-point ed)
-          (editor-goto-pos ed 0)
-          (echo-message! echo "Grep done"))))))
+               (grep-cmd (string-append "grep -rn --include='*.ss' --include='*.scm' "
+                                        "-- " (shell-quote pattern) " "
+                                        (shell-quote search-dir) " 2>&1 || true")))
+          (let-values (((output _status)
+                        (run-process-interruptible
+                          grep-cmd tui-peek-event tui-event-key? tui-event-key)))
+            (let* ((text (string-append "-*- Grep -*-\n"
+                                        "Pattern: " pattern "\n"
+                                        "Directory: " search-dir "\n"
+                                        (make-string 60 #\-) "\n\n"
+                                        output "\n"))
+                   (buf (or (buffer-by-name "*Grep*")
+                            (buffer-create! "*Grep*" ed #f))))
+              (buffer-attach! ed buf)
+              (set! (edit-window-buffer (current-window fr)) buf)
+              (editor-set-text ed text)
+              (editor-set-save-point ed)
+              (editor-goto-pos ed 0)
+              (echo-message! echo "Grep done"))))))))
 
 (def (shell-quote s)
   "Quote a string for safe shell use."

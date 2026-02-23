@@ -160,7 +160,14 @@
   theme-zenburn
 
   ;; Paredit strict mode
-  *paredit-strict-mode*)
+  *paredit-strict-mode*
+
+  ;; Quit flag (C-g subprocess interruption)
+  (struct-out keyboard-quit-exception)
+  *quit-flag*
+  quit-flag-set!
+  quit-flag-clear!
+  quit-flag?)
 
 (import :std/sugar
         :std/sort
@@ -169,6 +176,23 @@
         :gerbil/expander
         :gemacs/face
         :gemacs/themes)
+
+;;;============================================================================
+;;; Quit flag (C-g subprocess interruption)
+;;;============================================================================
+
+(defstruct keyboard-quit-exception () final: #t)
+
+(def *quit-flag* #f)
+
+(def (quit-flag-set!)
+  (set! *quit-flag* #t))
+
+(def (quit-flag-clear!)
+  (set! *quit-flag* #f))
+
+(def (quit-flag?)
+  *quit-flag*)
 
 ;;;============================================================================
 ;;; Keymap data structure
@@ -1158,12 +1182,15 @@
     (if cmd
       (begin
         (set! (app-state-last-command app) name)
+        (quit-flag-clear!)
         (with-catch
           (lambda (e)
-            (let ((msg (with-output-to-string "" (lambda () (display-exception e)))))
-              (gemacs-log! "COMMAND-ERROR: " (symbol->string name) ": " msg)
-              (echo-error! (app-state-echo app)
-                (string-append (symbol->string name) ": " msg))))
+            (if (keyboard-quit-exception? e)
+              (echo-message! (app-state-echo app) "Quit")
+              (let ((msg (with-output-to-string "" (lambda () (display-exception e)))))
+                (gemacs-log! "COMMAND-ERROR: " (symbol->string name) ": " msg)
+                (echo-error! (app-state-echo app)
+                  (string-append (symbol->string name) ": " msg)))))
           (lambda () (cmd app)))
         ;; Reset prefix-arg unless the command was a prefix-building command
         (unless (memq name '(universal-argument digit-argument-0 digit-argument-1 digit-argument-2

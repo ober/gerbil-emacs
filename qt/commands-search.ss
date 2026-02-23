@@ -10,6 +10,7 @@
         :std/text/base64
         :gemacs/qt/sci-shim
         :gemacs/core
+        :gemacs/subprocess
         :gemacs/editor
         :gemacs/repl
         :gemacs/eshell
@@ -175,60 +176,47 @@ Returns (file line col message) or #f."
 
 (def (compilation-run-command! app cmd)
   "Run a compile command, display output in *compilation* buffer, parse errors."
-  (let* ((echo (app-state-echo app))
-         (result+status
-          (with-catch
-            (lambda (e)
-              (cons (string-append "Error: "
-                      (with-output-to-string
-                        (lambda () (display-exception e))))
-                    -1))
-            (lambda ()
-              (let ((port (open-process
-                            (list path: "/bin/sh"
-                                  arguments: ["-c" cmd]
-                                  stdout-redirection: #t
-                                  stderr-redirection: #t
-                                  pseudo-terminal: #f))))
-                (let* ((output (read-line port #f))
-                       (status (process-status port)))
-                  (close-port port)
-                  (cons (or output "") status))))))
-         (result (car result+status))
-         (status (cdr result+status))
-         (errors (parse-compilation-errors result))
-         (header (string-append
-                   "-*- Compilation -*-\n"
-                   "Command: " cmd "\n"
-                   (make-string 60 #\-)
-                   "\n\n"))
-         (footer (string-append
-                   "\n" (make-string 60 #\-) "\n"
-                   "Compilation "
-                   (if (= status 0) "finished" "exited abnormally")
-                   (if (= status 0) ""
-                     (string-append " (exit " (number->string status) ")"))
-                   (if (null? errors) ""
-                     (string-append " — "
-                       (number->string (length errors)) " error location(s)"))
-                   "\n"))
-         (text (string-append header result footer))
-         (fr (app-state-frame app))
-         (ed (current-qt-editor app))
-         (buf (or (buffer-by-name "*compilation*")
-                  (qt-buffer-create! "*compilation*" ed #f))))
-    (set! *compilation-errors* errors)
-    (set! *compilation-error-index* -1)
-    (qt-buffer-attach! ed buf)
-    (set! (qt-edit-window-buffer (qt-current-window fr)) buf)
-    (qt-plain-text-edit-set-text! ed text)
-    (qt-text-document-set-modified! (buffer-doc-pointer buf) #f)
-    (qt-plain-text-edit-set-cursor-position! ed 0)
-    (echo-message! echo
-      (string-append "Compilation "
-        (if (= status 0) "finished" "failed")
-        (if (null? errors) ""
-          (string-append " — " (number->string (length errors)) " error(s)"))))))
+  (let ((echo (app-state-echo app)))
+    (echo-message! echo (string-append "Running: " cmd " (C-g to cancel)"))
+    (when *qt-app-ptr* (qt-app-process-events! *qt-app-ptr*))
+    (let-values (((result _status)
+                  (run-process-interruptible/qt
+                    cmd (lambda () (when *qt-app-ptr*
+                                    (qt-app-process-events! *qt-app-ptr*))))))
+      (let* ((errors (parse-compilation-errors result))
+             (has-errors? (not (null? errors)))
+             (header (string-append
+                       "-*- Compilation -*-\n"
+                       "Command: " cmd "\n"
+                       (make-string 60 #\-)
+                       "\n\n"))
+             (footer (string-append
+                       "\n" (make-string 60 #\-) "\n"
+                       "Compilation "
+                       (if has-errors? "exited abnormally" "finished")
+                       (if has-errors?
+                         (string-append " — "
+                           (number->string (length errors)) " error location(s)")
+                         "")
+                       "\n"))
+             (text (string-append header result footer))
+             (fr (app-state-frame app))
+             (ed (current-qt-editor app))
+             (buf (or (buffer-by-name "*compilation*")
+                      (qt-buffer-create! "*compilation*" ed #f))))
+        (set! *compilation-errors* errors)
+        (set! *compilation-error-index* -1)
+        (qt-buffer-attach! ed buf)
+        (set! (qt-edit-window-buffer (qt-current-window fr)) buf)
+        (qt-plain-text-edit-set-text! ed text)
+        (qt-text-document-set-modified! (buffer-doc-pointer buf) #f)
+        (qt-plain-text-edit-set-cursor-position! ed 0)
+        (echo-message! echo
+          (string-append "Compilation "
+            (if has-errors? "failed" "finished")
+            (if has-errors?
+              (string-append " — " (number->string (length errors)) " error(s)")
+              "")))))))
 
 (def (cmd-compile app)
   "Run a compile command and display output in *compilation* buffer with error parsing."
@@ -1093,33 +1081,20 @@ Returns (file line col message) or #f."
                  (start (min mark pos))
                  (end (max mark pos))
                  (text (qt-plain-text-edit-text ed))
-                 (region (substring text start end))
-                 (result (with-catch
-                           (lambda (e) (string-append "Error: "
-                                         (with-output-to-string
-                                           (lambda () (display-exception e)))))
-                           (lambda ()
-                             (let ((port (open-process
-                                           (list path: "/bin/sh"
-                                                 arguments: ["-c" cmd]
-                                                 stdin-redirection: #t
-                                                 stdout-redirection: #t
-                                                 stderr-redirection: #t
-                                                 pseudo-terminal: #f))))
-                               (display region port)
-                               (force-output port)
-                               (close-output-port port)
-                               (let ((output (read-line port #f)))
-                                 (close-port port)
-                                 (or output "")))))))
-            ;; Replace region with result
-            (let ((new-text (string-append (substring text 0 start)
-                                           result
-                                           (substring text end (string-length text)))))
-              (qt-plain-text-edit-set-text! ed new-text)
-              (qt-plain-text-edit-set-cursor-position! ed start)
-              (set! (buffer-mark buf) #f)
-              (echo-message! echo "Region filtered")))))
+                 (region (substring text start end)))
+            (let-values (((result _status)
+                          (run-process-interruptible/qt
+                            cmd (lambda () (when *qt-app-ptr*
+                                            (qt-app-process-events! *qt-app-ptr*)))
+                            stdin-text: region)))
+              ;; Replace region with result
+              (let ((new-text (string-append (substring text 0 start)
+                                             result
+                                             (substring text end (string-length text)))))
+                (qt-plain-text-edit-set-text! ed new-text)
+                (qt-plain-text-edit-set-cursor-position! ed start)
+                (set! (buffer-mark buf) #f)
+                (echo-message! echo "Region filtered"))))))
       (echo-error! echo "No mark set"))))
 
 ;;;============================================================================
@@ -1724,59 +1699,68 @@ Returns (file line col message) or #f."
                   (and line-num
                        (list file line-num text))))))))
 
+(def (grep-shell-quote s)
+  "Quote a string for safe shell use."
+  (string-append "'" (let loop ((i 0) (acc ""))
+                       (if (>= i (string-length s))
+                         acc
+                         (let ((ch (string-ref s i)))
+                           (if (char=? ch #\')
+                             (loop (+ i 1) (string-append acc "'\"'\"'"))
+                             (loop (+ i 1) (string-append acc (string ch)))))))
+                 "'"))
+
 (def (grep-run-and-show! app pattern dir args)
   "Run grep with ARGS, parse results, show in *Grep* buffer."
-  (with-catch
-    (lambda (e) (echo-error! (app-state-echo app) "Grep failed"))
-    (lambda ()
-      (let* ((proc (open-process
-                     (list path: "/usr/bin/grep"
-                           arguments: (append args (list pattern dir))
-                           stdout-redirection: #t
-                           stderr-redirection: #f)))
-             (output (read-line proc #f))
-             (_ (process-status proc)))
-        (close-port proc)
-        ;; Parse results
-        (let* ((lines (if output
-                       (let loop ((s output) (acc []))
-                         (let ((nl (string-index s #\newline)))
-                           (if nl
-                             (loop (substring s (+ nl 1) (string-length s))
-                                   (cons (substring s 0 nl) acc))
-                             (reverse (if (> (string-length s) 0)
-                                        (cons s acc) acc)))))
-                       []))
-               (parsed (filter identity (map parse-grep-line lines)))
-               (header (string-append "-*- grep -*-\n"
-                         "grep " (string-join args " ") " " pattern " " dir "\n\n")))
-          ;; Store results for navigation
-          (set! *grep-results* parsed)
-          (set! *grep-result-index* -1)
-          ;; Show in buffer
-          (let* ((ed (current-qt-editor app))
-                 (fr (app-state-frame app))
-                 (result-text (if (null? parsed)
-                               (string-append header "No matches found.\n")
-                               (string-append header
-                                 (number->string (length parsed)) " matches\n\n"
-                                 (string-join
-                                   (map (lambda (r)
-                                          (string-append (car r) ":"
-                                            (number->string (cadr r)) ":"
-                                            (caddr r)))
-                                        parsed)
-                                   "\n")
-                                 "\n\nPress Enter on a result line to jump to source.")))
-                 (grep-buf (or (buffer-by-name "*Grep*")
-                               (qt-buffer-create! "*Grep*" ed #f))))
-            (qt-buffer-attach! ed grep-buf)
-            (set! (qt-edit-window-buffer (qt-current-window fr)) grep-buf)
-            (qt-plain-text-edit-set-text! ed result-text)
-            (qt-text-document-set-modified! (buffer-doc-pointer grep-buf) #f)
-            (qt-plain-text-edit-set-cursor-position! ed 0)
-            (echo-message! (app-state-echo app)
-              (string-append (number->string (length parsed)) " matches"))))))))
+  (echo-message! (app-state-echo app) "Searching... (C-g to cancel)")
+  (when *qt-app-ptr* (qt-app-process-events! *qt-app-ptr*))
+  (let* ((grep-cmd (string-append "grep " (string-join args " ") " -- "
+                                  (grep-shell-quote pattern) " "
+                                  (grep-shell-quote dir) " 2>/dev/null || true")))
+    (let-values (((output _status)
+                  (run-process-interruptible/qt
+                    grep-cmd (lambda () (when *qt-app-ptr*
+                                          (qt-app-process-events! *qt-app-ptr*))))))
+      ;; Parse results
+      (let* ((lines (if (and output (> (string-length output) 0))
+                      (let loop ((s output) (acc []))
+                        (let ((nl (string-index s #\newline)))
+                          (if nl
+                            (loop (substring s (+ nl 1) (string-length s))
+                                  (cons (substring s 0 nl) acc))
+                            (reverse (if (> (string-length s) 0)
+                                       (cons s acc) acc)))))
+                      []))
+             (parsed (filter identity (map parse-grep-line lines)))
+             (header (string-append "-*- grep -*-\n"
+                       "grep " (string-join args " ") " " pattern " " dir "\n\n")))
+        ;; Store results for navigation
+        (set! *grep-results* parsed)
+        (set! *grep-result-index* -1)
+        ;; Show in buffer
+        (let* ((ed (current-qt-editor app))
+               (fr (app-state-frame app))
+               (result-text (if (null? parsed)
+                             (string-append header "No matches found.\n")
+                             (string-append header
+                               (number->string (length parsed)) " matches\n\n"
+                               (string-join
+                                 (map (lambda (r)
+                                        (string-append (car r) ":"
+                                          (number->string (cadr r)) ":"
+                                          (caddr r)))
+                                      parsed)
+                                 "\n")
+                               "\n\nPress Enter on a result line to jump to source.")))
+               (grep-buf (or (buffer-by-name "*Grep*")
+                             (qt-buffer-create! "*Grep*" ed #f))))
+          (qt-buffer-attach! ed grep-buf)
+          (set! (qt-edit-window-buffer (qt-current-window fr)) grep-buf)
+          (qt-plain-text-edit-set-text! ed result-text)
+          (qt-text-document-set-modified! (buffer-doc-pointer grep-buf) #f)
+          (qt-plain-text-edit-set-cursor-position! ed 0)
+          (echo-message! (app-state-echo app)
+            (string-append (number->string (length parsed)) " matches")))))))
 
 (def (cmd-grep app)
   "Run grep -rn and show results with navigation."

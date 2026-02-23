@@ -10,6 +10,7 @@
         :std/text/base64
         :gemacs/qt/sci-shim
         :gemacs/core
+        :gemacs/subprocess
         :gemacs/editor
         :gemacs/repl
         :gemacs/eshell
@@ -1442,20 +1443,12 @@
   (let* ((echo (app-state-echo app))
          (cmd (qt-echo-read-string app "Shell command: ")))
     (when (and cmd (> (string-length cmd) 0))
-      (let ((result (with-catch
-                      (lambda (e)
-                        (string-append "Error: "
-                          (with-output-to-string (lambda () (display-exception e)))))
-                      (lambda ()
-                        (let ((port (open-process
-                                      (list path: "/bin/sh"
-                                            arguments: ["-c" cmd]
-                                            stdout-redirection: #t
-                                            stderr-redirection: #t
-                                            pseudo-terminal: #f))))
-                          (let ((output (read-line port #f)))
-                            (close-port port)
-                            (or output "")))))))
+      (echo-message! echo (string-append "Running... (C-g to cancel)"))
+      (when *qt-app-ptr* (qt-app-process-events! *qt-app-ptr*))
+      (let-values (((result _status)
+                    (run-process-interruptible/qt
+                      cmd (lambda () (when *qt-app-ptr*
+                                      (qt-app-process-events! *qt-app-ptr*))))))
         (let* ((fr (app-state-frame app))
                (ed (current-qt-editor app))
                (buf (or (buffer-by-name "*Shell Output*")

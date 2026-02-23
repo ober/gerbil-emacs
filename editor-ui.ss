@@ -15,6 +15,7 @@
         :gerbil-scintilla/style
         :gerbil-scintilla/tui
         :gemacs/core
+        :gemacs/subprocess
         :gemacs/snippets
         :gemacs/repl
         :gemacs/eshell
@@ -739,6 +740,8 @@
 ;;;============================================================================
 
 (def (cmd-keyboard-quit app)
+  (quit-flag-set!)
+  (kill-active-subprocess!)
   (echo-message! (app-state-echo app) "Quit")
   (set! (app-state-key-state app) (make-initial-key-state))
   ;; Deactivate mark and clear visual selection (Emacs C-g behavior)
@@ -917,40 +920,29 @@
              (ed (current-editor app)))
         (set! (app-state-last-compile app) cmd)
         ;; Run the command and capture output
-        (echo-message! echo (string-append "Running: " cmd))
-        ;; Redraw to show message
+        (echo-message! echo (string-append "Running: " cmd " (C-g to cancel)"))
         (frame-refresh! (app-state-frame app))
-        (let* ((output (with-catch
-                         (lambda (e)
-                           (string-append "Error running command: "
-                             (with-output-to-string
-                               (lambda () (display-exception e)))))
-                         (lambda ()
-                           (let ((proc (open-process
-                                         (list path: "/bin/sh"
-                                               arguments: (list "-c" cmd)
-                                               stdin-redirection: #f
-                                               stdout-redirection: #t
-                                               stderr-redirection: #t
-                                               pseudo-terminal: #f))))
-                             (let ((result (read-line proc #f)))
-                               (let ((status (process-status proc)))
-                                 (string-append
-                                   (or result "")
-                                   "\n\nProcess exited with status "
-                                   (number->string status))))))))
-               (text (string-append "-*- Compilation -*-\n"
-                                    "Command: " cmd "\n"
-                                    (make-string 60 #\-) "\n\n"
-                                    output "\n"))
-               (buf (or (buffer-by-name "*Compilation*")
-                        (buffer-create! "*Compilation*" ed #f))))
-          (buffer-attach! ed buf)
-          (set! (edit-window-buffer (current-window fr)) buf)
-          (editor-set-text ed text)
-          (editor-set-save-point ed)
-          (editor-goto-pos ed 0)
-          (echo-message! echo "Compilation finished"))))))
+        (let-values (((result status)
+                      (run-process-interruptible
+                        cmd tui-peek-event tui-event-key? tui-event-key)))
+          (let* ((output (string-append
+                           (or result "")
+                           (if status
+                             (string-append "\n\nProcess exited with status "
+                                            (number->string status))
+                             "")))
+                 (text (string-append "-*- Compilation -*-\n"
+                                      "Command: " cmd "\n"
+                                      (make-string 60 #\-) "\n\n"
+                                      output "\n"))
+                 (buf (or (buffer-by-name "*Compilation*")
+                          (buffer-create! "*Compilation*" ed #f))))
+            (buffer-attach! ed buf)
+            (set! (edit-window-buffer (current-window fr)) buf)
+            (editor-set-text ed text)
+            (editor-set-save-point ed)
+            (editor-goto-pos ed 0)
+            (echo-message! echo "Compilation finished")))))))
 
 ;;;============================================================================
 ;;; Shell command on region (M-|)
@@ -973,34 +965,18 @@
                  (start (min mark pos))
                  (end (max mark pos))
                  (text (editor-get-text ed))
-                 (region-text (substring text start end))
-                 ;; Run command with region as stdin
-                 (output (with-catch
-                           (lambda (e)
-                             (string-append "Error: "
-                               (with-output-to-string
-                                 (lambda () (display-exception e)))))
-                           (lambda ()
-                             (let ((proc (open-process
-                                           (list path: "/bin/sh"
-                                                 arguments: (list "-c" cmd)
-                                                 stdin-redirection: #t
-                                                 stdout-redirection: #t
-                                                 stderr-redirection: #t
-                                                 pseudo-terminal: #f))))
-                               (display region-text proc)
-                               (close-output-port proc)
-                               (let ((result (read-line proc #f)))
-                                 (process-status proc)
-                                 (or result "")))))))
-            ;; Display output in *Shell Output* buffer
-            (let ((out-buf (or (buffer-by-name "*Shell Output*")
-                               (buffer-create! "*Shell Output*" ed #f))))
-              (buffer-attach! ed out-buf)
-              (set! (edit-window-buffer (current-window fr)) out-buf)
-              (editor-set-text ed output)
-              (editor-set-save-point ed)
-              (editor-goto-pos ed 0)
-              (set! (buffer-mark buf) #f)
-              (echo-message! echo "Shell command done"))))))))
+                 (region-text (substring text start end)))
+            (let-values (((output _status)
+                          (run-process-interruptible
+                            cmd tui-peek-event tui-event-key? tui-event-key
+                            stdin-text: region-text)))
+              (let ((out-buf (or (buffer-by-name "*Shell Output*")
+                                 (buffer-create! "*Shell Output*" ed #f))))
+                (buffer-attach! ed out-buf)
+                (set! (edit-window-buffer (current-window fr)) out-buf)
+                (editor-set-text ed output)
+                (editor-set-save-point ed)
+                (editor-goto-pos ed 0)
+                (set! (buffer-mark buf) #f)
+                (echo-message! echo "Shell command done")))))))))
 
