@@ -6,13 +6,13 @@
 
 ## Status Legend
 
-| Symbol | Meaning |
-|--------|---------|
-| :white_check_mark: | **Full** — Feature-complete, comparable to Emacs |
-| :large_blue_circle: | **Substantial** — Most functionality works, some gaps |
-| :yellow_circle: | **Partial** — Core works, significant gaps remain |
-| :orange_circle: | **Minimal** — Basic scaffolding, limited use |
-| :red_circle: | **Stub/Missing** — Registered but non-functional, or absent entirely |
+| Symbol              | Meaning                                                              |
+|---------------------|----------------------------------------------------------------------|
+| :white_check_mark:  | **Full** — Feature-complete, comparable to Emacs                     |
+| :large_blue_circle: | **Substantial** — Most functionality works, some gaps                |
+| :yellow_circle:     | **Partial** — Core works, significant gaps remain                    |
+| :orange_circle:     | **Minimal** — Basic scaffolding, limited use                         |
+| :red_circle:        | **Stub/Missing** — Registered but non-functional, or absent entirely |
 
 ---
 
@@ -71,27 +71,27 @@
 
 ## 1. Core Editing
 
-| Feature | Status | Notes |
-|---------|--------|-------|
-| Self-insert characters | :white_check_mark: | Full Unicode support via Scintilla |
-| Delete / Backspace | :white_check_mark: | `C-d`, `DEL`, `C-h` |
-| Kill line (`C-k`) | :white_check_mark: | Kill to EOL, empty line kills newline |
-| Open line (`C-o`) | :white_check_mark: | |
-| Newline & indent (`C-j`) | :white_check_mark: | |
-| Transpose chars (`C-t`) | :white_check_mark: | |
-| Transpose words (`M-t`) | :white_check_mark: | |
-| Transpose lines (`C-x C-t`) | :white_check_mark: | |
-| Transpose sexps | :white_check_mark: | |
-| Join line (`M-j` / `M-^`) | :white_check_mark: | |
-| Quoted insert (`C-q`) | :white_check_mark: | |
-| Overwrite mode | :white_check_mark: | Toggle via `<insert>` |
-| Auto-fill mode | :white_check_mark: | Automatic line wrapping at fill-column |
-| Electric pair mode | :large_blue_circle: | Auto-pairing brackets/quotes, toggleable |
-| Indent line / region | :white_check_mark: | TAB dispatches: indent, complete, or org-expand |
-| Universal argument (`C-u`) | :white_check_mark: | Numeric prefix for repeat/modify commands |
-| Digit arguments (`M-0`..`M-9`) | :white_check_mark: | |
-| Negative argument (`M--`) | :white_check_mark: | |
-| Repeat (`C-x z`) | :white_check_mark: | |
+| Feature                        | Status              | Notes                                           |
+|--------------------------------|---------------------|-------------------------------------------------|
+| Self-insert characters         | :white_check_mark:  | Full Unicode support via Scintilla              |
+| Delete / Backspace             | :white_check_mark:  | `C-d`, `DEL`, `C-h`                             |
+| Kill line (`C-k`)              | :white_check_mark:  | Kill to EOL, empty line kills newline           |
+| Open line (`C-o`)              | :white_check_mark:  |                                                 |
+| Newline & indent (`C-j`)       | :white_check_mark:  |                                                 |
+| Transpose chars (`C-t`)        | :white_check_mark:  |                                                 |
+| Transpose words (`M-t`)        | :white_check_mark:  |                                                 |
+| Transpose lines (`C-x C-t`)    | :white_check_mark:  |                                                 |
+| Transpose sexps                | :white_check_mark:  |                                                 |
+| Join line (`M-j` / `M-^`)      | :white_check_mark:  |                                                 |
+| Quoted insert (`C-q`)          | :white_check_mark:  |                                                 |
+| Overwrite mode                 | :white_check_mark:  | Toggle via `<insert>`                           |
+| Auto-fill mode                 | :white_check_mark:  | Automatic line wrapping at fill-column          |
+| Electric pair mode             | :large_blue_circle: | Auto-pairing brackets/quotes, toggleable        |
+| Indent line / region           | :white_check_mark:  | TAB dispatches: indent, complete, or org-expand |
+| Universal argument (`C-u`)     | :white_check_mark:  | Numeric prefix for repeat/modify commands       |
+| Digit arguments (`M-0`..`M-9`) | :white_check_mark:  |                                                 |
+| Negative argument (`M--`)      | :white_check_mark:  |                                                 |
+| Repeat (`C-x z`)               | :white_check_mark:  |                                                 |
 
 **Summary:** Core editing is feature-complete. All standard Emacs editing primitives work.
 
@@ -99,30 +99,30 @@
 
 ## 2. Navigation
 
-| Feature | Status | Notes |
-|---------|--------|-------|
-| Char/word/line movement | :white_check_mark: | `C-f/b/n/p`, `M-f/b`, arrows |
-| Beginning/end of line | :white_check_mark: | `C-a/e`, `Home/End` |
-| Beginning/end of buffer | :white_check_mark: | `M-<`, `M->` |
-| Page up/down | :white_check_mark: | `C-v`, `M-v`, PgUp/PgDn |
-| Scroll other window | :white_check_mark: | `M-g v`, `M-g V` |
-| Recenter (`C-l`) | :white_check_mark: | Cycles top/center/bottom |
-| Goto line (`M-g g`) | :white_check_mark: | |
-| Goto char (`M-g c`) | :white_check_mark: | |
-| Goto column | :white_check_mark: | |
-| Goto matching paren | :white_check_mark: | `M-g m` |
-| Goto percent | :white_check_mark: | `M-g %` — jump to N% of buffer |
-| Forward/backward sentence | :white_check_mark: | `M-a`, `M-e` |
-| Forward/backward paragraph | :white_check_mark: | `M-{`, `M-}` |
-| Forward/backward sexp | :white_check_mark: | `M-g f/b` |
-| Back to indentation (`M-m`) | :white_check_mark: | |
-| Imenu symbol navigation | :large_blue_circle: | Works for many languages, no sidebar |
-| Avy jump (char/line/word) | :large_blue_circle: | `avy-goto-char`, `avy-goto-line` |
-| Xref go-to-definition | :large_blue_circle: | Works via grep fallback; LSP backend partial |
-| Xref find references | :large_blue_circle: | Grep-based |
-| Next/previous error | :white_check_mark: | `M-g n/p` navigates compilation errors |
-| Ace-window | :large_blue_circle: | Jump to window by label |
-| Pop mark / mark ring | :large_blue_circle: | Mark stack navigation |
+| Feature                     | Status              | Notes                                        |
+|-----------------------------|---------------------|----------------------------------------------|
+| Char/word/line movement     | :white_check_mark:  | `C-f/b/n/p`, `M-f/b`, arrows                 |
+| Beginning/end of line       | :white_check_mark:  | `C-a/e`, `Home/End`                          |
+| Beginning/end of buffer     | :white_check_mark:  | `M-<`, `M->`                                 |
+| Page up/down                | :white_check_mark:  | `C-v`, `M-v`, PgUp/PgDn                      |
+| Scroll other window         | :white_check_mark:  | `M-g v`, `M-g V`                             |
+| Recenter (`C-l`)            | :white_check_mark:  | Cycles top/center/bottom                     |
+| Goto line (`M-g g`)         | :white_check_mark:  |                                              |
+| Goto char (`M-g c`)         | :white_check_mark:  |                                              |
+| Goto column                 | :white_check_mark:  |                                              |
+| Goto matching paren         | :white_check_mark:  | `M-g m`                                      |
+| Goto percent                | :white_check_mark:  | `M-g %` — jump to N% of buffer               |
+| Forward/backward sentence   | :white_check_mark:  | `M-a`, `M-e`                                 |
+| Forward/backward paragraph  | :white_check_mark:  | `M-{`, `M-}`                                 |
+| Forward/backward sexp       | :white_check_mark:  | `M-g f/b`                                    |
+| Back to indentation (`M-m`) | :white_check_mark:  |                                              |
+| Imenu symbol navigation     | :large_blue_circle: | Works for many languages, no sidebar         |
+| Avy jump (char/line/word)   | :large_blue_circle: | `avy-goto-char`, `avy-goto-line`             |
+| Xref go-to-definition       | :large_blue_circle: | Works via grep fallback; LSP backend partial |
+| Xref find references        | :large_blue_circle: | Grep-based                                   |
+| Next/previous error         | :white_check_mark:  | `M-g n/p` navigates compilation errors       |
+| Ace-window                  | :large_blue_circle: | Jump to window by label                      |
+| Pop mark / mark ring        | :large_blue_circle: | Mark stack navigation                        |
 
 **Summary:** Navigation is comprehensive. All standard movement commands plus extras like avy and ace-window.
 
@@ -130,23 +130,23 @@
 
 ## 3. Search & Replace
 
-| Feature | Status | Notes |
-|---------|--------|-------|
-| Isearch forward/backward | :white_check_mark: | `C-s`, `C-r` with wrap-around |
-| Isearch regexp | :white_check_mark: | `C-M-s` |
-| Query replace | :white_check_mark: | `M-%` with y/n/!/q responses |
-| Query replace regexp | :white_check_mark: | `C-M-%` |
-| Replace all (non-interactive) | :white_check_mark: | |
-| Occur | :white_check_mark: | `M-s o` — results buffer with line numbers |
-| Multi-file occur | :white_check_mark: | |
-| Grep (project-wide) | :white_check_mark: | `rgrep`, `project-grep`, `counsel-grep` |
-| Grep results buffer | :white_check_mark: | With next/prev error navigation |
-| Wgrep (edit grep results) | :white_check_mark: | Edit matches in-place, save back to files |
-| Keep/flush lines | :white_check_mark: | `M-s k`, `M-s f` |
-| Count matches | :white_check_mark: | `M-s c` |
-| Isearch word mode | :red_circle: | Not implemented |
-| Isearch symbol mode | :red_circle: | Not implemented |
-| Search highlight all matches | :yellow_circle: | Basic — no lazy highlight during isearch |
+| Feature                       | Status             | Notes                                      |
+|-------------------------------|--------------------|--------------------------------------------|
+| Isearch forward/backward      | :white_check_mark: | `C-s`, `C-r` with wrap-around              |
+| Isearch regexp                | :white_check_mark: | `C-M-s`                                    |
+| Query replace                 | :white_check_mark: | `M-%` with y/n/!/q responses               |
+| Query replace regexp          | :white_check_mark: | `C-M-%`                                    |
+| Replace all (non-interactive) | :white_check_mark: |                                            |
+| Occur                         | :white_check_mark: | `M-s o` — results buffer with line numbers |
+| Multi-file occur              | :white_check_mark: |                                            |
+| Grep (project-wide)           | :white_check_mark: | `rgrep`, `project-grep`, `counsel-grep`    |
+| Grep results buffer           | :white_check_mark: | With next/prev error navigation            |
+| Wgrep (edit grep results)     | :white_check_mark: | Edit matches in-place, save back to files  |
+| Keep/flush lines              | :white_check_mark: | `M-s k`, `M-s f`                           |
+| Count matches                 | :white_check_mark: | `M-s c`                                    |
+| Isearch word mode             | :red_circle:       | Not implemented                            |
+| Isearch symbol mode           | :red_circle:       | Not implemented                            |
+| Search highlight all matches  | :yellow_circle:    | Basic — no lazy highlight during isearch   |
 
 **Summary:** Search is strong. Isearch, query-replace, occur, grep, and wgrep all work well. Missing some isearch sub-modes.
 
@@ -1105,15 +1105,15 @@
 
 ## 47. Helm / Narrowing Framework
 
-| Feature | Status | Notes |
-|---------|--------|-------|
-| Helm (or equivalent) | :red_circle: | No narrowing framework |
-| Helm M-x | :red_circle: | M-x has fuzzy matching but no candidate list |
-| Helm buffers | :red_circle: | Buffer switch has fuzzy but no live preview |
-| Helm find-files | :red_circle: | No incremental file browser |
-| Helm occur | :red_circle: | Occur exists but not helm-style |
-| Helm dash (documentation) | :red_circle: | Not implemented |
-| Helm C-yasnippet | :red_circle: | Not implemented |
+| Feature                   | Status       | Notes                                        |
+|---------------------------|--------------|----------------------------------------------|
+| Helm (or equivalent)      | :red_circle: | No narrowing framework                       |
+| Helm M-x                  | :red_circle: | M-x has fuzzy matching but no candidate list |
+| Helm buffers              | :red_circle: | Buffer switch has fuzzy but no live preview  |
+| Helm find-files           | :red_circle: | No incremental file browser                  |
+| Helm occur                | :red_circle: | Occur exists but not helm-style              |
+| Helm dash (documentation) | :red_circle: | Not implemented                              |
+| Helm C-yasnippet          | :red_circle: | Not implemented                              |
 
 **Summary:** The user's primary completion framework is Helm. Gemacs has no equivalent narrowing/selection framework. This fundamentally changes the feel of M-x, buffer switching, file finding, and every interactive command.
 
@@ -1125,28 +1125,28 @@
 
 ### What the User Actually Uses Daily
 
-| Feature | Emacs Status | Gemacs Status | Gap Severity |
-|---------|-------------|---------------|-------------|
-| **Key-chords** (30+ bindings: AS, ZX, BV, FG, KB, etc.) | Extensive | :white_check_mark: Works | None — key-chord system exists |
-| **Helm** (M-x, buffers, files, grep) | Primary UI | :red_circle: Missing | **Critical** — core interaction paradigm |
-| **Magit + Forge** (staging, commit, PR review) | Daily driver | :orange_circle: Minimal | **Critical** |
-| **Multi-vterm** (multiple terminals, copy mode) | Heavy use | :red_circle: Missing | **High** |
-| **Eglot / LSP** (completion, hover, goto-def, refs) | Working | :red_circle: Transport only | **Critical** |
-| **Copilot / AI** (gptel, claude-shell, copilot) | Active | :red_circle: Missing | **High** |
-| **Corfu** (completion-at-point popup) | Active | :red_circle: Stub | **Critical** |
-| **Org tables + export** | Heavy use | :white_check_mark: Works | None |
-| **Org folding + TODO** | Heavy use | :white_check_mark: Works | None |
-| **Golden ratio** (window auto-sizing) | Enabled | :white_check_mark: Works | None |
-| **Browse kill ring** | Installed | :white_check_mark: Works | None |
-| **Bracket/paren swap** (`[`↔`(`) | Configured | :red_circle: Missing | **Medium** |
-| **iedit** (edit occurrences) | Installed | :red_circle: Missing | **Medium** |
-| **expand-region** | Installed | :red_circle: Missing | **Medium** |
-| **Snippets** (yasnippet + file-templates) | Active | :red_circle: Missing | **Medium** |
-| **Dired extensions** (dired-k, dired-imenu, etc.) | Enhanced | :yellow_circle: Basic | **Medium** |
-| **Gerbil mode + LSP** (custom gerbil-mode.el) | Custom written | :large_blue_circle: Built-in | Low — gemacs IS the Gerbil editor |
-| **Flycheck + Flyspell** | Both active | :yellow_circle: Partial | **Medium** |
-| **EditorConfig** | Installed | :red_circle: Missing | **Low** |
-| **GitLab issue tracking** (28 custom modes) | Extensive custom | :red_circle: Missing | **Low** — very personal workflow |
+| Feature                                                 | Emacs Status     | Gemacs Status                | Gap Severity                             |
+|---------------------------------------------------------|------------------|------------------------------|------------------------------------------|
+| **Key-chords** (30+ bindings: AS, ZX, BV, FG, KB, etc.) | Extensive        | :white_check_mark: Works     | None — key-chord system exists           |
+| **Helm** (M-x, buffers, files, grep)                    | Primary UI       | :red_circle: Missing         | **Critical** — core interaction paradigm |
+| **Magit + Forge** (staging, commit, PR review)          | Daily driver     | :orange_circle: Minimal      | **Critical**                             |
+| **Multi-vterm** (multiple terminals, copy mode)         | Heavy use        | :red_circle: Missing         | **High**                                 |
+| **Eglot / LSP** (completion, hover, goto-def, refs)     | Working          | :red_circle: Transport only  | **Critical**                             |
+| **Copilot / AI** (gptel, claude-shell, copilot)         | Active           | :red_circle: Missing         | **High**                                 |
+| **Corfu** (completion-at-point popup)                   | Active           | :red_circle: Stub            | **Critical**                             |
+| **Org tables + export**                                 | Heavy use        | :white_check_mark: Works     | None                                     |
+| **Org folding + TODO**                                  | Heavy use        | :white_check_mark: Works     | None                                     |
+| **Golden ratio** (window auto-sizing)                   | Enabled          | :white_check_mark: Works     | None                                     |
+| **Browse kill ring**                                    | Installed        | :white_check_mark: Works     | None                                     |
+| **Bracket/paren swap** (`[`↔`(`)                        | Configured       | :red_circle: Missing         | **Medium**                               |
+| **iedit** (edit occurrences)                            | Installed        | :red_circle: Missing         | **Medium**                               |
+| **expand-region**                                       | Installed        | :red_circle: Missing         | **Medium**                               |
+| **Snippets** (yasnippet + file-templates)               | Active           | :red_circle: Missing         | **Medium**                               |
+| **Dired extensions** (dired-k, dired-imenu, etc.)       | Enhanced         | :yellow_circle: Basic        | **Medium**                               |
+| **Gerbil mode + LSP** (custom gerbil-mode.el)           | Custom written   | :large_blue_circle: Built-in | Low — gemacs IS the Gerbil editor        |
+| **Flycheck + Flyspell**                                 | Both active      | :yellow_circle: Partial      | **Medium**                               |
+| **EditorConfig**                                        | Installed        | :red_circle: Missing         | **Low**                                  |
+| **GitLab issue tracking** (28 custom modes)             | Extensive custom | :red_circle: Missing         | **Low** — very personal workflow         |
 
 ### The User's Unique Patterns
 

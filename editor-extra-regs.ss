@@ -26,7 +26,9 @@
         ;; Batch 7
         cmd-debug-on-entry cmd-cancel-debug-on-entry
         ;; Batch 12
-        register-batch12-aliases!)
+        register-batch12-aliases!
+        ;; iedit
+        cmd-iedit-mode)
 
 (import :std/sugar
         :std/srfi/13
@@ -35,6 +37,7 @@
         :std/misc/process
         (only-in :std/misc/ports read-all-as-string)
         (only-in :gemacs/pregexp-compat pregexp pregexp-match)
+        :gerbil-scintilla/constants
         :gerbil-scintilla/scintilla
         :gemacs/core
         :gemacs/keymap
@@ -1477,3 +1480,93 @@
   ;; Emacs base mode-name aliases → toggle commands (editor-cmds scope)
   (register-command! 'delete-trailing-whitespace-mode cmd-toggle-delete-trailing-whitespace-on-save)
   (register-command! 'menu-bar-mode cmd-toggle-menu-bar-mode))
+
+;;;============================================================================
+;;; iedit-mode: rename symbol at point across buffer
+;;;============================================================================
+
+(def (iedit-word-char? ch)
+  "Return #t if ch is a word character (alphanumeric, underscore, hyphen)."
+  (or (char-alphabetic? ch) (char-numeric? ch)
+      (char=? ch #\_) (char=? ch #\-)))
+
+(def (iedit-get-word-at-point ed)
+  "Get word boundaries at cursor. Returns (values word start end) or (values #f 0 0)."
+  (let* ((pos (editor-get-current-pos ed))
+         (text (editor-get-text ed))
+         (len (string-length text)))
+    (if (or (>= pos len) (= len 0))
+      (values #f 0 0)
+      (let* ((start (let loop ((i pos))
+                      (if (or (= i 0)
+                              (not (iedit-word-char? (string-ref text (- i 1)))))
+                        i
+                        (loop (- i 1)))))
+             (end (let loop ((i pos))
+                    (if (or (>= i len)
+                            (not (iedit-word-char? (string-ref text i))))
+                      i
+                      (loop (+ i 1)))))
+             (word (substring text start end)))
+        (if (> (string-length word) 0)
+          (values word start end)
+          (values #f 0 0))))))
+
+(def (iedit-count-whole-word text word)
+  "Count whole-word occurrences of word in text."
+  (let ((wlen (string-length word))
+        (tlen (string-length text)))
+    (let loop ((i 0) (count 0))
+      (if (> (+ i wlen) tlen) count
+        (if (and (string=? (substring text i (+ i wlen)) word)
+                 ;; Check word boundary before
+                 (or (= i 0)
+                     (not (iedit-word-char? (string-ref text (- i 1)))))
+                 ;; Check word boundary after
+                 (or (= (+ i wlen) tlen)
+                     (not (iedit-word-char? (string-ref text (+ i wlen))))))
+          (loop (+ i wlen) (+ count 1))
+          (loop (+ i 1) count))))))
+
+(def (cmd-iedit-mode app)
+  "Rename symbol at point across the buffer (iedit-mode).
+   Gets the word at point, prompts for a replacement, and replaces all
+   whole-word occurrences."
+  (let* ((ed  (current-editor app))
+         (echo (app-state-echo app))
+         (fr   (app-state-frame app))
+         (row  (- (frame-height fr) 1))
+         (width (frame-width fr)))
+    (let-values (((word _start _end) (iedit-get-word-at-point ed)))
+      (if (not word)
+        (echo-message! echo "No symbol at point")
+        (let* ((text (editor-get-text ed))
+               (count (iedit-count-whole-word text word))
+               (prompt (string-append
+                        "iedit (" (number->string count)
+                        " of " word "): Replace with: "))
+               (replacement (echo-read-string echo prompt row width)))
+          (if (or (not replacement)
+                  (string=? replacement "")
+                  (string=? replacement word))
+            (echo-message! echo "iedit: cancelled or no change")
+            (let ((replaced 0))
+              (with-undo-action ed
+                (send-message ed SCI_SETTARGETSTART 0 0)
+                (send-message ed SCI_SETTARGETEND (editor-get-text-length ed) 0)
+                (send-message ed SCI_SETSEARCHFLAGS SCFIND_WHOLEWORD 0)
+                (let loop ()
+                  (let ((found (send-message/string ed SCI_SEARCHINTARGET word)))
+                    (when (>= found 0)
+                      (send-message/string ed SCI_REPLACETARGET replacement)
+                      (set! replaced (+ replaced 1))
+                      (send-message ed SCI_SETTARGETSTART
+                        (+ found (string-length replacement)) 0)
+                      (send-message ed SCI_SETTARGETEND
+                        (editor-get-text-length ed) 0)
+                      (loop)))))
+              (echo-message! echo
+                (string-append "iedit: replaced "
+                  (number->string replaced) " occurrences")))))))))
+
+

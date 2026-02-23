@@ -1403,4 +1403,80 @@
   (let ((ed (qt-current-editor (app-state-frame app))))
     (sci-send/string ed SCI_REPLACESEL "\t")))
 
+;;;============================================================================
+;;; iedit-mode: rename symbol at point across buffer (Qt)
+;;;============================================================================
+
+(def (qt-iedit-word-char? ch)
+  "Return #t if ch is a word character (alphanumeric, underscore, hyphen)."
+  (or (char-alphabetic? ch) (char-numeric? ch)
+      (char=? ch #\_) (char=? ch #\-)))
+
+(def (qt-iedit-count-whole-word text word)
+  "Count whole-word occurrences of word in text."
+  (let ((wlen (string-length word))
+        (tlen (string-length text)))
+    (let loop ((i 0) (count 0))
+      (if (> (+ i wlen) tlen) count
+        (if (and (string=? (substring text i (+ i wlen)) word)
+                 (or (= i 0)
+                     (not (qt-iedit-word-char? (string-ref text (- i 1)))))
+                 (or (= (+ i wlen) tlen)
+                     (not (qt-iedit-word-char? (string-ref text (+ i wlen))))))
+          (loop (+ i wlen) (+ count 1))
+          (loop (+ i 1) count))))))
+
+(def (qt-iedit-replace-all text word replacement)
+  "Replace all whole-word occurrences of word with replacement in text.
+   Returns (values new-text count)."
+  (let ((wlen (string-length word))
+        (tlen (string-length text))
+        (parts [])
+        (count 0)
+        (last-end 0))
+    (let loop ((i 0))
+      (if (> (+ i wlen) tlen)
+        ;; Done — assemble result
+        (let ((final-parts (reverse (cons (substring text last-end tlen) parts))))
+          (values (apply string-append final-parts) count))
+        (if (and (string=? (substring text i (+ i wlen)) word)
+                 (or (= i 0)
+                     (not (qt-iedit-word-char? (string-ref text (- i 1)))))
+                 (or (= (+ i wlen) tlen)
+                     (not (qt-iedit-word-char? (string-ref text (+ i wlen))))))
+          (begin
+            (set! parts (cons replacement (cons (substring text last-end i) parts)))
+            (set! count (+ count 1))
+            (set! last-end (+ i wlen))
+            (loop (+ i wlen)))
+          (loop (+ i 1)))))))
+
+(def (cmd-iedit-mode app)
+  "Rename symbol at point across the buffer (iedit-mode).
+   Gets the word at point, prompts for a replacement, and replaces all
+   whole-word occurrences."
+  (let ((ed (current-qt-editor app)))
+    (let-values (((word start end) (word-at-point ed)))
+      (if (not word)
+        (echo-error! (app-state-echo app) "No symbol at point")
+        (let* ((text (qt-plain-text-edit-text ed))
+               (count (qt-iedit-count-whole-word text word))
+               (prompt (string-append
+                        "iedit (" (number->string count)
+                        " of " word "): Replace with: "))
+               (replacement (qt-echo-read-string app prompt)))
+          (if (or (not replacement)
+                  (string=? replacement word))
+            (echo-message! (app-state-echo app) "iedit: cancelled or no change")
+            (let-values (((new-text replaced) (qt-iedit-replace-all text word replacement)))
+              (let ((pos (qt-plain-text-edit-cursor-position ed)))
+                (qt-plain-text-edit-set-text! ed new-text)
+                (qt-plain-text-edit-set-cursor-position! ed
+                  (min pos (string-length new-text)))
+                (set! (buffer-modified (current-qt-buffer app)) #t)
+                (echo-message! (app-state-echo app)
+                  (string-append "iedit: replaced "
+                    (number->string replaced) " occurrences"))))))))))
+
+
 

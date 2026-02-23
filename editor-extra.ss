@@ -1604,6 +1604,8 @@
   (register-command! 'ace-jump-mode cmd-avy-goto-char)
   (register-command! 'swiper cmd-isearch-occur)
   (register-command! 'helm-ag cmd-rgrep)
+  ;; iedit
+  (register-command! 'iedit-mode cmd-iedit-mode)
   ;; Batch 12: Emacs-standard aliases
   (register-batch12-aliases!)
   (register-batch12-extra-aliases!)

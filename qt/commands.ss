@@ -1392,6 +1392,8 @@
   (register-command! 'cycle-tab-width cmd-cycle-tab-width)
   ;; Replace string
   (register-command! 'replace-string cmd-replace-string)
+  ;; iedit
+  (register-command! 'iedit-mode cmd-iedit-mode)
   ;; Cross-cutting commands (defined in facade, not in chain modules)
   (register-command! 'show-dir-locals cmd-show-dir-locals)
   (register-command! 'delete-file-and-buffer cmd-delete-file-and-buffer)
