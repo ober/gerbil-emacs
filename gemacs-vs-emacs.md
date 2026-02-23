@@ -144,11 +144,11 @@
 | Wgrep (edit grep results)     | :white_check_mark: | Edit matches in-place, save back to files  |
 | Keep/flush lines              | :white_check_mark: | `M-s k`, `M-s f`                           |
 | Count matches                 | :white_check_mark: | `M-s c`                                    |
-| Isearch word mode             | :red_circle:       | Not implemented                            |
-| Isearch symbol mode           | :red_circle:       | Not implemented                            |
-| Search highlight all matches  | :yellow_circle:    | Basic — no lazy highlight during isearch   |
+| Isearch word mode             | :large_blue_circle: | `isearch-forward-word` searches for word at point |
+| Isearch symbol mode           | :large_blue_circle: | `isearch-forward-symbol` searches for symbol at point |
+| Search highlight all matches  | :green_circle:     | Qt: highlights all matches during isearch (current=cyan, others=yellow) |
 
-**Summary:** Search is strong. Isearch, query-replace, occur, grep, and wgrep all work well. Missing some isearch sub-modes.
+**Summary:** Search is strong. Isearch with live multi-match highlighting, query-replace, occur, grep, and wgrep all work well.
 
 ---
 
