@@ -1166,6 +1166,9 @@
   (register-command! 'ediff-merge-buffers cmd-ediff-buffers)
   (register-command! 'ediff-revision cmd-vc-diff-head)
   (register-command! 'emerge-buffers cmd-ediff-buffers)
+  ;; Smerge aliases
+  (register-command! 'smerge-keep-current cmd-smerge-keep-mine)
+  (register-command! 'smerge-resolve cmd-smerge-keep-mine)
   ;; Calendar/diary
   (register-command! 'diary-add-entry cmd-calendar)
   (register-command! 'diary-show-all-entries cmd-calendar)

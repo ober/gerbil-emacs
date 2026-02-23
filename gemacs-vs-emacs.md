@@ -696,21 +696,19 @@
 |---------|--------|-------|
 | Diff buffer vs file | :white_check_mark: | `C-c d` |
 | Unified diff display | :large_blue_circle: | |
-| Ediff two buffers | :orange_circle: | Side-by-side display |
+| Ediff two buffers | :large_blue_circle: | Side-by-side diff display |
+| Ediff files | :large_blue_circle: | Compare two files from disk |
+| Ediff directories | :large_blue_circle: | Recursive directory comparison |
+| Ediff regions | :large_blue_circle: | Compare buffer regions |
+| Ediff merge | :large_blue_circle: | Two-file merge comparison |
 | Ediff three-way merge | :red_circle: | Not implemented |
-| Navigate hunks (n/p) | :red_circle: | No hunk navigation |
-| Accept change (a/b) | :red_circle: | No interactive merge |
 | Refine hunks | :red_circle: | No word-level diff |
-| Ediff regions | :red_circle: | Not implemented |
-| Emerge (merge tool) | :red_circle: | Not implemented |
-| Smerge mode | :red_circle: | No Git conflict resolution |
+| Smerge mode | :white_check_mark: | Full conflict marker resolution |
+| Smerge navigate (n/p) | :white_check_mark: | Jump between `<<<<<<<` markers |
+| Smerge keep mine/other/both | :white_check_mark: | Resolve conflicts interactively |
+| Smerge conflict count | :white_check_mark: | Shows total conflicts in buffer |
 
-**Summary:** Basic diff display works. **No interactive merge capabilities.** This is a significant gap for development workflows.
-
-### Priority Improvements Needed:
-1. Hunk navigation in diff buffers
-2. Interactive accept/reject per hunk
-3. Smerge mode for Git conflict markers
+**Summary:** Diff display and smerge conflict resolution fully working. Ediff provides file/buffer/directory comparison. Missing: three-way merge and word-level hunk refinement.
 
 ---
 
@@ -986,7 +984,7 @@
 | **Modern completion (Vertico/Orderless)** | No vertical minibuffer completion, no space-separated filtering | Medium |
 | **Multiple cursors / iedit** | Can't edit multiple occurrences simultaneously | Medium |
 | ~~Snippet system (YASnippet)~~ | ~~No template expansion~~ Implemented: 100+ snippets, tabstops | ~~Medium~~ Done |
-| **Ediff / Smerge** | Can't resolve merge conflicts interactively | Medium |
+| ~~Ediff / Smerge~~ | ~~Can't resolve merge conflicts~~ Implemented: smerge-mode with keep-mine/other/both | ~~Medium~~ Done |
 | **Flyspell (on-the-fly spell)** | No background spell checking | Small |
 | **Undo tree** | Linear undo only, no branch visualization | Medium |
 | **Interactive agenda** | Org agenda displays but can't act on items | Medium |
@@ -1183,6 +1181,6 @@
 
 ### Phase 4: Ecosystem
 15. **Extension API** — A well-documented API for users to write custom modes in Gerbil. The user wrote 28 custom Elisp modes; they'll want to do the same in Gerbil.
-16. **Interactive ediff** — Hunk navigation and merge resolution.
+16. ~~Interactive ediff~~ — ~~Hunk navigation and merge resolution.~~ Done: smerge-mode with conflict marker resolution.
 17. **Tab bar / workspaces** — Named workspaces (the user has DOOM workspaces enabled).
 18. **TRAMP-like remote editing** — SSH/Docker file editing.

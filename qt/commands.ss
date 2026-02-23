@@ -1480,6 +1480,13 @@
   (register-command! 'ediff-directories cmd-ediff-directories)
   (register-command! 'ediff-merge cmd-ediff-merge)
   (register-command! 'ediff-regions cmd-ediff-regions)
+  ;; Smerge: conflict resolution
+  (register-command! 'smerge-mode cmd-smerge-mode)
+  (register-command! 'smerge-next cmd-smerge-next)
+  (register-command! 'smerge-prev cmd-smerge-prev)
+  (register-command! 'smerge-keep-mine cmd-smerge-keep-mine)
+  (register-command! 'smerge-keep-other cmd-smerge-keep-other)
+  (register-command! 'smerge-keep-both cmd-smerge-keep-both)
   ;; Mode toggles
   (register-command! 'show-paren-mode cmd-show-paren-mode)
   (register-command! 'delete-selection-mode cmd-delete-selection-mode)

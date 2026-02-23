@@ -284,6 +284,13 @@
   ;; Ediff extras
   (register-command! 'ediff-merge cmd-ediff-merge)
   (register-command! 'ediff-directories cmd-ediff-directories)
+  ;; Smerge: conflict resolution
+  (register-command! 'smerge-mode cmd-smerge-mode)
+  (register-command! 'smerge-next cmd-smerge-next)
+  (register-command! 'smerge-prev cmd-smerge-prev)
+  (register-command! 'smerge-keep-mine cmd-smerge-keep-mine)
+  (register-command! 'smerge-keep-other cmd-smerge-keep-other)
+  (register-command! 'smerge-keep-both cmd-smerge-keep-both)
   ;; Window extras
   (register-command! 'window-divider-mode cmd-window-divider-mode)
   (register-command! 'scroll-bar-mode cmd-scroll-bar-mode)

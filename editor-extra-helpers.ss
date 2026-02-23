@@ -263,3 +263,252 @@
   (let ((ed (current-editor app)))
     (editor-replace-selection ed "\t")))
 
+;;;============================================================================
+;;; Smerge mode: Git conflict marker resolution (TUI)
+;;;============================================================================
+
+(def *smerge-mine-marker*  "<<<<<<<")
+(def *smerge-sep-marker*   "=======")
+(def *smerge-other-marker* ">>>>>>>")
+
+(def (smerge-find-conflict text pos direction)
+  "Find the next/prev conflict starting from POS.
+   DIRECTION is 'next or 'prev.
+   Returns (values mine-start sep-start other-end) or (values #f #f #f).
+   mine-start = start of <<<<<<< line
+   sep-start = start of ======= line
+   other-end = end of >>>>>>> line (after newline)"
+  (let ((len (string-length text)))
+    (if (eq? direction 'next)
+      ;; Search forward from pos for <<<<<<<
+      (let loop ((i pos))
+        (if (>= i len)
+          (values #f #f #f)
+          (if (and (<= (+ i 7) len)
+                   (string=? (substring text i (+ i 7)) *smerge-mine-marker*)
+                   (or (= i 0) (char=? (string-ref text (- i 1)) #\newline)))
+            ;; Found <<<<<<< - now find ======= and >>>>>>>
+            (let ((mine-start i))
+              (let find-sep ((j (+ i 7)))
+                (if (>= j len)
+                  (values #f #f #f)
+                  (if (and (<= (+ j 7) len)
+                           (string=? (substring text j (+ j 7)) *smerge-sep-marker*)
+                           (or (= j 0) (char=? (string-ref text (- j 1)) #\newline)))
+                    (let ((sep-start j))
+                      (let find-other ((k (+ j 7)))
+                        (if (>= k len)
+                          (values #f #f #f)
+                          (if (and (<= (+ k 7) len)
+                                   (string=? (substring text k (+ k 7)) *smerge-other-marker*)
+                                   (or (= k 0) (char=? (string-ref text (- k 1)) #\newline)))
+                            ;; Find end of >>>>>>> line
+                            (let find-eol ((e (+ k 7)))
+                              (if (or (>= e len) (char=? (string-ref text e) #\newline))
+                                (values mine-start sep-start (min (+ e 1) len))
+                                (find-eol (+ e 1))))
+                            (find-other (+ k 1))))))
+                    (find-sep (+ j 1))))))
+            (loop (+ i 1)))))
+      ;; Search backward: find <<<<<<< before pos
+      (let loop ((i (min pos (- len 1))))
+        (if (< i 0)
+          (values #f #f #f)
+          (if (and (<= (+ i 7) len)
+                   (string=? (substring text i (+ i 7)) *smerge-mine-marker*)
+                   (or (= i 0) (char=? (string-ref text (- i 1)) #\newline)))
+            ;; Found <<<<<<< before pos - verify it has ======= and >>>>>>>
+            (let ((mine-start i))
+              (let find-sep ((j (+ i 7)))
+                (if (>= j len)
+                  (loop (- i 1))
+                  (if (and (<= (+ j 7) len)
+                           (string=? (substring text j (+ j 7)) *smerge-sep-marker*)
+                           (or (= j 0) (char=? (string-ref text (- j 1)) #\newline)))
+                    (let ((sep-start j))
+                      (let find-other ((k (+ j 7)))
+                        (if (>= k len)
+                          (loop (- i 1))
+                          (if (and (<= (+ k 7) len)
+                                   (string=? (substring text k (+ k 7)) *smerge-other-marker*)
+                                   (or (= k 0) (char=? (string-ref text (- k 1)) #\newline)))
+                            ;; Found complete conflict
+                            (let find-eol ((e (+ k 7)))
+                              (if (or (>= e len) (char=? (string-ref text e) #\newline))
+                                (values mine-start sep-start (min (+ e 1) len))
+                                (find-eol (+ e 1))))
+                            (find-other (+ k 1))))))
+                    (find-sep (+ j 1))))))
+            (loop (- i 1))))))))
+
+(def (smerge-count-conflicts text)
+  "Count total conflict markers in text."
+  (let ((len (string-length text)))
+    (let loop ((i 0) (count 0))
+      (if (>= i len)
+        count
+        (if (and (<= (+ i 7) len)
+                 (string=? (substring text i (+ i 7)) *smerge-mine-marker*)
+                 (or (= i 0) (char=? (string-ref text (- i 1)) #\newline)))
+          (loop (+ i 1) (+ count 1))
+          (loop (+ i 1) count))))))
+
+(def (smerge-extract-mine text mine-start sep-start)
+  "Extract 'mine' content between <<<<<<< and =======.
+   Returns the content lines (without the marker lines)."
+  (let ((mine-line-end
+          (let find-eol ((i (+ mine-start 7)))
+            (if (or (>= i (string-length text)) (char=? (string-ref text i) #\newline))
+              (min (+ i 1) (string-length text))
+              (find-eol (+ i 1))))))
+    (substring text mine-line-end sep-start)))
+
+(def (smerge-extract-other text sep-start other-end)
+  "Extract 'other' content between ======= and >>>>>>>.
+   Returns the content lines (without the marker lines)."
+  (let* ((sep-line-end
+           (let find-eol ((i (+ sep-start 7)))
+             (if (or (>= i (string-length text)) (char=? (string-ref text i) #\newline))
+               (min (+ i 1) (string-length text))
+               (find-eol (+ i 1)))))
+         ;; Find start of >>>>>>> line
+         (other-line-start
+           (let find-marker ((k sep-line-end))
+             (if (>= k other-end) other-end
+               (if (and (<= (+ k 7) (string-length text))
+                        (string=? (substring text k (+ k 7)) *smerge-other-marker*)
+                        (or (= k 0) (char=? (string-ref text (- k 1)) #\newline)))
+                 k
+                 (find-marker (+ k 1)))))))
+    (substring text sep-line-end other-line-start)))
+
+;;; TUI smerge commands
+
+(def (cmd-smerge-next app)
+  "Jump to the next merge conflict marker."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app))
+         (text (editor-get-text ed))
+         (pos (+ (editor-get-current-pos ed) 1)))
+    (let-values (((mine sep other) (smerge-find-conflict text pos 'next)))
+      (if mine
+        (begin
+          (editor-goto-pos ed mine)
+          (let ((total (smerge-count-conflicts text)))
+            (echo-message! echo (string-append "Conflict (" (number->string total) " total)"))))
+        (echo-message! echo "No more conflicts")))))
+
+(def (cmd-smerge-prev app)
+  "Jump to the previous merge conflict marker."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app))
+         (text (editor-get-text ed))
+         (pos (max 0 (- (editor-get-current-pos ed) 1))))
+    (let-values (((mine sep other) (smerge-find-conflict text pos 'prev)))
+      (if mine
+        (begin
+          (editor-goto-pos ed mine)
+          (let ((total (smerge-count-conflicts text)))
+            (echo-message! echo (string-append "Conflict (" (number->string total) " total)"))))
+        (echo-message! echo "No previous conflict")))))
+
+(def (cmd-smerge-keep-mine app)
+  "Keep 'mine' (upper) side of the current conflict."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app))
+         (text (editor-get-text ed))
+         (pos (editor-get-current-pos ed)))
+    ;; Find conflict containing pos: search backward for <<<<<<<
+    (let-values (((mine sep other) (smerge-find-conflict text pos 'prev)))
+      ;; Also check if pos is inside the conflict
+      (if (and mine (<= mine pos) (< pos other))
+        (let* ((content (smerge-extract-mine text mine sep))
+               (before (substring text 0 mine))
+               (after (substring text other (string-length text)))
+               (new-text (string-append before content after)))
+          (editor-set-text ed new-text)
+          (editor-goto-pos ed mine)
+          (echo-message! echo "Kept mine"))
+        ;; Try forward search — maybe cursor is just before the conflict
+        (let-values (((mine2 sep2 other2) (smerge-find-conflict text pos 'next)))
+          (if mine2
+            (let* ((content (smerge-extract-mine text mine2 sep2))
+                   (before (substring text 0 mine2))
+                   (after (substring text other2 (string-length text)))
+                   (new-text (string-append before content after)))
+              (editor-set-text ed new-text)
+              (editor-goto-pos ed mine2)
+              (echo-message! echo "Kept mine"))
+            (echo-message! echo "No conflict at point")))))))
+
+(def (cmd-smerge-keep-other app)
+  "Keep 'other' (lower) side of the current conflict."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app))
+         (text (editor-get-text ed))
+         (pos (editor-get-current-pos ed)))
+    (let-values (((mine sep other) (smerge-find-conflict text pos 'prev)))
+      (if (and mine (<= mine pos) (< pos other))
+        (let* ((content (smerge-extract-other text sep other))
+               (before (substring text 0 mine))
+               (after (substring text other (string-length text)))
+               (new-text (string-append before content after)))
+          (editor-set-text ed new-text)
+          (editor-goto-pos ed mine)
+          (echo-message! echo "Kept other"))
+        (let-values (((mine2 sep2 other2) (smerge-find-conflict text pos 'next)))
+          (if mine2
+            (let* ((content (smerge-extract-other text mine2 sep2))
+                   (before (substring text 0 mine2))
+                   (after (substring text other2 (string-length text)))
+                   (new-text (string-append before content after)))
+              (editor-set-text ed new-text)
+              (editor-goto-pos ed mine2)
+              (echo-message! echo "Kept other"))
+            (echo-message! echo "No conflict at point")))))))
+
+(def (cmd-smerge-keep-both app)
+  "Keep both sides of the current conflict (remove markers only)."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app))
+         (text (editor-get-text ed))
+         (pos (editor-get-current-pos ed)))
+    (let-values (((mine sep other) (smerge-find-conflict text pos 'prev)))
+      (if (and mine (<= mine pos) (< pos other))
+        (let* ((mine-content (smerge-extract-mine text mine sep))
+               (other-content (smerge-extract-other text sep other))
+               (before (substring text 0 mine))
+               (after (substring text other (string-length text)))
+               (new-text (string-append before mine-content other-content after)))
+          (editor-set-text ed new-text)
+          (editor-goto-pos ed mine)
+          (echo-message! echo "Kept both"))
+        (let-values (((mine2 sep2 other2) (smerge-find-conflict text pos 'next)))
+          (if mine2
+            (let* ((mine-content (smerge-extract-mine text mine2 sep2))
+                   (other-content (smerge-extract-other text sep2 other2))
+                   (before (substring text 0 mine2))
+                   (after (substring text other2 (string-length text)))
+                   (new-text (string-append before mine-content other-content after)))
+              (editor-set-text ed new-text)
+              (editor-goto-pos ed mine2)
+              (echo-message! echo "Kept both"))
+            (echo-message! echo "No conflict at point")))))))
+
+(def (cmd-smerge-mode app)
+  "Toggle smerge mode — report conflict count in current buffer."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app))
+         (text (editor-get-text ed))
+         (count (smerge-count-conflicts text)))
+    (if (> count 0)
+      (begin
+        (echo-message! echo
+          (string-append "Smerge: " (number->string count) " conflict"
+                         (if (> count 1) "s" "") " found. "
+                         "n/p=navigate, m=mine, o=other, b=both"))
+        ;; Jump to first conflict
+        (let-values (((mine sep other) (smerge-find-conflict text 0 'next)))
+          (when mine (editor-goto-pos ed mine))))
+      (echo-message! echo "No merge conflicts found"))))
+

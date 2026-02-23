@@ -1097,3 +1097,221 @@
 (def (cmd-dap-step-out app)
   "Step out in debug session."
   (echo-message! (app-state-echo app) "DAP: step out"))
+
+;;;============================================================================
+;;; Smerge mode: Git conflict marker resolution (Qt)
+;;;============================================================================
+
+(def *qt-smerge-mine-marker*  "<<<<<<<")
+(def *qt-smerge-sep-marker*   "=======")
+(def *qt-smerge-other-marker* ">>>>>>>")
+
+(def (qt-smerge-find-conflict text pos direction)
+  "Find the next/prev conflict starting from POS.
+   Returns (values mine-start sep-start other-end) or (values #f #f #f)."
+  (let ((len (string-length text)))
+    (if (eq? direction 'next)
+      (let loop ((i pos))
+        (if (>= i len)
+          (values #f #f #f)
+          (if (and (<= (+ i 7) len)
+                   (string=? (substring text i (+ i 7)) *qt-smerge-mine-marker*)
+                   (or (= i 0) (char=? (string-ref text (- i 1)) #\newline)))
+            (let ((mine-start i))
+              (let find-sep ((j (+ i 7)))
+                (if (>= j len)
+                  (values #f #f #f)
+                  (if (and (<= (+ j 7) len)
+                           (string=? (substring text j (+ j 7)) *qt-smerge-sep-marker*)
+                           (or (= j 0) (char=? (string-ref text (- j 1)) #\newline)))
+                    (let ((sep-start j))
+                      (let find-other ((k (+ j 7)))
+                        (if (>= k len)
+                          (values #f #f #f)
+                          (if (and (<= (+ k 7) len)
+                                   (string=? (substring text k (+ k 7)) *qt-smerge-other-marker*)
+                                   (or (= k 0) (char=? (string-ref text (- k 1)) #\newline)))
+                            (let find-eol ((e (+ k 7)))
+                              (if (or (>= e len) (char=? (string-ref text e) #\newline))
+                                (values mine-start sep-start (min (+ e 1) len))
+                                (find-eol (+ e 1))))
+                            (find-other (+ k 1))))))
+                    (find-sep (+ j 1))))))
+            (loop (+ i 1)))))
+      ;; prev
+      (let loop ((i (min pos (- len 1))))
+        (if (< i 0)
+          (values #f #f #f)
+          (if (and (<= (+ i 7) len)
+                   (string=? (substring text i (+ i 7)) *qt-smerge-mine-marker*)
+                   (or (= i 0) (char=? (string-ref text (- i 1)) #\newline)))
+            (let ((mine-start i))
+              (let find-sep ((j (+ i 7)))
+                (if (>= j len)
+                  (loop (- i 1))
+                  (if (and (<= (+ j 7) len)
+                           (string=? (substring text j (+ j 7)) *qt-smerge-sep-marker*)
+                           (or (= j 0) (char=? (string-ref text (- j 1)) #\newline)))
+                    (let ((sep-start j))
+                      (let find-other ((k (+ j 7)))
+                        (if (>= k len)
+                          (loop (- i 1))
+                          (if (and (<= (+ k 7) len)
+                                   (string=? (substring text k (+ k 7)) *qt-smerge-other-marker*)
+                                   (or (= k 0) (char=? (string-ref text (- k 1)) #\newline)))
+                            (let find-eol ((e (+ k 7)))
+                              (if (or (>= e len) (char=? (string-ref text e) #\newline))
+                                (values mine-start sep-start (min (+ e 1) len))
+                                (find-eol (+ e 1))))
+                            (find-other (+ k 1))))))
+                    (find-sep (+ j 1))))))
+            (loop (- i 1))))))))
+
+(def (qt-smerge-count text)
+  "Count conflict markers in text."
+  (let ((len (string-length text)))
+    (let loop ((i 0) (count 0))
+      (if (>= i len) count
+        (if (and (<= (+ i 7) len)
+                 (string=? (substring text i (+ i 7)) *qt-smerge-mine-marker*)
+                 (or (= i 0) (char=? (string-ref text (- i 1)) #\newline)))
+          (loop (+ i 1) (+ count 1))
+          (loop (+ i 1) count))))))
+
+(def (qt-smerge-extract-mine text mine-start sep-start)
+  "Extract 'mine' content between <<<<<<< and =======."
+  (let ((mine-line-end
+          (let find-eol ((i (+ mine-start 7)))
+            (if (or (>= i (string-length text)) (char=? (string-ref text i) #\newline))
+              (min (+ i 1) (string-length text))
+              (find-eol (+ i 1))))))
+    (substring text mine-line-end sep-start)))
+
+(def (qt-smerge-extract-other text sep-start other-end)
+  "Extract 'other' content between ======= and >>>>>>>."
+  (let* ((sep-line-end
+           (let find-eol ((i (+ sep-start 7)))
+             (if (or (>= i (string-length text)) (char=? (string-ref text i) #\newline))
+               (min (+ i 1) (string-length text))
+               (find-eol (+ i 1)))))
+         (other-line-start
+           (let find-marker ((k sep-line-end))
+             (if (>= k other-end) other-end
+               (if (and (<= (+ k 7) (string-length text))
+                        (string=? (substring text k (+ k 7)) *qt-smerge-other-marker*)
+                        (or (= k 0) (char=? (string-ref text (- k 1)) #\newline)))
+                 k
+                 (find-marker (+ k 1)))))))
+    (substring text sep-line-end other-line-start)))
+
+(def (cmd-smerge-next app)
+  "Jump to the next merge conflict marker."
+  (let* ((ed (current-qt-editor app))
+         (text (qt-plain-text-edit-text ed))
+         (pos (+ (qt-plain-text-edit-cursor-position ed) 1)))
+    (let-values (((mine sep other) (qt-smerge-find-conflict text pos 'next)))
+      (if mine
+        (begin
+          (qt-plain-text-edit-set-cursor-position! ed mine)
+          (echo-message! (app-state-echo app)
+            (string-append "Conflict (" (number->string (qt-smerge-count text)) " total)")))
+        (echo-message! (app-state-echo app) "No more conflicts")))))
+
+(def (cmd-smerge-prev app)
+  "Jump to the previous merge conflict marker."
+  (let* ((ed (current-qt-editor app))
+         (text (qt-plain-text-edit-text ed))
+         (pos (max 0 (- (qt-plain-text-edit-cursor-position ed) 1))))
+    (let-values (((mine sep other) (qt-smerge-find-conflict text pos 'prev)))
+      (if mine
+        (begin
+          (qt-plain-text-edit-set-cursor-position! ed mine)
+          (echo-message! (app-state-echo app)
+            (string-append "Conflict (" (number->string (qt-smerge-count text)) " total)")))
+        (echo-message! (app-state-echo app) "No previous conflict")))))
+
+(def (cmd-smerge-keep-mine app)
+  "Keep 'mine' (upper) side of the current conflict."
+  (let* ((ed (current-qt-editor app))
+         (text (qt-plain-text-edit-text ed))
+         (pos (qt-plain-text-edit-cursor-position ed)))
+    (let-values (((mine sep other) (qt-smerge-find-conflict text pos 'prev)))
+      (if (and mine (<= mine pos) (< pos other))
+        (let* ((content (qt-smerge-extract-mine text mine sep))
+               (before (substring text 0 mine))
+               (after (substring text other (string-length text))))
+          (qt-plain-text-edit-set-text! ed (string-append before content after))
+          (qt-plain-text-edit-set-cursor-position! ed mine)
+          (echo-message! (app-state-echo app) "Kept mine"))
+        (let-values (((mine2 sep2 other2) (qt-smerge-find-conflict text pos 'next)))
+          (if mine2
+            (let* ((content (qt-smerge-extract-mine text mine2 sep2))
+                   (before (substring text 0 mine2))
+                   (after (substring text other2 (string-length text))))
+              (qt-plain-text-edit-set-text! ed (string-append before content after))
+              (qt-plain-text-edit-set-cursor-position! ed mine2)
+              (echo-message! (app-state-echo app) "Kept mine"))
+            (echo-message! (app-state-echo app) "No conflict at point")))))))
+
+(def (cmd-smerge-keep-other app)
+  "Keep 'other' (lower) side of the current conflict."
+  (let* ((ed (current-qt-editor app))
+         (text (qt-plain-text-edit-text ed))
+         (pos (qt-plain-text-edit-cursor-position ed)))
+    (let-values (((mine sep other) (qt-smerge-find-conflict text pos 'prev)))
+      (if (and mine (<= mine pos) (< pos other))
+        (let* ((content (qt-smerge-extract-other text sep other))
+               (before (substring text 0 mine))
+               (after (substring text other (string-length text))))
+          (qt-plain-text-edit-set-text! ed (string-append before content after))
+          (qt-plain-text-edit-set-cursor-position! ed mine)
+          (echo-message! (app-state-echo app) "Kept other"))
+        (let-values (((mine2 sep2 other2) (qt-smerge-find-conflict text pos 'next)))
+          (if mine2
+            (let* ((content (qt-smerge-extract-other text mine2 sep2))
+                   (before (substring text 0 mine2))
+                   (after (substring text other2 (string-length text))))
+              (qt-plain-text-edit-set-text! ed (string-append before content after))
+              (qt-plain-text-edit-set-cursor-position! ed mine2)
+              (echo-message! (app-state-echo app) "Kept other"))
+            (echo-message! (app-state-echo app) "No conflict at point")))))))
+
+(def (cmd-smerge-keep-both app)
+  "Keep both sides of the current conflict (remove markers only)."
+  (let* ((ed (current-qt-editor app))
+         (text (qt-plain-text-edit-text ed))
+         (pos (qt-plain-text-edit-cursor-position ed)))
+    (let-values (((mine sep other) (qt-smerge-find-conflict text pos 'prev)))
+      (if (and mine (<= mine pos) (< pos other))
+        (let* ((mine-content (qt-smerge-extract-mine text mine sep))
+               (other-content (qt-smerge-extract-other text sep other))
+               (before (substring text 0 mine))
+               (after (substring text other (string-length text))))
+          (qt-plain-text-edit-set-text! ed (string-append before mine-content other-content after))
+          (qt-plain-text-edit-set-cursor-position! ed mine)
+          (echo-message! (app-state-echo app) "Kept both"))
+        (let-values (((mine2 sep2 other2) (qt-smerge-find-conflict text pos 'next)))
+          (if mine2
+            (let* ((mine-content (qt-smerge-extract-mine text mine2 sep2))
+                   (other-content (qt-smerge-extract-other text sep2 other2))
+                   (before (substring text 0 mine2))
+                   (after (substring text other2 (string-length text))))
+              (qt-plain-text-edit-set-text! ed (string-append before mine-content other-content after))
+              (qt-plain-text-edit-set-cursor-position! ed mine2)
+              (echo-message! (app-state-echo app) "Kept both"))
+            (echo-message! (app-state-echo app) "No conflict at point")))))))
+
+(def (cmd-smerge-mode app)
+  "Toggle smerge mode — report conflict count in current buffer."
+  (let* ((ed (current-qt-editor app))
+         (text (qt-plain-text-edit-text ed))
+         (count (qt-smerge-count text)))
+    (if (> count 0)
+      (begin
+        (echo-message! (app-state-echo app)
+          (string-append "Smerge: " (number->string count) " conflict"
+                         (if (> count 1) "s" "") " found. "
+                         "n/p=navigate, m=mine, o=other, b=both"))
+        (let-values (((mine sep other) (qt-smerge-find-conflict text 0 'next)))
+          (when mine (qt-plain-text-edit-set-cursor-position! ed mine))))
+      (echo-message! (app-state-echo app) "No merge conflicts found"))))

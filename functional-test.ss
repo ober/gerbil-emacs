@@ -1985,6 +1985,48 @@
       (setup-default-bindings!)
       (check (keymap-lookup *ctrl-x-map* "C-e") => 'eval-last-sexp))
 
+    ;; Smerge tests
+    (test-case "smerge: commands registered"
+      (register-all-commands!)
+      (check (not (eq? #f (find-command 'smerge-mode))) => #t)
+      (check (not (eq? #f (find-command 'smerge-next))) => #t)
+      (check (not (eq? #f (find-command 'smerge-keep-mine))) => #t)
+      (check (not (eq? #f (find-command 'smerge-keep-other))) => #t)
+      (check (not (eq? #f (find-command 'smerge-keep-both))) => #t))
+
+    (test-case "smerge: keep-mine resolves conflict"
+      (register-all-commands!)
+      (let-values (((ed app) (make-test-app "conflict.txt")))
+        (editor-set-text ed "before\n<<<<<<< HEAD\nmine\n=======\ntheirs\n>>>>>>> branch\nafter\n")
+        (editor-goto-pos ed 10)
+        (execute-command! app 'smerge-keep-mine)
+        (let ((text (editor-get-text ed)))
+          (check (not (eq? #f (string-contains text "mine"))) => #t)
+          (check (eq? #f (string-contains text "<<<<<<<")) => #t)
+          (check (eq? #f (string-contains text "theirs")) => #t))))
+
+    (test-case "smerge: keep-other resolves conflict"
+      (register-all-commands!)
+      (let-values (((ed app) (make-test-app "conflict.txt")))
+        (editor-set-text ed "before\n<<<<<<< HEAD\nmine\n=======\ntheirs\n>>>>>>> branch\nafter\n")
+        (editor-goto-pos ed 10)
+        (execute-command! app 'smerge-keep-other)
+        (let ((text (editor-get-text ed)))
+          (check (not (eq? #f (string-contains text "theirs"))) => #t)
+          (check (eq? #f (string-contains text "<<<<<<<")) => #t)
+          (check (eq? #f (string-contains text "mine")) => #t))))
+
+    (test-case "smerge: keep-both removes markers keeps content"
+      (register-all-commands!)
+      (let-values (((ed app) (make-test-app "conflict.txt")))
+        (editor-set-text ed "before\n<<<<<<< HEAD\nmine\n=======\ntheirs\n>>>>>>> branch\nafter\n")
+        (editor-goto-pos ed 10)
+        (execute-command! app 'smerge-keep-both)
+        (let ((text (editor-get-text ed)))
+          (check (not (eq? #f (string-contains text "mine"))) => #t)
+          (check (not (eq? #f (string-contains text "theirs"))) => #t)
+          (check (eq? #f (string-contains text "<<<<<<<")) => #t))))
+
 ))
 
 (def main
