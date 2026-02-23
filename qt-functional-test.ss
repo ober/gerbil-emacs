@@ -78,7 +78,7 @@
                  parse-hex-color)
         (only-in :gemacs/qt/commands
                  qt-register-all-commands!)
-        (only-in :gemacs/qt/commands-ide
+        (only-in :gemacs/qt/magit
                  magit-parse-status
                  magit-format-status
                  magit-file-at-point)
@@ -904,28 +904,28 @@
   ;; --- magit-format-status ---
   (displayln "Test: magit-format-status contains Head: header")
   (let* ((entries (list (cons "M" "file.ss")))
-         (text (magit-format-status entries "master")))
+         (text (magit-format-status entries "master" "/tmp")))
     (if (and (string? text) (contains? text "Head: master"))
       (pass! "magit-format-status contains 'Head: master'")
       (fail! "magit-format-status head" text "contains 'Head: master'")))
 
   (displayln "Test: magit-format-status clean tree message when no entries")
-  (let ((text (magit-format-status '() "main")))
+  (let ((text (magit-format-status '() "main" "/tmp")))
     (if (and (string? text) (contains? text "Nothing to commit"))
       (pass! "magit-format-status shows clean tree message")
       (fail! "magit-format-status clean" text "contains 'Nothing to commit'")))
 
   (displayln "Test: magit-format-status shows Keys: section")
-  (let ((text (magit-format-status '() "main")))
+  (let ((text (magit-format-status '() "main" "/tmp")))
     (if (and (string? text) (contains? text "Keys:"))
       (pass! "magit-format-status shows Keys: section")
       (fail! "magit-format-status keys" text "contains 'Keys:'")))
 
   ;; --- magit-file-at-point ---
-  (displayln "Test: magit-file-at-point extracts filename from staged line")
-  (let* ((text "Head: master\n\nStaged changes:\n  M commands.ss\n")
-         ;; Position on the "  M commands.ss" line (after "  M ")
-         (pos (+ (string-length "Head: master\n\nStaged changes:\n") 5)))
+  (displayln "Test: magit-file-at-point extracts filename from new format")
+  (let* ((text "Head: master\n\nUnstaged changes (1):\nmodified   commands.ss\n")
+         ;; Position on "modified   commands.ss" line
+         (pos (+ (string-length "Head: master\n\nUnstaged changes (1):\n") 5)))
     (let ((file (magit-file-at-point text pos)))
       (if (and (string? file) (string=? file "commands.ss"))
         (pass! "magit-file-at-point extracts 'commands.ss'")

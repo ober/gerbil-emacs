@@ -534,6 +534,7 @@
   (register-command! 'magit-rebase cmd-magit-rebase)
   (register-command! 'magit-merge cmd-magit-merge)
   (register-command! 'magit-stash cmd-magit-stash)
+  (register-command! 'magit-stash-pop cmd-magit-stash-pop)
   (register-command! 'magit-branch cmd-magit-branch)
   (register-command! 'magit-checkout cmd-magit-checkout)
   ;; Org-mode

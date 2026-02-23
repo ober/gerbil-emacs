@@ -662,6 +662,7 @@
   (register-command! 'apheleia-format-buffer cmd-apheleia-format-buffer)
   ;; Magit extras
   (register-command! 'magit-stash cmd-magit-stash)
+  (register-command! 'magit-stash-pop cmd-magit-stash-pop)
   (register-command! 'magit-blame cmd-magit-blame)
   (register-command! 'magit-fetch cmd-magit-fetch)
   (register-command! 'magit-pull cmd-magit-pull)

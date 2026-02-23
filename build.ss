@@ -278,6 +278,7 @@
           (gxc: "qt/commands-search" "-cc-options" ,qt-cc-opts "-ld-options" ,qt-ld-opts)
           (gxc: "qt/commands-file"   "-cc-options" ,qt-cc-opts "-ld-options" ,qt-ld-opts)
           (gxc: "qt/commands-sexp"   "-cc-options" ,qt-cc-opts "-ld-options" ,qt-ld-opts)
+          (gxc: "qt/magit"           "-cc-options" ,qt-cc-opts "-ld-options" ,qt-ld-opts)
           (gxc: "qt/commands-ide"    "-cc-options" ,qt-cc-opts "-ld-options" ,qt-ld-opts)
           (gxc: "qt/commands-vcs"    "-cc-options" ,qt-cc-opts "-ld-options" ,qt-ld-opts)
           (gxc: "qt/lsp-client"     "-cc-options" ,qt-cc-opts "-ld-options" ,qt-ld-opts)

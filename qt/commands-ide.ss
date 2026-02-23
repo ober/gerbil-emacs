@@ -21,6 +21,7 @@
         :gemacs/qt/echo
         :gemacs/qt/highlight
         :gemacs/qt/modeline
+        :gemacs/qt/magit
         :gemacs/qt/commands-core
         :gemacs/qt/commands-edit
         :gemacs/qt/commands-search
@@ -423,111 +424,13 @@
 
 ;;;============================================================================
 ;;; Magit-style interactive git interface
+;;; Helpers in qt/magit.ss; commands here.
 ;;;============================================================================
 
-(def *magit-dir* #f)  ;; working directory for magit operations
-
-(def (magit-run-git args dir)
-  "Run a git command and return output as string.
-   Note: intentionally omits process-status to avoid a race with Qt's
-   SIGCHLD handler (which calls waitpid(-1,...) and can reap the child
-   before Gambit's waitpid(pid,...) runs, causing an indefinite block).
-   read-line already blocks until stdout EOF (process exit closes the pipe).
-   The zombie is reaped by Qt's SIGCHLD handler or OS cleanup on exit."
-  (with-catch
-    (lambda (e) "")
-    (lambda ()
-      (let* ((proc (open-process
-                      (list path: "/usr/bin/git"
-                            arguments: args
-                            directory: dir
-                            stdout-redirection: #t
-                            stderr-redirection: #t)))
-             (output (read-line proc #f)))
-        (close-port proc)
-        (or output "")))))
-
-(def (magit-parse-status output)
-  "Parse git status --porcelain output into list of (status . filename)."
-  (let ((lines (string-split output #\newline)))
-    (filter identity
-      (map (lambda (line)
-             (and (>= (string-length line) 3)
-                  (let ((status (substring line 0 2))
-                        (file (substring line 3 (string-length line))))
-                    (cons (string-trim status) file))))
-           lines))))
-
-(def (magit-format-status entries branch)
-  "Format magit-style status buffer."
-  (let ((out (open-output-string)))
-    (display (string-append "Head: " branch "\n\n") out)
-    (let ((staged (filter (lambda (e)
-                            (let ((s (car e)))
-                              (and (> (string-length s) 0)
-                                   (not (string=? s "??"))
-                                   (not (string=? s ""))
-                                   (let ((ch (string-ref s 0)))
-                                     (and (not (char=? ch #\space))
-                                          (not (char=? ch #\?)))))))
-                          entries))
-          (unstaged (filter (lambda (e)
-                              (let ((s (car e)))
-                                (and (> (string-length s) 0)
-                                     (not (string=? s "??"))
-                                     (>= (string-length s) 2)
-                                     (let ((ch (string-ref s (min 1 (- (string-length s) 1)))))
-                                       (and (not (char=? ch #\space))
-                                            (not (char=? ch #\?)))))))
-                            entries))
-          (untracked (filter (lambda (e) (string=? (car e) "??")) entries)))
-      (when (not (null? staged))
-        (display "Staged changes:\n" out)
-        (for-each (lambda (e)
-                    (display (string-append "  " (car e) " " (cdr e) "\n") out))
-                  staged)
-        (display "\n" out))
-      (when (not (null? unstaged))
-        (display "Unstaged changes:\n" out)
-        (for-each (lambda (e)
-                    (display (string-append "  " (car e) " " (cdr e) "\n") out))
-                  unstaged)
-        (display "\n" out))
-      (when (not (null? untracked))
-        (display "Untracked files:\n" out)
-        (for-each (lambda (e)
-                    (display (string-append "  ?? " (cdr e) "\n") out))
-                  untracked)
-        (display "\n" out))
-      (when (and (null? staged) (null? unstaged) (null? untracked))
-        (display "Nothing to commit, working tree clean.\n" out))
-      (display "\nKeys: s=stage u=unstage c=commit d=diff g=refresh q=quit\n" out))
-    (get-output-string out)))
-
-(def (magit-file-at-point text pos)
-  "Extract the filename from the current line in magit buffer."
-  (let* ((line-start (let loop ((i (- pos 1)))
-                       (if (or (< i 0) (char=? (string-ref text i) #\newline))
-                         (+ i 1) (loop (- i 1)))))
-         (line-end (let loop ((i pos))
-                     (if (or (>= i (string-length text))
-                             (char=? (string-ref text i) #\newline))
-                       i (loop (+ i 1)))))
-         (line (substring text line-start line-end)))
-    ;; Lines look like "  M filename" or "  ?? filename"
-    (let ((trimmed (string-trim line)))
-      (cond
-        ((and (>= (string-length trimmed) 3)
-              (string=? (substring trimmed 0 2) "??"))
-         (string-trim (substring trimmed 2 (string-length trimmed))))
-        ((and (>= (string-length trimmed) 2)
-              (memv (string-ref trimmed 0)
-                    '(#\M #\A #\D #\R #\C #\U)))
-         (string-trim (substring trimmed 1 (string-length trimmed))))
-        (else #f)))))
+(def *magit-dir* #f)
 
 (def (cmd-magit-status app)
-  "Open interactive git status buffer (magit-style)."
+  "Open interactive git status buffer (magit-style) with inline diffs."
   (let* ((buf (current-qt-buffer app))
          (path (buffer-file-path buf))
          (dir (if path (path-directory path) (current-directory))))
@@ -536,7 +439,7 @@
            (branch-output (magit-run-git '("rev-parse" "--abbrev-ref" "HEAD") dir))
            (branch (string-trim branch-output))
            (entries (magit-parse-status status-output))
-           (text (magit-format-status entries branch))
+           (text (magit-format-status entries branch dir))
            (ed (current-qt-editor app))
            (fr (app-state-frame app))
            (git-buf (or (buffer-by-name "*Magit*")
@@ -549,36 +452,72 @@
       (echo-message! (app-state-echo app) "*Magit*"))))
 
 (def (cmd-magit-stage app)
-  "Stage the file at point."
+  "Stage file or hunk at point."
   (let ((buf (current-qt-buffer app)))
     (when (string=? (buffer-name buf) "*Magit*")
       (let* ((ed (current-qt-editor app))
              (text (qt-plain-text-edit-text ed))
              (pos (qt-plain-text-edit-cursor-position ed))
-             (file (magit-file-at-point text pos)))
-        (if file
-          (begin
-            (magit-run-git (list "add" file) *magit-dir*)
-            (cmd-magit-status app)
-            (echo-message! (app-state-echo app)
-              (string-append "Staged: " file)))
-          (echo-error! (app-state-echo app) "No file at point"))))))
+             (section (magit-find-section text pos)))
+        (when (eq? section 'unstaged)
+          ;; Try hunk first, then fall back to file
+          (let-values (((hunk-file patch) (magit-hunk-at-point text pos)))
+            (cond
+              (patch
+               (let ((result (magit-run-git-stdin patch '("apply" "--cached") *magit-dir*)))
+                 (cmd-magit-status app)
+                 (if (string-prefix? "error" result)
+                   (echo-error! (app-state-echo app) result)
+                   (echo-message! (app-state-echo app)
+                     (string-append "Staged hunk in: " (or hunk-file "?"))))))
+              (else
+               (let ((file (magit-file-at-point text pos)))
+                 (if file
+                   (begin
+                     (magit-run-git (list "add" file) *magit-dir*)
+                     (cmd-magit-status app)
+                     (echo-message! (app-state-echo app)
+                       (string-append "Staged: " file)))
+                   (echo-error! (app-state-echo app) "No file or hunk at point")))))))
+        ;; Allow staging untracked files
+        (when (eq? section 'untracked)
+          (let ((file (magit-file-at-point text pos)))
+            (when file
+              (magit-run-git (list "add" file) *magit-dir*)
+              (cmd-magit-status app)
+              (echo-message! (app-state-echo app)
+                (string-append "Staged: " file)))))))))
 
 (def (cmd-magit-unstage app)
-  "Unstage the file at point."
+  "Unstage file or hunk at point."
   (let ((buf (current-qt-buffer app)))
     (when (string=? (buffer-name buf) "*Magit*")
       (let* ((ed (current-qt-editor app))
              (text (qt-plain-text-edit-text ed))
              (pos (qt-plain-text-edit-cursor-position ed))
-             (file (magit-file-at-point text pos)))
-        (if file
-          (begin
-            (magit-run-git (list "reset" "HEAD" file) *magit-dir*)
-            (cmd-magit-status app)
-            (echo-message! (app-state-echo app)
-              (string-append "Unstaged: " file)))
-          (echo-error! (app-state-echo app) "No file at point"))))))
+             (section (magit-find-section text pos)))
+        (when (eq? section 'staged)
+          ;; Try hunk first, then fall back to file
+          (let-values (((hunk-file patch) (magit-hunk-at-point text pos)))
+            (cond
+              (patch
+               (let ((result (magit-run-git-stdin patch
+                               '("apply" "--cached" "--reverse") *magit-dir*)))
+                 (cmd-magit-status app)
+                 (if (string-prefix? "error" result)
+                   (echo-error! (app-state-echo app) result)
+                   (echo-message! (app-state-echo app)
+                     (string-append "Unstaged hunk in: " (or hunk-file "?"))))))
+              (else
+               (let ((file (magit-file-at-point text pos)))
+                 (if file
+                   (begin
+                     (magit-run-git (list "reset" "HEAD" file) *magit-dir*)
+                     (cmd-magit-status app)
+                     (echo-message! (app-state-echo app)
+                       (string-append "Unstaged: " file)))
+                   (echo-error! (app-state-echo app)
+                     "No file or hunk at point")))))))))))
 
 (def (cmd-magit-commit app)
   "Commit staged changes."
@@ -590,17 +529,22 @@
           (string-append "Committed: " msg))))))
 
 (def (cmd-magit-diff app)
-  "Show diff for file at point."
+  "Show diff for file at point or cursor context."
   (let ((buf (current-qt-buffer app)))
     (when (string=? (buffer-name buf) "*Magit*")
       (let* ((ed (current-qt-editor app))
              (text (qt-plain-text-edit-text ed))
              (pos (qt-plain-text-edit-cursor-position ed))
-             (file (magit-file-at-point text pos)))
+             (file (or (let-values (((f _p) (magit-hunk-at-point text pos))) f)
+                       (magit-file-at-point text pos))))
         (if file
           (let* ((diff-output (magit-run-git (list "diff" file) *magit-dir*))
                  (staged-diff (magit-run-git (list "diff" "--cached" file) *magit-dir*))
-                 (full-diff (if (> (string-length staged-diff) 0) staged-diff diff-output))
+                 (full-diff (string-append
+                              (if (> (string-length staged-diff) 0)
+                                (string-append "Staged:\n" staged-diff "\n") "")
+                              (if (> (string-length diff-output) 0)
+                                (string-append "Unstaged:\n" diff-output) "")))
                  (fr (app-state-frame app))
                  (diff-buf (or (buffer-by-name "*Magit Diff*")
                                (qt-buffer-create! "*Magit Diff*" ed #f))))
@@ -621,7 +565,7 @@
     (echo-message! (app-state-echo app) "All changes staged")))
 
 (def (cmd-magit-log app)
-  "Show git log in magit buffer."
+  "Show git log."
   (when *magit-dir*
     (let* ((output (magit-run-git '("log" "--oneline" "--graph" "-30") *magit-dir*))
            (ed (current-qt-editor app))
@@ -659,8 +603,8 @@
 (def (cmd-magit-fetch app)
   "Fetch from all remotes."
   (when *magit-dir*
-    (let ((output (magit-run-git '("fetch" "--all") *magit-dir*)))
-      (echo-message! (app-state-echo app) "Fetched from all remotes"))))
+    (magit-run-git '("fetch" "--all") *magit-dir*)
+    (echo-message! (app-state-echo app) "Fetched from all remotes")))
 
 (def (cmd-magit-pull app)
   "Pull from remote."
@@ -678,49 +622,82 @@
 
 (def (cmd-magit-rebase app)
   "Rebase onto a branch."
-  (let ((branch (qt-echo-read-string app "Rebase onto (default origin/main): ")))
-    (let ((target (if (or (not branch) (string=? branch "")) "origin/main" branch)))
-      (when *magit-dir*
-        (let ((output (magit-run-git (list "rebase" target) *magit-dir*)))
-          (echo-message! (app-state-echo app)
-            (if (string=? output "") "Rebase complete" (string-trim output))))))))
+  (let* ((dir (or *magit-dir* (current-directory)))
+         (branches (magit-branch-names dir))
+         (branch (if (null? branches)
+                   (qt-echo-read-string app "Rebase onto (default origin/main): ")
+                   (qt-echo-read-with-narrowing app "Rebase onto:" branches)))
+         (target (if (or (not branch) (string=? branch "")) "origin/main" branch)))
+    (let ((output (magit-run-git (list "rebase" target) dir)))
+      (echo-message! (app-state-echo app)
+        (if (string=? output "") "Rebase complete" (string-trim output))))))
 
 (def (cmd-magit-merge app)
-  "Merge a branch."
-  (let ((branch (qt-echo-read-string app "Merge branch: ")))
+  "Merge a branch using narrowing."
+  (let* ((dir (or *magit-dir* (current-directory)))
+         (branches (magit-branch-names dir))
+         (branch (if (null? branches)
+                   (qt-echo-read-string app "Merge branch: ")
+                   (qt-echo-read-with-narrowing app "Merge branch:" branches))))
     (when (and branch (> (string-length branch) 0))
-      (when *magit-dir*
-        (let ((output (magit-run-git (list "merge" branch) *magit-dir*)))
-          (echo-message! (app-state-echo app)
-            (if (string=? output "") "Merge complete" (string-trim output))))))))
+      (let ((output (magit-run-git (list "merge" branch) dir)))
+        (echo-message! (app-state-echo app)
+          (if (string=? output "") "Merge complete" (string-trim output)))))))
 
 (def (cmd-magit-stash app)
-  "Stash working directory changes."
+  "Stash changes or show stash list."
   (when *magit-dir*
-    (let ((output (magit-run-git '("stash" "push" "-m" "stash from editor") *magit-dir*)))
+    (let ((msg (qt-echo-read-string app "Stash message (empty=list stashes): ")))
+      (if (or (not msg) (string=? msg ""))
+        ;; Show stash list
+        (let* ((output (magit-run-git '("stash" "list") *magit-dir*))
+               (ed (current-qt-editor app))
+               (fr (app-state-frame app))
+               (stash-buf (or (buffer-by-name "*Magit Stash*")
+                              (qt-buffer-create! "*Magit Stash*" ed #f))))
+          (qt-buffer-attach! ed stash-buf)
+          (set! (qt-edit-window-buffer (qt-current-window fr)) stash-buf)
+          (qt-plain-text-edit-set-text! ed
+            (if (string=? output "") "No stashes.\n" output))
+          (qt-text-document-set-modified! (buffer-doc-pointer stash-buf) #f)
+          (qt-plain-text-edit-set-cursor-position! ed 0))
+        ;; Create stash
+        (let ((output (magit-run-git (list "stash" "push" "-m" msg) *magit-dir*)))
+          (cmd-magit-status app)
+          (echo-message! (app-state-echo app)
+            (if (string=? output "") "Stashed" (string-trim output))))))))
+
+(def (cmd-magit-stash-pop app)
+  "Pop the most recent stash."
+  (when *magit-dir*
+    (let ((output (magit-run-git '("stash" "pop") *magit-dir*)))
+      (cmd-magit-status app)
       (echo-message! (app-state-echo app)
-        (if (string=? output "") "Stashed" (string-trim output))))))
+        (if (string=? output "") "Stash popped" (string-trim output))))))
 
 (def (cmd-magit-branch app)
   "Show git branches."
   (let* ((dir (or *magit-dir* (current-directory)))
-         (output (magit-run-git '("branch" "-a") dir)))
-    (let* ((ed (current-qt-editor app))
-           (fr (app-state-frame app))
-           (br-buf (or (buffer-by-name "*Git Branches*")
-                       (qt-buffer-create! "*Git Branches*" ed #f))))
-      (qt-buffer-attach! ed br-buf)
-      (set! (qt-edit-window-buffer (qt-current-window fr)) br-buf)
-      (qt-plain-text-edit-set-text! ed (if (string=? output "") "No branches\n" output))
-      (qt-text-document-set-modified! (buffer-doc-pointer br-buf) #f)
-      (qt-plain-text-edit-set-cursor-position! ed 0))))
+         (output (magit-run-git '("branch" "-a") dir))
+         (ed (current-qt-editor app))
+         (fr (app-state-frame app))
+         (br-buf (or (buffer-by-name "*Git Branches*")
+                     (qt-buffer-create! "*Git Branches*" ed #f))))
+    (qt-buffer-attach! ed br-buf)
+    (set! (qt-edit-window-buffer (qt-current-window fr)) br-buf)
+    (qt-plain-text-edit-set-text! ed (if (string=? output "") "No branches\n" output))
+    (qt-text-document-set-modified! (buffer-doc-pointer br-buf) #f)
+    (qt-plain-text-edit-set-cursor-position! ed 0)))
 
 (def (cmd-magit-checkout app)
-  "Switch git branch."
-  (let ((branch (qt-echo-read-string app "Branch: ")))
+  "Switch git branch using narrowing."
+  (let* ((dir (or *magit-dir* (current-directory)))
+         (branches (magit-branch-names dir))
+         (branch (if (null? branches)
+                   (qt-echo-read-string app "Branch: ")
+                   (qt-echo-read-with-narrowing app "Checkout branch:" branches))))
     (when (and branch (> (string-length branch) 0))
-      (let* ((dir (or *magit-dir* (current-directory)))
-             (output (magit-run-git (list "checkout" branch) dir)))
+      (let ((output (magit-run-git (list "checkout" branch) dir)))
         (echo-message! (app-state-echo app)
           (if (string=? output "")
             (string-append "Switched to: " branch)
@@ -1870,113 +1847,4 @@
                 (echo-message! echo
                   (string-append "Rectangle copied to register " (string reg)))))))))))
 
-;;;============================================================================
-;;; VCS parity: vc-pull, vc-push, magit-stage-file
-;;;============================================================================
-
-(def (cmd-vc-pull app)
-  "Pull from remote repository."
-  (let ((result (with-exception-catcher
-                  (lambda (e) (with-output-to-string (lambda () (display-exception e))))
-                  (lambda ()
-                    (let ((p (open-process
-                               (list path: "git" arguments: '("pull")
-                                     stdin-redirection: #f stdout-redirection: #t
-                                     stderr-redirection: #t))))
-                      (let ((out (read-line p #f)))
-                        (process-status p) (or out "")))))))
-    (echo-message! (app-state-echo app)
-      (string-append "git pull: " (if (> (string-length result) 60)
-                                    (substring result 0 60) result)))))
-
-(def (cmd-vc-push app)
-  "Push to remote repository."
-  (let ((result (with-exception-catcher
-                  (lambda (e) (with-output-to-string (lambda () (display-exception e))))
-                  (lambda ()
-                    (let ((p (open-process
-                               (list path: "git" arguments: '("push")
-                                     stdin-redirection: #f stdout-redirection: #t
-                                     stderr-redirection: #t))))
-                      (let ((out (read-line p #f)))
-                        (process-status p) (or out "")))))))
-    (echo-message! (app-state-echo app)
-      (string-append "git push: " (if (> (string-length result) 60)
-                                    (substring result 0 60) result)))))
-
-(def (cmd-magit-stage-file app)
-  "Stage current buffer's file."
-  (let* ((buf (current-qt-buffer app))
-         (path (and buf (buffer-file-path buf))))
-    (if path
-      (let ((result (with-exception-catcher
-                      (lambda (e) "Error staging file")
-                      (lambda ()
-                        (let ((p (open-process
-                                   (list path: "git" arguments: (list "add" path)
-                                         stdin-redirection: #f stdout-redirection: #t
-                                         stderr-redirection: #t))))
-                          (process-status p)
-                          (string-append "Staged: " (path-strip-directory path)))))))
-        (echo-message! (app-state-echo app) result))
-      (echo-message! (app-state-echo app) "Buffer has no file"))))
-
-;;;============================================================================
-;;; DAP debug commands
-;;;============================================================================
-
-(def *qt-dap-breakpoints* (make-hash-table)) ;; file -> (list of line numbers)
-(def *qt-dap-process* #f)
-
-(def (cmd-dap-debug app)
-  "Start debug session."
-  (let ((program (qt-echo-read-string app "Program to debug: ")))
-    (if (or (not program) (= (string-length program) 0))
-      (echo-error! (app-state-echo app) "No program specified")
-      (begin
-        (set! *qt-dap-process* #f)
-        (echo-message! (app-state-echo app)
-          (string-append "DAP: debug session started for " program))))))
-
-(def (cmd-dap-breakpoint-toggle app)
-  "Toggle breakpoint at current line."
-  (let* ((ed (current-qt-editor app))
-         (buf (current-qt-buffer app))
-         (path (and buf (buffer-file-path buf)))
-         (text (qt-plain-text-edit-text ed))
-         (pos (qt-plain-text-edit-cursor-position ed))
-         ;; Count newlines up to pos to get line number
-         (line (+ 1 (let loop ((i 0) (n 0))
-                      (if (>= i pos) n
-                        (loop (+ i 1)
-                              (if (char=? (string-ref text i) #\newline)
-                                (+ n 1) n)))))))
-    (if (not path)
-      (echo-error! (app-state-echo app) "Buffer has no file")
-      (let* ((existing (or (hash-get *qt-dap-breakpoints* path) '()))
-             (has-bp (member line existing)))
-        (if has-bp
-          (begin
-            (hash-put! *qt-dap-breakpoints* path
-              (filter (lambda (l) (not (= l line))) existing))
-            (echo-message! (app-state-echo app)
-              (string-append "Breakpoint removed at "
-                (path-strip-directory path) ":" (number->string line))))
-          (begin
-            (hash-put! *qt-dap-breakpoints* path (cons line existing))
-            (echo-message! (app-state-echo app)
-              (string-append "Breakpoint set at "
-                (path-strip-directory path) ":" (number->string line)))))))))
-
-(def (cmd-dap-step-over app)
-  "Step over in debug session."
-  (echo-message! (app-state-echo app) "DAP: step over"))
-
-(def (cmd-dap-step-in app)
-  "Step into in debug session."
-  (echo-message! (app-state-echo app) "DAP: step in"))
-
-(def (cmd-dap-step-out app)
-  "Step out in debug session."
-  (echo-message! (app-state-echo app) "DAP: step out"))
 

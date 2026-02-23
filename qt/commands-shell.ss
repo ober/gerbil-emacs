@@ -21,6 +21,7 @@
         :gemacs/qt/echo
         :gemacs/qt/highlight
         :gemacs/qt/modeline
+        (only-in :gemacs/qt/magit magit-run-git)
         :gemacs/qt/commands-core
         :gemacs/qt/commands-edit
         :gemacs/qt/commands-search
