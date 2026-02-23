@@ -1096,15 +1096,15 @@
 
 | Feature                   | Status       | Notes                                        |
 |---------------------------|--------------|----------------------------------------------|
-| Helm (or equivalent)      | :red_circle: | No narrowing framework                       |
-| Helm M-x                  | :red_circle: | M-x has fuzzy matching but no candidate list |
-| Helm buffers              | :red_circle: | Buffer switch has fuzzy but no live preview  |
-| Helm find-files           | :red_circle: | No incremental file browser                  |
+| Helm (or equivalent)      | :white_check_mark: | QListWidget narrowing with fuzzy filter, C-n/C-p nav |
+| Helm M-x                  | :white_check_mark: | Real-time filtered candidate list with match count |
+| Helm buffers              | :white_check_mark: | MRU-ordered buffer list with narrowing |
+| Helm find-files           | :yellow_circle: | Tab completion, no live narrowing list yet |
 | Helm occur                | :red_circle: | Occur exists but not helm-style              |
 | Helm dash (documentation) | :red_circle: | Not implemented                              |
 | Helm C-yasnippet          | :red_circle: | Not implemented                              |
 
-**Summary:** The user's primary completion framework is Helm. Gemacs has no equivalent narrowing/selection framework. This fundamentally changes the feel of M-x, buffer switching, file finding, and every interactive command.
+**Summary:** Narrowing framework works for M-x, buffer switch, bookmarks, recent files, imenu, describe-function, and theme selection. Real-time fuzzy filtering with match count display. Find-files still uses Tab completion (no narrowing list).
 
 ---
 
@@ -1117,7 +1117,7 @@
 | Feature                                                 | Emacs Status     | Gemacs Status                | Gap Severity                             |
 |---------------------------------------------------------|------------------|------------------------------|------------------------------------------|
 | **Key-chords** (30+ bindings: AS, ZX, BV, FG, KB, etc.) | Extensive        | :white_check_mark: Works     | None — key-chord system exists           |
-| **Helm** (M-x, buffers, files, grep)                    | Primary UI       | :red_circle: Missing         | **Critical** — core interaction paradigm |
+| **Helm** (M-x, buffers, files, grep)                    | Primary UI       | :large_blue_circle: Narrowing | **Low** — M-x/buffers/bookmarks work    |
 | **Magit + Forge** (staging, commit, PR review)          | Daily driver     | :orange_circle: Minimal      | **Critical**                             |
 | **Multi-vterm** (multiple terminals, copy mode)         | Heavy use        | :white_check_mark: Works     | None — term-list/next/prev + copy mode   |
 | **Eglot / LSP** (completion, hover, goto-def, refs)     | Working          | :white_check_mark: Works     | None — full UI wiring with keybindings   |
