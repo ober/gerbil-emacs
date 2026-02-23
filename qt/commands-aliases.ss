@@ -766,6 +766,9 @@
   (register-command! 'lsp-restart cmd-lsp-restart)
   (register-command! 'lsp-stop cmd-lsp-stop)
   (register-command! 'lsp-smart-goto-definition cmd-lsp-smart-goto-definition)
+  (register-command! 'lsp-semantic-tokens cmd-lsp-semantic-tokens)
+  (register-command! 'lsp-incoming-calls cmd-lsp-incoming-calls)
+  (register-command! 'lsp-outgoing-calls cmd-lsp-outgoing-calls)
   ;; LSP keybindings in C-c l prefix map
   (keymap-bind! *ctrl-c-l-map* "d" 'lsp-goto-definition)
   (keymap-bind! *ctrl-c-l-map* "D" 'lsp-declaration)

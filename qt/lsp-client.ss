@@ -417,6 +417,28 @@
     (hash-put! text-doc "rename" rename)
     (hash-put! text-doc "codeAction" code-action)
     (hash-put! text-doc "publishDiagnostics" publish-diag)
+    ;; Semantic tokens
+    (let ((sem-tokens (make-hash-table))
+          (sem-full (make-hash-table)))
+      (hash-put! sem-tokens "dynamicRegistration" #f)
+      (hash-put! sem-full "delta" #f)
+      (hash-put! sem-tokens "requests" (let ((h (make-hash-table)))
+                                         (hash-put! h "full" sem-full)
+                                         h))
+      (hash-put! sem-tokens "tokenTypes"
+        ["namespace" "type" "class" "enum" "interface" "struct"
+         "typeParameter" "parameter" "variable" "property" "enumMember"
+         "event" "function" "method" "macro" "keyword" "modifier"
+         "comment" "string" "number" "regexp" "operator" "decorator"])
+      (hash-put! sem-tokens "tokenModifiers"
+        ["declaration" "definition" "readonly" "static" "deprecated"
+         "abstract" "async" "modification" "documentation" "defaultLibrary"])
+      (hash-put! sem-tokens "formats" ["relative"])
+      (hash-put! text-doc "semanticTokensProvider" sem-tokens))
+    ;; Call hierarchy
+    (let ((call-hier (make-hash-table)))
+      (hash-put! call-hier "dynamicRegistration" #f)
+      (hash-put! text-doc "callHierarchy" call-hier))
     (hash-put! caps "textDocument" text-doc)
     ;; workspace capabilities
     (hash-put! ws-edit "documentChanges" #t)

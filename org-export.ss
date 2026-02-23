@@ -197,12 +197,15 @@ Types: heading, paragraph, src-block, example-block, quote-block, table, keyword
 ;;;============================================================================
 
 (def (org-export-html text)
-  "Export org text to HTML."
+  "Export org text to HTML with footnotes and cross-references."
   (let* ((options (org-parse-export-options text))
          (title (or (hash-get options "title") "Untitled"))
          (author (or (hash-get options "author") ""))
          (blocks (org-split-into-blocks text))
          (toc? (not (string=? (or (hash-get options "opt-toc") "t") "nil")))
+         (footnotes (org-collect-footnotes text))
+         (fn-counter-box (list 0))
+         (fn-used-box (list '()))
          (body-parts '()))
     ;; Generate TOC if enabled
     (when toc?
@@ -247,11 +250,10 @@ Types: heading, paragraph, src-block, example-block, quote-block, table, keyword
                                         "</h" (number->string hlevel) ">")
                          body-parts)))))
             ((paragraph)
-             (set! body-parts
-               (cons (string-append "<p>"
-                       (org-export-inline (html-escape (string-join lines " ")) 'html)
-                       "</p>")
-                     body-parts)))
+             (let* ((raw (org-export-inline (html-escape (string-join lines " ")) 'html))
+                    (with-fn (org-replace-footnote-refs raw 'html fn-counter-box fn-used-box))
+                    (with-xref (org-replace-cross-refs with-fn 'html)))
+               (set! body-parts (cons (string-append "<p>" with-xref "</p>") body-parts))))
             ((src-block)
              (let* ((first (car lines))
                     (lang-match (pregexp-match "#\\+[Bb][Ee][Gg][Ii][Nn]_[Ss][Rr][Cc]\\s+(\\S+)" first))
@@ -320,6 +322,7 @@ Types: heading, paragraph, src-block, example-block, quote-block, table, keyword
            (if (string=? author "") ""
              (string-append "<p class=\"author\">Author: " (html-escape author) "</p>"))
            (string-join (reverse body-parts) "\n")
+           (org-export-footnotes-section footnotes (car fn-used-box) 'html)
            "</body>"
            "</html>")
      "\n")))
@@ -329,8 +332,11 @@ Types: heading, paragraph, src-block, example-block, quote-block, table, keyword
 ;;;============================================================================
 
 (def (org-export-markdown text)
-  "Export org text to GitHub-Flavored Markdown."
+  "Export org text to GitHub-Flavored Markdown with footnotes."
   (let* ((blocks (org-split-into-blocks text))
+         (footnotes (org-collect-footnotes text))
+         (fn-counter-box (list 0))
+         (fn-used-box (list '()))
          (parts '()))
     (for-each
       (lambda (block)
@@ -345,7 +351,10 @@ Types: heading, paragraph, src-block, example-block, quote-block, table, keyword
                      (kw-str (if kw (string-append kw " ") "")))
                  (set! parts (cons (string-append prefix " " kw-str md-title) parts)))))
             ((paragraph)
-             (set! parts (cons (org-export-inline (string-join lines "\n") 'markdown) parts)))
+             (let* ((raw (org-export-inline (string-join lines "\n") 'markdown))
+                    (with-fn (org-replace-footnote-refs raw 'markdown fn-counter-box fn-used-box))
+                    (with-xref (org-replace-cross-refs with-fn 'markdown)))
+               (set! parts (cons with-xref parts))))
             ((src-block)
              (let* ((first (car lines))
                     (lang-match (pregexp-match "#\\+[Bb][Ee][Gg][Ii][Nn]_[Ss][Rr][Cc]\\s+(\\S+)" first))
@@ -389,7 +398,9 @@ Types: heading, paragraph, src-block, example-block, quote-block, table, keyword
             ((keyword) (void))
             (else (void)))))
       blocks)
-    (string-join (reverse parts) "\n\n")))
+    (let ((main (string-join (reverse parts) "\n\n"))
+          (fn-section (org-export-footnotes-section footnotes (car fn-used-box) 'markdown)))
+      (string-append main fn-section))))
 
 ;;;============================================================================
 ;;; LaTeX Backend
@@ -404,11 +415,14 @@ Types: heading, paragraph, src-block, example-block, quote-block, table, keyword
     s))
 
 (def (org-export-latex text)
-  "Export org text to LaTeX."
+  "Export org text to LaTeX with footnotes and cross-references."
   (let* ((options (org-parse-export-options text))
          (title (or (hash-get options "title") "Untitled"))
          (author (or (hash-get options "author") ""))
          (blocks (org-split-into-blocks text))
+         (footnotes (org-collect-footnotes text))
+         (fn-counter-box (list 0))
+         (fn-used-box (list '()))
          (parts '()))
     (for-each
       (lambda (block)
@@ -427,8 +441,10 @@ Types: heading, paragraph, src-block, example-block, quote-block, table, keyword
                      (lt (org-export-inline (latex-escape title-text) 'latex)))
                  (set! parts (cons (string-append cmd "{" lt "}") parts)))))
             ((paragraph)
-             (set! parts (cons (org-export-inline (latex-escape (string-join lines "\n")) 'latex)
-                               parts)))
+             (let* ((raw (org-export-inline (latex-escape (string-join lines "\n")) 'latex))
+                    (with-fn (org-replace-footnote-refs raw 'latex fn-counter-box fn-used-box footnotes))
+                    (with-xref (org-replace-cross-refs with-fn 'latex)))
+               (set! parts (cons with-xref parts))))
             ((src-block)
              (let ((body-lines (cdr (let loop ((ls (cdr lines)) (acc '()))
                                       (if (or (null? ls) (org-src-block-end? (car ls)))
@@ -471,8 +487,11 @@ Types: heading, paragraph, src-block, example-block, quote-block, table, keyword
 ;;;============================================================================
 
 (def (org-export-text text)
-  "Export org text to plain text (strips all markup)."
+  "Export org text to plain text with footnotes."
   (let* ((blocks (org-split-into-blocks text))
+         (footnotes (org-collect-footnotes text))
+         (fn-counter-box (list 0))
+         (fn-used-box (list '()))
          (parts '()))
     (for-each
       (lambda (block)
@@ -488,7 +507,9 @@ Types: heading, paragraph, src-block, example-block, quote-block, table, keyword
                                      (org-export-inline title 'text))
                                    parts)))))
             ((paragraph)
-             (set! parts (cons (org-export-inline (string-join lines "\n") 'text) parts)))
+             (let* ((raw (org-export-inline (string-join lines "\n") 'text))
+                    (with-fn (org-replace-footnote-refs raw 'text fn-counter-box fn-used-box)))
+               (set! parts (cons with-fn parts))))
             ((src-block)
              (let ((body-lines (cdr (let loop ((ls (cdr lines)) (acc '()))
                                       (if (or (null? ls) (org-src-block-end? (car ls)))
@@ -500,7 +521,124 @@ Types: heading, paragraph, src-block, example-block, quote-block, table, keyword
             ((blank) (set! parts (cons "" parts)))
             (else (void)))))
       blocks)
-    (string-join (reverse parts) "\n\n")))
+    (let ((main (string-join (reverse parts) "\n\n"))
+          (fn-section (org-export-footnotes-section footnotes (car fn-used-box) 'text)))
+      (string-append main fn-section))))
+
+;;;============================================================================
+;;; Footnote Collection & Rendering
+;;;============================================================================
+
+(def (org-collect-footnotes text)
+  "Collect footnote definitions from text.
+   Returns hash: name -> definition text.
+   Matches lines like: [fn:name] definition text"
+  (let ((footnotes (make-hash-table))
+        (lines (string-split text #\newline)))
+    (for-each
+      (lambda (line)
+        (let ((m (pregexp-match "^\\[fn:(\\w+)\\]\\s+(.*)" line)))
+          (when m
+            (hash-put! footnotes (list-ref m 1) (string-trim (list-ref m 2))))))
+      lines)
+    footnotes))
+
+(def (org-export-footnote-ref name backend counter (footnotes #f))
+  "Generate a footnote reference for the given backend."
+  (case backend
+    ((html)     (string-append "<sup><a href=\"#fn-" name "\" id=\"fnr-" name "\">"
+                  (number->string counter) "</a></sup>"))
+    ((markdown) (string-append "[^" name "]"))
+    ((latex)    ;; LaTeX: inline footnote with definition
+                (let ((def-text (and footnotes (hash-get footnotes name))))
+                  (if def-text
+                    (string-append "\\footnote{" (latex-escape def-text) "}")
+                    (string-append "\\footnote{" name "}"))))
+    ((text)     (string-append "[" (number->string counter) "]"))
+    (else       (string-append "[" (number->string counter) "]"))))
+
+(def (org-export-footnotes-section footnotes used-footnotes backend)
+  "Generate the footnotes section for the document."
+  (if (null? used-footnotes) ""
+    (let ((entries
+            (let loop ((names used-footnotes) (n 1) (acc '()))
+              (if (null? names) (reverse acc)
+                (let* ((name (car names))
+                       (def-text (or (hash-get footnotes name) "")))
+                  (loop (cdr names) (+ n 1)
+                    (cons
+                      (case backend
+                        ((html)
+                         (string-append "<li id=\"fn-" name "\">"
+                           (org-export-inline (html-escape def-text) 'html)
+                           " <a href=\"#fnr-" name "\">↩</a></li>"))
+                        ((markdown)
+                         (string-append "[^" name "]: "
+                           (org-export-inline def-text 'markdown)))
+                        ((latex)  "")  ; LaTeX footnotes are inline
+                        ((text)
+                         (string-append "[" (number->string n) "] "
+                           (org-export-inline def-text 'text)))
+                        (else ""))
+                      acc)))))))
+      (case backend
+        ((html) (string-append "\n<section class=\"footnotes\">\n<hr>\n<ol>\n"
+                  (string-join entries "\n") "\n</ol>\n</section>"))
+        ((markdown) (string-append "\n---\n" (string-join entries "\n")))
+        ((text) (string-append "\n---\nFootnotes:\n" (string-join entries "\n")))
+        (else "")))))
+
+(def (org-replace-footnote-refs str backend counter-box used-box (footnotes #f))
+  "Replace [fn:name] in string with backend-appropriate references.
+   counter-box: (list counter), used-box: (list used-names-list).
+   Returns transformed string."
+  (let loop ((s str))
+    (let ((m (pregexp-match "\\[fn:(\\w+)\\]" s)))
+      (if (not m)
+        s
+        (let* ((full-match (list-ref m 0))
+               (name (list-ref m 1))
+               (already (member name (car used-box)))
+               (counter (if already
+                          (+ 1 (let find ((lst (car used-box)) (i 0))
+                                  (if (null? lst) i
+                                    (if (string=? (car lst) name) i
+                                      (find (cdr lst) (+ i 1))))))
+                          (begin
+                            (set-car! used-box (append (car used-box) (list name)))
+                            (set-car! counter-box (+ (car counter-box) 1))
+                            (car counter-box))))
+               (replacement (org-export-footnote-ref name backend counter footnotes)))
+          (loop (pregexp-replace (pregexp-quote full-match) s replacement)))))))
+
+;;;============================================================================
+;;; Cross-Reference / Target Handling
+;;;============================================================================
+
+(def (org-replace-cross-refs str backend)
+  "Replace <<target>> radio targets and [[#target]] internal links."
+  (let* (;; <<target>> → anchor/label
+         (s (pregexp-replace* "<<([^>]+)>>" str
+              (case backend
+                ((html)     "<a id=\"\\1\"></a>")
+                ((markdown) "")  ; no direct equivalent
+                ((latex)    "\\\\label{\\1}")
+                (else       ""))))
+         ;; [[#target]] internal links
+         (s (pregexp-replace* "\\[\\[#([^]]+)\\]\\]" s
+              (case backend
+                ((html)     "<a href=\"#\\1\">\\1</a>")
+                ((markdown) "[\\1](#\\1)")
+                ((latex)    "\\\\ref{\\1}")
+                (else       "\\1"))))
+         ;; [[#target][description]] internal links with description
+         (s (pregexp-replace* "\\[\\[#([^]]+)\\]\\[([^]]+)\\]\\]" s
+              (case backend
+                ((html)     "<a href=\"#\\1\">\\2</a>")
+                ((markdown) "[\\2](#\\1)")
+                ((latex)    "\\\\hyperref[\\1]{\\2}")
+                (else       "\\2")))))
+    s))
 
 ;;;============================================================================
 ;;; Export Dispatch

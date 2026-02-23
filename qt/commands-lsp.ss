@@ -1120,6 +1120,233 @@
       (string-append title ": " (number->string (length lines)) " results"))))
 
 ;;;============================================================================
+;;; Semantic Tokens
+;;;============================================================================
+
+;; Additional indicator IDs for semantic highlighting
+(def *indic-sem-keyword*  17)
+(def *indic-sem-function* 18)
+(def *indic-sem-type*     19)
+(def *indic-sem-string*   20)
+(def *indic-sem-comment*  21)
+(def *indic-sem-variable* 22)
+(def *indic-sem-number*   23)
+(def *indic-sem-macro*    24)
+
+;; LSP semantic token type names → indicator IDs
+(def *semantic-token-types*
+  ["namespace" "type" "class" "enum" "interface" "struct"
+   "typeParameter" "parameter" "variable" "property" "enumMember"
+   "event" "function" "method" "macro" "keyword" "modifier"
+   "comment" "string" "number" "regexp" "operator" "decorator"])
+
+(def (semantic-token-type->indicator type-index)
+  "Map a semantic token type index to a Scintilla indicator ID."
+  (cond
+    ((or (= type-index 15) (= type-index 16)) *indic-sem-keyword*)  ; keyword, modifier
+    ((or (= type-index 12) (= type-index 13)) *indic-sem-function*) ; function, method
+    ((or (= type-index 1) (= type-index 2) (= type-index 3)
+         (= type-index 4) (= type-index 5)) *indic-sem-type*)       ; type, class, enum, interface, struct
+    ((= type-index 18) *indic-sem-string*)    ; string
+    ((= type-index 17) *indic-sem-comment*)   ; comment
+    ((or (= type-index 8) (= type-index 7) (= type-index 9)
+         (= type-index 0)) *indic-sem-variable*) ; variable, parameter, property, namespace
+    ((= type-index 19) *indic-sem-number*)    ; number
+    ((= type-index 14) *indic-sem-macro*)     ; macro
+    (else #f)))
+
+(def *lsp-semantic-tokens-enabled* #f)
+
+(def (lsp-setup-semantic-indicators! sci)
+  "Configure Scintilla indicators for semantic tokens."
+  (let ((setup-indic
+          (lambda (indic style color)
+            (sci-send sci SCI_INDICSETSTYLE indic style)
+            (sci-send sci SCI_INDICSETFORE indic color))))
+    ;; INDIC_TEXTFORE (17) = change text foreground color
+    (setup-indic *indic-sem-keyword*  17 #x0000FF)   ; blue for keywords
+    (setup-indic *indic-sem-function* 17 #x795E26)   ; brown for functions
+    (setup-indic *indic-sem-type*     17 #x267F99)   ; teal for types
+    (setup-indic *indic-sem-string*   17 #xA31515)   ; red for strings
+    (setup-indic *indic-sem-comment*  17 #x008000)   ; green for comments
+    (setup-indic *indic-sem-variable* 17 #x001080)   ; dark blue for variables
+    (setup-indic *indic-sem-number*   17 #x098658)   ; green for numbers
+    (setup-indic *indic-sem-macro*    17 #x800080)))  ; purple for macros
+
+(def (lsp-clear-semantic-tokens! sci)
+  "Clear all semantic token indicators."
+  (let ((len (sci-send sci SCI_GETLENGTH 0)))
+    (for-each (lambda (indic)
+                (sci-send sci SCI_SETINDICATORCURRENT indic)
+                (sci-send sci SCI_INDICATORCLEARRANGE 0 len))
+      [*indic-sem-keyword* *indic-sem-function* *indic-sem-type*
+       *indic-sem-string* *indic-sem-comment* *indic-sem-variable*
+       *indic-sem-number* *indic-sem-macro*])))
+
+(def (lsp-apply-semantic-tokens! sci data)
+  "Apply semantic token data (flat array) to Scintilla editor.
+   LSP semantic tokens are encoded as: [deltaLine deltaStart length tokenType tokenModifiers ...]"
+  (when (and data (list? data) (not (null? data)))
+    (lsp-clear-semantic-tokens! sci)
+    (let loop ((rest data) (line 0) (char 0))
+      (when (>= (length rest) 5)
+        (let* ((delta-line (list-ref rest 0))
+               (delta-start (list-ref rest 1))
+               (tok-length (list-ref rest 2))
+               (tok-type (list-ref rest 3))
+               ;; tok-modifiers = (list-ref rest 4)
+               (cur-line (+ line delta-line))
+               (cur-char (if (> delta-line 0) delta-start (+ char delta-start)))
+               (pos (+ (sci-send sci SCI_POSITIONFROMLINE cur-line) cur-char))
+               (indic (semantic-token-type->indicator tok-type)))
+          (when (and indic (> tok-length 0))
+            (sci-send sci SCI_SETINDICATORCURRENT indic)
+            (sci-send sci SCI_INDICATORFILLRANGE pos tok-length))
+          (loop (list-tail rest 5) cur-line cur-char))))))
+
+(def (cmd-lsp-semantic-tokens app)
+  "Toggle semantic token highlighting from LSP."
+  (set! *lsp-semantic-tokens-enabled* (not *lsp-semantic-tokens-enabled*))
+  (if *lsp-semantic-tokens-enabled*
+    (begin
+      (echo-message! (app-state-echo app) "LSP semantic tokens enabled")
+      (lsp-request-semantic-tokens! app))
+    (let ((sci (current-qt-editor app)))
+      (lsp-clear-semantic-tokens! sci)
+      (echo-message! (app-state-echo app) "LSP semantic tokens disabled"))))
+
+(def (lsp-request-semantic-tokens! app)
+  "Request full semantic tokens for current buffer."
+  (when (and *lsp-semantic-tokens-enabled* (lsp-running?))
+    (let* ((buf (current-qt-buffer app))
+           (path (and buf (buffer-file-path buf))))
+      (when path
+        (let ((params (make-hash-table))
+              (td (make-hash-table)))
+          (hash-put! td "uri" (file-path->uri path))
+          (hash-put! params "textDocument" td)
+          (lsp-send-request! "textDocument/semanticTokens/full" params
+            (lambda (response)
+              (let ((result (hash-get response "result"))
+                    (error (hash-get response "error")))
+                (cond
+                  (error #f)  ; silently ignore errors
+                  ((and result (hash-table? result))
+                   (let ((data (hash-get result "data")))
+                     (when (and data (list? data))
+                       (let ((sci (current-qt-editor app)))
+                         (lsp-setup-semantic-indicators! sci)
+                         (lsp-apply-semantic-tokens! sci data))))))))))))))
+
+;;;============================================================================
+;;; Call Hierarchy
+;;;============================================================================
+
+(def (cmd-lsp-incoming-calls app)
+  "Show incoming calls (who calls this function) via LSP call hierarchy."
+  (lsp-call-hierarchy! app 'incoming))
+
+(def (cmd-lsp-outgoing-calls app)
+  "Show outgoing calls (what this function calls) via LSP call hierarchy."
+  (lsp-call-hierarchy! app 'outgoing))
+
+(def (lsp-call-hierarchy! app direction)
+  "Request call hierarchy: direction is 'incoming or 'outgoing."
+  (if (not (lsp-running?))
+    (echo-error! (app-state-echo app) "LSP: not running")
+    (let ((params (lsp-current-params app)))
+      (if (not params)
+        (echo-error! (app-state-echo app) "LSP: buffer has no file")
+        (begin
+          (echo-message! (app-state-echo app)
+            (string-append "LSP: finding " (symbol->string direction) " calls..."))
+          (lsp-send-request! "textDocument/prepareCallHierarchy" params
+            (lambda (response)
+              (let ((result (hash-get response "result"))
+                    (error (hash-get response "error")))
+                (cond
+                  (error
+                   (echo-error! (app-state-echo app) "LSP call hierarchy: error"))
+                  ((or (not result) (null? result))
+                   (echo-message! (app-state-echo app) "LSP: no call hierarchy item at cursor"))
+                  (else
+                   ;; Use first item from prepare result
+                   (let* ((item (car result))
+                          (method (if (eq? direction 'incoming)
+                                    "callHierarchy/incomingCalls"
+                                    "callHierarchy/outgoingCalls"))
+                          (req-params (make-hash-table)))
+                     (hash-put! req-params "item" item)
+                     (lsp-send-request! method req-params
+                       (lambda (ch-response)
+                         (let ((ch-result (hash-get ch-response "result"))
+                               (ch-error (hash-get ch-response "error")))
+                           (cond
+                             (ch-error
+                              (echo-error! (app-state-echo app) "LSP call hierarchy: error"))
+                             ((or (not ch-result) (null? ch-result))
+                              (echo-message! (app-state-echo app)
+                                (string-append "LSP: no " (symbol->string direction) " calls")))
+                             (else
+                              (lsp-show-call-hierarchy! app
+                                (string-append (if (eq? direction 'incoming)
+                                                 "Incoming calls to "
+                                                 "Outgoing calls from ")
+                                  (or (hash-get item "name") "?"))
+                                ch-result direction)))))))))))))))))
+
+(def (lsp-show-call-hierarchy! app title items direction)
+  "Display call hierarchy results in a buffer."
+  (let* ((fr (app-state-frame app))
+         (ed (current-qt-editor app))
+         (buf-name "*Call Hierarchy*")
+         (existing (buffer-by-name buf-name))
+         (buf (or existing (qt-buffer-create! buf-name ed #f)))
+         (lines (filter-map
+                  (lambda (entry)
+                    (when (hash-table? entry)
+                      ;; For incoming: entry has "from" field
+                      ;; For outgoing: entry has "to" field
+                      (let* ((target-key (if (eq? direction 'incoming) "from" "to"))
+                             (target (hash-get entry target-key))
+                             (name (and target (hash-get target "name")))
+                             (uri (and target (hash-get target "uri")))
+                             (range (and target (hash-get target "range")))
+                             (start (and range (hash-get range "start")))
+                             (line (and start (+ 1 (hash-get start "line"))))
+                             (file (and uri (uri->file-path uri))))
+                        (when (and name file line)
+                          (string-append "  " name "  ("
+                            file ":" (number->string line) ")")))))
+                  items))
+         (text (string-append title " (" (number->string (length lines)) " results)\n\n"
+                 (if (null? lines) "  (none)\n" (string-join lines "\n")))))
+    ;; Populate grep results for M-g n/p navigation
+    (set! *grep-results*
+      (filter-map
+        (lambda (entry)
+          (when (hash-table? entry)
+            (let* ((target-key (if (eq? direction 'incoming) "from" "to"))
+                   (target (hash-get entry target-key))
+                   (uri (and target (hash-get target "uri")))
+                   (range (and target (hash-get target "range")))
+                   (start (and range (hash-get range "start")))
+                   (line (and start (+ 1 (hash-get start "line"))))
+                   (file (and uri (uri->file-path uri))))
+              (when (and file line)
+                (list file line "")))))
+        items))
+    (set! *grep-result-index* -1)
+    ;; Show buffer
+    (qt-buffer-attach! ed buf)
+    (set! (qt-edit-window-buffer (qt-current-window fr)) buf)
+    (qt-plain-text-edit-set-text! ed text)
+    (qt-text-document-set-modified! (buffer-doc-pointer buf) #f)
+    (qt-plain-text-edit-set-cursor-position! ed 0)
+    (echo-message! (app-state-echo app)
+      (string-append title ": " (number->string (length lines)) " results"))))
+
+;;;============================================================================
 ;;; Restart / Stop commands
 ;;;============================================================================
 

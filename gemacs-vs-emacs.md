@@ -1,7 +1,7 @@
 # Gemacs vs GNU Emacs — Feature Comparison
 
 > **Last updated:** 2026-02-22
-> **Gemacs version:** master (33cc4f7)
+> **Gemacs version:** master (dcac545)
 > **Compared against:** GNU Emacs 29.x / 30.x feature set
 
 ## Status Legend
@@ -475,7 +475,7 @@
 | Babel :var evaluation | :white_check_mark: | Resolves named src blocks (executes) and tables (converts to data) |
 | Babel :noweb expansion | :white_check_mark: | `<<block-name>>` refs expanded when `:noweb yes` |
 | **Export** | :large_blue_circle: | HTML, Markdown, LaTeX, ASCII |
-| Export footnotes/cross-refs | :red_circle: | Not implemented |
+| Export footnotes/cross-refs | :white_check_mark: | `[fn:name]` refs, `<<target>>`/`[[#target]]` cross-refs, all 4 backends |
 | Custom export backends | :red_circle: | Not implemented |
 | **Clock tracking** | :large_blue_circle: | Clock-in/out, goto |
 | Org-crypt | :yellow_circle: | Registered |
@@ -533,8 +533,8 @@
 | Rename refactoring | :white_check_mark: | `C-c l R` with echo prompt |
 | Code actions | :white_check_mark: | `C-c l a` with selection popup |
 | Formatting | :white_check_mark: | `C-c l f` format buffer/region |
-| Semantic tokens | :red_circle: | Not implemented |
-| Call hierarchy | :red_circle: | Not implemented |
+| Semantic tokens | :white_check_mark: | Toggle with `lsp-semantic-tokens`, indicator-based highlighting |
+| Call hierarchy | :white_check_mark: | `lsp-incoming-calls` / `lsp-outgoing-calls` with navigation |
 | Type hierarchy | :red_circle: | Not implemented |
 | Inlay hints | :red_circle: | Not implemented |
 | Workspace symbols | :white_check_mark: | `C-c l s` with completion |
