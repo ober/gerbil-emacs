@@ -1564,6 +1564,7 @@
   (register-command! 'org-metadown cmd-org-demote)
   (register-command! 'org-shiftmetaup cmd-org-promote)
   (register-command! 'org-shiftmetadown cmd-org-demote)
+  (register-command! 'org-sparse-tree cmd-org-sparse-tree)
   ;; Batch 10: project/diff/calendar/mode aliases (editor-extra scope)
   ;; Project
   (register-command! 'project-forget-project cmd-project-switch-project)

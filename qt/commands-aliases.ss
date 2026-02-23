@@ -583,6 +583,7 @@
   (register-command! 'org-table-export-csv cmd-org-table-export-csv)
   (register-command! 'org-table-import-csv cmd-org-table-import-csv)
   (register-command! 'org-table-transpose cmd-org-table-transpose)
+  (register-command! 'org-sparse-tree cmd-org-sparse-tree)
   (register-command! 'org-template-expand
     (lambda (app) (qt-try-org-template-expand app)))
   ;; Markdown

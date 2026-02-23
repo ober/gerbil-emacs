@@ -1967,3 +1967,46 @@
         (hash-put! *qt-dedicated-windows* buf-name #t)
         (echo-message! echo
           (string-append "Window dedicated to: " buf-name))))))
+
+;;; ---- Org Sparse Tree ----
+
+(def (cmd-org-sparse-tree app)
+  "Show only org headings matching a search pattern (sparse tree view)."
+  (let* ((ed (current-qt-editor app))
+         (echo (app-state-echo app))
+         (query (qt-echo-read-string app "Sparse tree (regexp): ")))
+    (when (and query (not (string-empty? query)))
+      (let* ((text (qt-plain-text-edit-text ed))
+             (lines (string-split text #\newline))
+             (total (length lines))
+             (query-lower (string-downcase query)))
+        ;; First show all lines
+        (sci-send ed SCI_SHOWLINES 0 (- total 1))
+        ;; Find matching headings and their ancestors
+        (let* ((match-set (make-hash-table))
+               (_ (let loop ((i 0))
+                    (when (< i total)
+                      (let ((line (list-ref lines i)))
+                        (when (and (org-heading-line? line)
+                                   (string-contains (string-downcase line) query-lower))
+                          (hash-put! match-set i #t)
+                          ;; Also mark parent headings
+                          (let ((level (org-heading-stars-of-line line)))
+                            (let ploop ((j (- i 1)))
+                              (when (>= j 0)
+                                (let ((pl (list-ref lines j)))
+                                  (when (and (org-heading-line? pl)
+                                             (< (org-heading-stars-of-line pl) level))
+                                    (hash-put! match-set j #t)
+                                    (ploop (- j 1)))))))))
+                      (loop (+ i 1)))))
+               (match-count (hash-length match-set)))
+          ;; Hide non-matching lines
+          (let loop ((i 0))
+            (when (< i total)
+              (unless (hash-get match-set i)
+                (sci-send ed SCI_HIDELINES i i))
+              (loop (+ i 1))))
+          (echo-message! echo
+            (string-append "Sparse tree: " (number->string match-count)
+                           " matching headings")))))))

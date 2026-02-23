@@ -18,6 +18,7 @@
         :gemacs/echo
         :gemacs/editor-extra-helpers
         (only-in :gemacs/persist buffer-local-set!)
+        (only-in :gemacs/org-parse org-heading-stars-of-line)
         (only-in :gemacs/highlight register-custom-highlighter!)
         (only-in :gemacs/org-highlight
                  setup-org-styles! org-highlight-buffer! org-set-fold-levels!)
@@ -482,6 +483,44 @@
                   (send-message ed SCI_HIDELINES i i)))
               (loop (+ i 1))))
           (echo-message! echo "Headings only"))))))
+
+;;;============================================================================
+(def (cmd-org-sparse-tree app)
+  "Show only org headings matching a search pattern."
+  (let ((query (app-read-string app "Sparse tree (regexp): ")))
+    (when (and query (not (string-empty? query)))
+      (let* ((ed (current-editor app))
+             (echo (app-state-echo app))
+             (text (editor-get-text ed))
+             (lines (string-split text #\newline))
+             (total (length lines))
+             (query-lower (string-downcase query)))
+        (send-message ed SCI_SHOWLINES 0 (- total 1))
+        (let* ((match-set (make-hash-table))
+               (_ (let loop ((i 0))
+                    (when (< i total)
+                      (let ((line (list-ref lines i)))
+                        (when (and (org-heading-line? line)
+                                   (string-contains (string-downcase line) query-lower))
+                          (hash-put! match-set i #t)
+                          (let ((level (org-heading-stars-of-line line)))
+                            (let ploop ((j (- i 1)))
+                              (when (>= j 0)
+                                (let ((pl (list-ref lines j)))
+                                  (when (and (org-heading-line? pl)
+                                             (< (org-heading-stars-of-line pl) level))
+                                    (hash-put! match-set j #t)
+                                    (ploop (- j 1)))))))))
+                      (loop (+ i 1)))))
+               (match-count (hash-length match-set)))
+          (let loop ((i 0))
+            (when (< i total)
+              (unless (hash-get match-set i)
+                (send-message ed SCI_HIDELINES i i))
+              (loop (+ i 1))))
+          (echo-message! echo
+            (string-append "Sparse tree: " (number->string match-count)
+                           " matching headings")))))))
 
 ;;;============================================================================
 ;;; New org-mode commands

@@ -482,10 +482,10 @@
 | Heading promote/demote | :white_check_mark: | |
 | Move subtree up/down | :white_check_mark: | |
 | Template expansion (`<s TAB`) | :white_check_mark: | Source block templates |
-| Sparse tree | :red_circle: | Not implemented |
+| Sparse tree | :white_check_mark: | Regexp search, shows matching headings + parents |
 | Column view | :red_circle: | Not implemented |
 
-**Summary:** Org-mode is one of gemacs's strongest features with substantial coverage of the core: headings, TODO, tables, babel, export, agenda. Interactive agenda supports jump-to-source and TODO toggling. Refile with narrowing target selection. Key gaps: sparse tree, column view.
+**Summary:** Org-mode is one of gemacs's strongest features with substantial coverage of the core: headings, TODO, tables, babel, export, agenda. Interactive agenda supports jump-to-source and TODO toggling. Refile with narrowing target selection. Sparse tree with regexp matching. Key gap: column view.
 
 ---
 
