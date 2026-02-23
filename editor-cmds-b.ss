@@ -1869,3 +1869,150 @@
   (echo-message! (app-state-echo app)
     (if *global-auto-revert-mode* "Global auto-revert: on" "Global auto-revert: off")))
 
+;;;============================================================================
+;;; M-x customize UI
+;;;============================================================================
+
+(def *customizable-vars*
+  ;; list of (name description getter setter)
+  [["scroll-margin" "Lines of margin for scrolling" (lambda () *scroll-margin*) (lambda (v) (set! *scroll-margin* v))]
+   ["require-final-newline" "Ensure final newline on save" (lambda () *require-final-newline*) (lambda (v) (set! *require-final-newline* v))]
+   ["delete-trailing-whitespace-on-save" "Strip trailing whitespace" (lambda () *delete-trailing-whitespace-on-save*) (lambda (v) (set! *delete-trailing-whitespace-on-save* v))]
+   ["global-auto-revert-mode" "Auto-reload changed files" (lambda () *global-auto-revert-mode*) (lambda (v) (set! *global-auto-revert-mode* v))]
+   ["flymake-mode" "Syntax checking" (lambda () *flymake-mode*) (lambda (v) (set! *flymake-mode* v))]])
+
+(def (cmd-customize app)
+  "Display a customization buffer for common settings."
+  (let* ((echo (app-state-echo app))
+         (fr (app-state-frame app))
+         (ed (current-editor app))
+         (win (current-window fr))
+         (buf (buffer-create! "*Customize*" ed))
+         (lines []))
+    (buffer-attach! ed buf)
+    (set! (edit-window-buffer win) buf)
+    (for-each
+      (lambda (entry)
+        (let ((name (car entry))
+              (desc (cadr entry))
+              (getter (caddr entry)))
+          (set! lines (cons (string-append "  " name " = " (object->string (getter))
+                             "  ;; " desc) lines))))
+      *customizable-vars*)
+    (let ((text (string-append
+                  "Gemacs Customize\n"
+                  "================\n\n"
+                  "Current settings:\n\n"
+                  (string-join (reverse lines) "\n")
+                  "\n\nUse M-x set-variable to change a setting.\n")))
+      (editor-set-text ed text)
+      (editor-goto-pos ed 0)
+      (editor-set-read-only ed #t))))
+
+(def (cmd-set-variable app)
+  "Set a customizable variable by name."
+  (let* ((echo (app-state-echo app))
+         (fr (app-state-frame app))
+         (row (- (frame-height fr) 1))
+         (width (frame-width fr))
+         (names (map car *customizable-vars*))
+         (name (echo-read-string-with-completion echo "Set variable: " names row width)))
+    (when (and name (> (string-length name) 0))
+      (let ((entry (find (lambda (e) (string=? (car e) name)) *customizable-vars*)))
+        (if (not entry)
+          (echo-message! echo (string-append "Unknown variable: " name))
+          (let* ((getter (caddr entry))
+                 (current (getter))
+                 (val-str (echo-read-string echo
+                            (string-append name " (" (object->string current) "): ") row width)))
+            (when (and val-str (> (string-length val-str) 0))
+              (let* ((setter (cadddr entry))
+                     (val (cond
+                            ((string=? val-str "#t") #t)
+                            ((string=? val-str "#f") #f)
+                            ((string->number val-str) => values)
+                            (else val-str))))
+                (setter val)
+                (echo-message! echo
+                  (string-append name " = " (object->string val)))))))))))
+
+;;;============================================================================
+;;; Process sentinels/filters
+;;;============================================================================
+
+(def *process-sentinels* (make-hash-table))  ;; process -> sentinel-fn
+(def *process-filters* (make-hash-table))    ;; process -> filter-fn
+
+(def (set-process-sentinel! proc sentinel)
+  "Set a callback to be called when PROC changes state."
+  (hash-put! *process-sentinels* proc sentinel))
+
+(def (set-process-filter! proc filter)
+  "Set a callback to be called when PROC produces output."
+  (hash-put! *process-filters* proc filter))
+
+(def (process-sentinel proc)
+  "Get the sentinel function for PROC, or #f."
+  (hash-get *process-sentinels* proc))
+
+(def (process-filter proc)
+  "Get the filter function for PROC, or #f."
+  (hash-get *process-filters* proc))
+
+;;;============================================================================
+;;; Plugin/package system
+;;;============================================================================
+
+(def *plugin-directory* "~/.gemacs-plugins")
+(def *loaded-plugins* [])
+
+(def (cmd-load-plugin app)
+  "Load a Gerbil Scheme plugin file."
+  (let* ((echo (app-state-echo app))
+         (fr (app-state-frame app))
+         (row (- (frame-height fr) 1))
+         (width (frame-width fr))
+         (path (echo-read-string echo "Load plugin file: " row width)))
+    (when (and path (> (string-length path) 0))
+      (let ((full-path (path-expand path)))
+        (if (not (file-exists? full-path))
+          (echo-error! echo (string-append "File not found: " full-path))
+          (with-catch
+            (lambda (e)
+              (echo-error! echo (string-append "Plugin error: "
+                (with-output-to-string (lambda () (display-exception e))))))
+            (lambda ()
+              (load full-path)
+              (set! *loaded-plugins* (cons full-path *loaded-plugins*))
+              (echo-message! echo (string-append "Loaded: " (path-strip-directory full-path))))))))))
+
+(def (cmd-list-plugins app)
+  "Show loaded plugins."
+  (let* ((echo (app-state-echo app))
+         (fr (app-state-frame app))
+         (ed (current-editor app))
+         (win (current-window fr))
+         (buf (buffer-create! "*Plugins*" ed)))
+    (buffer-attach! ed buf)
+    (set! (edit-window-buffer win) buf)
+    (let* ((dir (path-expand *plugin-directory*))
+           (available (if (file-exists? dir)
+                       (directory-files dir)
+                       []))
+           (ss-files (filter (lambda (f) (string-suffix? ".ss" f)) available))
+           (text (string-append
+                   "Gemacs Plugins\n"
+                   "==============\n\n"
+                   "Loaded plugins:\n"
+                   (if (null? *loaded-plugins*)
+                     "  (none)\n"
+                     (string-join (map (lambda (p) (string-append "  " p)) *loaded-plugins*) "\n"))
+                   "\n\nAvailable in " dir ":\n"
+                   (if (null? ss-files)
+                     "  (none)\n"
+                     (string-join (map (lambda (f) (string-append "  " f)) ss-files) "\n"))
+                   "\n\nUse M-x load-plugin to load a plugin file.\n")))
+      (editor-set-text ed text)
+      (editor-goto-pos ed 0)
+      (editor-set-read-only ed #t))))
+

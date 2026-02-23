@@ -23,6 +23,9 @@
           cmd-project-tree-create-file cmd-project-tree-delete-file
           cmd-project-tree-rename-file cmd-gemacs-doc
           cmd-dired-async-copy cmd-dired-async-move)
+        (only-in :gemacs/editor-cmds-b
+          cmd-customize cmd-set-variable
+          cmd-load-plugin cmd-list-plugins)
         :gemacs/editor-extra-helpers
         :gemacs/editor-extra-org
         :gemacs/editor-extra-web
@@ -2103,4 +2106,9 @@
   (register-command! 'set-window-dedicated cmd-set-window-dedicated)
   (register-command! 'gemacs-doc cmd-gemacs-doc)
   (register-command! 'dired-async-copy cmd-dired-async-copy)
-  (register-command! 'dired-async-move cmd-dired-async-move))
+  (register-command! 'dired-async-move cmd-dired-async-move)
+  ;; Batch 9: customize, process sentinels, plugins
+  (register-command! 'customize cmd-customize)
+  (register-command! 'set-variable cmd-set-variable)
+  (register-command! 'load-plugin cmd-load-plugin)
+  (register-command! 'list-plugins cmd-list-plugins))

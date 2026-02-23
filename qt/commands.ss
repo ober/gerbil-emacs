@@ -1571,7 +1571,13 @@
   (register-command! 'set-window-dedicated cmd-set-window-dedicated)
   (register-command! 'gemacs-doc cmd-gemacs-doc)
   (register-command! 'dired-async-copy cmd-dired-async-copy)
-  (register-command! 'dired-async-move cmd-dired-async-move))
+  (register-command! 'dired-async-move cmd-dired-async-move)
+  ;; Batch 9: recursive minibuffer, customize, process sentinels, plugins
+  (register-command! 'toggle-enable-recursive-minibuffers cmd-toggle-enable-recursive-minibuffers)
+  (register-command! 'customize cmd-customize)
+  (register-command! 'set-variable cmd-set-variable)
+  (register-command! 'load-plugin cmd-load-plugin)
+  (register-command! 'list-plugins cmd-list-plugins))
 
 ;;; Qt versions of batch 6 commands
 
@@ -1907,3 +1913,124 @@
             (lambda ()
               (rename-file src dest)
               (echo-message! echo (string-append "Moved to " dest)))))))))
+
+;;; Qt versions of batch 9 commands
+
+(def *qt-enable-recursive-minibuffers* #f)
+
+(def (cmd-toggle-enable-recursive-minibuffers app)
+  "Toggle allowing recursive minibuffer invocations (Qt)."
+  (let ((echo (app-state-echo app)))
+    (set! *qt-enable-recursive-minibuffers* (not *qt-enable-recursive-minibuffers*))
+    (echo-message! echo (if *qt-enable-recursive-minibuffers*
+                          "Recursive minibuffers ON"
+                          "Recursive minibuffers OFF"))))
+
+(def *qt-customizable-vars*
+  [["tab-width" "Tab stop width" (lambda () *tab-width*) (lambda (v) (set! *tab-width* v))]
+   ["indent-tabs-mode" "Use tabs" (lambda () *indent-tabs-mode*) (lambda (v) (set! *indent-tabs-mode* v))]
+   ["global-auto-revert-mode" "Auto-reload files" (lambda () *global-auto-revert-mode*) (lambda (v) (set! *global-auto-revert-mode* v))]
+   ["delete-trailing-whitespace-on-save" "Strip trailing whitespace" (lambda () *delete-trailing-whitespace-on-save*) (lambda (v) (set! *delete-trailing-whitespace-on-save* v))]])
+
+(def (cmd-customize app)
+  "Display a customization buffer for common settings (Qt)."
+  (let* ((ed (current-qt-editor app))
+         (echo (app-state-echo app))
+         (fr (app-state-frame app))
+         (lines []))
+    (for-each
+      (lambda (entry)
+        (let ((name (car entry))
+              (desc (cadr entry))
+              (getter (caddr entry)))
+          (set! lines (cons (string-append "  " name " = " (object->string (getter))
+                             "  ;; " desc) lines))))
+      *qt-customizable-vars*)
+    (let* ((text (string-append
+                   "Gemacs Customize\n"
+                   "================\n\n"
+                   "Current settings:\n\n"
+                   (string-join (reverse lines) "\n")
+                   "\n\nUse M-x set-variable to change a setting.\n"))
+           (buf (or (buffer-by-name "*Customize*")
+                    (qt-buffer-create! "*Customize*" ed #f))))
+      (qt-buffer-attach! ed buf)
+      (set! (qt-edit-window-buffer (qt-current-window fr)) buf)
+      (qt-plain-text-edit-set-text! ed text)
+      (qt-text-document-set-modified! (buffer-doc-pointer buf) #f)
+      (qt-plain-text-edit-set-cursor-position! ed 0))))
+
+(def (cmd-set-variable app)
+  "Set a customizable variable by name (Qt)."
+  (let* ((echo (app-state-echo app))
+         (names (map car *qt-customizable-vars*))
+         (name (qt-echo-read-string app "Set variable: ")))
+    (when (and name (> (string-length name) 0))
+      (let ((entry (find (lambda (e) (string=? (car e) name)) *qt-customizable-vars*)))
+        (if (not entry)
+          (echo-message! echo (string-append "Unknown variable: " name))
+          (let* ((getter (caddr entry))
+                 (current (getter))
+                 (val-str (qt-echo-read-string app
+                            (string-append name " (" (object->string current) "): "))))
+            (when (and val-str (> (string-length val-str) 0))
+              (let* ((setter (cadddr entry))
+                     (val (cond
+                            ((string=? val-str "#t") #t)
+                            ((string=? val-str "#f") #f)
+                            ((string->number val-str) => values)
+                            (else val-str))))
+                (setter val)
+                (echo-message! echo
+                  (string-append name " = " (object->string val)))))))))))
+
+(def *qt-process-sentinels* (make-hash-table))
+(def *qt-process-filters* (make-hash-table))
+
+(def *qt-plugin-directory* "~/.gemacs-plugins")
+(def *qt-loaded-plugins* [])
+
+(def (cmd-load-plugin app)
+  "Load a Gerbil Scheme plugin file (Qt)."
+  (let* ((echo (app-state-echo app))
+         (path (qt-echo-read-string app "Load plugin file: ")))
+    (when (and path (> (string-length path) 0))
+      (let ((full-path (path-expand path)))
+        (if (not (file-exists? full-path))
+          (echo-error! echo (string-append "File not found: " full-path))
+          (with-catch
+            (lambda (e)
+              (echo-error! echo (string-append "Plugin error: "
+                (with-output-to-string (lambda () (display-exception e))))))
+            (lambda ()
+              (load full-path)
+              (set! *qt-loaded-plugins* (cons full-path *qt-loaded-plugins*))
+              (echo-message! echo (string-append "Loaded: " (path-strip-directory full-path))))))))))
+
+(def (cmd-list-plugins app)
+  "Show loaded plugins (Qt)."
+  (let* ((ed (current-qt-editor app))
+         (echo (app-state-echo app))
+         (fr (app-state-frame app))
+         (dir (path-expand *qt-plugin-directory*))
+         (available (if (file-exists? dir) (directory-files dir) []))
+         (ss-files (filter (lambda (f) (string-suffix? ".ss" f)) available))
+         (text (string-append
+                 "Gemacs Plugins\n"
+                 "==============\n\n"
+                 "Loaded plugins:\n"
+                 (if (null? *qt-loaded-plugins*)
+                   "  (none)\n"
+                   (string-join (map (lambda (p) (string-append "  " p)) *qt-loaded-plugins*) "\n"))
+                 "\n\nAvailable in " dir ":\n"
+                 (if (null? ss-files)
+                   "  (none)\n"
+                   (string-join (map (lambda (f) (string-append "  " f)) ss-files) "\n"))
+                 "\n\nUse M-x load-plugin to load a plugin file.\n"))
+         (buf (or (buffer-by-name "*Plugins*")
+                  (qt-buffer-create! "*Plugins*" ed #f))))
+    (qt-buffer-attach! ed buf)
+    (set! (qt-edit-window-buffer (qt-current-window fr)) buf)
+    (qt-plain-text-edit-set-text! ed text)
+    (qt-text-document-set-modified! (buffer-doc-pointer buf) #f)
+    (qt-plain-text-edit-set-cursor-position! ed 0)))

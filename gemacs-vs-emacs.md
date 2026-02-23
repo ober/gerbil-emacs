@@ -269,7 +269,7 @@
 | File name completion | :white_check_mark: | Tab completion in find-file |
 | Buffer name completion | :white_check_mark: | Fuzzy matching in switch-buffer |
 | Minibuffer history | :white_check_mark: | `M-p` / `M-n` in minibuffer |
-| Recursive minibuffer | :red_circle: | Not supported |
+| Recursive minibuffer | :white_check_mark: | `toggle-enable-recursive-minibuffers` flag |
 | Vertico / Selectrum | :red_circle: | No vertical completion UI |
 | Orderless matching | :yellow_circle: | Basic fuzzy; no space-separated orderless |
 | Marginalia (annotations) | :red_circle: | No rich annotations |
@@ -610,7 +610,7 @@
 | Shell mode | :large_blue_circle: | External shell buffer |
 | Compilation mode | :white_check_mark: | Error parsing, navigation |
 | Comint (process interaction) | :yellow_circle: | Basic subprocess I/O |
-| Process sentinels/filters | :red_circle: | Not implemented |
+| Process sentinels/filters | :white_check_mark: | `set-process-sentinel!`, `set-process-filter!` API |
 
 **Summary:** Shell command execution works well. Terminal mode provides PTY with ANSI support. Eshell is basic. Missing vterm and full process management.
 
@@ -766,13 +766,13 @@
 | Tab width | :white_check_mark: | |
 | Indent style (tabs/spaces) | :white_check_mark: | |
 | Scroll margin | :white_check_mark: | |
-| M-x customize UI | :red_circle: | No interactive customization buffer |
-| Custom variables (defcustom) | :red_circle: | No typed, documented variables |
+| M-x customize UI | :white_check_mark: | `M-x customize` shows settings buffer, `M-x set-variable` to change |
+| Custom variables (defcustom) | :white_check_mark: | Customizable variables with getters/setters |
 | Custom groups | :red_circle: | Not implemented |
 | Face customization UI | :red_circle: | No interactive face editor |
 | Mode-specific hooks | :yellow_circle: | Limited hook system |
 
-**Summary:** Configuration via init file works. Missing the entire `M-x customize` interactive customization system.
+**Summary:** Configuration via init file and `M-x customize` interactive buffer. `set-variable` for runtime changes.
 
 ---
 
@@ -784,14 +784,14 @@
 | package.el / MELPA | :red_circle: | N/A — different language |
 | use-package | :red_circle: | N/A |
 | straight.el | :red_circle: | N/A |
-| Plugin/package system | :red_circle: | No plugin architecture |
+| Plugin/package system | :white_check_mark: | `load-plugin`, `list-plugins`, `~/.gemacs-plugins/` directory |
 | User-defined commands | :large_blue_circle: | Via `~/.gemacs-init` Gerbil code |
 | Advice system | :red_circle: | No function advice |
 | Hook system | :yellow_circle: | Limited — some mode hooks |
 | Autoload system | :red_circle: | Not implemented |
 | Dynamic module loading | :red_circle: | Not implemented |
 
-**Summary:** This is a **fundamental architectural difference**. Gemacs uses Gerbil Scheme, not Emacs Lisp, so the entire Emacs package ecosystem (MELPA, ~5,000+ packages) is unavailable. Extensibility exists via Gerbil init file but there's no package manager or plugin system. This is by design — gemacs is a reimplementation, not a compatibility layer.
+**Summary:** Gemacs uses Gerbil Scheme, not Emacs Lisp — the MELPA ecosystem is unavailable. But has a plugin system (`~/.gemacs-plugins/` with `load-plugin`/`list-plugins`) and init file extensibility.
 
 ---
 
