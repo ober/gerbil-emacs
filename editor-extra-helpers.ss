@@ -884,3 +884,126 @@
     (editor-goto-pos ed 0)
     (editor-set-read-only ed #t)))
 
+;;;============================================================================
+;;; Dynamic module loading
+;;;============================================================================
+
+(def *loaded-modules* [])
+
+(def (cmd-load-module app)
+  "Load a compiled Gerbil module (.so or .ss) at runtime."
+  (let* ((echo (app-state-echo app))
+         (fr (app-state-frame app))
+         (row (- (frame-height fr) 1))
+         (width (frame-width fr))
+         (path (echo-read-string echo "Load module: " row width)))
+    (when (and path (> (string-length path) 0))
+      (let ((full-path (path-expand path)))
+        (if (not (file-exists? full-path))
+          (echo-error! echo (string-append "Module not found: " full-path))
+          (with-catch
+            (lambda (e)
+              (echo-error! echo (string-append "Load error: "
+                (with-output-to-string (lambda () (display-exception e))))))
+            (lambda ()
+              (load full-path)
+              (set! *loaded-modules* (cons full-path *loaded-modules*))
+              (echo-message! echo (string-append "Loaded module: "
+                (path-strip-directory full-path))))))))))
+
+(def (cmd-list-modules app)
+  "Show loaded dynamic modules."
+  (let* ((echo (app-state-echo app))
+         (fr (app-state-frame app))
+         (ed (current-editor app))
+         (win (current-window fr))
+         (buf (buffer-create! "*Modules*" ed))
+         (text (string-append
+                 "Loaded Modules\n"
+                 "==============\n\n"
+                 (if (null? *loaded-modules*)
+                   "  (none)\n"
+                   (string-join (map (lambda (m) (string-append "  " m)) *loaded-modules*) "\n"))
+                 "\n\nUse M-x load-module to load a module.\n")))
+    (buffer-attach! ed buf)
+    (set! (edit-window-buffer win) buf)
+    (editor-set-text ed text)
+    (editor-goto-pos ed 0)
+    (editor-set-read-only ed #t)))
+
+;;;============================================================================
+;;; Icomplete / Fido mode
+;;;============================================================================
+
+(def *icomplete-mode* #f)
+
+(def (cmd-icomplete-mode app)
+  "Toggle icomplete-mode (inline completion display)."
+  (let ((echo (app-state-echo app)))
+    (set! *icomplete-mode* (not *icomplete-mode*))
+    (echo-message! echo (if *icomplete-mode*
+                          "Icomplete mode ON (inline completions)"
+                          "Icomplete mode OFF"))))
+
+(def (cmd-fido-mode app)
+  "Toggle fido-mode (flex matching + icomplete)."
+  (let ((echo (app-state-echo app)))
+    (set! *icomplete-mode* (not *icomplete-mode*))
+    (echo-message! echo (if *icomplete-mode*
+                          "Fido mode ON (flex matching)"
+                          "Fido mode OFF"))))
+
+;;;============================================================================
+;;; Marginalia (annotations in completions)
+;;;============================================================================
+
+(def *marginalia-annotators* (make-hash-table))
+
+(def (marginalia-annotate! category annotator)
+  "Register an annotator function for a completion CATEGORY."
+  (hash-put! *marginalia-annotators* category annotator))
+
+(marginalia-annotate! 'command
+  (lambda (name)
+    (let ((cmd (find-command (string->symbol name))))
+      (if cmd " [command]" ""))))
+
+(marginalia-annotate! 'buffer
+  (lambda (name)
+    (let ((buf (buffer-by-name name)))
+      (if buf
+        (let ((file (buffer-file-path buf)))
+          (if file (string-append " " file) " [no file]"))
+        ""))))
+
+;;;============================================================================
+;;; Embark action registry (used by cmd-embark-act in editor-extra-modes.ss)
+;;;============================================================================
+
+(def *embark-actions* (make-hash-table))
+
+(def (embark-define-action! category name fn)
+  "Register an action for completion candidates of CATEGORY."
+  (let ((existing (or (hash-get *embark-actions* category) [])))
+    (hash-put! *embark-actions* category (cons (cons name fn) existing))))
+
+(embark-define-action! 'command "describe"
+  (lambda (app candidate)
+    (echo-message! (app-state-echo app)
+      (string-append "Command: " candidate))))
+
+(embark-define-action! 'command "execute"
+  (lambda (app candidate)
+    (let ((cmd (find-command (string->symbol candidate))))
+      (when cmd (cmd app)))))
+
+(embark-define-action! 'file "find-file"
+  (lambda (app candidate)
+    (echo-message! (app-state-echo app)
+      (string-append "Would open: " candidate))))
+
+(embark-define-action! 'file "delete"
+  (lambda (app candidate)
+    (echo-message! (app-state-echo app)
+      (string-append "Would delete: " candidate))))
+

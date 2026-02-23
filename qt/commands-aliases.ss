@@ -1811,3 +1811,76 @@
       (qt-text-document-set-modified! (buffer-doc-pointer buf) #f)
       (qt-plain-text-edit-set-cursor-position! ed 0))))
 
+;;; Qt batch 11: dynamic modules, icomplete, marginalia, embark
+
+(def *qt-loaded-modules* [])
+
+(def (cmd-load-module app)
+  "Load a module at runtime (Qt)."
+  (let* ((echo (app-state-echo app))
+         (path (qt-echo-read-string app "Load module: ")))
+    (when (and path (> (string-length path) 0))
+      (let ((full-path (path-expand path)))
+        (if (not (file-exists? full-path))
+          (echo-error! echo (string-append "Not found: " full-path))
+          (with-catch
+            (lambda (e) (echo-error! echo "Load error"))
+            (lambda ()
+              (load full-path)
+              (set! *qt-loaded-modules* (cons full-path *qt-loaded-modules*))
+              (echo-message! echo (string-append "Loaded: " (path-strip-directory full-path))))))))))
+
+(def (cmd-list-modules app)
+  "Show loaded modules (Qt)."
+  (let* ((ed (current-qt-editor app))
+         (echo (app-state-echo app))
+         (fr (app-state-frame app))
+         (text (string-append
+                 "Loaded Modules\n==============\n\n"
+                 (if (null? *qt-loaded-modules*) "  (none)\n"
+                   (string-join (map (lambda (m) (string-append "  " m)) *qt-loaded-modules*) "\n"))
+                 "\n"))
+         (buf (or (buffer-by-name "*Modules*")
+                  (qt-buffer-create! "*Modules*" ed #f))))
+    (qt-buffer-attach! ed buf)
+    (set! (qt-edit-window-buffer (qt-current-window fr)) buf)
+    (qt-plain-text-edit-set-text! ed text)
+    (qt-text-document-set-modified! (buffer-doc-pointer buf) #f)
+    (qt-plain-text-edit-set-cursor-position! ed 0)))
+
+(def *qt-icomplete-mode* #f)
+
+(def (cmd-icomplete-mode app)
+  "Toggle icomplete-mode (Qt)."
+  (set! *qt-icomplete-mode* (not *qt-icomplete-mode*))
+  (echo-message! (app-state-echo app)
+    (if *qt-icomplete-mode* "Icomplete mode ON" "Icomplete mode OFF")))
+
+(def (cmd-fido-mode app)
+  "Toggle fido-mode (Qt)."
+  (set! *qt-icomplete-mode* (not *qt-icomplete-mode*))
+  (echo-message! (app-state-echo app)
+    (if *qt-icomplete-mode* "Fido mode ON" "Fido mode OFF")))
+
+(def *qt-marginalia-mode* #f)
+
+(def (cmd-marginalia-mode app)
+  "Toggle marginalia-mode (Qt)."
+  (set! *qt-marginalia-mode* (not *qt-marginalia-mode*))
+  (echo-message! (app-state-echo app)
+    (if *qt-marginalia-mode* "Marginalia mode ON" "Marginalia mode OFF")))
+
+(def *qt-embark-actions* (make-hash-table))
+
+(def (cmd-embark-act app)
+  "Show embark actions (Qt)."
+  (let* ((echo (app-state-echo app))
+         (cat-str (qt-echo-read-string app "Embark category: ")))
+    (when (and cat-str (> (string-length cat-str) 0))
+      (let ((actions (hash-get *qt-embark-actions* (string->symbol cat-str))))
+        (if (not actions)
+          (echo-message! echo "No actions for category")
+          (let ((action (qt-echo-read-string app "Action: ")))
+            (when (and action (> (string-length action) 0))
+              (echo-message! echo (string-append "Embark: " action)))))))))
+

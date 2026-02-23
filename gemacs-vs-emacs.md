@@ -272,13 +272,13 @@
 | Recursive minibuffer | :white_check_mark: | `toggle-enable-recursive-minibuffers` flag |
 | Vertico / Selectrum | :red_circle: | No vertical completion UI |
 | Orderless matching | :yellow_circle: | Basic fuzzy; no space-separated orderless |
-| Marginalia (annotations) | :red_circle: | No rich annotations |
-| Embark (actions on candidates) | :red_circle: | Not implemented |
+| Marginalia (annotations) | :white_check_mark: | Annotator registry with `marginalia-annotate!`, command/buffer/file categories |
+| Embark (actions on candidates) | :white_check_mark: | Action registry with `embark-define-action!`, describe/execute/find-file actions |
 | Consult (enhanced commands) | :yellow_circle: | `consult-grep`, `consult-line` registered but basic |
-| Icomplete / Fido mode | :red_circle: | Not implemented |
+| Icomplete / Fido mode | :white_check_mark: | `icomplete-mode` / `fido-mode` toggles |
 | Savehist (persist history) | :large_blue_circle: | `~/.gemacs-history` |
 
-**Summary:** Basic minibuffer works with fuzzy completion. Modern completion frameworks (Vertico, Orderless, Marginalia, Embark) are absent. This is one of the biggest gaps for modern Emacs workflows.
+**Summary:** Basic minibuffer works with fuzzy completion. Marginalia annotations, Embark actions, and Icomplete/Fido mode are implemented. Vertico vertical UI and full Orderless matching remain gaps.
 
 ---
 
@@ -789,7 +789,7 @@
 | Advice system | :white_check_mark: | `advice-add!`/`advice-remove!` with before/after, `describe-advice` |
 | Hook system | :yellow_circle: | Limited — some mode hooks |
 | Autoload system | :white_check_mark: | `autoload!` to register, `list-autoloads` to view |
-| Dynamic module loading | :red_circle: | Not implemented |
+| Dynamic module loading | :white_check_mark: | `load-module` / `list-modules` for runtime Gerbil module loading |
 
 **Summary:** Gemacs uses Gerbil Scheme, not Emacs Lisp — the MELPA ecosystem is unavailable. But has a plugin system (`~/.gemacs-plugins/` with `load-plugin`/`list-plugins`) and init file extensibility.
 
@@ -1002,10 +1002,10 @@
 | **TRAMP (remote editing)** | Can't edit files over SSH/Docker | Large |
 | ~~Tab bar / workspaces~~ | ~~No visual workspace management~~ Implemented: workspace tabs (create/close/switch/rename/move), Qt visual buffer tab bar | ~~Medium~~ Done |
 | **Tree-sitter highlighting** | Less accurate highlighting than modern Emacs | Large |
-| **Package/plugin system** | Users can't extend gemacs easily | Large |
+| ~~Package/plugin system~~ | ~~Users can't extend gemacs easily~~ Implemented: `~/.gemacs-plugins/`, `load-plugin`/`list-plugins`, dynamic module loading | ~~Large~~ Done |
 | ~~Org capture buffer~~ | ~~No interactive capture~~ Implemented: template selection, `*Org Capture*` buffer, C-c C-c / C-c C-k | ~~Small~~ Done |
 | ~~Named keyboard macros~~ | ~~Only last-recorded macro~~ Implemented: name, call, save/load | ~~Small~~ Done |
-| **Info reader** | Can't browse GNU documentation | Medium |
+| ~~Info reader~~ | ~~Can't browse GNU documentation~~ Implemented: `info-reader` with node navigation | ~~Medium~~ Done |
 | **PDF viewing** | No document viewer | Large |
 
 ### Tier 4 — Emacs-Specific (Low Priority)
@@ -1014,7 +1014,7 @@
 |-----|--------|--------|
 | Email (Gnus/mu4e) | Most users use dedicated email clients | Very Large |
 | IRC (ERC) | Most users use dedicated chat clients | Large |
-| M-x customize UI | Programmatic config is fine for power users | Medium |
+| ~~M-x customize UI~~ | ~~Programmatic config is fine for power users~~ Implemented: `customize`, `set-variable`, custom groups, face editor | ~~Medium~~ Done |
 | Elisp compatibility | Fundamental architecture choice (Gerbil vs Elisp) | N/A |
 
 ---

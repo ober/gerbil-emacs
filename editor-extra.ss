@@ -2114,4 +2114,9 @@
   (register-command! 'list-plugins cmd-list-plugins)
   ;; Batch 10: advice, autoloads
   (register-command! 'describe-advice cmd-describe-advice)
-  (register-command! 'list-autoloads cmd-list-autoloads))
+  (register-command! 'list-autoloads cmd-list-autoloads)
+  ;; Batch 11: dynamic modules, icomplete/fido
+  (register-command! 'load-module cmd-load-module)
+  (register-command! 'list-modules cmd-list-modules)
+  (register-command! 'icomplete-mode cmd-icomplete-mode)
+  (register-command! 'fido-mode cmd-fido-mode))
