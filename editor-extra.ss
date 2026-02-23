@@ -11,6 +11,7 @@
         :gerbil-scintilla/constants
         :gerbil-scintilla/scintilla
         :gemacs/core
+        :gemacs/snippets
         :gemacs/keymap
         :gemacs/buffer
         :gemacs/window
@@ -1888,28 +1889,102 @@
   "List key translations."
   (echo-message! (app-state-echo app) "No key translations defined"))
 
-;; --- Snippets ---
-(def *tui-snippets* (make-hash-table))
-(def (cmd-define-snippet app)
-  "Define a snippet."
-  (let ((name (app-read-string app "Snippet name: ")))
-    (when (and name (> (string-length name) 0))
-      (let ((body (app-read-string app "Snippet body: ")))
-        (when body (hash-put! *tui-snippets* name body)
-          (echo-message! (app-state-echo app) (string-append "Defined: " name)))))))
-(def (cmd-list-snippets app)
-  "List snippets."
-  (let ((names (hash-keys *tui-snippets*)))
-    (if (null? names) (echo-message! (app-state-echo app) "No snippets")
-      (let* ((fr (app-state-frame app)) (win (current-window fr)) (ed (edit-window-editor win))
-             (buf (buffer-create! "*Snippets*" ed)))
-        (buffer-attach! ed buf) (set! (edit-window-buffer win) buf)
-        (editor-set-text ed (string-join names "\n")) (editor-goto-pos ed 0)))))
+;; --- Snippets (real implementation using shared :gemacs/snippets) ---
+(def (tui-get-word-prefix ed)
+  "Get word prefix before cursor in TUI editor."
+  (let* ((pos (editor-get-current-pos ed))
+         (text (editor-get-text ed))
+         (start (let loop ((i (- pos 1)))
+                  (if (< i 0) 0
+                    (let ((ch (string-ref text i)))
+                      (if (or (char-alphabetic? ch) (char-numeric? ch)
+                              (char=? ch #\-) (char=? ch #\_) (char=? ch #\*) (char=? ch #\!))
+                        (loop (- i 1))
+                        (+ i 1)))))))
+    (if (< start pos)
+      (substring text start pos)
+      "")))
+
 (def (cmd-snippet-expand app)
-  "Expand snippet at point."
-  (echo-message! (app-state-echo app) "Use M-x define-snippet first"))
-(def (cmd-snippet-next-field app) "Next snippet field." (echo-message! (app-state-echo app) "No snippet active"))
-(def (cmd-snippet-prev-field app) "Previous snippet field." (echo-message! (app-state-echo app) "No snippet active"))
+  "Try to expand snippet at point. Returns #t if expanded, #f otherwise."
+  (let* ((ed (current-editor app))
+         (buf (current-buffer-from-app app))
+         (prefix (tui-get-word-prefix ed))
+         (lang (or (buffer-lexer-lang buf) 'global)))
+    (if (string=? prefix "")
+      #f
+      (let ((template (snippet-lookup prefix lang)))
+        (if (not template)
+          #f
+          (let* ((expanded (snippet-expand-template template))
+                 (text (car expanded))
+                 (fields (cdr expanded))
+                 (pos (editor-get-current-pos ed))
+                 (trigger-start (- pos (string-length prefix)))
+                 (full-text (editor-get-text ed))
+                 (new-text (string-append
+                             (substring full-text 0 trigger-start)
+                             text
+                             (substring full-text pos (string-length full-text)))))
+            (editor-set-text ed new-text)
+            (if (null? fields)
+              (editor-goto-pos ed (+ trigger-start (string-length text)))
+              (let ((first-field (car fields)))
+                (set! *snippet-active* #t)
+                (set! *snippet-field-positions*
+                  (map (lambda (f) (+ trigger-start (cdr f))) fields))
+                (editor-goto-pos ed (+ trigger-start (cdr first-field)))))
+            #t))))))
+
+(def (cmd-snippet-next-field app)
+  "Jump to next snippet field."
+  (when *snippet-active*
+    (let* ((ed (current-editor app))
+           (pos (editor-get-current-pos ed))
+           (next (let loop ((fps *snippet-field-positions*))
+                   (if (null? fps) #f
+                     (if (> (car fps) pos) (car fps) (loop (cdr fps)))))))
+      (if next
+        (editor-goto-pos ed next)
+        (snippet-deactivate!)))))
+
+(def (cmd-snippet-prev-field app)
+  "Jump to previous snippet field."
+  (when *snippet-active*
+    (let* ((ed (current-editor app))
+           (pos (editor-get-current-pos ed))
+           (prev (let loop ((fps (reverse *snippet-field-positions*)))
+                   (if (null? fps) #f
+                     (if (< (car fps) pos) (car fps) (loop (cdr fps)))))))
+      (when prev (editor-goto-pos ed prev)))))
+
+(def (cmd-define-snippet app)
+  "Interactively define a snippet."
+  (let ((lang-str (app-read-string app "Language (or global): ")))
+    (when (and lang-str (> (string-length lang-str) 0))
+      (let ((trigger (app-read-string app "Trigger: ")))
+        (when (and trigger (> (string-length trigger) 0))
+          (let ((template (app-read-string app "Template ($1,$2 for fields): ")))
+            (when (and template (> (string-length template) 0))
+              (snippet-define! (string->symbol lang-str) trigger template)
+              (echo-message! (app-state-echo app)
+                (string-append "Snippet '" trigger "' defined for " lang-str)))))))))
+
+(def (cmd-list-snippets app)
+  "List all defined snippets."
+  (let ((out (open-output-string)))
+    (display "Snippets:\n\n" out)
+    (hash-for-each
+      (lambda (lang lang-table)
+        (display (string-append "--- " (symbol->string lang) " ---\n") out)
+        (hash-for-each
+          (lambda (trigger template)
+            (let ((first-line (let ((nl (string-index template #\newline)))
+                                (if nl (substring template 0 nl) template))))
+              (display (string-append "  " trigger " -> " first-line "\n") out)))
+          lang-table))
+      *snippet-table*)
+    (open-output-buffer app "*Snippets*" (get-output-string out))))
 
 ;;; Parity batch 11: GUI-specific, LSP, and multi-cursor stubs
 (def (cmd-calendar-today app) "Calendar today."

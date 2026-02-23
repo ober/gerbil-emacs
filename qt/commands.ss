@@ -77,6 +77,7 @@
         :std/text/base64
         :gemacs/qt/sci-shim
         :gemacs/core
+        :gemacs/snippets
         :gemacs/editor
         (only-in :gemacs/editor-extra-final
                  find-editorconfig)
@@ -109,6 +110,7 @@
         :gemacs/qt/commands-lsp
         :gemacs/qt/commands-shell
         :gemacs/qt/commands-modes
+        :gemacs/qt/snippets
         :gemacs/qt/commands-config
         :gemacs/qt/commands-parity
         :gemacs/qt/commands-aliases)

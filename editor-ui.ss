@@ -15,6 +15,7 @@
         :gerbil-scintilla/style
         :gerbil-scintilla/tui
         :gemacs/core
+        :gemacs/snippets
         :gemacs/repl
         :gemacs/eshell
         :gemacs/shell
@@ -384,9 +385,17 @@
               (else
                (editor-insert-text ed pos "  ")))))))
       (else
-       ;; Insert 2-space indent (Scheme convention)
-       (let ((pos (editor-get-current-pos ed)))
-         (editor-insert-text ed pos "  "))))))
+       ;; If snippet is active, jump to next field
+       (if *snippet-active*
+         (let ((fn (find-command 'snippet-next-field)))
+           (when fn (fn app)))
+         ;; Try snippet expansion, then indent
+         (let* ((fn (find-command 'snippet-expand))
+                (expanded (and fn (fn app))))
+           (unless expanded
+             ;; Insert 2-space indent (Scheme convention)
+             (let ((pos (editor-get-current-pos ed)))
+               (editor-insert-text ed pos "  ")))))))))
 
 ;;;============================================================================
 ;;; Beginning/end of defun

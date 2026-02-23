@@ -197,6 +197,8 @@
     "terminal"
     ;; AI Chat (Claude CLI integration)
     "chat"
+    ;; Shared snippet infrastructure
+    "snippets"
     ;; TUI backend
     "keymap"
     "buffer"
@@ -285,6 +287,7 @@
           (gxc: "qt/commands-lsp"   "-cc-options" ,qt-cc-opts "-ld-options" ,qt-ld-opts)
           (gxc: "qt/commands-shell"  "-cc-options" ,qt-cc-opts "-ld-options" ,qt-ld-opts)
           (gxc: "qt/commands-modes"  "-cc-options" ,qt-cc-opts "-ld-options" ,qt-ld-opts)
+          (gxc: "qt/snippets"       "-cc-options" ,qt-cc-opts "-ld-options" ,qt-ld-opts)
           (gxc: "qt/commands-config" "-cc-options" ,qt-cc-opts "-ld-options" ,qt-ld-opts)
           (gxc: "qt/commands-parity"  "-cc-options" ,qt-cc-opts "-ld-options" ,qt-ld-opts)
           (gxc: "qt/commands-aliases" "-cc-options" ,qt-cc-opts "-ld-options" ,qt-ld-opts)

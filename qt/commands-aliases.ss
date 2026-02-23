@@ -30,6 +30,7 @@
         :gemacs/qt/commands-lsp
         :gemacs/qt/commands-shell
         :gemacs/qt/commands-modes
+        :gemacs/qt/snippets
         :gemacs/qt/commands-config
         :gemacs/qt/commands-parity)
 
@@ -588,6 +589,7 @@
   (register-command! 'snippet-prev-field cmd-snippet-prev-field)
   (register-command! 'define-snippet cmd-define-snippet)
   (register-command! 'list-snippets cmd-list-snippets)
+  (register-command! 'snippet-insert cmd-snippet-insert)
   ;; Winner mode
   (register-command! 'winner-undo cmd-winner-undo)
   (register-command! 'winner-redo cmd-winner-redo)

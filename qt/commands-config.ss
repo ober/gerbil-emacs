@@ -1,5 +1,5 @@
 ;;; -*- Gerbil -*-
-;;; Qt commands config - snippets, terminal, keymaps, dired marks, keys, init, macros
+;;; Qt commands config - terminal, keymaps, dired marks, keys, init, macros
 ;;; Part of the qt/commands-*.ss module chain.
 
 (export #t)
@@ -10,6 +10,7 @@
         :std/text/base64
         :gemacs/qt/sci-shim
         :gemacs/core
+        :gemacs/snippets
         (only-in :gemacs/persist
                  record-face-customization!
                  custom-faces-save!
@@ -32,192 +33,8 @@
         :gemacs/qt/commands-ide
         :gemacs/qt/commands-vcs
         :gemacs/qt/commands-shell
-        :gemacs/qt/commands-modes)
-
-;;; ============================================================================
-
-(def *snippet-table* (make-hash-table)) ;; lang -> (hash trigger -> template)
-(def *snippet-active* #f) ;; #f or (fields . current-field-idx)
-(def *snippet-field-positions* []) ;; list of (start . end) positions
-
-(def (snippet-define! lang trigger template)
-  "Define a snippet: LANG is language symbol or 'global, TRIGGER is prefix string,
-   TEMPLATE is string with $1, $2 etc. for fields and $0 for final cursor pos."
-  (let ((lang-table (or (hash-get *snippet-table* lang) (make-hash-table))))
-    (hash-put! lang-table trigger template)
-    (hash-put! *snippet-table* lang lang-table)))
-
-(def (snippet-lookup trigger lang)
-  "Look up a snippet by trigger, checking lang-specific then global."
-  (or (let ((lt (hash-get *snippet-table* lang)))
-        (and lt (hash-get lt trigger)))
-      (let ((gt (hash-get *snippet-table* 'global)))
-        (and gt (hash-get gt trigger)))))
-
-(def (snippet-expand-template template)
-  "Expand template: replace $1..$9 with empty placeholders, return (text . field-offsets).
-   Field offsets are positions where $N markers were."
-  (let ((out (open-output-string))
-        (fields (make-hash-table))
-        (len (string-length template)))
-    (let loop ((i 0))
-      (cond
-        ((>= i len)
-         (let* ((text (get-output-string out))
-                (offsets
-                  (let collect ((n 1) (acc []))
-                    (if (> n 9)
-                      (let ((zero-pos (hash-get fields 0)))
-                        (if zero-pos
-                          (reverse (cons (cons 0 zero-pos) acc))
-                          (reverse acc)))
-                      (let ((pos (hash-get fields n)))
-                        (if pos
-                          (collect (+ n 1) (cons (cons n pos) acc))
-                          (collect (+ n 1) acc)))))))
-           (cons text offsets)))
-        ((and (char=? (string-ref template i) #\$)
-              (< (+ i 1) len)
-              (char-numeric? (string-ref template (+ i 1))))
-         (let ((n (- (char->integer (string-ref template (+ i 1)))
-                     (char->integer #\0)))
-               (pos (string-length (get-output-string out))))
-           ;; Re-create output string to get current position
-           (hash-put! fields n pos)
-           (loop (+ i 2))))
-        (else
-         (display (string (string-ref template i)) out)
-         (loop (+ i 1)))))))
-
-(def (cmd-snippet-expand app)
-  "Try to expand snippet at point. If no snippet, insert tab."
-  (let* ((ed (current-qt-editor app))
-         (buf (current-qt-buffer app))
-         (prefix (get-word-prefix ed))
-         (lang (or (buffer-lexer-lang buf) 'global)))
-    (if (string=? prefix "")
-      #f  ;; No trigger word
-      (let ((template (snippet-lookup prefix lang)))
-        (if (not template)
-          #f  ;; No matching snippet
-          (let* ((expanded (snippet-expand-template template))
-                 (text (car expanded))
-                 (fields (cdr expanded))
-                 (pos (qt-plain-text-edit-cursor-position ed))
-                 (trigger-start (- pos (string-length prefix)))
-                 ;; Replace trigger with expanded text
-                 (full-text (qt-plain-text-edit-text ed))
-                 (new-text (string-append
-                             (substring full-text 0 trigger-start)
-                             text
-                             (substring full-text pos (string-length full-text)))))
-            (qt-plain-text-edit-set-text! ed new-text)
-            (if (null? fields)
-              ;; No fields — place cursor at end of expansion
-              (qt-plain-text-edit-set-cursor-position! ed
-                (+ trigger-start (string-length text)))
-              ;; Place cursor at first field
-              (let ((first-field (car fields)))
-                (set! *snippet-active* #t)
-                (set! *snippet-field-positions*
-                  (map (lambda (f) (+ trigger-start (cdr f))) fields))
-                (qt-plain-text-edit-set-cursor-position! ed
-                  (+ trigger-start (cdr first-field)))))
-            (qt-plain-text-edit-ensure-cursor-visible! ed)
-            #t))))))
-
-(def (cmd-snippet-next-field app)
-  "Jump to next snippet field."
-  (when *snippet-active*
-    (let* ((ed (current-qt-editor app))
-           (pos (qt-plain-text-edit-cursor-position ed))
-           ;; Find next field after current position
-           (next (let loop ((fps *snippet-field-positions*))
-                   (if (null? fps) #f
-                     (if (> (car fps) pos)
-                       (car fps)
-                       (loop (cdr fps)))))))
-      (if next
-        (begin
-          (qt-plain-text-edit-set-cursor-position! ed next)
-          (qt-plain-text-edit-ensure-cursor-visible! ed))
-        ;; No more fields — deactivate snippet
-        (begin
-          (set! *snippet-active* #f)
-          (set! *snippet-field-positions* []))))))
-
-(def (cmd-snippet-prev-field app)
-  "Jump to previous snippet field."
-  (when *snippet-active*
-    (let* ((ed (current-qt-editor app))
-           (pos (qt-plain-text-edit-cursor-position ed))
-           ;; Find previous field before current position
-           (prev (let loop ((fps (reverse *snippet-field-positions*)))
-                   (if (null? fps) #f
-                     (if (< (car fps) pos)
-                       (car fps)
-                       (loop (cdr fps)))))))
-      (when prev
-        (qt-plain-text-edit-set-cursor-position! ed prev)
-        (qt-plain-text-edit-ensure-cursor-visible! ed)))))
-
-(def (cmd-define-snippet app)
-  "Interactively define a snippet."
-  (let* ((lang-str (qt-echo-read-string app "Language (or global): "))
-         (trigger (qt-echo-read-string app "Trigger: "))
-         (template (qt-echo-read-string app "Template ($1,$2 for fields): ")))
-    (when (and lang-str trigger template
-               (> (string-length trigger) 0)
-               (> (string-length template) 0))
-      (let ((lang (string->symbol lang-str)))
-        (snippet-define! lang trigger template)
-        (echo-message! (app-state-echo app)
-          (string-append "Snippet '" trigger "' defined for " lang-str))))))
-
-(def (cmd-list-snippets app)
-  "List all defined snippets."
-  (let* ((ed (current-qt-editor app))
-         (fr (app-state-frame app))
-         (out (open-output-string)))
-    (display "Snippets:\n\n" out)
-    (hash-for-each
-      (lambda (lang lang-table)
-        (display (string-append "--- " (symbol->string lang) " ---\n") out)
-        (hash-for-each
-          (lambda (trigger template)
-            (display (string-append "  " trigger " → " template "\n") out))
-          lang-table))
-      *snippet-table*)
-    (let* ((text (get-output-string out))
-           (buf (or (buffer-by-name "*Snippets*")
-                    (qt-buffer-create! "*Snippets*" ed #f))))
-      (qt-buffer-attach! ed buf)
-      (set! (qt-edit-window-buffer (qt-current-window fr)) buf)
-      (qt-plain-text-edit-set-text! ed text)
-      (qt-text-document-set-modified! (buffer-doc-pointer buf) #f)
-      (qt-plain-text-edit-set-cursor-position! ed 0))))
-
-;; Built-in snippets for common languages
-(snippet-define! 'scheme "def" "(def ($1)\n  $2)\n$0")
-(snippet-define! 'scheme "defn" "(def ($1 $2)\n  $3)\n$0")
-(snippet-define! 'scheme "let" "(let (($1 $2))\n  $3)\n$0")
-(snippet-define! 'scheme "let*" "(let* (($1 $2))\n  $3)\n$0")
-(snippet-define! 'scheme "when" "(when $1\n  $2)\n$0")
-(snippet-define! 'scheme "unless" "(unless $1\n  $2)\n$0")
-(snippet-define! 'scheme "cond" "(cond\n  (($1) $2)\n  (else $3))\n$0")
-(snippet-define! 'scheme "if" "(if $1\n  $2\n  $3)\n$0")
-(snippet-define! 'scheme "lambda" "(lambda ($1)\n  $2)\n$0")
-(snippet-define! 'scheme "match" "(match $1\n  (($2) $3))\n$0")
-(snippet-define! 'scheme "defstruct" "(defstruct $1 ($2))\n$0")
-(snippet-define! 'scheme "defclass" "(defclass $1 ($2)\n  $3)\n$0")
-(snippet-define! 'scheme "import" "(import $1)\n$0")
-(snippet-define! 'scheme "export" "(export $1)\n$0")
-(snippet-define! 'scheme "with-catch" "(with-catch\n  (lambda (e) $1)\n  (lambda ()\n    $2))\n$0")
-(snippet-define! 'scheme "for-each" "(for-each\n  (lambda ($1)\n    $2)\n  $3)\n$0")
-
-(snippet-define! 'global "todo" ";; TODO: $1\n$0")
-(snippet-define! 'global "fixme" ";; FIXME: $1\n$0")
-(snippet-define! 'global "note" ";; NOTE: $1\n$0")
+        :gemacs/qt/commands-modes
+        :gemacs/qt/snippets)
 
 ;; --- Misc ---
 (def (cmd-display-fill-column-indicator app)

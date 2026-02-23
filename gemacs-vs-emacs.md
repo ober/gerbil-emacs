@@ -1,7 +1,7 @@
 # Gemacs vs GNU Emacs — Feature Comparison
 
 > **Last updated:** 2026-02-22
-> **Gemacs version:** master (4e74547)
+> **Gemacs version:** master (33cc4f7)
 > **Compared against:** GNU Emacs 29.x / 30.x feature set
 
 ## Status Legend
@@ -911,13 +911,18 @@
 
 | Feature | Status | Notes |
 |---------|--------|-------|
-| Snippet expansion | :yellow_circle: | Org-mode `<s TAB` works; no general snippet system |
-| Snippet library | :red_circle: | No snippet collections |
-| Snippet creation | :red_circle: | Not implemented |
-| Tabstop navigation | :red_circle: | Not implemented |
+| Snippet expansion | :white_check_mark: | TAB expands trigger → template with field navigation |
+| Snippet library | :large_blue_circle: | 100+ built-in snippets across 9 languages |
+| Snippet creation | :white_check_mark: | `M-x define-snippet` interactive definition |
+| Tabstop navigation | :white_check_mark: | TAB/$1→$2→...→$0 field jumping |
+| Default field values | :large_blue_circle: | `${1:default}` syntax supported |
+| Snippet browsing | :white_check_mark: | `M-x snippet-insert` with narrowing |
+| File-based snippets | :large_blue_circle: | Load from `~/.gemacs-snippets/<lang>/` |
 | Mirror fields | :red_circle: | Not implemented |
 
-**Summary:** No general snippet system. Org template expansion (`<s TAB` etc.) exists as a special case.
+**Built-in snippet languages:** Scheme/Gerbil, Python, JavaScript, C/C++, Go, Rust, HTML, Shell/Bash, Markdown, plus global snippets.
+
+**Summary:** Full snippet system with TAB-triggered expansion, field navigation ($1→$2→$0), default values, 100+ built-in snippets, file-based loading, and narrowing-based browsing. Both TUI and Qt. Missing mirror fields (linked fields that update together).
 
 ---
 
@@ -980,7 +985,7 @@
 |-----|--------|--------|
 | **Modern completion (Vertico/Orderless)** | No vertical minibuffer completion, no space-separated filtering | Medium |
 | **Multiple cursors / iedit** | Can't edit multiple occurrences simultaneously | Medium |
-| **Snippet system (YASnippet)** | No template expansion with tabstops | Medium |
+| ~~Snippet system (YASnippet)~~ | ~~No template expansion~~ Implemented: 100+ snippets, tabstops | ~~Medium~~ Done |
 | **Ediff / Smerge** | Can't resolve merge conflicts interactively | Medium |
 | **Flyspell (on-the-fly spell)** | No background spell checking | Small |
 | **Undo tree** | Linear undo only, no branch visualization | Medium |
@@ -1127,7 +1132,7 @@
 | **Bracket/paren swap** (`[`↔`(`)                        | Configured       | :white_check_mark: Works     | None — key-translate system              |
 | **iedit** (edit occurrences)                            | Installed        | :white_check_mark: Works     | None — M-x iedit-mode                    |
 | **expand-region**                                       | Installed        | :white_check_mark: Works     | None — C-= expand, C-- shrink            |
-| **Snippets** (yasnippet + file-templates)               | Active           | :red_circle: Missing         | **Medium**                               |
+| **Snippets** (yasnippet + file-templates)               | Active           | :large_blue_circle: Substantial | **Low** — 100+ snippets, TAB expand, field nav, file loading |
 | **Dired extensions** (dired-k, dired-imenu, etc.)       | Enhanced         | :large_blue_circle: Substantial | **Low** — batch ops, wdired, find-dired work |
 | **Gerbil mode + LSP** (custom gerbil-mode.el)           | Custom written   | :large_blue_circle: Built-in | Low — gemacs IS the Gerbil editor        |
 | **Flycheck + Flyspell**                                 | Both active      | :yellow_circle: Flycheck OK  | **Low** — flycheck via LSP, no flyspell  |
