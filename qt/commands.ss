@@ -361,6 +361,9 @@
                       (qt-plain-text-edit-set-cursor-position! ed 0)))))
               (file-mtime-record! filename))
             (qt-setup-highlighting! app buf)
+            ;; Apply directory-locals and editorconfig settings
+            (apply-dir-locals! app filename)
+            (qt-apply-editorconfig! app filename)
             (echo-message! echo (string-append "Opened: " filename)))))))))))
 
 (def (cmd-save-buffer app)

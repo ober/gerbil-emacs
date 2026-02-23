@@ -1184,7 +1184,7 @@
 11. ~~Flyspell~~ — ~~Background spell checking.~~ Done: `flyspell-mode` with aspell backend, squiggle indicators (TUI), word-list reporting (Qt).
 12. ~~Bracket/paren swap~~ — ~~Input-level key remapping.~~ Done: `toggle-bracket-paren-swap` uses key-translate system in both TUI and Qt.
 13. **DevOps syntax modes** — At minimum: Terraform, Ansible, Docker highlighting via Scintilla lexers.
-14. **EditorConfig support** — Read `.editorconfig` files for indent style/size.
+14. ~~EditorConfig support~~ — ~~Read `.editorconfig` files for indent style/size.~~ Done: auto-applied on `find-file` in Qt, manual `editorconfig-apply` in TUI.
 
 ### Phase 4: Ecosystem
 15. **Extension API** — A well-documented API for users to write custom modes in Gerbil. The user wrote 28 custom Elisp modes; they'll want to do the same in Gerbil.
