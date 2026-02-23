@@ -1513,6 +1513,7 @@
   (register-command! 'flush-undo cmd-flush-undo)
   (register-command! 'undo-history cmd-undo-history)
   (register-command! 'undo-history-restore cmd-undo-history-restore)
+  (register-command! 'undo-tree-visualize cmd-undo-tree-visualize)
   ;; Untabify buffer
   (register-command! 'untabify-buffer cmd-untabify-buffer)
   ;; Expand region

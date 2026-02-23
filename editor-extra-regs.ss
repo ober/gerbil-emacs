@@ -560,6 +560,7 @@
   (register-command! 'dired-do-copy cmd-dired-do-copy)
   (register-command! 'dired-do-delete cmd-dired-do-delete)
   (register-command! 'dired-do-rename cmd-dired-do-rename)
+  (register-command! 'dired-subtree-toggle cmd-dired-subtree-toggle)
   (register-command! 'display-fill-column-indicator cmd-display-fill-column-indicator)
   (register-command! 'electric-newline-and-indent cmd-electric-newline-and-indent)
   (register-command! 'emacs-version cmd-emacs-version)
@@ -677,6 +678,9 @@
   (register-command! 'org-sort cmd-org-sort)
   (register-command! 'project-switch-to-buffer cmd-project-switch-to-buffer)
   (register-command! 'project-kill-buffers cmd-project-kill-buffers)
+  (register-command! 'project-tree cmd-project-tree)
+  (register-command! 'project-tree-toggle-node cmd-project-tree-toggle-node)
+  (register-command! 'project-term cmd-project-term)
   (register-command! 'vc-next-action cmd-vc-next-action)
   ;;; Batch 2: more canonical aliases for standard Emacs names
   (register-command! 'keyboard-escape-quit cmd-keyboard-quit)

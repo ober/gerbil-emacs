@@ -165,6 +165,7 @@
   (register-command! 'dired-do-rename cmd-dired-do-rename)
   (register-command! 'dired-do-delete cmd-dired-do-delete)
   (register-command! 'dired-do-copy cmd-dired-do-copy)
+  (register-command! 'dired-subtree-toggle cmd-dired-subtree-toggle)
   ;; Toggle commands
   (register-command! 'toggle-hl-line cmd-toggle-hl-line)
   (register-command! 'toggle-show-tabs cmd-toggle-show-tabs)
@@ -314,6 +315,8 @@
   (register-command! 'project-find-regexp cmd-project-find-regexp)
   (register-command! 'project-shell cmd-project-shell)
   (register-command! 'project-eshell cmd-project-eshell)
+  (register-command! 'project-tree cmd-project-tree)
+  (register-command! 'project-term cmd-project-term)
   ;; Diff
   (register-command! 'diff-mode cmd-diff-mode)
   (register-command! 'diff-apply-hunk cmd-diff-apply-hunk)

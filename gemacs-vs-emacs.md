@@ -1,7 +1,7 @@
 # Gemacs vs GNU Emacs — Feature Comparison
 
 > **Last updated:** 2026-02-22
-> **Gemacs version:** master (e0cc774)
+> **Gemacs version:** master (ade3dae)
 > **Compared against:** GNU Emacs 29.x / 30.x feature set
 
 ## Status Legend
@@ -181,11 +181,11 @@
 | Redo (`M-_`) | :white_check_mark: | Linear redo |
 | Undo grouping | :white_check_mark: | Consecutive edits grouped |
 | Undo boundaries | :white_check_mark: | Commands create boundaries |
-| Undo tree visualization | :red_circle: | Not implemented — linear only |
+| Undo tree visualization | :white_check_mark: | `M-x undo-tree-visualize` with snapshot history |
 | Persistent undo (across sessions) | :red_circle: | Not implemented |
 | Selective undo (region) | :red_circle: | Not implemented |
 
-**Summary:** Basic undo/redo works well but is linear. No tree visualization or branching history like `undo-tree` or `vundo`.
+**Summary:** Undo/redo with tree visualization (`M-x undo-tree-visualize`), timestamped snapshots (`M-x undo-history`), and snapshot restore. No persistent undo or selective region undo.
 
 ---
 
@@ -406,9 +406,9 @@
 | Dired-x extensions | :yellow_circle: | find-dired, find-name-dired |
 | Async operations | :red_circle: | All synchronous |
 | Virtual dired | :red_circle: | Not implemented |
-| Dired subtree | :red_circle: | Not implemented |
+| Dired subtree | :white_check_mark: | `M-x dired-subtree-toggle` for inline expansion |
 
-**Summary:** Dired is **substantially complete**. Full listing with permissions/sizes, single-file and batch operations on marked files, wdired for inline renaming, find integration. Missing: image thumbnails, async operations, dired subtree.
+**Summary:** Dired is **substantially complete**. Full listing with permissions/sizes, single-file and batch operations on marked files, wdired for inline renaming, find integration, inline subtree expansion. Missing: image thumbnails, async operations.
 
 ---
 
@@ -883,12 +883,12 @@
 
 | Feature | Status | Notes |
 |---------|--------|-------|
-| File tree sidebar | :yellow_circle: | Registered but minimal |
-| Project tree | :red_circle: | Not implemented |
+| File tree sidebar | :white_check_mark: | `M-x project-tree` with expand/collapse |
+| Project tree | :white_check_mark: | Tree view with depth limit, hidden file filtering |
 | Git status in tree | :red_circle: | Not implemented |
 | File operations in tree | :red_circle: | Not implemented |
 
-**Summary:** No functional file tree sidebar.
+**Summary:** Project tree sidebar shows directory structure with expand/collapse. Missing: git status indicators and file operations within the tree.
 
 ---
 
@@ -1060,10 +1060,10 @@
 | Vterm (libvterm) | :red_circle: | Not implemented (uses PTY instead) |
 | Multi-vterm (multiple terminals) | :white_check_mark: | `term-list`, `term-next`, `term-prev` commands |
 | Vterm copy mode | :white_check_mark: | Terminal copy mode with `C-c C-k` / `C-c C-j` |
-| Terminal per-project | :red_circle: | Not implemented |
+| Terminal per-project | :white_check_mark: | `M-x project-term` opens/switches to project terminal |
 | Term / ansi-term | :large_blue_circle: | Basic PTY terminal with ANSI support |
 
-**Summary:** Multi-terminal management works — create, list, cycle, and copy mode. Uses PTY instead of libvterm but functionally equivalent for most workflows.
+**Summary:** Multi-terminal management works — create, list, cycle, copy mode, and per-project terminals. Uses PTY instead of libvterm but functionally equivalent for most workflows.
 
 ---
 

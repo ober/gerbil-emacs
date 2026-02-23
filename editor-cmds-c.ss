@@ -28,6 +28,7 @@
         :gemacs/echo
         :gemacs/highlight
         :gemacs/editor-core
+        (only-in :gemacs/editor-extra-helpers project-current)
         :gemacs/editor-ui
         :gemacs/editor-text
         :gemacs/editor-advanced
@@ -1933,4 +1934,225 @@
   "Open an ANSI terminal — opens PTY terminal."
   (execute-command! app 'term))
 
+;; --- Dired subtree: inline subdirectory expansion ---
+
+(def *dired-expanded-dirs* (make-hash-table)) ;; buf-name -> set of expanded paths
+
+(def (cmd-dired-subtree-toggle app)
+  "Toggle inline expansion of subdirectory under cursor in dired buffer."
+  (let* ((fr (app-state-frame app))
+         (win (current-window fr))
+         (ed (edit-window-editor win))
+         (echo (app-state-echo app))
+         (buf (edit-window-buffer win))
+         (name (and buf (buffer-name buf))))
+    (if (not (and name (string-prefix? "*Dired:" name)))
+      (echo-message! echo "Not in a dired buffer")
+      (let* ((pos (send-message ed SCI_GETCURRENTPOS 0 0))
+             (line-num (send-message ed SCI_LINEFROMPOSITION pos 0))
+             (line-start (send-message ed SCI_POSITIONFROMLINE line-num 0))
+             (line-end (send-message ed SCI_GETLINEENDPOSITION line-num 0))
+             (line-text (editor-get-text-range ed line-start line-end))
+             (expanded (or (hash-get *dired-expanded-dirs* name) (make-hash-table))))
+        ;; Extract directory path from dired line (last field after permissions/date)
+        (let* ((trimmed (string-trim line-text))
+               (parts (string-split trimmed #\space))
+               (last-part (if (pair? parts) (last parts) #f)))
+          (when (and last-part (not (string-empty? last-part))
+                     (not (member last-part '("." ".." "total"))))
+            ;; Try to find the dired root directory from buffer name
+            (let* ((dir-match (and (> (string-length name) 8)
+                                    (substring name 8 (- (string-length name) 1))))
+                   (full-path (if dir-match
+                                (path-expand last-part dir-match)
+                                last-part)))
+              (if (and (file-exists? full-path) (eq? (file-info-type (file-info full-path)) 'directory))
+                (if (hash-get expanded full-path)
+                  ;; Collapse: remove expanded lines
+                  (begin
+                    (hash-remove! expanded full-path)
+                    (hash-put! *dired-expanded-dirs* name expanded)
+                    ;; Remove indented lines below
+                    (let rm-loop ((next-line (+ line-num 1)))
+                      (let* ((ns (send-message ed SCI_POSITIONFROMLINE next-line 0))
+                             (ne (send-message ed SCI_GETLINEENDPOSITION next-line 0)))
+                        (when (> ne ns)
+                          (let ((nt (editor-get-text-range ed ns ne)))
+                            (when (string-prefix? "    " nt)
+                              (send-message ed SCI_SETREADONLY 0 0)
+                              (let ((del-end (send-message ed SCI_POSITIONFROMLINE (+ next-line 1) 0)))
+                                (send-message ed SCI_DELETERANGE ns (- del-end ns)))
+                              (send-message ed SCI_SETREADONLY 1 0)
+                              (rm-loop next-line))))))
+                    (echo-message! echo (string-append "Collapsed: " last-part)))
+                  ;; Expand: insert directory listing indented
+                  (with-catch
+                    (lambda (e) (echo-message! echo "Cannot read directory"))
+                    (lambda ()
+                      (let* ((entries (directory-files full-path))
+                             (sorted (sort entries string<?))
+                             (lines (map (lambda (f)
+                                           (let* ((fp (path-expand f full-path))
+                                                  (is-dir (and (file-exists? fp)
+                                                               (eq? (file-info-type (file-info fp)) 'directory))))
+                                             (string-append "    " (if is-dir "d " "  ") f
+                                                            (if is-dir "/" ""))))
+                                         sorted))
+                             (insert-text (string-append "\n" (string-join lines "\n")))
+                             (insert-pos (send-message ed SCI_GETLINEENDPOSITION line-num 0)))
+                        (hash-put! expanded full-path #t)
+                        (hash-put! *dired-expanded-dirs* name expanded)
+                        (send-message ed SCI_SETREADONLY 0 0)
+                        (editor-insert-text ed insert-pos insert-text)
+                        (send-message ed SCI_SETREADONLY 1 0)
+                        (echo-message! echo (string-append "Expanded: " last-part
+                                                           " (" (number->string (length entries)) " entries)"))))))
+                (echo-message! echo (string-append "Not a directory: " last-part))))))))))
+
+;; --- Project tree sidebar (treemacs-like) ---
+
+(def *project-tree-expanded* (make-hash-table)) ;; path -> #t if expanded
+
+(def (project-tree-render dir depth max-depth)
+  "Render a project directory tree as text lines."
+  (if (> depth max-depth) []
+    (with-catch (lambda (e) [])
+      (lambda ()
+        (let* ((entries (directory-files dir))
+               (sorted (sort entries string<?))
+               (indent (make-string (* depth 2) #\space)))
+          (let loop ((es sorted) (acc []))
+            (if (null? es) (reverse acc)
+              (let* ((f (car es))
+                     (fp (path-expand f dir))
+                     (is-dir (and (file-exists? fp) (eq? (file-info-type (file-info fp)) 'directory)))
+                     (is-hidden (and (> (string-length f) 0) (char=? (string-ref f 0) #\.)))
+                     (expanded (hash-get *project-tree-expanded* fp)))
+                (if is-hidden
+                  (loop (cdr es) acc)
+                  (let ((line (string-append indent
+                                (if is-dir
+                                  (string-append (if expanded "v " "> ") f "/")
+                                  (string-append "  " f)))))
+                    (if (and is-dir expanded)
+                      (let ((children (project-tree-render fp (+ depth 1) max-depth)))
+                        (loop (cdr es) (append (reverse (cons line children)) acc)))
+                      (loop (cdr es) (cons line acc)))))))))))))
+
+(def (cmd-project-tree app)
+  "Show project file tree in a sidebar buffer."
+  (let* ((fr (app-state-frame app))
+         (win (current-window fr))
+         (ed (edit-window-editor win))
+         (echo (app-state-echo app))
+         (root (project-current app)))
+    (if (not root)
+      (echo-message! echo "Not in a project")
+      (let* ((lines (project-tree-render root 0 3))
+             (header (string-append "Project: " (path-strip-directory root) "\n"
+                                    (make-string 40 #\-) "\n"))
+             (content (string-append header (string-join lines "\n") "\n"))
+             (tbuf (buffer-create! "*Project Tree*" ed)))
+        (buffer-attach! ed tbuf)
+        (set! (edit-window-buffer win) tbuf)
+        (editor-set-text ed content)
+        (editor-goto-pos ed 0)
+        (editor-set-read-only ed #t)
+        (echo-message! echo (string-append "Project tree: " root))))))
+
+(def (cmd-project-tree-toggle-node app)
+  "Toggle expand/collapse of directory under cursor in project tree."
+  (let* ((fr (app-state-frame app))
+         (win (current-window fr))
+         (ed (edit-window-editor win))
+         (echo (app-state-echo app))
+         (buf (edit-window-buffer win))
+         (name (and buf (buffer-name buf))))
+    (if (not (equal? name "*Project Tree*"))
+      (echo-message! echo "Not in project tree buffer")
+      (let* ((pos (send-message ed SCI_GETCURRENTPOS 0 0))
+             (line-num (send-message ed SCI_LINEFROMPOSITION pos 0))
+             (line-start (send-message ed SCI_POSITIONFROMLINE line-num 0))
+             (line-end (send-message ed SCI_GETLINEENDPOSITION line-num 0))
+             (line-text (editor-get-text-range ed line-start line-end))
+             (trimmed (string-trim line-text))
+             (is-dir-line (string-suffix? "/" trimmed)))
+        (if (not is-dir-line)
+          (echo-message! echo "Not a directory")
+          ;; Find the full path by walking from root
+          (let* ((root (project-current app))
+                 ;; Extract dir name: remove "> " or "v " prefix and trailing "/"
+                 (dir-name (let ((s (cond
+                                      ((string-prefix? "> " trimmed)
+                                       (substring trimmed 2 (string-length trimmed)))
+                                      ((string-prefix? "v " trimmed)
+                                       (substring trimmed 2 (string-length trimmed)))
+                                      (else trimmed))))
+                             (if (string-suffix? "/" s)
+                               (substring s 0 (- (string-length s) 1))
+                               s)))
+                 ;; Calculate depth from leading spaces
+                 (spaces (- (string-length line-text) (string-length (string-trim line-text))))
+                 (depth (quotient spaces 2))
+                 ;; Build path by walking up lines
+                 (full-path (if (= depth 0)
+                              (path-expand dir-name root)
+                              ;; Walk back to find parent dirs
+                              (let walk ((ln (- line-num 1)) (parts [dir-name]) (target-depth (- depth 1)))
+                                (if (or (< ln 2) (< target-depth 0))
+                                  (apply path-expand (reverse (cons root parts)))
+                                  (let* ((ls (send-message ed SCI_POSITIONFROMLINE ln 0))
+                                         (le (send-message ed SCI_GETLINEENDPOSITION ln 0))
+                                         (lt (editor-get-text-range ed ls le))
+                                         (sp (- (string-length lt) (string-length (string-trim lt))))
+                                         (d (quotient sp 2)))
+                                    (if (and (= d target-depth) (string-suffix? "/" (string-trim lt)))
+                                      (let* ((t (string-trim lt))
+                                             (n (cond ((string-prefix? "> " t)
+                                                       (substring t 2 (- (string-length t) 1)))
+                                                      ((string-prefix? "v " t)
+                                                       (substring t 2 (- (string-length t) 1)))
+                                                      (else (substring t 0 (- (string-length t) 1))))))
+                                        (walk (- ln 1) (cons n parts) (- target-depth 1)))
+                                      (walk (- ln 1) parts target-depth))))))))
+            (if (hash-get *project-tree-expanded* full-path)
+              (hash-remove! *project-tree-expanded* full-path)
+              (hash-put! *project-tree-expanded* full-path #t))
+            ;; Re-render the whole tree
+            (let* ((lines (project-tree-render root 0 3))
+                   (header (string-append "Project: " (path-strip-directory root) "\n"
+                                          (make-string 40 #\-) "\n"))
+                   (content (string-append header (string-join lines "\n") "\n")))
+              (send-message ed SCI_SETREADONLY 0 0)
+              (editor-set-text ed content)
+              (editor-goto-pos ed (min pos (- (send-message ed SCI_GETLENGTH 0 0) 1)))
+              (send-message ed SCI_SETREADONLY 1 0))))))))
+
+;; --- Terminal per-project ---
+
+(def *project-terminals* (make-hash-table)) ;; project-root -> buffer-name
+
+(def (cmd-project-term app)
+  "Open or switch to a terminal associated with the current project."
+  (let* ((echo (app-state-echo app))
+         (root (project-current app)))
+    (if (not root)
+      (echo-message! echo "Not in a project")
+      (let* ((term-name (or (hash-get *project-terminals* root)
+                            (string-append "*term:" (path-strip-directory root) "*")))
+             (existing (buffer-by-name term-name)))
+        (if existing
+          ;; Switch to existing terminal
+          (let* ((fr (app-state-frame app))
+                 (win (current-window fr))
+                 (ed (edit-window-editor win)))
+            (buffer-attach! ed existing)
+            (set! (edit-window-buffer win) existing)
+            (echo-message! echo (string-append "Terminal: " (path-strip-directory root))))
+          ;; Create new terminal in project root
+          (begin
+            (current-directory root)
+            (hash-put! *project-terminals* root term-name)
+            (execute-command! app 'shell)
+            (echo-message! echo (string-append "New terminal in: " root))))))))
 

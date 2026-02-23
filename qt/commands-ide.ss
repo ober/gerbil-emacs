@@ -26,7 +26,8 @@
         :gemacs/qt/commands-edit
         :gemacs/qt/commands-search
         :gemacs/qt/commands-file
-        :gemacs/qt/commands-sexp)
+        :gemacs/qt/commands-sexp
+        (only-in :gemacs/editor-extra-helpers project-current))
 
 ;;;============================================================================
 ;;; Insert commands
@@ -1847,4 +1848,196 @@
                 (echo-message! echo
                   (string-append "Rectangle copied to register " (string reg)))))))))))
 
+;;; Undo tree visualization for Qt layer
+(def (cmd-undo-tree-visualize app)
+  "Show undo history as a visual tree for the current buffer."
+  (let* ((ed (current-qt-editor app))
+         (buf (current-qt-buffer app))
+         (buf-name (buffer-name buf))
+         (echo (app-state-echo app))
+         (current-text (qt-plain-text-edit-text ed))
+         (history (or (hash-get *undo-history* buf-name) [])))
+    ;; Record current state
+    (undo-history-record! buf-name current-text)
+    (let ((history (or (hash-get *undo-history* buf-name) [])))
+      (if (null? history)
+        (echo-message! echo "No undo history for this buffer")
+        (let* ((now (inexact->exact (floor (time->seconds (current-time)))))
+               (fr (app-state-frame app))
+               (tree-lines
+                 (let loop ((entries history) (i 0) (acc []))
+                   (if (null? entries) (reverse acc)
+                     (let* ((e (car entries))
+                            (ts (car e))
+                            (text (cdr e))
+                            (tlen (string-length text))
+                            (line-count (let lp ((j 0) (c 1))
+                                          (cond ((>= j tlen) c)
+                                                ((char=? (string-ref text j) #\newline)
+                                                 (lp (+ j 1) (+ c 1)))
+                                                (else (lp (+ j 1) c)))))
+                            (age (- now ts))
+                            (age-str (cond
+                                       ((< age 60) (string-append (number->string age) "s ago"))
+                                       ((< age 3600) (string-append (number->string (quotient age 60)) "m ago"))
+                                       ((< age 86400) (string-append (number->string (quotient age 3600)) "h ago"))
+                                       (else (string-append (number->string (quotient age 86400)) "d ago"))))
+                            (marker (if (= i 0) " *" ""))
+                            (connector (if (= i 0) "o" "|"))
+                            (preview (let ((sub (substring text 0 (min 50 tlen))))
+                                       (let ((nl (string-contains sub "\n")))
+                                         (if nl (substring sub 0 nl) sub)))))
+                       (loop (cdr entries) (+ i 1)
+                         (cons (string-append
+                                 "  " connector "-- [" (number->string i) "] "
+                                 age-str "  " (number->string tlen) " chars, "
+                                 (number->string line-count) " lines" marker
+                                 "\n  |   " preview)
+                               acc))))))
+               (header (string-append
+                         "Undo Tree: " buf-name "\n"
+                         "Snapshots: " (number->string (length history))
+                         "  Use M-x undo-history-restore to restore\n"
+                         (make-string 60 #\-) "\n"))
+               (content (string-append header (string-join tree-lines "\n") "\n"))
+               (tree-buf (or (buffer-by-name "*Undo Tree*")
+                             (qt-buffer-create! "*Undo Tree*" ed #f))))
+          (qt-buffer-attach! ed tree-buf)
+          (set! (qt-edit-window-buffer (qt-current-window fr)) tree-buf)
+          (qt-plain-text-edit-set-text! ed content)
+          (qt-text-document-set-modified! (buffer-doc-pointer tree-buf) #f)
+          (qt-plain-text-edit-set-cursor-position! ed 0))))))
+
+;;; Shared state for dired subtree, project tree, terminal per-project
+(def *dired-expanded-dirs* (make-hash-table))
+(def *project-tree-expanded* (make-hash-table))
+(def *project-terminals* (make-hash-table))
+
+(def (project-tree-render dir depth max-depth)
+  "Render a project directory tree as text lines."
+  (if (> depth max-depth) []
+    (with-catch (lambda (e) [])
+      (lambda ()
+        (let* ((entries (directory-files dir))
+               (sorted (sort entries string<?))
+               (indent (make-string (* depth 2) #\space)))
+          (let loop ((es sorted) (acc []))
+            (if (null? es) (reverse acc)
+              (let* ((f (car es))
+                     (fp (path-expand f dir))
+                     (is-dir (and (file-exists? fp)
+                                  (eq? (file-info-type (file-info fp)) 'directory)))
+                     (is-hidden (and (> (string-length f) 0) (char=? (string-ref f 0) #\.)))
+                     (expanded (hash-get *project-tree-expanded* fp)))
+                (if is-hidden
+                  (loop (cdr es) acc)
+                  (let ((line (string-append indent
+                                (if is-dir
+                                  (string-append (if expanded "v " "> ") f "/")
+                                  (string-append "  " f)))))
+                    (if (and is-dir expanded)
+                      (let ((children (project-tree-render fp (+ depth 1) max-depth)))
+                        (loop (cdr es) (append (reverse (cons line children)) acc)))
+                      (loop (cdr es) (cons line acc)))))))))))))
+
+;;; Dired subtree toggle for Qt
+(def (cmd-dired-subtree-toggle app)
+  "Toggle inline expansion of subdirectory under cursor in dired."
+  (let* ((ed (current-qt-editor app))
+         (buf (current-qt-buffer app))
+         (echo (app-state-echo app))
+         (name (buffer-name buf)))
+    (if (not (string-prefix? "*Dired:" name))
+      (echo-message! echo "Not in a dired buffer")
+      (let* ((pos (sci-send ed SCI_GETCURRENTPOS 0 0))
+             (line-num (sci-send ed SCI_LINEFROMPOSITION pos 0))
+             (ls (sci-send ed SCI_POSITIONFROMLINE line-num 0))
+             (le (sci-send ed SCI_GETLINEENDPOSITION line-num 0))
+             (line-text (qt-plain-text-edit-text-range ed ls le))
+             (trimmed (string-trim line-text))
+             (parts (string-split trimmed #\space))
+             (last-part (if (pair? parts) (last parts) #f))
+             (dir-match (and (> (string-length name) 8)
+                             (substring name 8 (- (string-length name) 1)))))
+        (when (and last-part (not (string-empty? last-part))
+                   (not (member last-part '("." ".." "total"))))
+          (let ((full-path (if dir-match (path-expand last-part dir-match) last-part)))
+            (if (and (file-exists? full-path) (eq? (file-info-type (file-info full-path)) 'directory))
+              (let ((expanded (or (hash-get *dired-expanded-dirs* name) (make-hash-table))))
+                (if (hash-get expanded full-path)
+                  (begin ;; Collapse
+                    (hash-remove! expanded full-path)
+                    (hash-put! *dired-expanded-dirs* name expanded)
+                    (let rm ((nl (+ line-num 1)))
+                      (let* ((ns (sci-send ed SCI_POSITIONFROMLINE nl 0))
+                             (ne (sci-send ed SCI_GETLINEENDPOSITION nl 0)))
+                        (when (> ne ns)
+                          (let ((nt (qt-plain-text-edit-text-range ed ns ne)))
+                            (when (string-prefix? "    " nt)
+                              (sci-send ed SCI_SETREADONLY 0 0)
+                              (let ((de (sci-send ed SCI_POSITIONFROMLINE (+ nl 1) 0)))
+                                (sci-send ed SCI_DELETERANGE ns (- de ns)))
+                              (sci-send ed SCI_SETREADONLY 1 0)
+                              (rm nl))))))
+                    (echo-message! echo (string-append "Collapsed: " last-part)))
+                  (with-catch (lambda (e) (echo-message! echo "Cannot read directory"))
+                    (lambda () ;; Expand
+                      (let* ((entries (sort (directory-files full-path) string<?))
+                             (lines (map (lambda (f)
+                                           (let* ((fp (path-expand f full-path))
+                                                  (is-d (and (file-exists? fp) (eq? (file-info-type (file-info fp)) 'directory))))
+                                             (string-append "    " (if is-d "d " "  ") f (if is-d "/" ""))))
+                                         entries))
+                             (ins (string-append "\n" (string-join lines "\n"))))
+                        (hash-put! expanded full-path #t)
+                        (hash-put! *dired-expanded-dirs* name expanded)
+                        (sci-send ed SCI_SETREADONLY 0 0)
+                        (sci-send ed SCI_GOTOPOS le 0)
+                        (sci-send/string ed SCI_REPLACESEL ins)
+                        (sci-send ed SCI_SETREADONLY 1 0)
+                        (echo-message! echo (string-append "Expanded: " last-part)))))))
+              (echo-message! echo (string-append "Not a directory: " last-part)))))))))
+
+;;; Project tree for Qt
+(def (cmd-project-tree app)
+  "Show project file tree in a buffer."
+  (let* ((ed (current-qt-editor app))
+         (echo (app-state-echo app))
+         (root (project-current app)))
+    (if (not root)
+      (echo-message! echo "Not in a project")
+      (let* ((fr (app-state-frame app))
+             (lines (project-tree-render root 0 3))
+             (header (string-append "Project: " (path-strip-directory root) "\n"
+                                    (make-string 40 #\-) "\n"))
+             (content (string-append header (string-join lines "\n") "\n"))
+             (tbuf (or (buffer-by-name "*Project Tree*")
+                       (qt-buffer-create! "*Project Tree*" ed #f))))
+        (qt-buffer-attach! ed tbuf)
+        (set! (qt-edit-window-buffer (qt-current-window fr)) tbuf)
+        (qt-plain-text-edit-set-text! ed content)
+        (qt-text-document-set-modified! (buffer-doc-pointer tbuf) #f)
+        (qt-plain-text-edit-set-cursor-position! ed 0)))))
+
+;;; Terminal per-project for Qt
+(def (cmd-project-term app)
+  "Open or switch to terminal for current project."
+  (let* ((echo (app-state-echo app))
+         (root (project-current app)))
+    (if (not root)
+      (echo-message! echo "Not in a project")
+      (let* ((term-name (or (hash-get *project-terminals* root)
+                            (string-append "*term:" (path-strip-directory root) "*")))
+             (existing (buffer-by-name term-name)))
+        (if existing
+          (let* ((ed (current-qt-editor app))
+                 (fr (app-state-frame app)))
+            (qt-buffer-attach! ed existing)
+            (set! (qt-edit-window-buffer (qt-current-window fr)) existing)
+            (echo-message! echo (string-append "Terminal: " (path-strip-directory root))))
+          (begin
+            (current-directory root)
+            (hash-put! *project-terminals* root term-name)
+            (execute-command! app 'shell)
+            (echo-message! echo (string-append "New terminal in: " root))))))))
 

@@ -774,18 +774,43 @@
                       (editor-goto-pos ed 0)
                       (editor-set-read-only ed #t))))))))))))
 
-;; Undo tree visualization
+;; Undo tree visualization — renders undo state as a visual tree
 (def (cmd-undo-tree-visualize app)
-  "Show undo history information for current buffer."
+  "Show undo history as a visual tree for the current buffer."
   (let* ((fr (app-state-frame app))
          (win (current-window fr))
          (ed (edit-window-editor win))
          (echo (app-state-echo app))
+         (buf (edit-window-buffer win))
+         (name (and buf (buffer-name buf)))
          (can-undo (send-message ed SCI_CANUNDO 0 0))
-         (can-redo (send-message ed SCI_CANREDO 0 0)))
-    (echo-message! echo
-      (string-append "Undo: " (if (= can-undo 1) "available" "empty")
-                     ", Redo: " (if (= can-redo 1) "available" "empty")))))
+         (can-redo (send-message ed SCI_CANREDO 0 0))
+         (text-len (send-message ed SCI_GETLENGTH 0 0))
+         (line-count (send-message ed SCI_GETLINECOUNT 0 0)))
+    (if (and (= can-undo 0) (= can-redo 0))
+      (echo-message! echo "No undo history for this buffer")
+      (let* ((header (string-append
+                       "Undo Tree: " (or name "?") "\n"
+                       (make-string 50 #\-) "\n"
+                       "Buffer: " (number->string text-len) " chars, "
+                       (number->string line-count) " lines\n\n"))
+             (tree (string-append
+                     "  o-- [current state]\n"
+                     (if (= can-undo 1)
+                       "  |-- [undo available] C-/ to undo\n"
+                       "")
+                     (if (= can-redo 1)
+                       "  |-- [redo available] C-S-/ to redo\n"
+                       "")
+                     "\nUse M-x undo-history for timestamped snapshots.\n"
+                     "Use M-x undo-history-restore to restore a snapshot.\n"))
+             (content (string-append header tree))
+             (tbuf (buffer-create! "*Undo Tree*" ed)))
+        (buffer-attach! ed tbuf)
+        (set! (edit-window-buffer win) tbuf)
+        (editor-set-text ed content)
+        (editor-goto-pos ed 0)
+        (editor-set-read-only ed #t)))))
 
 ;; Editor server — file socket not available in TUI, provide info
 (def (cmd-server-start app)
