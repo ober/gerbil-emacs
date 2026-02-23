@@ -835,12 +835,12 @@
 | Calendar display | :orange_circle: | Monthly grid, navigation |
 | Today highlighting | :white_check_mark: | |
 | Navigate months/years | :white_check_mark: | |
-| Diary integration | :red_circle: | No diary entries |
-| Holiday display | :red_circle: | Not implemented |
+| Diary integration | :white_check_mark: | `diary-insert-entry` adds to `~/.gemacs-diary`, `diary-view-entries` shows entries |
+| Holiday display | :white_check_mark: | US holidays shown on calendar, `calendar-holidays` command |
 | Appointment reminders | :red_circle: | Not implemented |
 | Org-agenda integration | :red_circle: | Calendar doesn't link to org |
 
-**Summary:** Calendar is a display-only monthly grid. No diary, holidays, or org integration.
+**Summary:** Calendar with 3-month grid, navigation, holiday display, and diary integration (insert/view entries from `~/.gemacs-diary`).
 
 ---
 

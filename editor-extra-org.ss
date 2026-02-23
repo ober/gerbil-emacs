@@ -993,34 +993,77 @@
       (echo-message! echo "No template at point"))))
 
 ;; Calendar/diary
+(def *tui-us-holidays*
+  '((1  1  "New Year's Day")
+    (1  15 "Martin Luther King Jr. Day")
+    (2  17 "Presidents' Day")
+    (5  26 "Memorial Day")
+    (6  19 "Juneteenth")
+    (7  4  "Independence Day")
+    (9  1  "Labor Day")
+    (10 13 "Columbus Day / Indigenous Peoples' Day")
+    (11 11 "Veterans Day")
+    (11 27 "Thanksgiving")
+    (12 25 "Christmas Day")))
+
+(def *tui-diary-file*
+  (path-expand ".gemacs-diary" (user-info-home (user-info (user-name)))))
+
+(def (tui-holidays-for-month month)
+  "Return holidays in month as list of (day . name)."
+  (filter-map (lambda (h) (and (= (car h) month)
+                               (cons (cadr h) (caddr h))))
+              *tui-us-holidays*))
+
+(def (tui-current-month)
+  "Get current month number."
+  (with-catch (lambda (e) 1)
+    (lambda ()
+      (let* ((port (open-process
+                     (list path: "/bin/date" arguments: ["+%m"]
+                           stdout-redirection: #t stderr-redirection: #f
+                           pseudo-terminal: #f)))
+             (line (read-line port)))
+        (close-port port)
+        (if (eof-object? line) 1 (or (string->number (string-trim line)) 1))))))
+
 (def (cmd-calendar app)
-  "Show calendar."
-  (let ((cal-text (with-exception-catcher
-                    (lambda (e) "Calendar not available")
-                    (lambda ()
-                      (let ((p (open-process
-                                 (list path: "cal"
-                                       arguments: '()
-                                       stdin-redirection: #f stdout-redirection: #t
-                                       stderr-redirection: #t))))
-                        (let ((out (read-line p #f)))
-                          (process-status p)
-                          (or out "")))))))
+  "Show calendar with holidays."
+  (let* ((cal-text (with-exception-catcher
+                     (lambda (e) "Calendar not available")
+                     (lambda ()
+                       (let ((p (open-process
+                                  (list path: "cal"
+                                        arguments: '()
+                                        stdin-redirection: #f stdout-redirection: #t
+                                        stderr-redirection: #t))))
+                         (let ((out (read-line p #f)))
+                           (process-status p)
+                           (or out ""))))))
+         (month (tui-current-month))
+         (hols (tui-holidays-for-month month))
+         (hol-text (if (null? hols) ""
+                     (string-append "\nHolidays:\n"
+                       (string-join
+                         (map (lambda (h)
+                                (string-append "  " (number->string (car h)) " — " (cdr h)))
+                              hols)
+                         "\n") "\n"))))
     (let* ((fr (app-state-frame app))
            (win (current-window fr))
            (ed (edit-window-editor win))
            (buf (buffer-create! "*Calendar*" ed)))
       (buffer-attach! ed buf)
       (set! (edit-window-buffer win) buf)
-      (editor-set-text ed (string-append "Calendar\n\n" cal-text "\n"))
+      (editor-set-text ed (string-append "Calendar\n\n" cal-text hol-text "\n"))
       (editor-set-read-only ed #t))))
 
 (def (cmd-diary-view-entries app)
-  "View diary entries from ~/.diary file."
-  (let* ((diary-file (string-append (or (getenv "HOME") ".") "/.diary"))
-         (echo (app-state-echo app)))
-    (if (file-exists? diary-file)
-      (let* ((content (read-file-as-string diary-file))
+  "View diary entries from ~/.gemacs-diary file."
+  (let ((echo (app-state-echo app)))
+    (if (not (file-exists? *tui-diary-file*))
+      (echo-message! echo "No diary file (~/.gemacs-diary)")
+      (let* ((content (read-file-as-string *tui-diary-file*))
              (fr (app-state-frame app))
              (win (current-window fr))
              (ed (edit-window-editor win))
@@ -1029,8 +1072,30 @@
         (set! (edit-window-buffer win) buf)
         (editor-set-text ed (string-append "Diary Entries\n\n" content))
         (editor-goto-pos ed 0)
-        (editor-set-read-only ed #t))
-      (echo-message! echo "No diary file (~/.diary)"))))
+        (editor-set-read-only ed #t)))))
+
+(def (cmd-diary-insert-entry app)
+  "Add a diary entry for today to ~/.gemacs-diary."
+  (let* ((date-str (with-catch (lambda (e) "2026-01-01")
+                     (lambda ()
+                       (let* ((port (open-process
+                                      (list path: "/bin/date"
+                                            arguments: ["+%Y-%m-%d"]
+                                            stdout-redirection: #t
+                                            stderr-redirection: #f
+                                            pseudo-terminal: #f)))
+                              (line (read-line port)))
+                         (close-port port)
+                         (if (eof-object? line) "2026-01-01" (string-trim line))))))
+         (entry (app-read-string app (string-append "Diary entry (" date-str "): "))))
+    (when (and entry (not (string=? entry "")))
+      (with-catch
+        (lambda (e) (echo-error! (app-state-echo app) "Failed to write diary"))
+        (lambda ()
+          (call-with-output-file [path: *tui-diary-file* append: #t]
+            (lambda (port) (display (string-append date-str " " entry "\n") port)))
+          (echo-message! (app-state-echo app)
+            (string-append "Diary entry added for " date-str)))))))
 
 ;;;============================================================================
 ;;; Batch 27: focus mode, zen mode, killed buffers, file operations, etc.

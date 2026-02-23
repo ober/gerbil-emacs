@@ -438,6 +438,49 @@
         (close-port port)
         (or output "")))))
 
+(def *us-holidays*
+  '((1  1  "New Year's Day")
+    (1  15 "Martin Luther King Jr. Day")  ; ~3rd Monday
+    (2  17 "Presidents' Day")             ; ~3rd Monday
+    (5  26 "Memorial Day")                ; ~last Monday
+    (6  19 "Juneteenth")
+    (7  4  "Independence Day")
+    (9  1  "Labor Day")                   ; ~1st Monday
+    (10 13 "Columbus Day / Indigenous Peoples' Day")
+    (11 11 "Veterans Day")
+    (11 27 "Thanksgiving")                ; ~4th Thursday
+    (12 25 "Christmas Day")))
+
+(def (holidays-for-month month)
+  "Return list of (day . name) for holidays in given month."
+  (filter-map (lambda (h) (and (= (car h) month)
+                               (cons (cadr h) (caddr h))))
+              *us-holidays*))
+
+(def (cmd-calendar-holidays app)
+  "Show holidays for the current calendar month."
+  (when *calendar-month*
+    (let ((hols (holidays-for-month *calendar-month*)))
+      (if (null? hols)
+        (echo-message! (app-state-echo app)
+          (string-append "No holidays in month " (number->string *calendar-month*)))
+        (echo-message! (app-state-echo app)
+          (string-join
+            (map (lambda (h) (string-append (number->string (car h)) ": " (cdr h)))
+                 hols)
+            ", "))))))
+
+(def (calendar-holiday-footer month)
+  "Return holiday info string for display under calendar."
+  (let ((hols (holidays-for-month month)))
+    (if (null? hols) ""
+      (string-append "\nHolidays:\n"
+        (string-join
+          (map (lambda (h)
+                 (string-append "  " (number->string (car h)) " — " (cdr h)))
+               hols)
+          "\n")))))
+
 (def (cmd-calendar app)
   "Display a calendar."
   (when (not *calendar-year*)
@@ -446,6 +489,7 @@
       (set! *calendar-month* m)))
   (let* ((text (string-append
                  (calendar-render *calendar-year* *calendar-month*)
+                 (calendar-holiday-footer *calendar-month*)
                  "\n\nNavigation: p=prev month  n=next month  <=prev year  >=next year  .=today"))
          (fr (app-state-frame app))
          (ed (current-qt-editor app))
@@ -493,6 +537,72 @@
     (set! *calendar-year* y)
     (set! *calendar-month* m)
     (cmd-calendar app)))
+
+;; --- Diary integration ---
+(def *diary-file*
+  (path-expand ".gemacs-diary" (user-info-home (user-info (user-name)))))
+
+(def (diary-entries-for-month year month)
+  "Read diary entries for year/month from ~/.gemacs-diary.
+   Format: YYYY-MM-DD entry text"
+  (if (not (file-exists? *diary-file*))
+    []
+    (with-catch (lambda (e) [])
+      (lambda ()
+        (let* ((content (read-file-as-string *diary-file*))
+               (lines (string-split content #\newline))
+               (prefix (string-append (number->string year) "-"
+                         (if (< month 10) "0" "") (number->string month) "-")))
+          (filter-map
+            (lambda (line)
+              (and (string-prefix? prefix line)
+                   line))
+            lines))))))
+
+(def (cmd-diary-view-entries app)
+  "View diary entries for the current calendar month."
+  (let* ((year (or *calendar-year* 2026))
+         (month (or *calendar-month* 1))
+         (entries (diary-entries-for-month year month)))
+    (if (null? entries)
+      (echo-message! (app-state-echo app) "No diary entries for this month")
+      (let* ((ed (current-qt-editor app))
+             (fr (app-state-frame app))
+             (buf (or (buffer-by-name "*Diary*")
+                      (qt-buffer-create! "*Diary*" ed #f)))
+             (text (string-append
+                     "Diary entries for "
+                     (number->string year) "-" (number->string month) "\n\n"
+                     (string-join entries "\n") "\n")))
+        (qt-buffer-attach! ed buf)
+        (set! (qt-edit-window-buffer (qt-current-window fr)) buf)
+        (qt-plain-text-edit-set-text! ed text)
+        (qt-text-document-set-modified! (buffer-doc-pointer buf) #f)
+        (qt-plain-text-edit-set-cursor-position! ed 0)))))
+
+(def (cmd-diary-insert-entry app)
+  "Add a diary entry for today to ~/.gemacs-diary."
+  (let* ((date-str (with-catch (lambda (e) "2026-01-01")
+                     (lambda ()
+                       (let* ((port (open-process
+                                      (list path: "/bin/date"
+                                            arguments: ["+%Y-%m-%d"]
+                                            stdout-redirection: #t
+                                            stderr-redirection: #f
+                                            pseudo-terminal: #f)))
+                              (line (read-line port)))
+                         (close-port port)
+                         (if (eof-object? line) "2026-01-01" (string-trim line))))))
+         (prompt (string-append "Diary entry (" date-str "): "))
+         (entry (qt-echo-read-string app prompt)))
+    (when (and entry (not (string=? entry "")))
+      (with-catch
+        (lambda (e) (echo-error! (app-state-echo app) "Failed to write diary"))
+        (lambda ()
+          (call-with-output-file [path: *diary-file* append: #t]
+            (lambda (port) (display (string-append date-str " " entry "\n") port)))
+          (echo-message! (app-state-echo app)
+            (string-append "Diary entry added for " date-str)))))))
 
 ;; --- Runtime key rebinding ---
 (def *custom-keys-path*
