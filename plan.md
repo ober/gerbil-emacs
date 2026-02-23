@@ -1,59 +1,77 @@
-# Gemacs Feature Parity Plan
+# Gemacs Development Plan
 
-## Status: Batches 1–15 Complete + Enhanced Help System In Progress
+## Current: Autocomplete Popups & Diagnostic Tooltips
 
-All alias/parity batches through Batch 15 are committed and pushed to master.
-Org-mode test integration (17 test files, 141 checks) committed and pushed.
+Goal: Match the popup UX seen in Ruby Scintilla editors — inline autocomplete dropdown at cursor and floating diagnostic tooltips on hover.
 
----
+### Infrastructure Already in Place
 
-## Completed Work
+- **`sci-send` / `sci-send/string`** — generic Scintilla message API works in both TUI and Qt
+- **All `SCI_AUTOC*` and `SCI_CALLTIP*` constants** accessible from `:gerbil-scintilla/constants`
+- **TUI autocomplete** — `cmd-complete-at-point` (`editor-text.ss:1916-1988`) already uses `SCI_AUTOCSHOW` with word-based candidates
+- **Qt `QCompleter` FFI** — `qt-completer-create`, `qt-completer-complete-rect!`, etc. all wired up
+- **LSP completion requests** — `textDocument/completion` working in `qt/commands-lsp.ss`
+- **LSP diagnostics** — squiggly underlines + margin markers already rendered via Scintilla indicators
+- **Idle timer** — 500ms timer fires in `qt/app.ss:756`, calls `lsp-auto-complete!`
 
-### Alias Batches (all committed & pushed)
-- **Batch 1–11**: Core Emacs command aliases (undo, redo, kill, yank, mark, search, replace, window, buffer, file, dired, org, magit, paredit, help, project, bookmarks, rectangles, registers, macros, completion, flycheck, treesit, mc, helm, etc.)
-- **Batch 12** (`5be60a0`): undo-redo, outline, flymake, dired, text-scale, tab-bar, mode toggles
-- **Batch 13** (`e83078e`): mode-name aliases (transient-mark, highlight-changes, delete-trailing-whitespace, menu-bar, tool-bar), set-visited-file-name, sort stubs, apropos-variable
-- **Batch 14** (`2b90666`): visual-line commands, kill-emacs, forward-list/backward-list, goto-address-mode
-- **Batch 15** (`0bab81a`): insert-tab, keep-matching-lines, calc-dispatch
+### Task 1: Qt Idle Autocomplete Popup
 
-### Org-mode Tests (committed & pushed)
-- **`d1c29ba`**: Integrate 17 org-mode test files from gemacs-org-tests
-- **`4e5dd5d`**: Fix all 141 org-mode test failures across 17 test files
+`lsp-auto-complete!` in `qt/commands-lsp.ss:1668-1702` is wired up but calls two **undefined helpers**, so it silently fails.
 
-### Qt Module Split (committed)
-- **`11fcaf9`**: Split `qt/commands.ss` — extracted registrations + utilities into `qt/commands-aliases.ss`
+**Option A — Use Scintilla native popup (recommended)**
+- Simpler, already proven in TUI, no Qt widget management
+- Feed LSP completion items as newline-separated string to `SCI_AUTOCSHOW`
+- Steps:
+  1. Implement `get-word-prefix` — use `SCI_WORDSTARTPOSITION` + `SCI_GETRANGEPOINTER` to extract prefix at cursor
+  2. Rewrite `lsp-auto-complete!` to call `SCI_AUTOCSHOW` with LSP results instead of `QCompleter`
+  3. Configure popup: `SCI_AUTOCSETSEPARATOR` (newline), `SCI_AUTOCSETIGNORECASE`, `SCI_AUTOCSETMAXHEIGHT`, `SCI_AUTOCSETORDER`
+  4. Handle `SCI_AUTOCCANCEL` on cursor move / escape
 
-### Earlier Work (committed)
-- Theme switching fix (`qt-apply-editor-theme!` reads from face system)
-- 50/50 split sizing fix
-- LSP visual integration (margin setup on start, cleanup on stop)
-- Multiple cursors (Group 20 tests)
-- Qt functional test Groups 1–21
+**Option B — Finish QCompleter approach**
+- Implement `get-word-prefix` (same as above)
+- Implement `get-or-create-completer!` — cache a `QCompleter` per editor widget
+- Call `qt-completer-complete-rect!` with coordinates from `SCI_POINTXFROMPOSITION` / `SCI_POINTYFROMPOSITION`
 
----
+**Files to modify:**
+- `qt/commands-lsp.ss` — fix `lsp-auto-complete!`, add helper functions
+- Possibly `qt/sci-shim.ss` — if new SCI constants are needed
 
-## In Progress: Enhanced Help/Describe System
+### Task 2: Diagnostic Hover Tooltips
 
-### What was done (building, not yet committed)
-- Added `*command-docs*` hash table to `core.ss` for command docstring registry
-- Added `register-command-doc!`, `command-doc`, `command-name->description`, `find-keybinding-for-command` to core
-- Added `setup-command-docs!` — registers 100+ docstrings for the most commonly used commands
-- Enhanced TUI `describe-command` (`editor-ui.ss`) — now shows help in *Help* buffer with name, keybinding, and description (was: just "is a command")
-- Enhanced TUI `describe-key` (`editor-ui.ss`) — now shows full help in *Help* buffer (was: just "runs X")
-- Enhanced TUI `describe-function` (`editor-cmds-c.ss`) — shows help in *Help* buffer with completion (was: just "command registered")
-- Enhanced Qt `describe-command` (`qt/commands-file.ss`) — shows help in *Help* buffer (was: just "is on [key]")
-- Enhanced Qt `describe-function` (`qt/commands-vcs.ss`) — shows help in *Help* buffer with completion (was: just "is a registered command")
-- Auto-generated fallback: `command-name->description` converts symbol names to human-readable strings (e.g. `find-file` → "Find file")
-- Called from both `app.ss` and `qt/app.ss` initialization
+Currently hover info shows in the **echo area** at the bottom. Goal: floating tooltip near the diagnostic squiggle.
 
-### Files modified
-- `core.ss` — new exports + command doc registry + `setup-command-docs!`
-- `editor-ui.ss` — enhanced `cmd-describe-key`, `cmd-describe-command`, added `format-command-help`
-- `editor-cmds-c.ss` — enhanced `cmd-describe-function`, `cmd-describe-variable`
-- `qt/commands-file.ss` — enhanced `cmd-describe-command`, added `qt-format-command-help`
-- `qt/commands-vcs.ss` — enhanced `cmd-describe-function`, `cmd-describe-variable`
-- `app.ss` — added `(setup-command-docs!)` call
-- `qt/app.ss` — added `(setup-command-docs!)` call
+**Option A — Scintilla calltips (recommended)**
+- Use `SCI_CALLTIPSHOW(pos, text)` to display tooltip at a position
+- Set background color with `SCI_CALLTIPSETBACK` (yellow like the Ruby screenshot)
+- Hook into `SCN_DWELLSTART` notification (fires when mouse hovers over a position)
+- Look up diagnostics at the hovered position and show the message
+- Dismiss on `SCN_DWELLEND` with `SCI_CALLTIPCANCEL`
+- ~20 lines of code, no new C FFI needed
+
+**Option B — Qt tooltip widget (richer)**
+- Create `QToolTip` or custom `QLabel` popup via new C shim functions
+- More control over styling, positioning, multi-line layout
+- Requires new FFI bindings in qt_shim
+
+**Steps (Option A):**
+1. Enable dwell events: `SCI_SETMOUSEDWELLTIME(ms)` — e.g. 500ms
+2. Handle `SCN_DWELLSTART` in the Qt event loop (`qt/app.ss`)
+3. Look up stored diagnostics for the hovered line/position
+4. Show diagnostic text via `SCI_CALLTIPSHOW`
+5. Handle `SCN_DWELLEND` → `SCI_CALLTIPCANCEL`
+6. Style: `SCI_CALLTIPSETBACK` with yellow background, `SCI_CALLTIPSETFOREHLT` for severity coloring
+
+**Files to modify:**
+- `qt/app.ss` — handle `SCN_DWELLSTART` / `SCN_DWELLEND` notifications
+- `qt/commands-lsp.ss` — store diagnostics in a position-indexed structure for fast lookup
+- `qt/sci-shim.ss` — add `SCI_CALLTIP*` and `SCI_SETMOUSEDWELLTIME` constants if not present
+
+### Task 3: TUI Parity (Optional)
+
+- TUI already has `SCI_AUTOCSHOW` for word completion
+- Could extend to support LSP completions if LSP is ever added to TUI
+- Calltips would work the same way via `sci-send` in the TUI Scintilla widget
+- Lower priority since TUI has no LSP integration currently
 
 ---
 
@@ -82,52 +100,23 @@ Org-mode test integration (17 test files, 141 checks) committed and pushed.
 
 ---
 
-## Codebase Audit Results (Feb 2026)
+## Backlog (Prioritized)
 
-### Feature Coverage Summary
-The codebase is **extremely comprehensive** with 1,001+ registered commands covering:
-- File/buffer/window operations, navigation, editing, search/replace
-- Org-mode (headings, TODO, scheduling, agenda, export, babel, tables)
-- VCS (magit status/log/commit/diff/blame/stash/push/pull)
-- Shell/REPL (eshell, shell, gxi, eval-expression)
-- Modern packages (fuzzy M-x, which-key, auto-revert, recentf, session save/restore)
-- Electric pair, paredit, multiple cursors, rectangles, registers, macros
-- LSP (Qt only), compilation, grep, occur, wgrep
-- Themes, rainbow delimiters, hl-todo, indent guides
-- Ediff, bookmarks, narrowing, sort, align, fill-paragraph
+### High Impact
+- **Persistent M-x command history** — track frequently used commands, sort to top, persist across sessions
+- **Proper narrow-to-defun** — detect function boundaries for Scheme/Lisp and common languages
 
-### True Stubs (very few)
-- `debug-on-entry` / `cancel-debug-on-entry` — echo-only stubs
-- `org-archive-subtree` — "not yet implemented"
-- Some modal editing flags (evil-mode/meow-mode) — toggles only, no vi keybindings
-
-### Architectural Limitations
-- Single-frame only (no `make-frame` / `other-frame`)
-- LSP only in Qt layer (TUI shows "use gemacs-qt")
-- DAP/debugger commands are stubs
-
----
-
-## Next Steps (Prioritized)
-
-### High Impact — Feature Quality
-1. **Persistent M-x command history** — track frequently used commands, sort to top, persist across sessions
-2. **Proper narrow-to-defun** — detect function boundaries for Scheme/Lisp and common languages
-3. **Line number display mode** — Scintilla margin line numbers (display-line-numbers-mode)
-4. **Better describe system** — register docstrings from cmd-* function definitions (auto-extract)
-
-### Medium Impact — Polish
-5. **Org-mode archive/refile** — complete org workflow
-6. **Better which-key delay display** — show descriptions alongside key names
-7. **Occur mode improvements** — read-only, better navigation
-8. **Dired improvements** — more operations, better display
+### Medium Impact
+- **Org-mode archive/refile** — complete org workflow
+- **Better which-key delay display** — show descriptions alongside key names
+- **Occur mode improvements** — read-only, better navigation
+- **Dired improvements** — more operations, better display
 
 ### Maintenance
-9. **Split over-limit files** — `editor-extra-media.ss`, `editor-extra-editing.ss`, `qt/commands-edit.ss`, `qt/commands-vcs.ss`
-10. **Test coverage** — add functional tests for untested command groups
+- **Split over-limit files** — `editor-extra-media.ss`, `editor-extra-editing.ss`, `qt/commands-edit.ss`, `qt/commands-vcs.ss`
+- **Test coverage** — add functional tests for untested command groups
 
 ### Aspirational
-- Evil-mode (real vi keybindings)
 - LSP in TUI
 - DAP/debugger integration
 - Multi-frame support

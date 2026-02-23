@@ -1987,3 +1987,28 @@
                 (echo-message! echo
                   (string-append (number->string (length words)) " completions"))))))))))
 
+;;;============================================================================
+;;; Calltip display (diagnostic tooltips, hover info)
+;;;============================================================================
+
+(def (show-calltip! ed pos text . opts)
+  "Show a calltip at POS with TEXT. Optional keyword args: bg-color, fg-color.
+   Colors are in Scintilla BGR format (use rgb->sci from sci-shim)."
+  (let ((bg (if (and (pair? opts) (pair? (cdr opts)))
+              (cadr opts)
+              #f))
+        (fg (if (and (pair? opts) (pair? (cdr opts)) (pair? (cddr opts))
+                     (pair? (cdddr opts)))
+              (cadddr opts)
+              #f)))
+    (when bg (send-message ed SCI_CALLTIPSETBACK bg))
+    (when fg (send-message ed SCI_CALLTIPSETFORE fg))
+    (scintilla-send-message-string
+      (scintilla-editor-handle ed) SCI_CALLTIPSHOW
+      (max 0 pos) text)))
+
+(def (cancel-calltip! ed)
+  "Cancel any active calltip."
+  (when (not (zero? (send-message ed SCI_CALLTIPACTIVE)))
+    (send-message ed SCI_CALLTIPCANCEL)))
+

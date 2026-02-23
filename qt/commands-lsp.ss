@@ -911,7 +911,10 @@
 ;;;============================================================================
 
 (def (lsp-diagnostic-at-cursor! app)
-  "Show diagnostic message in echo area if cursor is on a line with diagnostics."
+  "Show diagnostic message as calltip and in echo area."
+  ;; Show/hide floating calltip based on cursor line
+  (lsp-diagnostic-calltip! app)
+  ;; Also show first diagnostic in echo area for accessibility
   (when (lsp-running?)
     (let* ((ed (current-qt-editor app))
            (buf (current-qt-buffer app))
@@ -1659,14 +1662,23 @@
       (string-append title ": " (number->string (length items)) " results"))))
 
 ;;;============================================================================
-;;; Auto-completion on idle (Corfu-like)
+;;; Auto-completion on idle (Corfu-like) via Scintilla native popup
 ;;;============================================================================
 
 (def *lsp-auto-complete-enabled* #t)
 (def *lsp-auto-complete-min-prefix* 3)
 
+(def (sci-word-prefix ed)
+  "Get the word prefix at cursor using Scintilla word navigation."
+  (let* ((pos (sci-send ed SCI_GETCURRENTPOS))
+         (word-start (sci-send ed SCI_WORDSTARTPOSITION pos 1)))
+    (if (< word-start pos)
+      (let ((text (qt-plain-text-edit-text-range ed word-start pos)))
+        (values text (- pos word-start)))
+      (values "" 0))))
+
 (def (lsp-auto-complete! app)
-  "Request LSP completions and show in QCompleter popup if prefix is long enough."
+  "Request LSP completions and show Scintilla autocomplete popup."
   (when (and *lsp-auto-complete-enabled* (lsp-running?))
     (let* ((fr (app-state-frame app))
            (ed (qt-current-editor fr))
@@ -1674,9 +1686,11 @@
       (when (and buf (buffer-file-path buf)
                  (not (dired-buffer? buf))
                  (not (repl-buffer? buf))
-                 (not (terminal-buffer? buf)))
-        (let ((prefix (get-word-prefix ed)))
-          (when (>= (string-length prefix) *lsp-auto-complete-min-prefix*)
+                 (not (terminal-buffer? buf))
+                 ;; Don't show autocomplete if one is already active
+                 (zero? (sci-send ed SCI_AUTOCACTIVE)))
+        (let-values (((prefix plen) (sci-word-prefix ed)))
+          (when (>= plen *lsp-auto-complete-min-prefix*)
             (let ((params (lsp-current-params app)))
               (when params
                 (lsp-send-request! "textDocument/completion" params
@@ -1695,8 +1709,87 @@
                                                 (hash-get item "label")))
                                          items)))
                           (when (not (null? labels))
-                            (let* ((cur-prefix (get-word-prefix ed))
-                                   (c (get-or-create-completer! ed app)))
-                              (qt-completer-set-model-strings! c labels)
-                              (qt-completer-set-completion-prefix! c cur-prefix)
-                              (qt-completer-complete-rect! c 0 0 250 20))))))))))))))))
+                            ;; Re-check prefix at callback time (cursor may have moved)
+                            (let-values (((cur-prefix cur-plen) (sci-word-prefix ed)))
+                              (when (> cur-plen 0)
+                                ;; Configure and show Scintilla native autocomplete
+                                (sci-send ed SCI_AUTOCSETSEPARATOR
+                                          (char->integer #\newline) 0)
+                                (sci-send ed SCI_AUTOCSETIGNORECASE 1 0)
+                                (sci-send ed SCI_AUTOCSETMAXHEIGHT 10 0)
+                                (sci-send ed SCI_AUTOCSETDROPRESTOFWORD 1 0)
+                                (sci-send ed SCI_AUTOCSETORDER 1 0) ;; SC_ORDER_PERFORMSORT
+                                (let ((item-list (string-join
+                                                   (sort labels string-ci<?)
+                                                   "\n")))
+                                  (sci-send/string ed SCI_AUTOCSHOW
+                                    item-list cur-plen))))))))))))))))))
+
+;;;============================================================================
+;;; Diagnostic calltip on cursor hover
+;;;============================================================================
+
+;; Track last diagnostic line to avoid re-showing the same calltip
+(def *lsp-last-calltip-line* -1)
+
+(def (lsp-diagnostic-calltip! app)
+  "Show diagnostic message as a calltip if cursor is on a line with diagnostics."
+  (when (lsp-running?)
+    (let* ((ed (current-qt-editor app))
+           (buf (current-qt-buffer app))
+           (path (buffer-file-path buf)))
+      (when path
+        (let* ((uri (file-path->uri path))
+               (diags (or (hash-get *lsp-diagnostics* uri) []))
+               (line (qt-plain-text-edit-cursor-line ed)))
+          ;; Collect all diagnostics on the current line
+          (let ((line-diags
+                  (filter (lambda (d)
+                            (and (hash-table? d)
+                                 (let* ((range (hash-get d "range"))
+                                        (start (and range (hash-get range "start")))
+                                        (start-line (and start (hash-get start "line"))))
+                                   (and start-line (= start-line line)))))
+                          diags)))
+            (cond
+              ;; Diagnostics on this line — show calltip
+              ((not (null? line-diags))
+               (unless (= line *lsp-last-calltip-line*)
+                 (set! *lsp-last-calltip-line* line)
+                 ;; Build calltip text from all diagnostics on this line
+                 (let* ((msgs (map (lambda (d)
+                                     (let* ((msg (or (hash-get d "message") ""))
+                                            (sev (or (hash-get d "severity") 1))
+                                            (prefix (case sev
+                                                      ((1) "Error: ")
+                                                      ((2) "Warning: ")
+                                                      ((3) "Info: ")
+                                                      (else "Hint: "))))
+                                       (string-append prefix msg)))
+                                   line-diags))
+                        (text (string-join msgs "\n"))
+                        ;; Position calltip at end of line
+                        (line-end (sci-send ed SCI_GETLINEENDPOSITION line)))
+                   ;; Style the calltip background based on highest severity
+                   (let ((max-sev (apply min (map (lambda (d)
+                                                    (or (hash-get d "severity") 1))
+                                                  line-diags))))
+                     (sci-send ed SCI_CALLTIPSETBACK
+                       (case max-sev
+                         ((1) (rgb->sci 255 220 220))   ;; light red for error
+                         ((2) (rgb->sci 255 255 200))   ;; light yellow for warning
+                         ((3) (rgb->sci 220 230 255))   ;; light blue for info
+                         (else (rgb->sci 240 240 240)))) ;; light grey for hint
+                     (sci-send ed SCI_CALLTIPSETFORE (rgb->sci 30 30 30)))
+                   (sci-send/string ed SCI_CALLTIPSHOW text line-end))))
+              ;; No diagnostics — cancel calltip if we showed one
+              ((not (= *lsp-last-calltip-line* -1))
+               (set! *lsp-last-calltip-line* -1)
+               (sci-send ed SCI_CALLTIPCANCEL)))))))))
+
+(def (lsp-cancel-calltip! app)
+  "Cancel any active diagnostic calltip."
+  (let ((ed (current-qt-editor app)))
+    (when (not (zero? (sci-send ed SCI_CALLTIPACTIVE)))
+      (sci-send ed SCI_CALLTIPCANCEL)
+      (set! *lsp-last-calltip-line* -1))))
