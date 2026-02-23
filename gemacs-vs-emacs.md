@@ -471,8 +471,8 @@
 | Capture buffer (C-c C-c / C-c C-k) | :white_check_mark: | Interactive capture with finalize/abort keybindings |
 | Refile | :large_blue_circle: | `M-x org-refile` with narrowing target selection (Qt) |
 | **Babel** (code blocks) | :large_blue_circle: | 8 languages, execution, tangling |
-| Babel session persistence | :red_circle: | Sessions stored but not reused |
-| Babel :var evaluation | :red_circle: | Only literal values |
+| Babel session persistence | :white_check_mark: | `:session name` keeps persistent process, sentinel-based I/O |
+| Babel :var evaluation | :white_check_mark: | Resolves named src blocks (executes) and tables (converts to data) |
 | Babel :noweb expansion | :white_check_mark: | `<<block-name>>` refs expanded when `:noweb yes` |
 | **Export** | :large_blue_circle: | HTML, Markdown, LaTeX, ASCII |
 | Export footnotes/cross-refs | :red_circle: | Not implemented |
@@ -837,10 +837,10 @@
 | Navigate months/years | :white_check_mark: | |
 | Diary integration | :white_check_mark: | `diary-insert-entry` adds to `~/.gemacs-diary`, `diary-view-entries` shows entries |
 | Holiday display | :white_check_mark: | US holidays shown on calendar, `calendar-holidays` command |
-| Appointment reminders | :red_circle: | Not implemented |
-| Org-agenda integration | :red_circle: | Calendar doesn't link to org |
+| Appointment reminders | :white_check_mark: | `appt-check` scans org deadlines + diary for next 15 min |
+| Org-agenda integration | :white_check_mark: | Calendar footer shows org DEADLINE/SCHEDULED items for month |
 
-**Summary:** Calendar with 3-month grid, navigation, holiday display, and diary integration (insert/view entries from `~/.gemacs-diary`).
+**Summary:** Calendar with 3-month grid, navigation, holiday display, diary integration, org-agenda items in calendar, and appointment reminders.
 
 ---
 

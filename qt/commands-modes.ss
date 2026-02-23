@@ -28,6 +28,14 @@
         :gemacs/qt/commands-ide
         :gemacs/qt/commands-vcs
         :gemacs/qt/commands-shell
+        (only-in :gemacs/org-agenda
+                 *org-agenda-files*
+                 org-collect-agenda-items org-agenda-item-heading
+                 org-agenda-item-type org-agenda-item-date
+                 org-agenda-item-time-string org-agenda-item-file)
+        (only-in :gemacs/org-parse
+                 org-heading-title make-org-timestamp
+                 org-timestamp-day)
         (only-in :gemacs/org-table
                  org-table-row? org-table-separator? org-table-parse-row
                  org-table-column-widths org-table-format-row org-table-format-separator
@@ -490,6 +498,7 @@
   (let* ((text (string-append
                  (calendar-render *calendar-year* *calendar-month*)
                  (calendar-holiday-footer *calendar-month*)
+                 (calendar-org-footer *calendar-year* *calendar-month*)
                  "\n\nNavigation: p=prev month  n=next month  <=prev year  >=next year  .=today"))
          (fr (app-state-frame app))
          (ed (current-qt-editor app))
@@ -603,6 +612,117 @@
             (lambda (port) (display (string-append date-str " " entry "\n") port)))
           (echo-message! (app-state-echo app)
             (string-append "Diary entry added for " date-str)))))))
+
+;; --- Calendar-org integration ---
+(def (org-items-for-month year month)
+  "Collect org agenda items (deadlines/scheduled) for a given month.
+   Scans *org-agenda-files* and any open .org buffers."
+  (let* ((date-from (make-org-timestamp 'active year month 1 #f #f #f #f #f #f #f))
+         (date-to (make-org-timestamp 'active year month 28 #f #f #f #f #f #f #f))
+         ;; Get files to scan: agenda files + open .org buffers
+         (agenda-files *org-agenda-files*)
+         (open-org-bufs (filter (lambda (b) (and (buffer-file-path b)
+                                                  (string-suffix? ".org" (buffer-file-path b))))
+                                *buffer-list*))
+         (open-org-files (map buffer-file-path open-org-bufs))
+         (all-files (let dedup ((lst (append agenda-files open-org-files))
+                                 (seen '()) (acc '()))
+                      (cond ((null? lst) (reverse acc))
+                            ((member (car lst) seen) (dedup (cdr lst) seen acc))
+                            (else (dedup (cdr lst) (cons (car lst) seen)
+                                         (cons (car lst) acc))))))
+         (items '()))
+    (for-each
+      (lambda (file)
+        (when (file-exists? file)
+          (with-catch void
+            (lambda ()
+              (let ((text (read-file-as-string file)))
+                (set! items (append items
+                  (org-collect-agenda-items text file date-from date-to))))))))
+      all-files)
+    items))
+
+(def (calendar-org-footer year month)
+  "Return org scheduled/deadline items for display in calendar."
+  (let ((items (org-items-for-month year month)))
+    (if (null? items)
+      ""
+      (string-append "\nOrg items:\n"
+        (string-join
+          (map (lambda (item)
+                 (let* ((h (org-agenda-item-heading item))
+                        (type (org-agenda-item-type item))
+                        (day (org-timestamp-day (org-agenda-item-date item)))
+                        (time (or (org-agenda-item-time-string item) ""))
+                        (label (cond ((eq? type 'deadline) "DEADLINE")
+                                     ((eq? type 'scheduled) "Sched")
+                                     (else "Event"))))
+                   (string-append "  " (number->string day) " "
+                     label ": " (org-heading-title h)
+                     (if (string=? time "") "" (string-append " " time)))))
+               items)
+          "\n")))))
+
+;; --- Appointment reminders ---
+(def (cmd-appt-check app)
+  "Check for appointments in the next 15 minutes from diary and org."
+  (with-catch
+    (lambda (e) (echo-message! (app-state-echo app) "No appointment data"))
+    (lambda ()
+      (let* ((now-port (open-process
+                         (list path: "/bin/date"
+                               arguments: ["+%Y %m %d %H %M"]
+                               stdout-redirection: #t
+                               stderr-redirection: #f
+                               pseudo-terminal: #f)))
+             (now-str (read-line now-port))
+             (_ (close-port now-port))
+             (parts (string-split (string-trim now-str) #\space))
+             (year (string->number (list-ref parts 0)))
+             (month (string->number (list-ref parts 1)))
+             (day (string->number (list-ref parts 2)))
+             (hour (string->number (list-ref parts 3)))
+             (minute (string->number (list-ref parts 4)))
+             (now-mins (+ (* hour 60) minute))
+             (upcoming '()))
+        ;; Check org items for today
+        (let ((items (org-items-for-month year month)))
+          (for-each
+            (lambda (item)
+              (when (= (org-timestamp-day (org-agenda-item-date item)) day)
+                (let ((time-str (org-agenda-item-time-string item)))
+                  (when time-str
+                    (let* ((tparts (string-split time-str #\:))
+                           (th (string->number (car tparts)))
+                           (tm (string->number (cadr tparts)))
+                           (item-mins (+ (* th 60) tm))
+                           (diff (- item-mins now-mins)))
+                      (when (and (>= diff 0) (<= diff 15))
+                        (set! upcoming
+                          (cons (string-append time-str " "
+                                  (org-heading-title (org-agenda-item-heading item))
+                                  " (in " (number->string diff) " min)")
+                                upcoming))))))))
+            items))
+        ;; Check diary entries for today
+        (let* ((entries (diary-entries-for-month year month))
+               (today-prefix (string-append
+                               (number->string year) "-"
+                               (if (< month 10) "0" "") (number->string month) "-"
+                               (if (< day 10) "0" "") (number->string day))))
+          (for-each
+            (lambda (entry)
+              (when (string-prefix? today-prefix entry)
+                (set! upcoming (cons (string-append "Diary: "
+                  (substring entry (+ (string-length today-prefix) 1)
+                             (string-length entry)))
+                  upcoming))))
+            entries))
+        (if (null? upcoming)
+          (echo-message! (app-state-echo app) "No upcoming appointments")
+          (echo-message! (app-state-echo app)
+            (string-append "Upcoming: " (string-join (reverse upcoming) " | "))))))))
 
 ;; --- Runtime key rebinding ---
 (def *custom-keys-path*

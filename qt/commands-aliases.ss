@@ -1156,6 +1156,7 @@
   (register-command! 'org-babel-next-src-block cmd-next-error)
   (register-command! 'org-babel-previous-src-block cmd-previous-error)
   (register-command! 'org-babel-mark-block cmd-mark-paragraph)
+  (register-command! 'org-babel-kill-session cmd-org-babel-kill-session)
   ;; Error navigation
   (register-command! 'next-error-no-select cmd-next-error)
   (register-command! 'compilation-minor-mode cmd-compile)
@@ -1208,6 +1209,8 @@
   (register-command! 'calendar-mark-holidays cmd-calendar-holidays)
   (register-command! 'calendar-list-holidays cmd-calendar-holidays)
   (register-command! 'calendar-sunrise-sunset cmd-calendar)
+  (register-command! 'appt-check cmd-appt-check)
+  (register-command! 'appt-activate cmd-appt-check)
   ;; Batch 11: package/treesit/flymake/mc/helm aliases
   ;; Package
   (register-command! 'use-package cmd-customize-variable)

@@ -16,7 +16,8 @@
         :gemacs/editor
         (only-in :gemacs/org-babel
                  org-babel-find-src-block org-babel-execute
-                 org-babel-tangle-to-files org-babel-insert-result)
+                 org-babel-tangle-to-files org-babel-insert-result
+                 org-babel-kill-all-sessions)
         (only-in :gemacs/org-capture
                  org-capture-menu-string org-capture-template-key
                  org-capture-template-template org-capture-cursor-position
@@ -703,6 +704,11 @@
               "No :tangle blocks found"
               (string-append "Tangled to: "
                 (string-join (map car files) ", ")))))))))
+
+(def (cmd-org-babel-kill-session app)
+  "Kill all active org-babel sessions."
+  (org-babel-kill-all-sessions)
+  (echo-message! (app-state-echo app) "All babel sessions killed"))
 
 ;;; --- Other frame (stub) ---
 (def (cmd-other-frame app)

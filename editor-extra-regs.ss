@@ -16,7 +16,7 @@
         ;; Batch 2
         cmd-sort-numeric-fields cmd-find-dired cmd-find-name-dired
         cmd-dired-hide-details cmd-desktop-save-mode
-        cmd-org-babel-execute-src-block cmd-org-babel-tangle
+        cmd-org-babel-execute-src-block cmd-org-babel-tangle cmd-org-babel-kill-session
         cmd-other-frame cmd-winum-mode cmd-help-with-tutorial
         cmd-cua-mode cmd-org-archive-subtree cmd-org-toggle-heading
         cmd-magit-init cmd-magit-tag
@@ -50,7 +50,8 @@
         :gemacs/echo
         (only-in :gemacs/org-babel
                  org-babel-find-src-block org-babel-execute
-                 org-babel-tangle-to-files org-babel-insert-result)
+                 org-babel-tangle-to-files org-babel-insert-result
+                 org-babel-kill-all-sessions)
         (only-in :gemacs/org-capture
                  org-capture-menu-string org-capture-template-key
                  org-capture-template-template org-capture-cursor-position
@@ -791,6 +792,7 @@
   (register-command! 'org-babel-next-src-block cmd-next-error)
   (register-command! 'org-babel-previous-src-block cmd-previous-error)
   (register-command! 'org-babel-mark-block cmd-mark-paragraph)
+  (register-command! 'org-babel-kill-session cmd-org-babel-kill-session)
   ;; Error navigation
   (register-command! 'next-error-no-select cmd-next-error)
   ;; Search/find
@@ -1295,6 +1297,12 @@
               "No :tangle blocks found"
               (string-append "Tangled to: "
                 (string-join (map car files) ", ")))))))))
+
+;;; --- Org babel sessions ---
+(def (cmd-org-babel-kill-session app)
+  "Kill all active org-babel sessions."
+  (org-babel-kill-all-sessions)
+  (echo-message! (app-state-echo app) "All babel sessions killed"))
 
 ;;; --- Other frame (stub) ---
 (def (cmd-other-frame app)

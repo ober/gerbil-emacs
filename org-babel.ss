@@ -35,6 +35,109 @@
 ;; Active sessions: "lang:session-name" -> process port
 (def *org-babel-sessions* (make-hash-table))
 
+(def *babel-session-counter* 0)
+
+(def (org-babel-session-key lang session-name)
+  "Create a session hash key from language and session name."
+  (string-append lang ":" (or session-name "default")))
+
+(def (org-babel-get-session lang session-name)
+  "Get or create a persistent session for lang. Returns process port."
+  (let* ((key (org-babel-session-key lang session-name))
+         (existing (hash-get *org-babel-sessions* key)))
+    (if existing
+      existing
+      ;; Create new session
+      (let* ((cmd-entry (assoc lang *org-babel-lang-commands*))
+             (cmd (and cmd-entry (cadr cmd-entry)))
+             (args (cond
+                     ((or (string=? lang "python") (string=? lang "python3"))
+                      '("-i" "-u"))  ;; interactive, unbuffered
+                     ((or (string=? lang "bash") (string=? lang "sh"))
+                      '("-i"))
+                     ((string=? lang "node")
+                      '("-i"))
+                     ((or (string=? lang "gerbil") (string=? lang "scheme"))
+                      '())
+                     (else '())))
+             (proc (open-process
+                     (list path: cmd
+                           arguments: args
+                           stdout-redirection: #t
+                           stdin-redirection: #t
+                           stderr-redirection: #t))))
+        (hash-put! *org-babel-sessions* key proc)
+        proc))))
+
+(def (org-babel-session-execute lang code session-name)
+  "Execute code in a persistent session. Returns output string."
+  (with-catch
+    (lambda (e)
+      ;; Remove dead session so next call recreates
+      (hash-remove! *org-babel-sessions*
+                    (org-babel-session-key lang session-name))
+      (string-append "Session error: "
+        (with-output-to-string (lambda () (display-exception e)))))
+    (lambda ()
+      (let* ((proc (org-babel-get-session lang session-name))
+             ;; Use a unique sentinel to detect end of output
+             (sentinel (begin (set! *babel-session-counter*
+                                    (+ *babel-session-counter* 1))
+                              (string-append "___BABEL_DONE_"
+                                (number->string *babel-session-counter*)
+                                "___")))
+             ;; Send the code followed by a sentinel echo
+             (sentinel-cmd
+               (cond
+                 ((or (string=? lang "python") (string=? lang "python3"))
+                  (string-append "print('" sentinel "')"))
+                 ((or (string=? lang "bash") (string=? lang "sh"))
+                  (string-append "echo '" sentinel "'"))
+                 ((string=? lang "node")
+                  (string-append "console.log('" sentinel "')"))
+                 ((or (string=? lang "gerbil") (string=? lang "scheme"))
+                  (string-append "(displayln \"" sentinel "\")"))
+                 (else (string-append "echo '" sentinel "'")))))
+        (display code proc)
+        (newline proc)
+        (display sentinel-cmd proc)
+        (newline proc)
+        (force-output proc)
+        ;; Read lines until we see the sentinel
+        (let loop ((lines '()))
+          (let ((line (read-line proc)))
+            (cond
+              ((eof-object? line)
+               (string-join (reverse lines) "\n"))
+              ((string-contains line sentinel)
+               (string-join (reverse lines) "\n"))
+              (else
+               (loop (cons line lines))))))))))
+
+(def (org-babel-kill-session lang session-name)
+  "Kill a persistent session."
+  (let* ((key (org-babel-session-key lang session-name))
+         (proc (hash-get *org-babel-sessions* key)))
+    (when proc
+      (with-catch void
+        (lambda ()
+          (close-output-port proc)
+          (close-input-port proc)
+          (process-status proc)))
+      (hash-remove! *org-babel-sessions* key))))
+
+(def (org-babel-kill-all-sessions)
+  "Kill all active babel sessions."
+  (hash-for-each
+    (lambda (key proc)
+      (with-catch void
+        (lambda ()
+          (close-output-port proc)
+          (close-input-port proc)
+          (process-status proc))))
+    *org-babel-sessions*)
+  (set! *org-babel-sessions* (make-hash-table)))
+
 ;;;============================================================================
 ;;; Source Block Parsing
 ;;;============================================================================
@@ -125,11 +228,14 @@
 
 (def (org-babel-execute lang code header-args buffer-text: (buffer-text #f))
   "Execute code in the given language. Returns output string.
-   Pass buffer-text: for :noweb expansion support."
+   Pass buffer-text: for :noweb expansion support.
+   When :session header is present, uses persistent process."
   (let* ((cmd-entry (assoc lang *org-babel-lang-commands*))
          (dir (or (hash-get header-args "dir") #f))
-         (vars (org-babel-collect-vars header-args))
+         (vars (org-babel-collect-vars header-args buffer-text))
          (noweb? (equal? (hash-get header-args "noweb") "yes"))
+         (session-name (hash-get header-args "session"))
+         (use-session? (and session-name (not (string=? session-name "none"))))
          (results-type (or (hash-get header-args "results") "output")))
     (if (not cmd-entry)
       (string-append "Error: unknown language '" lang "'")
@@ -141,22 +247,25 @@
              ;; Inject variable preamble
              (full-code (if (null? vars)
                           expanded-code
-                          (string-append (org-babel-inject-variables lang vars) "\n" expanded-code)))
-             ;; Write to temp file
-             (ext (org-babel-file-extension lang))
-             (tmp (string-append "/tmp/org-babel-" lang "." ext)))
-        (call-with-output-file tmp
-          (lambda (port) (display full-code port)))
-        (with-catch
-          (lambda (e)
-            (string-append "Error: " (with-output-to-string (lambda () (display-exception e)))))
-          (lambda ()
-            (let ((output (run-process
-                            [cmd tmp]
-                            coprocess: read-all-as-string
-                            directory: (or dir #f)
-                            stderr-redirection: #t)))
-              (string-trim output))))))))
+                          (string-append (org-babel-inject-variables lang vars) "\n" expanded-code))))
+        (if use-session?
+          ;; Use persistent session
+          (string-trim (org-babel-session-execute lang full-code session-name))
+          ;; One-shot execution via temp file
+          (let* ((ext (org-babel-file-extension lang))
+                 (tmp (string-append "/tmp/org-babel-" lang "." ext)))
+            (call-with-output-file tmp
+              (lambda (port) (display full-code port)))
+            (with-catch
+              (lambda (e)
+                (string-append "Error: " (with-output-to-string (lambda () (display-exception e)))))
+              (lambda ()
+                (let ((output (run-process
+                                [cmd tmp]
+                                coprocess: read-all-as-string
+                                directory: (or dir #f)
+                                stderr-redirection: #t)))
+                  (string-trim output))))))))))
 
 (def (org-babel-file-extension lang)
   "Get file extension for a language."
@@ -169,8 +278,9 @@
     ((or (string=? lang "gerbil") (string=? lang "scheme")) "ss")
     (else "txt")))
 
-(def (org-babel-collect-vars header-args)
-  "Extract :var declarations from header args. Returns list of (name . value)."
+(def (org-babel-collect-vars header-args (buffer-text #f))
+  "Extract :var declarations from header args. Returns list of (name . value).
+   When buffer-text is provided, resolves named block/table references."
   (let ((var-str (hash-get header-args "var")))
     (if (not var-str)
       '()
@@ -180,11 +290,113 @@
           (lambda (part)
             (let ((eq-pos (string-index (string-trim part) #\=)))
               (if eq-pos
-                (cons (substring (string-trim part) 0 eq-pos)
-                      (substring (string-trim part) (+ eq-pos 1)
-                                 (string-length (string-trim part))))
+                (let* ((name (substring (string-trim part) 0 eq-pos))
+                       (raw-val (substring (string-trim part) (+ eq-pos 1)
+                                           (string-length (string-trim part))))
+                       (val (if buffer-text
+                              (org-babel-resolve-var-ref buffer-text raw-val)
+                              raw-val)))
+                  (cons name val))
                 #f)))
           parts)))))
+
+(def (org-babel-resolve-var-ref text ref-name)
+  "Resolve a :var reference. If ref-name matches a #+NAME: src block,
+   execute it and return output. If it matches a named table, convert
+   to list format. Otherwise return ref-name as literal."
+  ;; First check for a named src block
+  (let ((block-body (org-babel-find-named-block text ref-name)))
+    (if block-body
+      ;; Found a named src block — find its language and execute
+      (let ((block-lang (org-babel-find-named-block-lang text ref-name)))
+        (if block-lang
+          (let ((result (org-babel-execute block-lang block-body
+                          (make-hash-table))))
+            (string-trim result))
+          ref-name))
+      ;; Check for a named table
+      (let ((table-data (org-babel-find-named-table text ref-name)))
+        (if table-data
+          table-data
+          ref-name)))))
+
+(def (org-babel-find-named-block-lang text name)
+  "Find the language of a named src block."
+  (let* ((lines (string-split text #\newline))
+         (total (length lines)))
+    (let loop ((i 0))
+      (cond
+        ((>= i total) #f)
+        ((let ((line (list-ref lines i)))
+           (let ((m (pregexp-match "^#\\+[Nn][Aa][Mm][Ee]:\\s*(.+)" line)))
+             (and m (string=? (string-trim (list-ref m 1)) name)
+                  (< (+ i 1) total)
+                  (org-block-begin? (list-ref lines (+ i 1))))))
+         ;; Found it — parse the BEGIN_SRC line for language
+         (let ((parsed (org-babel-parse-begin-line (list-ref lines (+ i 1)))))
+           (and parsed (car parsed))))
+        (else (loop (+ i 1)))))))
+
+(def (org-babel-find-named-table text name)
+  "Find a named org table and convert to a language-appropriate string.
+   Returns comma-separated rows with pipe-separated cells, or #f."
+  (let* ((lines (string-split text #\newline))
+         (total (length lines)))
+    (let loop ((i 0))
+      (cond
+        ((>= i total) #f)
+        ((let ((line (list-ref lines i)))
+           (let ((m (pregexp-match "^#\\+[Nn][Aa][Mm][Ee]:\\s*(.+)" line)))
+             (and m (string=? (string-trim (list-ref m 1)) name)
+                  (< (+ i 1) total)
+                  (org-table-line-check? (list-ref lines (+ i 1))))))
+         ;; Found named table — collect rows
+         (let table-loop ((j (+ i 1)) (rows '()))
+           (if (or (>= j total)
+                   (not (org-table-line-check? (list-ref lines j))))
+             ;; Convert to data string: list of lists
+             (org-babel-table-to-string (reverse rows))
+             ;; Skip separator lines (|---|---|)
+             (let ((line (list-ref lines j)))
+               (if (pregexp-match "^\\s*\\|[-+]+\\|" line)
+                 (table-loop (+ j 1) rows)
+                 (table-loop (+ j 1) (cons (org-babel-parse-table-row line) rows)))))))
+        (else (loop (+ i 1)))))))
+
+(def (org-babel-parse-table-row line)
+  "Parse '| a | b | c |' into list of trimmed cell strings."
+  (let* ((trimmed (string-trim line))
+         ;; Remove leading and trailing |
+         (inner (if (and (> (string-length trimmed) 0)
+                         (char=? (string-ref trimmed 0) #\|))
+                  (substring trimmed 1 (string-length trimmed))
+                  trimmed))
+         (inner2 (if (and (> (string-length inner) 0)
+                          (char=? (string-ref inner (- (string-length inner) 1)) #\|))
+                   (substring inner 0 (- (string-length inner) 1))
+                   inner)))
+    (map string-trim (string-split inner2 #\|))))
+
+(def (org-babel-table-to-string rows)
+  "Convert list of row-lists to a string suitable for variable injection.
+   Format: [[\"a\",\"b\"],[\"c\",\"d\"]] for general use."
+  (string-append
+    "["
+    (string-join
+      (map (lambda (row)
+             (string-append
+               "["
+               (string-join
+                 (map (lambda (cell)
+                        (if (pregexp-match "^-?\\d+\\.?\\d*$" cell)
+                          cell
+                          (string-append "\"" cell "\"")))
+                      row)
+                 ",")
+               "]"))
+           rows)
+      ",")
+    "]"))
 
 (def (org-babel-inject-variables lang vars)
   "Generate variable preamble for the given language."

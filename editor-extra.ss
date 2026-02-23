@@ -1590,6 +1590,8 @@
   (register-command! 'calendar-mark-holidays cmd-calendar-holidays)
   (register-command! 'calendar-list-holidays cmd-calendar-holidays)
   (register-command! 'calendar-sunrise-sunset cmd-calendar)
+  (register-command! 'appt-check cmd-appt-check)
+  (register-command! 'appt-activate cmd-appt-check)
   ;; Batch 11: package/treesit/flymake/mc/helm aliases
   ;; Package
   (register-command! 'use-package cmd-package-install)
