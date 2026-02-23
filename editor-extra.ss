@@ -2080,4 +2080,6 @@
   ;; Batch 14: address mode alias (editor-extra scope)
   (register-command! 'goto-address-mode cmd-toggle-global-goto-address)
   ;; Batch 15: insert-tab
-  (register-command! 'insert-tab cmd-insert-tab))
+  (register-command! 'insert-tab cmd-insert-tab)
+  ;; Batch 6: tutorial, header-line, project-keymaps, org-columns
+  (register-batch6-commands!))

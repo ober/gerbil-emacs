@@ -81,6 +81,8 @@
         :gemacs/editor
         (only-in :gemacs/editor-extra-final
                  find-editorconfig)
+        (only-in :gemacs/editor-extra-helpers
+                 project-current)
         (only-in :gemacs/persist
                  buffer-local-set!
                  save-place-save! save-place-load!
@@ -1551,4 +1553,108 @@
   ;; Batch 12: Emacs-standard aliases
   (qt-register-batch12-aliases!)
   ;; Batch 14: facade-scope aliases
-  (register-command! 'kill-emacs cmd-quit))
+  (register-command! 'kill-emacs cmd-quit)
+  ;; Batch 6: header-line, project-keymaps, org-columns
+  (register-command! 'header-line-mode cmd-header-line-mode)
+  (register-command! 'project-keymap-load cmd-project-keymap-load)
+  (register-command! 'org-columns cmd-org-columns))
+
+;;; Qt versions of batch 6 commands
+
+(def *header-line-mode* #f)
+(def *project-keymaps* (make-hash-table))
+
+(def (cmd-header-line-mode app)
+  "Toggle header line display."
+  (set! *header-line-mode* (not *header-line-mode*))
+  (let ((echo (app-state-echo app)))
+    (if *header-line-mode*
+      (let* ((buf (current-qt-buffer app))
+             (path (and buf (buffer-file-path buf))))
+        (echo-message! echo (string-append "Header: " (or path (buffer-name buf)))))
+      (echo-message! echo "Header line mode disabled"))))
+
+(def (cmd-project-keymap-load app)
+  "Load project-specific keybindings from .gemacs-keys in project root."
+  (let* ((root (project-current app))
+         (echo (app-state-echo app)))
+    (if (not root)
+      (echo-message! echo "Not in a project")
+      (let ((keyfile (path-expand ".gemacs-keys" root)))
+        (if (not (file-exists? keyfile))
+          (echo-message! echo (string-append "No .gemacs-keys in " root))
+          (with-catch
+            (lambda (e)
+              (echo-message! echo (string-append "Error: "
+                (with-output-to-string (lambda () (display-exception e))))))
+            (lambda ()
+              (let* ((content (call-with-input-file keyfile
+                        (lambda (p) (read-line p #f))))
+                     (lines (string-split content #\newline))
+                     (count 0))
+                (for-each
+                  (lambda (line)
+                    (let ((trimmed (string-trim line)))
+                      (when (and (> (string-length trimmed) 0)
+                                 (not (char=? (string-ref trimmed 0) #\#)))
+                        (let ((parts (string-split trimmed #\space)))
+                          (when (>= (length parts) 2)
+                            (hash-put! *project-keymaps* (cons root (car parts))
+                                       (string->symbol (cadr parts)))
+                            (set! count (+ count 1)))))))
+                  lines)
+                (echo-message! echo
+                  (string-append "Loaded " (number->string count) " project keybindings"))))))))))
+
+(def (cmd-org-columns app)
+  "Display org heading properties in column view."
+  (let* ((ed (current-qt-editor app))
+         (echo (app-state-echo app))
+         (text (qt-plain-text-edit-text ed))
+         (lines (string-split text #\newline)))
+    (let loop ((ls lines) (headings []))
+      (if (null? ls)
+        (if (null? headings)
+          (echo-message! echo "No org headings found")
+          (let* ((rev (reverse headings))
+                 (header "| Level | Heading | TODO | Priority |")
+                 (sep    "|-------|---------|------|----------|")
+                 (rows (map (lambda (h)
+                              (let ((level (car h)) (title (cadr h))
+                                    (todo (caddr h)) (pri (cadddr h)))
+                                (string-append "| " (number->string level) " | "
+                                  (substring title 0 (min 30 (string-length title))) " | "
+                                  todo " | " pri " |")))
+                            rev))
+                 (content (string-append header "\n" sep "\n"
+                            (string-join rows "\n") "\n"))
+                 (fr (app-state-frame app))
+                 (cbuf (or (buffer-by-name "*Org Columns*")
+                           (qt-buffer-create! "*Org Columns*" ed #f))))
+            (qt-buffer-attach! ed cbuf)
+            (set! (qt-edit-window-buffer (qt-current-window fr)) cbuf)
+            (qt-plain-text-edit-set-text! ed content)
+            (qt-text-document-set-modified! (buffer-doc-pointer cbuf) #f)
+            (qt-plain-text-edit-set-cursor-position! ed 0)))
+        (let* ((line (car ls))
+               (trimmed (string-trim line)))
+          (if (and (> (string-length trimmed) 0)
+                   (char=? (string-ref trimmed 0) #\*))
+            (let* ((stars (let lp ((i 0))
+                           (if (and (< i (string-length trimmed))
+                                    (char=? (string-ref trimmed i) #\*))
+                             (lp (+ i 1)) i)))
+                   (rest (string-trim (substring trimmed stars (string-length trimmed))))
+                   (words (string-split rest #\space))
+                   (todo-kw (if (and (pair? words)
+                                     (member (car words) '("TODO" "DONE" "WAITING" "CANCELLED")))
+                              (car words) ""))
+                   (after-todo (if (string=? todo-kw "") words (cdr words)))
+                   (pri (if (and (pair? after-todo)
+                                 (string-prefix? "[#" (car after-todo)))
+                           (car after-todo) ""))
+                   (after-pri (if (string=? pri "") after-todo (cdr after-todo)))
+                   (title (string-join after-pri " ")))
+              (loop (cdr ls) (cons (list stars title todo-kw pri) headings)))
+            (loop (cdr ls) headings)))))))
+

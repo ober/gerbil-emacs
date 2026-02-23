@@ -1719,4 +1719,3 @@
         (editor-insert-text ed pos str)
         (editor-goto-pos ed (+ pos spaces))))))
 
-

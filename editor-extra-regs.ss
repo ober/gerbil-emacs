@@ -36,7 +36,11 @@
         cmd-eww-add-bookmark cmd-eww-list-bookmarks
         ;; Forge (GitHub)
         cmd-forge-list-prs cmd-forge-create-pr
-        cmd-forge-list-issues cmd-forge-view-pr)
+        cmd-forge-list-issues cmd-forge-view-pr
+        ;; Batch 6
+        *project-keymaps*
+        cmd-project-keymap-load cmd-org-columns
+        register-batch6-commands!)
 
 (import :std/sugar
         :std/srfi/1
@@ -71,7 +75,8 @@
         :gemacs/editor-cmds-a
         :gemacs/editor-cmds-b
         :gemacs/editor-cmds-c
-        (only-in :gemacs/editor-extra-helpers cmd-flyspell-mode)
+        (only-in :gemacs/editor-extra-helpers cmd-flyspell-mode project-current)
+        (only-in :gemacs/editor-extra-tools2 cmd-toggle-header-line)
         (only-in :gemacs/terminal terminal-buffer?)
         (only-in :gemacs/editor-extra-web
                  *eww-current-url* eww-display-page eww-fetch-url))
@@ -1960,3 +1965,100 @@
         (if (not output)
           (echo-error! echo "forge: failed to create PR")
           (echo-message! echo (string-append "Created: " (string-trim output))))))))
+
+;;; --- Project-specific keymaps ---
+(def *project-keymaps* (make-hash-table)) ;; project-root -> alist of (key . command)
+
+(def (cmd-project-keymap-load app)
+  "Load project-specific keybindings from .gemacs-keys in project root."
+  (let* ((echo (app-state-echo app))
+         (root (project-current app)))
+    (if (not root)
+      (echo-message! echo "Not in a project")
+      (let ((keyfile (path-expand ".gemacs-keys" root)))
+        (if (not (file-exists? keyfile))
+          (echo-message! echo (string-append "No .gemacs-keys in " root))
+          (with-catch
+            (lambda (e)
+              (echo-message! echo (string-append "Error loading keys: "
+                (with-output-to-string (lambda () (display-exception e))))))
+            (lambda ()
+              (let* ((content (call-with-input-file keyfile
+                        (lambda (p) (read-line p #f))))
+                     (lines (string-split content #\newline))
+                     (count 0))
+                (for-each
+                  (lambda (line)
+                    (let ((trimmed (string-trim line)))
+                      (when (and (> (string-length trimmed) 0)
+                                 (not (char=? (string-ref trimmed 0) #\#)))
+                        (let ((parts (string-split trimmed #\space)))
+                          (when (>= (length parts) 2)
+                            (let ((key (car parts))
+                                  (cmd-name (string->symbol (cadr parts))))
+                              (hash-put! *project-keymaps* (cons root key) cmd-name)
+                              (set! count (+ count 1))))))))
+                  lines)
+                (echo-message! echo
+                  (string-append "Loaded " (number->string count) " project keybindings"))))))))))
+
+;;; --- Org column view ---
+(def (cmd-org-columns app)
+  "Display org heading properties in a column view."
+  (let* ((fr (app-state-frame app))
+         (win (current-window fr))
+         (ed (edit-window-editor win))
+         (echo (app-state-echo app))
+         (text (editor-get-text ed))
+         (lines (string-split text #\newline)))
+    (let loop ((ls lines) (headings []))
+      (if (null? ls)
+        (if (null? headings)
+          (echo-message! echo "No org headings found")
+          (let* ((rev (reverse headings))
+                 (header "| Level | Heading | TODO | Priority |")
+                 (sep    "|-------|---------|------|----------|")
+                 (rows (map (lambda (h)
+                              (let ((level (car h)) (title (cadr h))
+                                    (todo (caddr h)) (pri (cadddr h)))
+                                (string-append "| " (number->string level) " | "
+                                  (substring title 0 (min 30 (string-length title))) " | "
+                                  todo " | " pri " |")))
+                            rev))
+                 (content (string-append header "\n" sep "\n"
+                            (string-join rows "\n") "\n"))
+                 (cbuf (buffer-create! "*Org Columns*" ed)))
+            (buffer-attach! ed cbuf)
+            (set! (edit-window-buffer win) cbuf)
+            (editor-set-text ed content)
+            (editor-goto-pos ed 0)
+            (editor-set-read-only ed #t)))
+        (let* ((line (car ls))
+               (trimmed (string-trim line)))
+          (if (and (> (string-length trimmed) 0)
+                   (char=? (string-ref trimmed 0) #\*))
+            ;; Parse heading: count stars, extract TODO, priority, title
+            (let* ((stars (let lp ((i 0))
+                           (if (and (< i (string-length trimmed))
+                                    (char=? (string-ref trimmed i) #\*))
+                             (lp (+ i 1)) i)))
+                   (rest (string-trim (substring trimmed stars (string-length trimmed))))
+                   (words (string-split rest #\space))
+                   (todo-kw (if (and (pair? words)
+                                     (member (car words) '("TODO" "DONE" "WAITING" "CANCELLED")))
+                              (car words) ""))
+                   (after-todo (if (string=? todo-kw "")
+                                 words (cdr words)))
+                   (pri (if (and (pair? after-todo)
+                                 (string-prefix? "[#" (car after-todo)))
+                           (car after-todo) ""))
+                   (after-pri (if (string=? pri "")
+                                after-todo (cdr after-todo)))
+                   (title (string-join after-pri " ")))
+              (loop (cdr ls) (cons (list stars title todo-kw pri) headings)))
+            (loop (cdr ls) headings)))))))
+
+(def (register-batch6-commands!)
+  (register-command! 'header-line-mode cmd-toggle-header-line) ;; alias
+  (register-command! 'project-keymap-load cmd-project-keymap-load)
+  (register-command! 'org-columns cmd-org-columns))

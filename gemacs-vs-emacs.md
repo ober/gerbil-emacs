@@ -343,7 +343,7 @@
 | Scroll bar | :red_circle: | Scintilla handles internally |
 | Mode line (status bar) | :white_check_mark: | Shows mode, file, position, modified status |
 | Tab bar | :green_circle: | Qt visual buffer tab bar + workspace tabs (both layers) |
-| Header line | :red_circle: | Not implemented |
+| Header line | :white_check_mark: | Toggle header line display (file path breadcrumb) |
 | Fringe indicators | :yellow_circle: | Line numbers; no bitmap fringes |
 | Display tables | :red_circle: | Not implemented |
 
@@ -482,9 +482,9 @@
 | Move subtree up/down | :white_check_mark: | |
 | Template expansion (`<s TAB`) | :white_check_mark: | Source block templates |
 | Sparse tree | :white_check_mark: | Regexp search, shows matching headings + parents |
-| Column view | :red_circle: | Not implemented |
+| Column view | :white_check_mark: | Tabular display of heading level, title, TODO, priority |
 
-**Summary:** Org-mode is one of gemacs's strongest features with substantial coverage of the core: headings, TODO, tables, babel, export, agenda. Interactive agenda supports jump-to-source and TODO toggling. Refile with narrowing target selection. Sparse tree with regexp matching. Key gap: column view.
+**Summary:** Org-mode is one of gemacs's strongest features with substantial coverage of the core: headings, TODO, tables, babel, export, agenda, column view. Interactive agenda supports jump-to-source and TODO toggling. Refile with narrowing target selection. Sparse tree with regexp matching.
 
 ---
 
@@ -724,7 +724,7 @@
 | Project dired | :large_blue_circle: | Dired at project root |
 | Project-aware buffer list | :large_blue_circle: | |
 | Per-project settings | :large_blue_circle: | `.gemacs-config` directory-local settings (applied on file open) |
-| Project-specific keymaps | :red_circle: | Not implemented |
+| Project-specific keymaps | :white_check_mark: | Load `.gemacs-keys` from project root |
 | Projectile integration | :yellow_circle: | Basic command registration |
 | project.el features | :yellow_circle: | Basic |
 
@@ -745,7 +745,7 @@
 | View lossage (`C-h l`) | :white_check_mark: | Last 300 keystrokes |
 | Command history | :white_check_mark: | |
 | Info reader | :red_circle: | Not implemented |
-| Emacs tutorial | :red_circle: | Not implemented |
+| Emacs tutorial | :white_check_mark: | Built-in tutorial with navigation, editing, files, search, windows, org mode |
 | Built-in documentation browser | :red_circle: | No hyperlinked docs |
 
 **Summary:** Key-based help works well. Missing the Info reader and comprehensive documentation browser.
