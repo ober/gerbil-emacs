@@ -329,6 +329,48 @@
                   (editor-set-text ed new-text)
                   (editor-goto-pos ed (min pos (string-length new-text))))))))))))
 
+(def (cmd-paredit-slurp-backward app)
+  "Extend enclosing sexp to include the sexp before the opening delimiter."
+  (let* ((ed (current-editor app))
+         (text (editor-get-text ed))
+         (pos (editor-get-current-pos ed))
+         (open-pos (text-find-enclosing-open text pos)))
+    (when open-pos
+      (let* ((before (text-skip-ws-backward text open-pos))
+             (prev-start (text-sexp-start text before)))
+        (when (and prev-start (< prev-start open-pos))
+          (let* ((open-char (string (string-ref text open-pos)))
+                 (new-text (string-append
+                             (substring text 0 prev-start)
+                             open-char
+                             (substring text prev-start open-pos)
+                             (substring text (+ open-pos 1) (string-length text)))))
+            (with-undo-action ed
+              (editor-set-text ed new-text)
+              (editor-goto-pos ed pos))))))))
+
+(def (cmd-paredit-barf-backward app)
+  "Move the first element of enclosing sexp out before the opening delimiter."
+  (let* ((ed (current-editor app))
+         (text (editor-get-text ed))
+         (pos (editor-get-current-pos ed))
+         (open-pos (text-find-enclosing-open text pos)))
+    (when open-pos
+      (let* ((after-open (text-skip-ws-forward text (+ open-pos 1)))
+             (first-end (text-sexp-end text after-open))
+             (close-pos (text-find-enclosing-close text pos))
+             (open-char (string (string-ref text open-pos))))
+        (when (and first-end close-pos (< first-end close-pos))
+          (let* ((ws-after (text-skip-ws-forward text first-end))
+                 (new-text (string-append
+                             (substring text 0 open-pos)
+                             (substring text (+ open-pos 1) ws-after)
+                             open-char
+                             (substring text ws-after (string-length text)))))
+            (with-undo-action ed
+              (editor-set-text ed new-text)
+              (editor-goto-pos ed (min pos (string-length new-text))))))))))
+
 (def (cmd-paredit-split-sexp app)
   "Split the enclosing sexp into two at point."
   (let* ((ed (current-editor app))

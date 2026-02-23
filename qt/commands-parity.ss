@@ -1848,3 +1848,24 @@
       (begin
         (rainbow-clear-indicators! ed)
         (echo-message! echo "Rainbow delimiters OFF")))))
+
+;;; ---- Dedicated Windows ----
+
+(def *qt-dedicated-windows* (make-hash-table))
+
+(def (cmd-toggle-window-dedicated app)
+  "Toggle whether the current window is dedicated to its buffer."
+  (let* ((fr (app-state-frame app))
+         (win (qt-current-window fr))
+         (echo (app-state-echo app))
+         (buf-name (buffer-name (qt-edit-window-buffer win)))
+         (currently-dedicated (hash-get *qt-dedicated-windows* buf-name)))
+    (if currently-dedicated
+      (begin
+        (hash-remove! *qt-dedicated-windows* buf-name)
+        (echo-message! echo
+          (string-append "Window undedicated from: " buf-name)))
+      (begin
+        (hash-put! *qt-dedicated-windows* buf-name #t)
+        (echo-message! echo
+          (string-append "Window dedicated to: " buf-name))))))

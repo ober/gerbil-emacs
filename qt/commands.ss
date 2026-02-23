@@ -1270,6 +1270,8 @@
   ;; Paredit
   (register-command! 'paredit-slurp-forward cmd-paredit-slurp-forward)
   (register-command! 'paredit-barf-forward cmd-paredit-barf-forward)
+  (register-command! 'paredit-slurp-backward cmd-paredit-slurp-backward)
+  (register-command! 'paredit-barf-backward cmd-paredit-barf-backward)
   (register-command! 'paredit-wrap-round cmd-paredit-wrap-round)
   (register-command! 'paredit-wrap-square cmd-paredit-wrap-square)
   (register-command! 'paredit-splice-sexp cmd-paredit-splice-sexp)

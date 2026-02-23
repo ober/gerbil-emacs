@@ -252,12 +252,12 @@
 | Stop recording (`F4` / `C-x )`) | :white_check_mark: | |
 | Execute last macro (`F4` / `C-x e`) | :white_check_mark: | |
 | Named macros | :white_check_mark: | `M-x name-last-kbd-macro`, `M-x call-named-kbd-macro` with narrowing |
-| Macro counter | :red_circle: | No `C-x C-k C-i` counter |
-| Edit macro | :red_circle: | No `C-x C-k C-e` editor |
+| Macro counter | :white_check_mark: | `M-x kbd-macro-counter-insert` / `kbd-macro-counter-set` |
+| Edit macro | :large_blue_circle: | `M-x edit-kbd-macro` shows macro events in buffer (TUI) |
 | Save macros to file | :white_check_mark: | `M-x save-kbd-macros` / `load-kbd-macros` persists to `~/.gemacs-macros` |
 | Execute with count prefix | :yellow_circle: | Basic repeat support |
 
-**Summary:** Macro recording/playback with named macros and persistence. Named macros stored in `app-state`, saved/loaded from disk. Qt uses narrowing for macro selection.
+**Summary:** Feature-rich macro system: recording/playback, named macros with save/load persistence, counter insert/set, macro viewer. Qt uses narrowing for macro selection.
 
 ---
 
@@ -320,7 +320,7 @@
 | Ace-window (jump by label) | :large_blue_circle: | |
 | Swap buffers between windows | :white_check_mark: | |
 | Golden ratio mode | :white_check_mark: | Auto-resize focused window |
-| Dedicated windows | :red_circle: | Not implemented |
+| Dedicated windows | :white_check_mark: | `M-x toggle-window-dedicated` prevents buffer replacement |
 | Side windows | :red_circle: | No `display-buffer-in-side-window` |
 | Window purpose | :red_circle: | Not implemented |
 | Follow mode | :white_check_mark: | Synchronized scrolling across windows |
@@ -591,7 +591,7 @@
 | File path completion | :white_check_mark: | In minibuffer |
 | Symbol completion | :white_check_mark: | Buffer words + LSP merged on Tab |
 | LSP completion | :white_check_mark: | Auto-complete on idle + C-M-i + Tab merge |
-| Snippet completion | :red_circle: | No YASnippet integration |
+| Snippet completion | :large_blue_circle: | TAB expands snippet triggers; `M-x snippet-insert` for browsing |
 | Copilot/AI completion | :yellow_circle: | Registered but not connected |
 
 **Summary:** Completion works via QCompleter popup with buffer words and LSP completions merged. Auto-triggers on idle (500ms) when LSP is running. Tab merges buffer words with LSP results. Missing Cape-style backend extensions.
@@ -681,12 +681,12 @@
 | Raise sexp | :white_check_mark: | Replace parent with child |
 | Split sexp | :white_check_mark: | Break at point |
 | Join sexps | :white_check_mark: | Merge adjacent |
-| Backward slurp/barf | :red_circle: | Not implemented |
+| Backward slurp/barf | :white_check_mark: | `paredit-slurp-backward`, `paredit-barf-backward` |
 | Convolute sexp | :red_circle: | Not implemented |
 | Paredit strict mode | :red_circle: | No delimiter balance enforcement |
 | Smartparens | :red_circle: | Not implemented |
 
-**Summary:** Solid paredit implementation for forward operations. Missing backward slurp/barf and strict mode.
+**Summary:** Comprehensive paredit: forward and backward slurp/barf, wrap, splice, raise, split, join. Missing strict mode and smartparens.
 
 ---
 
@@ -724,12 +724,12 @@
 | Project shell/eshell | :large_blue_circle: | Shell in project root |
 | Project dired | :large_blue_circle: | Dired at project root |
 | Project-aware buffer list | :large_blue_circle: | |
-| Per-project settings | :red_circle: | No `.dir-locals.el` equivalent per-project |
+| Per-project settings | :large_blue_circle: | `.gemacs-config` directory-local settings (applied on file open) |
 | Project-specific keymaps | :red_circle: | Not implemented |
 | Projectile integration | :yellow_circle: | Basic command registration |
 | project.el features | :yellow_circle: | Basic |
 
-**Summary:** Basic project management works (detection, search, compile). Missing per-project configuration.
+**Summary:** Project management works well. Per-project settings via `.gemacs-config` dir-locals. Missing project-specific keymaps.
 
 ---
 
@@ -1079,7 +1079,7 @@
 | Per-mode keymaps | :yellow_circle: | Limited |
 | Global key remap (input-decode-map) | :red_circle: | No input-level key translation |
 
-**Summary:** Key-chord system works well. Missing input-level remapping (bracket swap, super-to-meta).
+**Summary:** Key-chord system works well. Bracket/paren swap via key-translate system. Missing super-to-meta mapping.
 
 ---
 
@@ -1088,14 +1088,14 @@
 | Feature | Status | Notes |
 |---------|--------|-------|
 | Docker mode | :red_circle: | Not implemented |
-| Terraform mode | :red_circle: | Not implemented |
+| Terraform mode | :large_blue_circle: | Syntax highlighting via C lexer (`.tf`, `.tfvars`, `.hcl`) |
 | Ansible mode | :red_circle: | Not implemented |
 | Systemd unit files | :red_circle: | Not implemented |
 | YAML mode | :large_blue_circle: | Syntax highlighting via Scintilla |
 | Kubernetes / k8s | :red_circle: | Not implemented |
 | SSH management | :red_circle: | Not implemented |
 
-**Summary:** No DevOps-specific modes. The user has extensive Ansible, Terraform, Docker, and AWS tooling in their Emacs config.
+**Summary:** Terraform/HCL has syntax highlighting. YAML mode works. Docker uses bash lexer. Missing dedicated Ansible, Kubernetes, and Docker modes.
 
 ---
 

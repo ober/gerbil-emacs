@@ -724,6 +724,8 @@
   ;; Paredit advanced
   (register-command! 'paredit-slurp-forward cmd-paredit-slurp-forward)
   (register-command! 'paredit-barf-forward cmd-paredit-barf-forward)
+  (register-command! 'paredit-slurp-backward cmd-paredit-slurp-backward)
+  (register-command! 'paredit-barf-backward cmd-paredit-barf-backward)
   (register-command! 'paredit-split-sexp cmd-paredit-split-sexp)
   (register-command! 'paredit-join-sexps cmd-paredit-join-sexps)
   ;; Number increment/decrement

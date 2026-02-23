@@ -1516,6 +1516,48 @@ Returns (file line col message) or #f."
                   (min pos (string-length new-text)))
                 (qt-plain-text-edit-ensure-cursor-visible! ed)))))))))
 
+(def (cmd-paredit-slurp-backward app)
+  "Extend enclosing sexp to include the sexp before the opening delimiter."
+  (let* ((ed (current-qt-editor app))
+         (text (qt-plain-text-edit-text ed))
+         (pos (qt-plain-text-edit-cursor-position ed))
+         (open-pos (find-enclosing-open text pos)))
+    (when open-pos
+      (let* ((before (skip-whitespace-backward text open-pos))
+             (prev-start (sexp-start text before)))
+        (when (and prev-start (< prev-start open-pos))
+          (let* ((open-char (string (string-ref text open-pos)))
+                 (new-text (string-append
+                             (substring text 0 prev-start)
+                             open-char
+                             (substring text prev-start open-pos)
+                             (substring text (+ open-pos 1) (string-length text)))))
+            (qt-plain-text-edit-set-text! ed new-text)
+            (qt-plain-text-edit-set-cursor-position! ed pos)
+            (qt-plain-text-edit-ensure-cursor-visible! ed)))))))
+
+(def (cmd-paredit-barf-backward app)
+  "Move the first element of enclosing sexp out before the opening delimiter."
+  (let* ((ed (current-qt-editor app))
+         (text (qt-plain-text-edit-text ed))
+         (pos (qt-plain-text-edit-cursor-position ed))
+         (open-pos (find-enclosing-open text pos)))
+    (when open-pos
+      (let* ((after-open (skip-whitespace-forward text (+ open-pos 1)))
+             (first-end (sexp-end text after-open))
+             (close-pos (find-enclosing-close text pos))
+             (open-char (string (string-ref text open-pos))))
+        (when (and first-end close-pos (< first-end close-pos))
+          (let* ((ws-after (skip-whitespace-forward text first-end))
+                 (new-text (string-append
+                             (substring text 0 open-pos)
+                             (substring text (+ open-pos 1) ws-after)
+                             open-char
+                             (substring text ws-after (string-length text)))))
+            (qt-plain-text-edit-set-text! ed new-text)
+            (qt-plain-text-edit-set-cursor-position! ed (min pos (string-length new-text)))
+            (qt-plain-text-edit-ensure-cursor-visible! ed)))))))
+
 (def (cmd-paredit-wrap-round app)
   "Wrap the sexp at point in parentheses."
   (let* ((ed (current-qt-editor app))

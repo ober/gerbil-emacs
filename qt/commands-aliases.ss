@@ -412,6 +412,7 @@
   (register-command! 'rainbow-delimiters-mode cmd-rainbow-delimiters-mode)
   (register-command! 'toggle-rainbow-delimiters-global cmd-rainbow-delimiters-mode)
   (register-command! 'toggle-rainbow-mode cmd-rainbow-delimiters-mode)
+  (register-command! 'toggle-window-dedicated cmd-toggle-window-dedicated)
   (register-command! 'set-scroll-margin cmd-set-scroll-margin)
   (register-command! 'toggle-scroll-margin cmd-toggle-scroll-margin)
   (register-command! 'toggle-input-method cmd-toggle-input-method)
