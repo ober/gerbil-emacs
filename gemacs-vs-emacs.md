@@ -1,7 +1,7 @@
 # Gemacs vs GNU Emacs — Feature Comparison
 
-> **Last updated:** 2026-02-22
-> **Gemacs version:** master (ade3dae)
+> **Last updated:** 2026-02-23
+> **Gemacs version:** master (339b5ba)
 > **Compared against:** GNU Emacs 29.x / 30.x feature set
 
 ## Status Legend
@@ -271,7 +271,7 @@
 | Minibuffer history | :white_check_mark: | `M-p` / `M-n` in minibuffer |
 | Recursive minibuffer | :white_check_mark: | `toggle-enable-recursive-minibuffers` flag |
 | Vertico / Selectrum | :white_check_mark: | Mode toggles, uses narrowing framework for vertical completion |
-| Orderless matching | :yellow_circle: | Basic fuzzy; no space-separated orderless |
+| Orderless matching | :large_blue_circle: | Multi-match engine: space-separated AND tokens, `!` negation, `^` prefix |
 | Marginalia (annotations) | :white_check_mark: | Annotator registry with `marginalia-annotate!`, command/buffer/file categories |
 | Embark (actions on candidates) | :white_check_mark: | Action registry with `embark-define-action!`, describe/execute/find-file actions |
 | Consult (enhanced commands) | :yellow_circle: | `consult-grep`, `consult-line` registered but basic |
@@ -1102,15 +1102,28 @@
 
 | Feature                   | Status       | Notes                                        |
 |---------------------------|--------------|----------------------------------------------|
-| Helm (or equivalent)      | :white_check_mark: | QListWidget narrowing with fuzzy filter, C-n/C-p nav |
-| Helm M-x                  | :white_check_mark: | Real-time filtered candidate list with match count |
-| Helm buffers              | :white_check_mark: | MRU-ordered buffer list with narrowing |
-| Helm find-files           | :yellow_circle: | Tab completion, no live narrowing list yet |
-| Helm occur                | :white_check_mark: | `helm-occur` with interactive filtering       |
+| Helm core framework       | :white_check_mark: | Multi-source composition, session management, action dispatch |
+| Multi-match engine        | :white_check_mark: | Space-separated AND tokens, `!` negation, `^` prefix, fuzzy per-source |
+| Helm M-x                  | :white_check_mark: | Real-time filtered candidate list, command + keybinding display |
+| Helm mini                 | :white_check_mark: | Multi-source: buffers + recent files combined |
+| Helm buffers              | :white_check_mark: | MRU-ordered buffer list with modified indicator |
+| Helm find-files           | :large_blue_circle: | TUI has full helm file browser; Qt delegates to find-file |
+| Helm occur                | :white_check_mark: | Live narrowing of buffer lines, goto-line on select |
+| Helm imenu                | :white_check_mark: | Navigate definitions (def/defstruct/defclass/define/defmethod/defrule) |
+| Helm show-kill-ring       | :white_check_mark: | Browse and insert from kill ring |
+| Helm bookmarks            | :white_check_mark: | Browse bookmarks with narrowing |
+| Helm mark-ring            | :white_check_mark: | Browse mark ring positions |
+| Helm register             | :white_check_mark: | Browse registers |
+| Helm apropos              | :white_check_mark: | Multi-source: commands + variables with descriptions |
+| Helm resume               | :white_check_mark: | Restore last session with pattern and candidates |
+| Helm mode toggle          | :white_check_mark: | Rebinds M-x, C-x b, C-x C-b, M-y, C-x r b |
 | Helm dash (documentation) | :white_check_mark: | `helm-dash` docset search                    |
 | Helm C-yasnippet          | :white_check_mark: | `helm-c-yasnippet` delegates to snippet-insert |
+| Helm grep (async)         | :red_circle:  | Not yet implemented — needs async source support |
+| Follow mode               | :red_circle:  | Struct has field but not wired to auto-preview |
+| Action menu / marking     | :red_circle:  | TAB action menu, C-SPC marking not implemented |
 
-**Summary:** Narrowing framework works for M-x, buffer switch, bookmarks, recent files, imenu, describe-function, and theme selection. Real-time fuzzy filtering with match count display. Find-files still uses Tab completion (no narrowing list).
+**Summary:** Full Helm narrowing framework with dedicated core (`helm.ss`), multi-match engine, 10 built-in sources, TUI and Qt renderers, 14 registered commands, session resume, and helm-mode keybinding override. Both TUI and Qt have feature parity. Missing: async grep, follow mode, action menu/marking, candidate highlighting.
 
 ---
 
@@ -1123,7 +1136,7 @@
 | Feature                                                 | Emacs Status     | Gemacs Status                | Gap Severity                             |
 |---------------------------------------------------------|------------------|------------------------------|------------------------------------------|
 | **Key-chords** (30+ bindings: AS, ZX, BV, FG, KB, etc.) | Extensive        | :white_check_mark: Works     | None — key-chord system exists           |
-| **Helm** (M-x, buffers, files, grep)                    | Primary UI       | :large_blue_circle: Narrowing | **Low** — M-x/buffers/bookmarks work    |
+| **Helm** (M-x, buffers, files, grep)                    | Primary UI       | :white_check_mark: Full framework | **None** — 14 commands, multi-match, session resume, TUI+Qt |
 | **Magit + Forge** (staging, commit, PR review)          | Daily driver     | :white_check_mark: Works     | None — hunk staging, inline diffs, forge PR/issue |
 | **Multi-vterm** (multiple terminals, copy mode)         | Heavy use        | :white_check_mark: Works     | None — term-list/next/prev + copy mode   |
 | **Eglot / LSP** (completion, hover, goto-def, refs)     | Working          | :white_check_mark: Works     | None — full UI wiring with keybindings   |
@@ -1147,7 +1160,7 @@
 
 1. **Key-chord power user**: 30+ two-key simultaneous bindings for common actions. Gemacs already supports this.
 
-2. **Helm-centric workflow**: Everything goes through Helm — M-x, buffers, files, grep, docs. This is the biggest UX gap; without a narrowing framework, every interactive command feels clunky.
+2. **Helm-centric workflow**: Everything goes through Helm — M-x, buffers, files, grep, docs. Gemacs now has a full Helm framework with 14 commands, multi-match engine, session resume, and TUI+Qt renderers. Remaining gap: async helm-grep.
 
 3. **Multi-terminal workflow**: Uses multi-vterm with key-chords (`MT` = new terminal, `LK` = copy mode, `JK` = exit copy mode). Terminal management is core to their workflow.
 
@@ -1168,7 +1181,7 @@
 ### Phase 1: Core Interaction (Make Gemacs Feel Right)
 1. **Completion popup (Corfu equivalent)** — Inline completion overlay at point. The user uses Corfu in Emacs. Without this, code editing is painful.
 2. **LSP UI wiring** — Connect the existing LSP transport to: completion (popup), hover (echo area), goto-definition, find-references, diagnostics display. The user has eglot working in Emacs for Gerbil.
-3. **Narrowing framework (Helm-like)** — A candidate selection UI for M-x, switch-buffer, find-file, grep results. Doesn't need to be Helm exactly, but needs: live filtering, candidate list, preview. This is the user's primary interaction pattern.
+3. ~~Narrowing framework (Helm-like)~~ — ~~A candidate selection UI for M-x, switch-buffer, find-file, grep results.~~ Done: Full Helm framework with 14 commands, multi-match engine (AND tokens, `!` negation, `^` prefix), 10 built-in sources, TUI+Qt renderers, session resume, helm-mode toggle.
 
 ### Phase 2: Development Workflow
 4. **Magit interactive status** — The user runs Magit daily. At minimum: status buffer with file-level staging/unstaging, commit composition, diff viewing with hunk navigation.

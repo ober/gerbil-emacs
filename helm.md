@@ -6,23 +6,29 @@ Port the core Emacs Helm experience to Gemacs: an incremental narrowing framewor
 
 ## Current State
 
-### What exists
+### What's implemented ✅
 
-- **Fuzzy matching**: `fuzzy-match?`, `fuzzy-score`, `fuzzy-filter-sort` in `core.ss`
-- **TUI minibuffer**: `echo-read-string-with-completion` — Tab cycles through fuzzy-filtered candidates; shows `[n/total]` count
-- **Qt minibuffer**: `qt-echo-read-string-with-completion` — QLineEdit + QCompleter, Tab cycling with common-prefix completion
-- **File completion**: Directory-aware fuzzy matching with `~/` expansion in both TUI and Qt
-- **Command history**: MRU ordering for M-x, minibuffer history (M-p/M-n)
-- **Stub commands**: `cmd-helm-mode`, `cmd-helm-mini`, `cmd-helm-buffers-list` — these delegate to the basic completion or are mode toggles
+- **Core framework** (`helm.ss`): `helm-source`, `helm-session`, `helm-candidate` structs; multi-match engine; filtering + scoring; session management; action dispatch
+- **Multi-match engine**: Space-separated AND tokens, `!` negation, `^` prefix matching, fuzzy mode per-source
+- **TUI renderer** (`helm-tui.ss`): Candidate list in bottom terminal rows, C-n/C-p/C-v/M-v navigation, RET/C-g/C-j, typing updates pattern
+- **Qt renderer** (`qt/helm-qt.ss`): QListWidget-based candidate panel, same navigation keys, echo-area integration
+- **14 commands** registered in both TUI and Qt: helm-M-x, helm-mini, helm-buffers-list, helm-find-files, helm-occur, helm-imenu, helm-show-kill-ring, helm-bookmarks, helm-mark-ring, helm-register, helm-apropos, helm-resume, helm-mode, toggle-helm-mode
+- **10 built-in sources** (`helm-sources.ss`): commands, buffers, recent-files, files, occur, imenu, kill-ring, bookmarks, mark-ring, registers, apropos (commands+variables)
+- **Session resume**: `helm-resume` restores last session with pattern and candidates
+- **Helm-mode toggle**: Rebinds M-x, C-x b, C-x C-b, M-y, C-x r b to helm equivalents
+- **Functional tests**: 23 checks in TUI (`functional-test.ss`), 4 checks in Qt (`qt-functional-test.ss`)
 
-### What's missing
+### What's remaining
 
-- **Candidate list UI**: No visible list of matching candidates; user must Tab-cycle blindly
-- **Multi-source**: Cannot combine buffers + recentf + bookmarks in one session
-- **Action system**: One action per prompt; no persistent action, action menu, or marking
-- **Follow mode**: No live preview as you navigate
-- **Multi-match**: No space-separated AND patterns, no `!` negation, no `^` prefix
-- **Session resume**: Cannot return to previous completion session
+- **Follow mode**: Struct has `follow?` field but not wired to auto-preview on navigation
+- **Action menu**: TAB for action selection, C-SPC marking, M-a mark-all not implemented
+- **Candidate highlighting**: No visual highlighting of match characters
+- **Auto-resize**: Helm window doesn't grow/shrink with candidate count
+- **helm-grep (async)**: No async grep source with streaming results
+- **helm-man**: No man page source
+- **helm-find-files (Qt)**: Qt delegates to basic find-file; TUI has full helm file browser
+- **Input debounce**: No configurable idle delay before re-filtering
+- **Source headers**: No colored separator lines between sources in candidate list
 
 ---
 
@@ -146,11 +152,11 @@ Layout mirrors TUI but uses Qt stylesheets for coloring and font.
 
 ## Implementation Phases
 
-### Phase 1: Core Framework + M-x (MVP)
+### Phase 1: Core Framework + M-x (MVP) ✅ DONE
 
 **Goal**: Replace M-x with a helm-style candidate list. This validates the entire rendering pipeline.
 
-#### 1.1 Core data model (`helm.ss`)
+#### 1.1 Core data model (`helm.ss`) ✅
 
 - Define `helm-source`, `helm-session`, `helm-candidate` structs
 - `helm-multi-match`: parse space-separated tokens with `!`/`^` prefixes
@@ -158,20 +164,20 @@ Layout mirrors TUI but uses Qt stylesheets for coloring and font.
 - `helm-run`: main entry point — create session, invoke renderer, handle result
 - `helm-resume`: restore last session
 
-#### 1.2 TUI renderer (`helm-tui.ss`)
+#### 1.2 TUI renderer (`helm-tui.ss`) ✅
 
 - `helm-tui-render!`: draw candidate list in bottom rows
 - `helm-tui-input-loop!`: key handling (C-n, C-p, C-v, M-v, RET, C-g, C-j, TAB, C-SPC, typing)
 - `helm-tui-resize!`: adjust editor viewport when helm opens/closes
 - Input debouncing: re-filter after short delay (or on every keystroke if fast enough)
 
-#### 1.3 Qt renderer (`qt/helm-qt.ss`)
+#### 1.3 Qt renderer (`qt/helm-qt.ss`) ✅
 
 - `helm-qt-render!`: draw candidate list in a QWidget panel
 - `helm-qt-input-loop!`: key handling via Qt event filter
 - `helm-qt-resize!`: adjust splitter/layout when helm opens/closes
 
-#### 1.4 helm-M-x
+#### 1.4 helm-M-x ✅
 
 - Source: `helm-source-commands` — candidates from `*all-commands*` hash, MRU ordered
 - Display: command name + key binding (if any)
@@ -179,11 +185,11 @@ Layout mirrors TUI but uses Qt stylesheets for coloring and font.
 - Persistent action: show command docstring in echo area
 - Register as `helm-M-x` command; optionally bind to `M-x` when helm-mode is on
 
-### Phase 2: Buffers + Recent Files + Mini
+### Phase 2: Buffers + Recent Files + Mini ✅ DONE
 
 **Goal**: The quintessential Helm experience — multiple sources in one session.
 
-#### 2.1 Buffer source
+#### 2.1 Buffer source ✅
 
 - `helm-source-buffers`: candidates from `*buffer-list*` in MRU order
 - Display: buffer name + modified indicator + mode + file path
@@ -191,28 +197,28 @@ Layout mirrors TUI but uses Qt stylesheets for coloring and font.
 - Actions: switch-to-buffer (default), kill-buffer, save-buffer, diff
 - Persistent action: show buffer in other window (preview)
 
-#### 2.2 Recent files source
+#### 2.2 Recent files source ✅
 
 - `helm-source-recentf`: candidates from `*recent-files*`
 - Display: abbreviated file path
 - Actions: find-file (default), find-file-other-window
 - Persistent action: preview file content
 
-#### 2.3 Create buffer source
+#### 2.3 Create buffer source ❌
 
 - `helm-source-buffer-not-found`: dummy source — user input becomes a new buffer name
 - Action: switch to new buffer with that name
 
-#### 2.4 Compose
+#### 2.4 Compose ✅
 
 - `helm-mini`: combines buffers + recentf + create-buffer
 - `helm-buffers-list`: buffers source only (replaces current stub)
 
-### Phase 3: File Navigation
+### Phase 3: File Navigation ⚠️ PARTIAL
 
 **Goal**: Replace `find-file` with a helm-style file browser.
 
-#### 3.1 File source
+#### 3.1 File source ⚠️ (TUI ✅, Qt delegates to find-file)
 
 - `helm-source-files`: candidates from directory listing
 - Display: filename (dirs with trailing `/`)
@@ -223,16 +229,16 @@ Layout mirrors TUI but uses Qt stylesheets for coloring and font.
 - Actions: find-file (default), find-file-other-window, dired
 - Persistent action: preview file content (first N lines in echo or split)
 
-#### 3.2 Integration
+#### 3.2 Integration ⚠️
 
 - `helm-find-files`: entry point with initial directory from current buffer
 - Bind to `C-x C-f` when helm-mode is on
 
-### Phase 4: Search Commands
+### Phase 4: Search Commands ⚠️ PARTIAL
 
 **Goal**: Interactive search and navigation within and across buffers.
 
-#### 4.1 helm-occur
+#### 4.1 helm-occur ✅
 
 - `helm-source-occur`: candidates = lines of current buffer, numbered
 - Live narrowing: re-filter lines as you type
@@ -240,7 +246,7 @@ Layout mirrors TUI but uses Qt stylesheets for coloring and font.
 - Persistent action: jump to line without closing
 - Follow mode natural here — navigate lines, see cursor move in buffer
 
-#### 4.2 helm-imenu
+#### 4.2 helm-imenu ✅
 
 - `helm-source-imenu`: candidates = definitions in current buffer (functions, variables, classes)
 - Parse via existing highlighting/definition infrastructure or simple regex
@@ -248,7 +254,7 @@ Layout mirrors TUI but uses Qt stylesheets for coloring and font.
 - Actions: goto-definition (default)
 - Persistent action: jump to definition without closing
 
-#### 4.3 helm-grep (async)
+#### 4.3 helm-grep (async) ❌
 
 - `helm-source-grep`: async source — runs `rg` or `grep` as subprocess
 - Pattern typed in helm becomes the grep pattern
@@ -258,66 +264,66 @@ Layout mirrors TUI but uses Qt stylesheets for coloring and font.
 - Persistent action: preview match in context
 - Requires async source support (Phase 4 prerequisite: extend core)
 
-### Phase 5: Utility Commands
+### Phase 5: Utility Commands ✅ MOSTLY DONE
 
 **Goal**: Common Emacs Helm commands for daily use.
 
-#### 5.1 helm-show-kill-ring
+#### 5.1 helm-show-kill-ring ✅
 
 - `helm-source-kill-ring`: candidates from kill ring
 - Display: truncated text with line count indicator
 - Actions: insert-at-point (default), append-to-kill-ring
 - Multi-line candidate display for readability
 
-#### 5.2 helm-bookmarks
+#### 5.2 helm-bookmarks ✅
 
 - `helm-source-bookmarks`: candidates from `*bookmarks*` hash
 - Display: bookmark name + file path + position
 - Actions: jump (default), delete-bookmark, rename-bookmark
 
-#### 5.3 helm-mark-ring
+#### 5.3 helm-mark-ring ✅
 
 - `helm-source-mark-ring`: candidates from buffer mark ring and global mark ring
 - Display: line content at mark position
 - Actions: jump-to-mark (default)
 - Persistent action: show mark position
 
-#### 5.4 helm-register
+#### 5.4 helm-register ✅
 
 - `helm-source-registers`: candidates from register hash
 - Display: register char + content preview
 - Actions: insert (default), jump (for position registers)
 
-#### 5.5 helm-apropos
+#### 5.5 helm-apropos ✅
 
 - Combines: command source + variable source + function source
 - Multi-source: all matching symbols across categories
 - Actions: describe (default), execute (commands), set (variables)
 
-#### 5.6 helm-man
+#### 5.6 helm-man ❌
 
 - `helm-source-man`: candidates from `man -k` output (async)
 - Actions: open man page (default)
 
-### Phase 6: Follow Mode + Resume + Polish
+### Phase 6: Follow Mode + Resume + Polish ⚠️ PARTIAL
 
 **Goal**: Advanced Helm features that complete the experience.
 
-#### 6.1 Follow mode
+#### 6.1 Follow mode ❌
 
 - Toggle with `C-c C-f` during any helm session
 - When on: persistent-action fires automatically on C-n/C-p navigation
 - Configurable delay (`*helm-follow-delay*`) to avoid thrashing
 - Per-source `:follow` slot
 
-#### 6.2 helm-resume
+#### 6.2 helm-resume ✅
 
 - Store sessions in `*helm-sessions*` alist (buffer-name → session snapshot)
 - `helm-resume`: reopen last session with pattern and cursor position intact
 - `C-c n` during session: cycle through resumable sessions
 - Limit stored sessions (default: 10)
 
-#### 6.3 Polish
+#### 6.3 Polish ❌
 
 - Candidate highlighting: match characters shown in different face/color
 - Source headers: colored, non-selectable separator lines
