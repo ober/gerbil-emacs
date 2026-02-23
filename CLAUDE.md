@@ -36,11 +36,13 @@ Org-mode `<s TAB` has regressed 5 times. Each time, the leaf-function tests in `
 
 **You MUST verify ALL builds and run tests BEFORE committing and pushing.** Never commit code that hasn't been verified to build and pass tests. Follow this checklist in order:
 
-1. **`make build`** — must complete without errors
+1. **`make build`** — dynamic TUI + Qt build must complete without errors
 2. **Verify binaries**: `.gerbil/bin/gemacs --version` and `QT_QPA_PLATFORM=offscreen .gerbil/bin/gemacs-qt --version`
 3. **`make test`** — all TUI tests must pass
 4. **`make static-qt`** — static Qt Docker build must complete and produce a working binary
 5. **Verify static binary**: `QT_QPA_PLATFORM=offscreen .gerbil/bin/gemacs-qt --version`
+
+**BOTH `make build` AND `make static-qt` are required.** The static build uses a Docker image with pinned dependency versions and may fail even when the dynamic build succeeds (e.g., new constants/exports added to gerbil-scintilla or gerbil-qt that aren't in the Docker deps image). If `make static-qt` fails with unbound identifier errors, rebuild the deps image with `make docker-deps` first.
 
 If any step fails, **fix it before committing**. Do not push broken builds.
 
