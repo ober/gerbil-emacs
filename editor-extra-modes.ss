@@ -806,23 +806,77 @@
   "Toggle highlight indent guides — same as indent-guide-mode."
   (cmd-indent-guide-mode app))
 
-;; Rainbow delimiters — Scintilla brace highlight
+;; Rainbow delimiters — color delimiters by nesting depth using indicators
+(def *tui-rainbow-active* #f)
+(def *tui-rainbow-indic-base* 20)
+(def *tui-rainbow-colors*
+  (vector #xFF6666 #x44CCFF #x00DDDD #x66DD66
+          #xFFCC44 #xFF8844 #xFF66CC #xAAAAFF))
+
+(def (tui-rainbow-setup! ed)
+  (let ((INDIC_TEXTFORE 17))
+    (let loop ((i 0))
+      (when (< i 8)
+        (let ((indic (+ *tui-rainbow-indic-base* i)))
+          (send-message ed SCI_INDICSETSTYLE indic INDIC_TEXTFORE)
+          (send-message ed SCI_INDICSETFORE indic
+                        (vector-ref *tui-rainbow-colors* i)))
+        (loop (+ i 1))))))
+
+(def (tui-rainbow-clear! ed)
+  (let ((len (send-message ed SCI_GETTEXTLENGTH 0 0)))
+    (let loop ((i 0))
+      (when (< i 8)
+        (send-message ed SCI_SETINDICATORCURRENT (+ *tui-rainbow-indic-base* i) 0)
+        (send-message ed SCI_INDICATORCLEARRANGE 0 len)
+        (loop (+ i 1))))))
+
+(def (tui-rainbow-colorize! ed)
+  (let* ((text (editor-get-text ed))
+         (len (string-length text)))
+    (tui-rainbow-clear! ed)
+    (tui-rainbow-setup! ed)
+    (let loop ((i 0) (depth 0) (in-str #f) (in-cmt #f) (esc #f))
+      (when (< i len)
+        (let ((ch (string-ref text i)))
+          (cond
+            (esc (loop (+ i 1) depth in-str in-cmt #f))
+            ((and in-str (char=? ch #\\))
+             (loop (+ i 1) depth in-str in-cmt #t))
+            ((and in-str (char=? ch #\"))
+             (loop (+ i 1) depth #f in-cmt #f))
+            (in-str (loop (+ i 1) depth in-str in-cmt #f))
+            ((and in-cmt (char=? ch #\newline))
+             (loop (+ i 1) depth in-str #f #f))
+            (in-cmt (loop (+ i 1) depth in-str in-cmt #f))
+            ((char=? ch #\;) (loop (+ i 1) depth in-str #t #f))
+            ((char=? ch #\") (loop (+ i 1) depth #t in-cmt #f))
+            ((or (char=? ch #\() (char=? ch #\[) (char=? ch #\{))
+             (let ((indic (+ *tui-rainbow-indic-base* (modulo depth 8))))
+               (send-message ed SCI_SETINDICATORCURRENT indic 0)
+               (send-message ed SCI_INDICATORFILLRANGE i 1))
+             (loop (+ i 1) (+ depth 1) in-str in-cmt #f))
+            ((or (char=? ch #\)) (char=? ch #\]) (char=? ch #\}))
+             (let* ((d (max 0 (- depth 1)))
+                    (indic (+ *tui-rainbow-indic-base* (modulo d 8))))
+               (send-message ed SCI_SETINDICATORCURRENT indic 0)
+               (send-message ed SCI_INDICATORFILLRANGE i 1))
+             (loop (+ i 1) (max 0 (- depth 1)) in-str in-cmt #f))
+            (else (loop (+ i 1) depth in-str in-cmt #f))))))))
+
 (def (cmd-rainbow-delimiters-mode app)
-  "Toggle rainbow delimiters — enables brace matching highlight."
+  "Toggle rainbow delimiter coloring by nesting depth."
   (let* ((fr (app-state-frame app))
          (win (current-window fr))
-         (ed (edit-window-editor win))
-         (on (toggle-mode! 'rainbow-delimiters)))
-    (if on
+         (ed (edit-window-editor win)))
+    (set! *tui-rainbow-active* (not *tui-rainbow-active*))
+    (if *tui-rainbow-active*
       (begin
-        ;; Set brace highlight colors
-        (send-message ed SCI_STYLESETFORE 34 #x00FF00)  ;; STYLE_BRACELIGHT
-        (send-message ed SCI_STYLESETBACK 34 #x333333)
-        (echo-message! (app-state-echo app) "Rainbow delimiters: on"))
+        (tui-rainbow-colorize! ed)
+        (echo-message! (app-state-echo app) "Rainbow delimiters ON"))
       (begin
-        (send-message ed SCI_STYLESETFORE 34 #xFFFFFF)
-        (send-message ed SCI_STYLESETBACK 34 #x000000)
-        (echo-message! (app-state-echo app) "Rainbow delimiters: off")))))
+        (tui-rainbow-clear! ed)
+        (echo-message! (app-state-echo app) "Rainbow delimiters OFF")))))
 
 (def (cmd-rainbow-mode app)
   "Toggle rainbow mode — colorize color strings in buffer."

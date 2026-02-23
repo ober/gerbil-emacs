@@ -1746,3 +1746,105 @@
         (set! (app-state-current-tab-idx app) new-idx)
         (echo-message! echo (string-append "Moved tab to position "
                                           (number->string (+ new-idx 1))))))))
+
+;;;============================================================================
+;;; Rainbow delimiters
+;;;============================================================================
+;; Colors paired delimiters by nesting depth using Scintilla indicators.
+;; Uses INDIC_TEXTFORE (17) to change text foreground for delimiter characters.
+
+(def *qt-rainbow-active* #f)
+
+;; 8 rainbow colors in BGR format (Scintilla uses BGR)
+(def *rainbow-colors*
+  (vector #xFF6666   ;; red
+          #x44CCFF   ;; orange (BGR)
+          #x00DDDD   ;; yellow (BGR)
+          #x66DD66   ;; green
+          #xFFCC44   ;; cyan (BGR)
+          #xFF8844   ;; blue (BGR)
+          #xFF66CC   ;; magenta (BGR)
+          #xAAAAFF)) ;; pink (BGR)
+
+;; Indicator IDs 20-27 for 8 depth levels
+(def *rainbow-indic-base* 20)
+
+(def (rainbow-setup-indicators! ed)
+  "Initialize rainbow delimiter indicators on a Scintilla editor."
+  (let ((INDIC_TEXTFORE 17))
+    (let loop ((i 0))
+      (when (< i 8)
+        (let ((indic (+ *rainbow-indic-base* i)))
+          (sci-send ed SCI_INDICSETSTYLE indic INDIC_TEXTFORE)
+          (sci-send ed SCI_INDICSETFORE indic (vector-ref *rainbow-colors* i)))
+        (loop (+ i 1))))))
+
+(def (rainbow-clear-indicators! ed)
+  "Clear all rainbow indicators from editor."
+  (let ((len (sci-send ed SCI_GETTEXTLENGTH)))
+    (let loop ((i 0))
+      (when (< i 8)
+        (sci-send ed SCI_SETINDICATORCURRENT (+ *rainbow-indic-base* i))
+        (sci-send ed SCI_INDICATORCLEARRANGE 0 len)
+        (loop (+ i 1))))))
+
+(def (rainbow-colorize-buffer! ed)
+  "Scan buffer and colorize delimiters by nesting depth."
+  (let* ((text (qt-plain-text-edit-text ed))
+         (len (string-length text)))
+    (rainbow-clear-indicators! ed)
+    (rainbow-setup-indicators! ed)
+    (let loop ((i 0) (depth 0) (in-string #f) (in-comment #f) (escape #f))
+      (when (< i len)
+        (let ((ch (string-ref text i)))
+          (cond
+            ;; Handle escape in string
+            (escape
+             (loop (+ i 1) depth in-string in-comment #f))
+            ;; String handling
+            ((and in-string (char=? ch #\\))
+             (loop (+ i 1) depth in-string in-comment #t))
+            ((and in-string (char=? ch #\"))
+             (loop (+ i 1) depth #f in-comment #f))
+            (in-string
+             (loop (+ i 1) depth in-string in-comment #f))
+            ;; Line comment handling
+            ((and in-comment (char=? ch #\newline))
+             (loop (+ i 1) depth in-string #f #f))
+            (in-comment
+             (loop (+ i 1) depth in-string in-comment #f))
+            ;; Start of comment
+            ((char=? ch #\;)
+             (loop (+ i 1) depth in-string #t #f))
+            ;; Start of string
+            ((char=? ch #\")
+             (loop (+ i 1) depth #t in-comment #f))
+            ;; Opening delimiter
+            ((or (char=? ch #\() (char=? ch #\[) (char=? ch #\{))
+             (let ((indic (+ *rainbow-indic-base* (modulo depth 8))))
+               (sci-send ed SCI_SETINDICATORCURRENT indic)
+               (sci-send ed SCI_INDICATORFILLRANGE i 1))
+             (loop (+ i 1) (+ depth 1) in-string in-comment #f))
+            ;; Closing delimiter
+            ((or (char=? ch #\)) (char=? ch #\]) (char=? ch #\}))
+             (let* ((d (max 0 (- depth 1)))
+                    (indic (+ *rainbow-indic-base* (modulo d 8))))
+               (sci-send ed SCI_SETINDICATORCURRENT indic)
+               (sci-send ed SCI_INDICATORFILLRANGE i 1))
+             (loop (+ i 1) (max 0 (- depth 1)) in-string in-comment #f))
+            ;; Any other character
+            (else
+             (loop (+ i 1) depth in-string in-comment #f))))))))
+
+(def (cmd-rainbow-delimiters-mode app)
+  "Toggle rainbow delimiter coloring by nesting depth."
+  (let* ((ed (current-qt-editor app))
+         (echo (app-state-echo app)))
+    (set! *qt-rainbow-active* (not *qt-rainbow-active*))
+    (if *qt-rainbow-active*
+      (begin
+        (rainbow-colorize-buffer! ed)
+        (echo-message! echo "Rainbow delimiters ON"))
+      (begin
+        (rainbow-clear-indicators! ed)
+        (echo-message! echo "Rainbow delimiters OFF")))))

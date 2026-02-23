@@ -562,7 +562,7 @@
 | Per-buffer lexer | :white_check_mark: | Based on file extension |
 | Font-lock (regex-based) | :red_circle: | Uses Scintilla lexers instead — different model |
 | Tree-sitter highlighting | :red_circle: | Not implemented |
-| Rainbow delimiters | :yellow_circle: | Registered |
+| Rainbow delimiters | :green_circle: | Depth-based coloring via indicators (8 colors, both layers) |
 
 **Built-in Themes:**
 1. Dark (default)
@@ -1176,7 +1176,7 @@
 5. **Multi-terminal** — Multi-vterm equivalent: create/switch/close terminals, copy mode. The user has key-chords for this (MT, LK, JK).
 6. **iedit / edit occurrences** — Select symbol, edit all occurrences in buffer. The user has iedit installed.
 7. **expand-region** — Incrementally expand selection (word → sexp → defun → buffer). The user has this installed.
-8. **Dired batch operations** — Operate on marked files (delete, rename, copy). Currently single-file only.
+8. ~~Dired batch operations~~ — ~~Operate on marked files (delete, rename, copy). Currently single-file only.~~ Done: mark/unmark, batch delete/copy/rename, mark-by-regexp, toggle-marks, wdired.
 
 ### Phase 3: Polish & Power Features
 9. **AI integration** — At minimum: Copilot-like inline suggestions or a chat buffer for LLM interaction. The user has 6 AI packages installed.

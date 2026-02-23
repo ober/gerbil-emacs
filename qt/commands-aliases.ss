@@ -408,6 +408,10 @@
   (register-command! 'tab-bar-new-tab cmd-tab-new)
   (register-command! 'tab-bar-close-tab cmd-tab-close)
   (register-command! 'tab-bar-switch-to-tab cmd-tab-next)
+  ;; Rainbow delimiters
+  (register-command! 'rainbow-delimiters-mode cmd-rainbow-delimiters-mode)
+  (register-command! 'toggle-rainbow-delimiters-global cmd-rainbow-delimiters-mode)
+  (register-command! 'toggle-rainbow-mode cmd-rainbow-delimiters-mode)
   (register-command! 'set-scroll-margin cmd-set-scroll-margin)
   (register-command! 'toggle-scroll-margin cmd-toggle-scroll-margin)
   (register-command! 'toggle-input-method cmd-toggle-input-method)
