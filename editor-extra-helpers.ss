@@ -495,6 +495,145 @@
               (echo-message! echo "Kept both"))
             (echo-message! echo "No conflict at point")))))))
 
+;;;============================================================================
+;;; Interactive Org Agenda commands (TUI)
+;;;============================================================================
+
+(def *agenda-items* (make-hash-table))  ; line-number -> (buf-name file-path src-line)
+
+(def (agenda-parse-line text line-num)
+  "Parse an agenda line 'bufname:linenum: text' → (buf-name src-line) or #f."
+  (let* ((lines (string-split text #\newline))
+         (len (length lines)))
+    (if (or (< line-num 0) (>= line-num len))
+      #f
+      (let* ((line (list-ref lines line-num))
+             (trimmed (string-trim line)))
+        ;; Format: "bufname:NUM: rest"
+        (let ((colon1 (string-contains trimmed ":")))
+          (if (not colon1)
+            #f
+            (let* ((buf-name (substring trimmed 0 colon1))
+                   (rest (substring trimmed (+ colon1 1) (string-length trimmed)))
+                   (colon2 (string-contains rest ":")))
+              (if (not colon2)
+                #f
+                (let* ((num-str (substring rest 0 colon2))
+                       (src-line (string->number num-str)))
+                  (if src-line
+                    (list buf-name src-line)
+                    #f))))))))))
+
+(def (cmd-org-agenda-goto app)
+  "Jump to the source of the agenda item on the current line."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app))
+         (text (editor-get-text ed))
+         (pos (editor-get-current-pos ed))
+         (line-num (editor-line-from-position ed pos))
+         (parsed (agenda-parse-line text line-num)))
+    (if (not parsed)
+      (echo-message! echo "No agenda item on this line")
+      (let* ((buf-name (car parsed))
+             (src-line (cadr parsed))
+             (target-buf (buffer-by-name buf-name)))
+        (if target-buf
+          ;; Buffer exists - switch to it and go to line
+          (let* ((fr (app-state-frame app))
+                 (win (current-window fr)))
+            (buffer-attach! ed target-buf)
+            (set! (edit-window-buffer win) target-buf)
+            (editor-goto-line ed (- src-line 1))
+            (echo-message! echo (string-append "Jumped to " buf-name ":" (number->string src-line))))
+          ;; Buffer doesn't exist - try to find file
+          (let ((fp (let search ((bufs (buffer-list)))
+                      (if (null? bufs) #f
+                        (let ((b (car bufs)))
+                          (if (string=? (buffer-name b) buf-name)
+                            (buffer-file-path b)
+                            (search (cdr bufs))))))))
+            (if fp
+              (begin
+                (let* ((content (with-exception-catcher (lambda (e) #f)
+                                  (lambda () (call-with-input-file fp (lambda (p) (read-line p #f))))))
+                       (fr (app-state-frame app))
+                       (win (current-window fr))
+                       (buf (buffer-create! buf-name ed #f)))
+                  (when content
+                    (buffer-attach! ed buf)
+                    (set! (edit-window-buffer win) buf)
+                    (set! (buffer-file-path buf) fp)
+                    (editor-set-text ed content)
+                    (editor-goto-line ed (- src-line 1))
+                    (echo-message! echo (string-append "Opened " fp ":" (number->string src-line))))))
+              (echo-message! echo (string-append "Buffer not found: " buf-name)))))))))
+
+(def (cmd-org-agenda-todo app)
+  "Toggle TODO state of the agenda item on the current line."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app))
+         (text (editor-get-text ed))
+         (pos (editor-get-current-pos ed))
+         (line-num (editor-line-from-position ed pos))
+         (parsed (agenda-parse-line text line-num)))
+    (if (not parsed)
+      (echo-message! echo "No agenda item on this line")
+      (let* ((buf-name (car parsed))
+             (src-line (cadr parsed))
+             (target-buf (buffer-by-name buf-name)))
+        (if (not target-buf)
+          (echo-message! echo (string-append "Buffer not found: " buf-name))
+          ;; Find the target buffer's file and toggle TODO
+          (let ((fp (buffer-file-path target-buf)))
+            (if (not fp)
+              (echo-message! echo "Buffer has no file")
+              (with-exception-catcher
+                (lambda (e) (echo-message! echo "Error toggling TODO"))
+                (lambda ()
+                  (let* ((content (call-with-input-file fp (lambda (p) (read-line p #f))))
+                         (lines (string-split content #\newline))
+                         (idx (- src-line 1)))
+                    (when (and (>= idx 0) (< idx (length lines)))
+                      (let* ((line (list-ref lines idx))
+                             (new-line
+                               (cond
+                                 ((string-contains line "TODO ")
+                                  (let ((i (string-contains line "TODO ")))
+                                    (string-append (substring line 0 i) "DONE "
+                                                   (substring line (+ i 5) (string-length line)))))
+                                 ((string-contains line "DONE ")
+                                  (let ((i (string-contains line "DONE ")))
+                                    (string-append (substring line 0 i) "TODO "
+                                                   (substring line (+ i 5) (string-length line)))))
+                                 (else line)))
+                             (new-lines (let loop ((ls lines) (n 0) (acc '()))
+                                          (if (null? ls) (reverse acc)
+                                            (loop (cdr ls) (+ n 1)
+                                                  (cons (if (= n idx) new-line (car ls)) acc)))))
+                             (new-content (string-join new-lines "\n")))
+                        (call-with-output-file fp (lambda (p) (display new-content p)))
+                        ;; Update the agenda line in place
+                        (let* ((agenda-text (editor-get-text ed))
+                               (agenda-lines (string-split agenda-text #\newline))
+                               (new-agenda-lines
+                                 (let loop ((ls agenda-lines) (n 0) (acc '()))
+                                   (if (null? ls) (reverse acc)
+                                     (loop (cdr ls) (+ n 1)
+                                           (cons (if (= n line-num)
+                                                   (string-append "  " buf-name ":"
+                                                                  (number->string src-line) ": "
+                                                                  (string-trim new-line))
+                                                   (car ls))
+                                                 acc)))))
+                               (new-agenda (string-join new-agenda-lines "\n")))
+                          (editor-set-read-only ed #f)
+                          (editor-set-text ed new-agenda)
+                          (editor-set-read-only ed #t))
+                        (echo-message! echo
+                          (if (string-contains new-line "DONE")
+                            "TODO → DONE"
+                            "DONE → TODO"))))))))))))))
+
 (def (cmd-smerge-mode app)
   "Toggle smerge mode — report conflict count in current buffer."
   (let* ((ed (current-editor app))

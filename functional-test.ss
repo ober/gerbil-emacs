@@ -2027,6 +2027,12 @@
           (check (not (eq? #f (string-contains text "theirs"))) => #t)
           (check (eq? #f (string-contains text "<<<<<<<")) => #t))))
 
+    ;; Interactive agenda tests
+    (test-case "org-agenda: interactive commands registered"
+      (register-all-commands!)
+      (check (not (eq? #f (find-command 'org-agenda-goto))) => #t)
+      (check (not (eq? #f (find-command 'org-agenda-todo))) => #t))
+
 ))
 
 (def main

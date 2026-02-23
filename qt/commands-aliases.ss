@@ -786,6 +786,8 @@
   (register-command! 'org-clock-in cmd-org-clock-in)
   (register-command! 'org-clock-out cmd-org-clock-out)
   (register-command! 'org-agenda cmd-org-agenda)
+  (register-command! 'org-agenda-goto cmd-org-agenda-goto)
+  (register-command! 'org-agenda-todo cmd-org-agenda-todo)
   (register-command! 'org-export cmd-org-export)
   (register-command! 'org-priority cmd-org-priority)
   (register-command! 'org-todo cmd-org-todo-cycle)  ;; alias

@@ -466,7 +466,7 @@
 | Table formulas | :large_blue_circle: | Basic recalculate |
 | Table CSV import/export | :white_check_mark: | |
 | **Agenda** | :large_blue_circle: | Daily/weekly views, date filtering, tag search |
-| Agenda interactive commands | :red_circle: | No `a/t/d` keys in agenda buffer |
+| Agenda interactive commands | :large_blue_circle: | Jump to source, toggle TODO from agenda |
 | **Capture** | :yellow_circle: | Templates with `%?/%U/%T/%f` placeholders |
 | Capture buffer (C-c C-c / C-c C-k) | :red_circle: | No interactive capture buffer |
 | Refile | :red_circle: | Not implemented |
@@ -485,7 +485,7 @@
 | Sparse tree | :red_circle: | Not implemented |
 | Column view | :red_circle: | Not implemented |
 
-**Summary:** Org-mode is one of gemacs's strongest features with substantial coverage of the core: headings, TODO, tables, babel, export, agenda. Key gaps: interactive agenda commands, capture buffer UI, refile, sparse tree.
+**Summary:** Org-mode is one of gemacs's strongest features with substantial coverage of the core: headings, TODO, tables, babel, export, agenda. Interactive agenda supports jump-to-source and TODO toggling. Key gaps: capture buffer UI, refile, sparse tree.
 
 ---
 
@@ -897,11 +897,16 @@
 
 | Feature | Status | Notes |
 |---------|--------|-------|
-| Multiple cursors | :red_circle: | Not implemented |
-| iedit (edit all occurrences) | :red_circle: | Not implemented |
-| Symbol highlighting + edit | :red_circle: | `highlight-symbol` highlights but can't edit |
+| mc-mark-next | :white_check_mark: | Mark next occurrence of selection |
+| mc-mark-all | :white_check_mark: | Mark all occurrences |
+| mc-edit-lines | :white_check_mark: | Add cursor to each line in region |
+| mc-skip-and-mark-next | :white_check_mark: | Skip current, mark next |
+| mc-unmark-last | :white_check_mark: | Remove last cursor |
+| mc-rotate | :white_check_mark: | Rotate between cursors |
+| iedit (edit all occurrences) | :white_check_mark: | Rename symbol at point across buffer |
+| Symbol highlighting + edit | :white_check_mark: | `highlight-symbol` + iedit |
 
-**Summary:** No multi-cursor editing. This is a commonly expected feature in modern editors.
+**Summary:** Full multiple cursors and iedit support in both TUI and Qt layers. Keybindings: `C-c m n`, `C-c m a`.
 
 ---
 
@@ -987,7 +992,7 @@
 | ~~Ediff / Smerge~~ | ~~Can't resolve merge conflicts~~ Implemented: smerge-mode with keep-mine/other/both | ~~Medium~~ Done |
 | **Flyspell (on-the-fly spell)** | No background spell checking | Small |
 | **Undo tree** | Linear undo only, no branch visualization | Medium |
-| **Interactive agenda** | Org agenda displays but can't act on items | Medium |
+| ~~Interactive agenda~~ | ~~Can't act on agenda items~~ Implemented: goto source, toggle TODO | ~~Medium~~ Done |
 
 ### Tier 3 — Nice to Have
 

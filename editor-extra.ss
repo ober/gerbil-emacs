@@ -40,6 +40,8 @@
   (register-command! 'org-schedule cmd-org-schedule)
   (register-command! 'org-deadline cmd-org-deadline)
   (register-command! 'org-agenda cmd-org-agenda)
+  (register-command! 'org-agenda-goto cmd-org-agenda-goto)
+  (register-command! 'org-agenda-todo cmd-org-agenda-todo)
   (register-command! 'org-export cmd-org-export)
   (register-command! 'org-table-create cmd-org-table-create)
   (register-command! 'org-table-align cmd-org-table-align)

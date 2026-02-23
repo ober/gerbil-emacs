@@ -1315,3 +1315,141 @@
         (let-values (((mine sep other) (qt-smerge-find-conflict text 0 'next)))
           (when mine (qt-plain-text-edit-set-cursor-position! ed mine))))
       (echo-message! (app-state-echo app) "No merge conflicts found"))))
+
+;;;============================================================================
+;;; Interactive Org Agenda commands (Qt)
+;;;============================================================================
+
+(def (qt-agenda-parse-line text line-num)
+  "Parse an agenda line 'bufname:linenum: text' → (buf-name src-line) or #f."
+  (let* ((lines (string-split text #\newline))
+         (len (length lines)))
+    (if (or (< line-num 0) (>= line-num len))
+      #f
+      (let* ((line (list-ref lines line-num))
+             (trimmed (string-trim line)))
+        (let ((colon1 (string-contains trimmed ":")))
+          (if (not colon1)
+            #f
+            (let* ((buf-name (substring trimmed 0 colon1))
+                   (rest (substring trimmed (+ colon1 1) (string-length trimmed)))
+                   (colon2 (string-contains rest ":")))
+              (if (not colon2)
+                #f
+                (let* ((num-str (substring rest 0 colon2))
+                       (src-line (string->number num-str)))
+                  (if src-line
+                    (list buf-name src-line)
+                    #f))))))))))
+
+(def (cmd-org-agenda-goto app)
+  "Jump to the source of the agenda item on the current line."
+  (let* ((ed (current-qt-editor app))
+         (text (qt-plain-text-edit-text ed))
+         (line-num (qt-plain-text-edit-cursor-line ed))
+         (parsed (qt-agenda-parse-line text line-num)))
+    (if (not parsed)
+      (echo-message! (app-state-echo app) "No agenda item on this line")
+      (let* ((buf-name (car parsed))
+             (src-line (cadr parsed))
+             (target-buf (buffer-by-name buf-name)))
+        (if target-buf
+          ;; Buffer exists - switch to it
+          (let* ((fr (app-state-frame app))
+                 (win (qt-current-window fr)))
+            (qt-buffer-attach! ed target-buf)
+            (set! (qt-edit-window-buffer win) target-buf)
+            ;; Go to line
+            (let* ((new-text (qt-plain-text-edit-text ed))
+                   (lines (string-split new-text #\newline))
+                   (pos (let loop ((ls lines) (n 0) (offset 0))
+                          (if (or (null? ls) (= n (- src-line 1)))
+                            offset
+                            (loop (cdr ls) (+ n 1) (+ offset (string-length (car ls)) 1))))))
+              (qt-plain-text-edit-set-cursor-position! ed pos))
+            (echo-message! (app-state-echo app)
+              (string-append "Jumped to " buf-name ":" (number->string src-line))))
+          ;; Try to open file from buffer list
+          (let ((fp (let search ((bufs (buffer-list)))
+                      (if (null? bufs) #f
+                        (let ((b (car bufs)))
+                          (if (string=? (buffer-name b) buf-name)
+                            (buffer-file-path b)
+                            (search (cdr bufs))))))))
+            (if fp
+              (begin
+                (cmd-find-file-by-path app fp)
+                (let* ((new-ed (current-qt-editor app))
+                       (new-text (qt-plain-text-edit-text new-ed))
+                       (lines (string-split new-text #\newline))
+                       (pos (let loop ((ls lines) (n 0) (offset 0))
+                              (if (or (null? ls) (= n (- src-line 1)))
+                                offset
+                                (loop (cdr ls) (+ n 1) (+ offset (string-length (car ls)) 1))))))
+                  (qt-plain-text-edit-set-cursor-position! new-ed pos))
+                (echo-message! (app-state-echo app)
+                  (string-append "Opened " fp ":" (number->string src-line))))
+              (echo-message! (app-state-echo app)
+                (string-append "Buffer not found: " buf-name)))))))))
+
+(def (cmd-org-agenda-todo app)
+  "Toggle TODO state of the agenda item on the current line."
+  (let* ((ed (current-qt-editor app))
+         (text (qt-plain-text-edit-text ed))
+         (line-num (qt-plain-text-edit-cursor-line ed))
+         (parsed (qt-agenda-parse-line text line-num)))
+    (if (not parsed)
+      (echo-message! (app-state-echo app) "No agenda item on this line")
+      (let* ((buf-name (car parsed))
+             (src-line (cadr parsed))
+             (target-buf (buffer-by-name buf-name)))
+        (if (not target-buf)
+          (echo-message! (app-state-echo app) (string-append "Buffer not found: " buf-name))
+          (let ((fp (buffer-file-path target-buf)))
+            (if (not fp)
+              (echo-message! (app-state-echo app) "Buffer has no file")
+              (with-catch
+                (lambda (e) (echo-message! (app-state-echo app) "Error toggling TODO"))
+                (lambda ()
+                  (let* ((content (call-with-input-file fp (lambda (p) (read-line p #f))))
+                         (lines (string-split content #\newline))
+                         (idx (- src-line 1)))
+                    (when (and (>= idx 0) (< idx (length lines)))
+                      (let* ((line (list-ref lines idx))
+                             (new-line
+                               (cond
+                                 ((string-contains line "TODO ")
+                                  (let ((i (string-contains line "TODO ")))
+                                    (string-append (substring line 0 i) "DONE "
+                                                   (substring line (+ i 5) (string-length line)))))
+                                 ((string-contains line "DONE ")
+                                  (let ((i (string-contains line "DONE ")))
+                                    (string-append (substring line 0 i) "TODO "
+                                                   (substring line (+ i 5) (string-length line)))))
+                                 (else line)))
+                             (new-lines (let loop ((ls lines) (n 0) (acc '()))
+                                          (if (null? ls) (reverse acc)
+                                            (loop (cdr ls) (+ n 1)
+                                                  (cons (if (= n idx) new-line (car ls)) acc)))))
+                             (new-content (string-join new-lines "\n")))
+                        (call-with-output-file fp (lambda (p) (display new-content p)))
+                        ;; Update the agenda line in place
+                        (let* ((agenda-text (qt-plain-text-edit-text ed))
+                               (agenda-lines (string-split agenda-text #\newline))
+                               (new-agenda-lines
+                                 (let loop ((ls agenda-lines) (n 0) (acc '()))
+                                   (if (null? ls) (reverse acc)
+                                     (loop (cdr ls) (+ n 1)
+                                           (cons (if (= n line-num)
+                                                   (string-append "  " buf-name ":"
+                                                                  (number->string src-line) ": "
+                                                                  (string-trim new-line))
+                                                   (car ls))
+                                                 acc)))))
+                               (new-agenda (string-join new-agenda-lines "\n")))
+                          (qt-plain-text-edit-set-text! ed new-agenda)
+                          (qt-plain-text-edit-set-cursor-position! ed 0))
+                        (echo-message! (app-state-echo app)
+                          (if (string-contains new-line "DONE")
+                            "TODO → DONE"
+                            "DONE → TODO"))))))))))))))
