@@ -1786,9 +1786,21 @@
   (let ((on (toggle-mode! 'compile-on-save)))
     (echo-message! (app-state-echo app) (if on "Compile on save: on" "Compile on save: off"))))
 (def (cmd-toggle-bracket-paren-swap app)
-  "Toggle bracket/paren swap."
+  "Toggle swapping [ ↔ ( and ] ↔ ) for Lisp editing."
   (let ((on (toggle-mode! 'bracket-paren-swap)))
-    (echo-message! (app-state-echo app) (if on "Bracket-paren swap: on" "Bracket-paren swap: off"))))
+    (if on
+      (begin
+        (key-translate! #\[ #\()
+        (key-translate! #\] #\))
+        (key-translate! #\( #\[)
+        (key-translate! #\) #\])
+        (echo-message! (app-state-echo app) "Bracket/paren swap enabled"))
+      (begin
+        (hash-remove! *key-translation-map* #\[)
+        (hash-remove! *key-translation-map* #\])
+        (hash-remove! *key-translation-map* #\()
+        (hash-remove! *key-translation-map* #\))
+        (echo-message! (app-state-echo app) "Bracket/paren swap disabled")))))
 
 ;; --- Settings ---
 (def (cmd-set-variable app)

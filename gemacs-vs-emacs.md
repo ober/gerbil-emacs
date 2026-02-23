@@ -1072,7 +1072,7 @@
 |---------|--------|-------|
 | Key-chord bindings | :white_check_mark: | Two-key simultaneous chords |
 | Key translation table | :white_check_mark: | Character remapping |
-| Swap brackets/parens | :red_circle: | User swaps `[`↔`(` and `]`↔`)` — not yet configurable |
+| Swap brackets/parens | :white_check_mark: | `M-x toggle-bracket-paren-swap` and `M-x key-translation-list` |
 | Super/Hyper key mapping | :red_circle: | No super-key-as-meta mapping |
 | Per-mode keymaps | :yellow_circle: | Limited |
 | Global key remap (input-decode-map) | :red_circle: | No input-level key translation |
@@ -1180,7 +1180,7 @@
 9. **AI integration** — At minimum: Copilot-like inline suggestions or a chat buffer for LLM interaction. The user has 6 AI packages installed.
 10. **Snippet system** — YASnippet equivalent with tabstop navigation. The user has snippets + file-templates enabled.
 11. ~~Flyspell~~ — ~~Background spell checking.~~ Done: `flyspell-mode` with aspell backend, squiggle indicators (TUI), word-list reporting (Qt).
-12. **Bracket/paren swap** — Input-level key remapping to swap `[`↔`(`. User has this configured.
+12. ~~Bracket/paren swap~~ — ~~Input-level key remapping.~~ Done: `toggle-bracket-paren-swap` uses key-translate system in both TUI and Qt.
 13. **DevOps syntax modes** — At minimum: Terraform, Ansible, Docker highlighting via Scintilla lexers.
 14. **EditorConfig support** — Read `.editorconfig` files for indent style/size.
 
