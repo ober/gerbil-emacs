@@ -1457,6 +1457,208 @@
       (lsp-did-change! uri text))))
 
 ;;;============================================================================
+;;; Inlay Hints
+;;;============================================================================
+
+(def *lsp-inlay-hints-enabled* #f)
+(def *lsp-inlay-hints-cache* (make-hash-table)) ; uri -> list of hint strings per line
+
+(def (cmd-lsp-inlay-hints app)
+  "Toggle LSP inlay hints display in echo area."
+  (set! *lsp-inlay-hints-enabled* (not *lsp-inlay-hints-enabled*))
+  (echo-message! (app-state-echo app)
+    (string-append "LSP inlay hints: " (if *lsp-inlay-hints-enabled* "ON" "OFF")))
+  (when *lsp-inlay-hints-enabled*
+    (lsp-request-inlay-hints! app)))
+
+(def (lsp-request-inlay-hints! app)
+  "Request inlay hints for the current buffer's visible range."
+  (when (and *lsp-inlay-hints-enabled* (lsp-running?))
+    (let* ((buf (current-qt-buffer app))
+           (path (and buf (buffer-file-path buf))))
+      (when path
+        (let* ((ed (current-qt-editor app))
+               (first-line (sci-send ed SCI_GETFIRSTVISIBLELINE 0))
+               (lines-on-screen (sci-send ed SCI_LINESONSCREEN 0))
+               (last-line (+ first-line lines-on-screen))
+               (params (make-hash-table))
+               (td (make-hash-table))
+               (range (make-hash-table))
+               (start-pos (make-hash-table))
+               (end-pos (make-hash-table)))
+          (hash-put! td "uri" (file-path->uri path))
+          (hash-put! start-pos "line" first-line)
+          (hash-put! start-pos "character" 0)
+          (hash-put! end-pos "line" last-line)
+          (hash-put! end-pos "character" 0)
+          (hash-put! range "start" start-pos)
+          (hash-put! range "end" end-pos)
+          (hash-put! params "textDocument" td)
+          (hash-put! params "range" range)
+          (lsp-send-request! "textDocument/inlayHint" params
+            (lambda (response)
+              (let ((result (hash-get response "result"))
+                    (error (hash-get response "error")))
+                (when (and (not error) result (list? result))
+                  ;; Cache hints indexed by line number
+                  (let ((by-line (make-hash-table)))
+                    (for-each
+                      (lambda (hint)
+                        (when (hash-table? hint)
+                          (let* ((pos (hash-get hint "position"))
+                                 (line (and pos (hash-get pos "line")))
+                                 (label (hash-get hint "label"))
+                                 (kind (hash-get hint "kind"))
+                                 (text (cond
+                                         ((string? label) label)
+                                         ((and (list? label) (not (null? label)))
+                                          (string-join
+                                            (filter-map
+                                              (lambda (part)
+                                                (and (hash-table? part)
+                                                     (hash-get part "value")))
+                                              label) ""))
+                                         (else #f))))
+                            (when (and line text)
+                              (let ((existing (or (hash-get by-line line) [])))
+                                (hash-put! by-line line
+                                  (append existing
+                                    (list (string-append
+                                            (case kind
+                                              ((1) ": ")   ; Type
+                                              ((2) "")     ; Parameter
+                                              (else ""))
+                                            text)))))))))
+                      result)
+                    (hash-put! *lsp-inlay-hints-cache*
+                      (file-path->uri path) by-line)))))))))))
+
+(def (lsp-inlay-hint-at-cursor! app)
+  "Show inlay hints for the current line in echo area. Called from idle timer."
+  (when (and *lsp-inlay-hints-enabled* (lsp-running?))
+    (let* ((buf (current-qt-buffer app))
+           (path (and buf (buffer-file-path buf))))
+      (when path
+        (let* ((uri (file-path->uri path))
+               (by-line (hash-get *lsp-inlay-hints-cache* uri))
+               (ed (current-qt-editor app))
+               (line (qt-plain-text-edit-cursor-line ed)))
+          (when by-line
+            (let ((hints (hash-get by-line line)))
+              (when (and hints (not (null? hints)))
+                (echo-message! (app-state-echo app)
+                  (string-append "hints: " (string-join hints " | ")))))))))))
+
+;;;============================================================================
+;;; Type Hierarchy
+;;;============================================================================
+
+(def (cmd-lsp-supertypes app)
+  "Show supertypes of the symbol at point via LSP type hierarchy."
+  (lsp-type-hierarchy! app 'supertypes))
+
+(def (cmd-lsp-subtypes app)
+  "Show subtypes of the symbol at point via LSP type hierarchy."
+  (lsp-type-hierarchy! app 'subtypes))
+
+(def (lsp-type-hierarchy! app direction)
+  "Request type hierarchy: direction is 'supertypes or 'subtypes."
+  (if (not (lsp-running?))
+    (echo-error! (app-state-echo app) "LSP: not running")
+    (let ((params (lsp-current-params app)))
+      (if (not params)
+        (echo-error! (app-state-echo app) "LSP: buffer has no file")
+        (begin
+          (echo-message! (app-state-echo app)
+            (string-append "LSP: finding " (symbol->string direction) "..."))
+          (lsp-send-request! "textDocument/prepareTypeHierarchy" params
+            (lambda (response)
+              (let ((result (hash-get response "result"))
+                    (error (hash-get response "error")))
+                (cond
+                  (error
+                   (echo-error! (app-state-echo app) "LSP type hierarchy: error"))
+                  ((or (not result) (null? result))
+                   (echo-message! (app-state-echo app)
+                     "LSP: no type hierarchy item at cursor"))
+                  (else
+                   (let* ((item (car result))
+                          (method (if (eq? direction 'supertypes)
+                                    "typeHierarchy/supertypes"
+                                    "typeHierarchy/subtypes"))
+                          (hier-params (make-hash-table)))
+                     (hash-put! hier-params "item" item)
+                     (lsp-send-request! method hier-params
+                       (lambda (resp2)
+                         (let ((items (hash-get resp2 "result"))
+                               (err2 (hash-get resp2 "error")))
+                           (cond
+                             (err2
+                              (echo-error! (app-state-echo app)
+                                "LSP type hierarchy: error"))
+                             ((or (not items) (null? items))
+                              (echo-message! (app-state-echo app)
+                                (string-append "LSP: no " (symbol->string direction))))
+                             (else
+                              (lsp-show-type-hierarchy! app direction items)))))))))))))))))
+
+(def (lsp-symbol-kind->string kind)
+  "Convert LSP SymbolKind number to a short string."
+  (case kind
+    ((1) "File") ((2) "Module") ((3) "Namespace") ((4) "Package")
+    ((5) "Class") ((6) "Method") ((7) "Property") ((8) "Field")
+    ((9) "Constructor") ((10) "Enum") ((11) "Interface") ((12) "Function")
+    ((13) "Variable") ((14) "Constant") ((15) "String") ((16) "Number")
+    ((17) "Boolean") ((18) "Array") ((19) "Object") ((20) "Key")
+    ((21) "Null") ((22) "EnumMember") ((23) "Struct") ((24) "Event")
+    ((25) "Operator") ((26) "TypeParameter")
+    (else "Symbol")))
+
+(def (lsp-show-type-hierarchy! app direction items)
+  "Display type hierarchy results in a *Type Hierarchy* buffer."
+  (let* ((fr (app-state-frame app))
+         (ed (current-qt-editor app))
+         (buf-name "*Type Hierarchy*")
+         (existing (buffer-by-name buf-name))
+         (buf (or existing (qt-buffer-create! buf-name ed #f)))
+         (lines (map (lambda (item)
+                       (let* ((name (or (hash-get item "name") "?"))
+                              (kind (or (hash-get item "kind") 0))
+                              (uri (hash-get item "uri"))
+                              (range (hash-get item "range"))
+                              (start (and range (hash-get range "start")))
+                              (line (and start (hash-get start "line")))
+                              (file (and uri (uri->file-path uri))))
+                         (string-append
+                           "  " (lsp-symbol-kind->string kind) " " name
+                           "  (" (or file "?") ":"
+                           (number->string (+ 1 (or line 0))) ")")))
+                     items))
+         (title (string-append "Type Hierarchy (" (symbol->string direction) ")"))
+         (text (string-append title " — " (number->string (length items)) " results\n\n"
+                 (if (null? lines) "  (none)\n" (string-join lines "\n")))))
+    ;; Populate grep results for M-g n/p navigation
+    (set! *grep-results*
+      (filter-map
+        (lambda (item)
+          (let* ((uri (hash-get item "uri"))
+                 (range (hash-get item "range"))
+                 (start (and range (hash-get range "start")))
+                 (line (and start (+ 1 (hash-get start "line"))))
+                 (file (and uri (uri->file-path uri))))
+            (when (and file line)
+              (list file line ""))))
+        items))
+    (set! *grep-result-index* -1)
+    (qt-buffer-attach! ed buf)
+    (set! (qt-edit-window-buffer (qt-current-window fr)) buf)
+    (qt-plain-text-edit-set-text! ed text)
+    (qt-text-document-set-modified! (buffer-doc-pointer buf) #f)
+    (qt-plain-text-edit-set-cursor-position! ed 0)
+    (echo-message! (app-state-echo app)
+      (string-append title ": " (number->string (length items)) " results"))))
+
+;;;============================================================================
 ;;; Auto-completion on idle (Corfu-like)
 ;;;============================================================================
 

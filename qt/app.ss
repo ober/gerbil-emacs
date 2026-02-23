@@ -744,7 +744,8 @@
               (begin
                 (lsp-eldoc-display! app)
                 (lsp-diagnostic-at-cursor! app)
-                (lsp-document-highlight! app))
+                (lsp-document-highlight! app)
+                (lsp-inlay-hint-at-cursor! app))
               (eldoc-display! app))))
         (qt-timer-start! eldoc-timer 300))
 

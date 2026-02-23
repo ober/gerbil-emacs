@@ -439,6 +439,14 @@
     (let ((call-hier (make-hash-table)))
       (hash-put! call-hier "dynamicRegistration" #f)
       (hash-put! text-doc "callHierarchy" call-hier))
+    ;; Inlay hints
+    (let ((inlay (make-hash-table)))
+      (hash-put! inlay "dynamicRegistration" #f)
+      (hash-put! text-doc "inlayHint" inlay))
+    ;; Type hierarchy
+    (let ((type-hier (make-hash-table)))
+      (hash-put! type-hier "dynamicRegistration" #f)
+      (hash-put! text-doc "typeHierarchy" type-hier))
     (hash-put! caps "textDocument" text-doc)
     ;; workspace capabilities
     (hash-put! ws-edit "documentChanges" #t)

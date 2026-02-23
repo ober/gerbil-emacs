@@ -644,15 +644,39 @@ Types: heading, paragraph, src-block, example-block, quote-block, table, keyword
 ;;; Export Dispatch
 ;;;============================================================================
 
+;;;============================================================================
+;;; Custom Export Backend Registry
+;;;============================================================================
+
+(def *org-export-backends* (make-hash-table))
+
+(def (org-export-register-backend! name handler)
+  "Register a custom export backend. NAME is a symbol, HANDLER is
+(lambda (text) ...) that receives the org source text and returns
+the exported string."
+  (hash-put! *org-export-backends* name handler))
+
+(def (org-export-unregister-backend! name)
+  "Remove a registered custom backend."
+  (hash-remove! *org-export-backends* name))
+
+(def (org-export-list-backends)
+  "List all available export backends (built-in + custom)."
+  (append '(html markdown latex text)
+    (hash-keys *org-export-backends*)))
+
 (def (org-export-buffer text backend)
   "Export org text using the specified backend symbol.
-Returns the exported string."
-  (case backend
-    ((html)     (org-export-html text))
-    ((markdown) (org-export-markdown text))
-    ((latex)    (org-export-latex text))
-    ((text)     (org-export-text text))
-    (else       (org-export-text text))))
+Returns the exported string. Checks custom backends first."
+  (let ((custom (hash-get *org-export-backends* backend)))
+    (if custom
+      (custom text)
+      (case backend
+        ((html)     (org-export-html text))
+        ((markdown) (org-export-markdown text))
+        ((latex)    (org-export-latex text))
+        ((text)     (org-export-text text))
+        (else       (org-export-text text))))))
 
 ;;;============================================================================
 ;;; Helper: parse row without importing org-table

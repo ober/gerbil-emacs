@@ -31,7 +31,12 @@
         ;; iedit
         cmd-iedit-mode
         ;; multi-terminal
-        cmd-term-list cmd-term-next cmd-term-prev)
+        cmd-term-list cmd-term-next cmd-term-prev
+        ;; EWW bookmarks
+        cmd-eww-add-bookmark cmd-eww-list-bookmarks
+        ;; Forge (GitHub)
+        cmd-forge-list-prs cmd-forge-create-pr
+        cmd-forge-list-issues cmd-forge-view-pr)
 
 (import :std/sugar
         :std/srfi/1
@@ -67,7 +72,9 @@
         :gemacs/editor-cmds-b
         :gemacs/editor-cmds-c
         (only-in :gemacs/editor-extra-helpers cmd-flyspell-mode)
-        (only-in :gemacs/terminal terminal-buffer?))
+        (only-in :gemacs/terminal terminal-buffer?)
+        (only-in :gemacs/editor-extra-web
+                 *eww-current-url* eww-display-page eww-fetch-url))
 
 (def (register-parity-commands!)
   ;;; From editor-core.ss
@@ -817,6 +824,14 @@
   (register-command! 'customize-option cmd-customize-face)
   (register-command! 'customize-save-customized cmd-customize-face)
   (register-command! 'helm-projectile cmd-project-find-file)
+  ;; EWW bookmarks
+  (register-command! 'eww-add-bookmark cmd-eww-add-bookmark)
+  (register-command! 'eww-list-bookmarks cmd-eww-list-bookmarks)
+  ;; Forge (GitHub via gh CLI)
+  (register-command! 'forge-list-prs cmd-forge-list-prs)
+  (register-command! 'forge-list-issues cmd-forge-list-issues)
+  (register-command! 'forge-view-pr cmd-forge-view-pr)
+  (register-command! 'forge-create-pr cmd-forge-create-pr)
 )
 
 ;;;============================================================================
@@ -1780,3 +1795,164 @@
            ((eq? (car rest) cur)
             (tui-switch-to-terminal! app prev))
            (else (loop (cdr rest) (car rest)))))))))
+
+;;;============================================================================
+;;; EWW Bookmarks
+;;;============================================================================
+
+(def *eww-bookmarks* '())  ; list of (title . url) pairs
+(def *eww-bookmarks-file* (path-expand ".gemacs-eww-bookmarks" (user-info-home (user-info (user-name)))))
+
+(def (eww-load-bookmarks!)
+  "Load EWW bookmarks from disk."
+  (when (file-exists? *eww-bookmarks-file*)
+    (with-exception-catcher
+      (lambda (e) #f)
+      (lambda ()
+        (set! *eww-bookmarks*
+          (with-input-from-file *eww-bookmarks-file*
+            (lambda ()
+              (let loop ((result '()))
+                (let ((line (read-line)))
+                  (if (eof-object? line)
+                    (reverse result)
+                    (let ((tab-pos (string-index line #\tab)))
+                      (if tab-pos
+                        (loop (cons (cons (substring line 0 tab-pos)
+                                         (substring line (+ tab-pos 1) (string-length line)))
+                                    result))
+                        (loop result)))))))))))))
+
+(def (eww-save-bookmarks!)
+  "Persist EWW bookmarks to disk."
+  (with-exception-catcher
+    (lambda (e) #f)
+    (lambda ()
+      (with-output-to-file *eww-bookmarks-file*
+        (lambda ()
+          (for-each (lambda (bm)
+                      (display (car bm))
+                      (display "\t")
+                      (display (cdr bm))
+                      (newline))
+            *eww-bookmarks*))))))
+
+(def (cmd-eww-add-bookmark app)
+  "Bookmark the current EWW page."
+  (let ((echo (app-state-echo app)))
+    (if (not *eww-current-url*)
+      (echo-message! echo "No page to bookmark")
+      (let* ((fr (app-state-frame app))
+             (row (- (frame-height fr) 1))
+             (width (frame-width fr))
+             (title (echo-read-string echo "Bookmark title: " row width)))
+        (when (and title (not (string=? title "")))
+          (eww-load-bookmarks!)
+          (set! *eww-bookmarks*
+            (cons (cons title *eww-current-url*) *eww-bookmarks*))
+          (eww-save-bookmarks!)
+          (echo-message! echo (string-append "Bookmarked: " title)))))))
+
+(def (cmd-eww-list-bookmarks app)
+  "Show EWW bookmarks in a buffer. Navigate and press RET to open."
+  (let* ((echo (app-state-echo app))
+         (fr (app-state-frame app)))
+    (eww-load-bookmarks!)
+    (if (null? *eww-bookmarks*)
+      (echo-message! echo "No bookmarks saved")
+      (let* ((lines (let loop ((bms *eww-bookmarks*) (i 1) (acc '()))
+                      (if (null? bms)
+                        (reverse acc)
+                        (let ((bm (car bms)))
+                          (loop (cdr bms) (+ i 1)
+                            (cons (string-append (number->string i) ". "
+                                    (car bm) " — " (cdr bm))
+                              acc))))))
+             (text (string-append "EWW Bookmarks:\n\n"
+                     (string-join lines "\n") "\n")))
+        (forge-show-in-buffer! app "*EWW Bookmarks*" text)
+        (echo-message! echo
+          (string-append (number->string (length *eww-bookmarks*)) " bookmarks"))))))
+
+;;;============================================================================
+;;; Forge (GitHub integration via gh CLI)
+;;;============================================================================
+
+(def (forge-run-gh args)
+  "Run gh CLI command and return output string, or #f on failure."
+  (with-exception-catcher
+    (lambda (e) #f)
+    (lambda ()
+      (let ((proc (open-process
+                    (list path: "gh"
+                          arguments: args
+                          stdin-redirection: #f
+                          stdout-redirection: #t
+                          stderr-redirection: #t))))
+        (let ((output (read-all-as-string proc)))
+          (process-status proc)
+          (if (zero? (process-status proc))
+            output
+            #f))))))
+
+(def (forge-show-in-buffer! app buf-name text)
+  "Create or reuse a buffer, fill with text, switch to it."
+  (let* ((fr (app-state-frame app))
+         (ed (current-editor app))
+         (existing (buffer-by-name buf-name))
+         (buf (or existing (buffer-create! buf-name ed))))
+    (buffer-attach! ed buf)
+    (set! (edit-window-buffer (current-window fr)) buf)
+    (send-message ed SCI_CLEARALL 0)
+    (editor-insert-text ed 0 text)
+    (send-message ed SCI_GOTOPOS 0)))
+
+(def (cmd-forge-list-prs app)
+  "List open pull requests for the current project."
+  (let* ((echo (app-state-echo app))
+         (output (forge-run-gh ["pr" "list" "--limit" "20"])))
+    (if (not output)
+      (echo-error! echo "forge: failed to list PRs (is gh installed?)")
+      (begin
+        (forge-show-in-buffer! app "*Forge PRs*"
+          (string-append "Pull Requests:\n\n" output))
+        (echo-message! echo "Forge: PRs loaded")))))
+
+(def (cmd-forge-list-issues app)
+  "List open issues for the current project."
+  (let* ((echo (app-state-echo app))
+         (output (forge-run-gh ["issue" "list" "--limit" "20"])))
+    (if (not output)
+      (echo-error! echo "forge: failed to list issues (is gh installed?)")
+      (begin
+        (forge-show-in-buffer! app "*Forge Issues*"
+          (string-append "Issues:\n\n" output))
+        (echo-message! echo "Forge: issues loaded")))))
+
+(def (cmd-forge-view-pr app)
+  "View details of a specific PR by number."
+  (let* ((echo (app-state-echo app))
+         (fr (app-state-frame app))
+         (row (- (frame-height fr) 1))
+         (width (frame-width fr))
+         (num (echo-read-string echo "PR number: " row width)))
+    (when (and num (not (string=? num "")))
+      (let ((output (forge-run-gh ["pr" "view" num])))
+        (if (not output)
+          (echo-error! echo (string-append "forge: failed to view PR #" num))
+          (begin
+            (forge-show-in-buffer! app (string-append "*Forge PR #" num "*") output)
+            (echo-message! echo (string-append "Forge: PR #" num))))))))
+
+(def (cmd-forge-create-pr app)
+  "Create a new PR via gh CLI."
+  (let* ((echo (app-state-echo app))
+         (fr (app-state-frame app))
+         (row (- (frame-height fr) 1))
+         (width (frame-width fr))
+         (title (echo-read-string echo "PR title: " row width)))
+    (when (and title (not (string=? title "")))
+      (let ((output (forge-run-gh ["pr" "create" "--title" title "--fill"])))
+        (if (not output)
+          (echo-error! echo "forge: failed to create PR")
+          (echo-message! echo (string-append "Created: " (string-trim output))))))))

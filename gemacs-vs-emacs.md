@@ -1,7 +1,7 @@
 # Gemacs vs GNU Emacs — Feature Comparison
 
 > **Last updated:** 2026-02-22
-> **Gemacs version:** master (dcac545)
+> **Gemacs version:** master (384815e)
 > **Compared against:** GNU Emacs 29.x / 30.x feature set
 
 ## Status Legend
@@ -432,18 +432,17 @@
 | Merge UI | :yellow_circle: | Merge with narrowing branch selection |
 | Cherry-pick | :yellow_circle: | Basic |
 | Revert commit | :yellow_circle: | Basic |
-| Forge (PR/issue management) | :red_circle: | Not implemented |
+| Forge (PR/issue management) | :large_blue_circle: | List/view PRs and issues, create PRs via `gh` CLI |
 | Diff-hl (gutter marks) | :large_blue_circle: | Git diff gutter indicators |
 | Wgrep on grep results | :white_check_mark: | Edit and save back |
 | Magit keymap | :white_check_mark: | 20 bindings: s/S/u/c/d/l/g/n/p/q/b/B/f/F/P/r/m/z/Z/k |
 | VC generic backend | :yellow_circle: | Basic git-only |
 
-**Summary:** Magit has been significantly enhanced. The status buffer now shows **inline diffs** per file. **Hunk-level staging/unstaging** works via `git apply --cached`. Branch operations (checkout, merge, rebase) use the **narrowing framework** for interactive selection. 20 single-key bindings in the magit keymap. Remaining gaps: commit composition buffer, interactive log with commit details, forge integration.
+**Summary:** Magit has been significantly enhanced. The status buffer now shows **inline diffs** per file. **Hunk-level staging/unstaging** works via `git apply --cached`. Branch operations (checkout, merge, rebase) use the **narrowing framework** for interactive selection. 20 single-key bindings in the magit keymap. Forge integration provides PR/issue listing and creation via `gh` CLI. Remaining gaps: commit composition buffer, interactive log with commit details.
 
 ### Priority Improvements Needed:
 1. Commit composition buffer with diff preview
 2. Interactive log with commit details
-3. Forge (PR/issue) integration
 
 ---
 
@@ -476,7 +475,7 @@
 | Babel :noweb expansion | :white_check_mark: | `<<block-name>>` refs expanded when `:noweb yes` |
 | **Export** | :large_blue_circle: | HTML, Markdown, LaTeX, ASCII |
 | Export footnotes/cross-refs | :white_check_mark: | `[fn:name]` refs, `<<target>>`/`[[#target]]` cross-refs, all 4 backends |
-| Custom export backends | :red_circle: | Not implemented |
+| Custom export backends | :white_check_mark: | Register via `org-export-register-backend!`, list with `org-export-list-backends` |
 | **Clock tracking** | :large_blue_circle: | Clock-in/out, goto |
 | Org-crypt | :yellow_circle: | Registered |
 | Heading promote/demote | :white_check_mark: | |
@@ -535,12 +534,12 @@
 | Formatting | :white_check_mark: | `C-c l f` format buffer/region |
 | Semantic tokens | :white_check_mark: | Toggle with `lsp-semantic-tokens`, indicator-based highlighting |
 | Call hierarchy | :white_check_mark: | `lsp-incoming-calls` / `lsp-outgoing-calls` with navigation |
-| Type hierarchy | :red_circle: | Not implemented |
-| Inlay hints | :red_circle: | Not implemented |
+| Type hierarchy | :white_check_mark: | `lsp-supertypes` / `lsp-subtypes` with navigation buffer |
+| Inlay hints | :white_check_mark: | Toggle with `lsp-inlay-hints`, shows in echo area on idle |
 | Workspace symbols | :white_check_mark: | `C-c l s` with completion |
 | Multi-server support | :red_circle: | Single server per project |
 
-**Summary:** LSP is fully functional — auto-starts on file open, provides completion (auto + Tab + C-M-i), diagnostics with inline indicators, go-to-definition (M-.), hover, references, rename, code actions, formatting, and workspace symbols. All under `C-c l` prefix. Missing semantic tokens, call/type hierarchy, and inlay hints.
+**Summary:** LSP is fully functional — auto-starts on file open, provides completion (auto + Tab + C-M-i), diagnostics with inline indicators, go-to-definition (M-.), hover, references, rename, code actions, formatting, workspace symbols, semantic tokens, call hierarchy, type hierarchy, and inlay hints. All under `C-c l` prefix. Only missing multi-server support.
 5. Wire find-references to results buffer
 
 ---
@@ -822,7 +821,7 @@
 | CSS rendering | :red_circle: | Not implemented |
 | Image display | :red_circle: | Not implemented |
 | JavaScript | :red_circle: | Not implemented |
-| Bookmarks | :red_circle: | Not implemented |
+| Bookmarks | :white_check_mark: | `eww-add-bookmark` / `eww-list-bookmarks`, persisted to `~/.gemacs-eww-bookmarks` |
 
 **Summary:** Basic text-mode web browsing. Fetches pages and strips HTML. Not usable for modern web pages.
 
@@ -1125,7 +1124,7 @@
 |---------------------------------------------------------|------------------|------------------------------|------------------------------------------|
 | **Key-chords** (30+ bindings: AS, ZX, BV, FG, KB, etc.) | Extensive        | :white_check_mark: Works     | None — key-chord system exists           |
 | **Helm** (M-x, buffers, files, grep)                    | Primary UI       | :large_blue_circle: Narrowing | **Low** — M-x/buffers/bookmarks work    |
-| **Magit + Forge** (staging, commit, PR review)          | Daily driver     | :large_blue_circle: Substantial | **Low** — hunk staging, inline diffs, narrowing branches |
+| **Magit + Forge** (staging, commit, PR review)          | Daily driver     | :white_check_mark: Works     | None — hunk staging, inline diffs, forge PR/issue |
 | **Multi-vterm** (multiple terminals, copy mode)         | Heavy use        | :white_check_mark: Works     | None — term-list/next/prev + copy mode   |
 | **Eglot / LSP** (completion, hover, goto-def, refs)     | Working          | :white_check_mark: Works     | None — full UI wiring with keybindings   |
 | **Copilot / AI** (gptel, claude-shell, copilot)         | Active           | :yellow_circle: Chat works   | **Medium** — chat OK, no inline AI      |
