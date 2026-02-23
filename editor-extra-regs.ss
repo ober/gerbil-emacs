@@ -56,6 +56,7 @@
         :gemacs/editor-cmds-a
         :gemacs/editor-cmds-b
         :gemacs/editor-cmds-c
+        (only-in :gemacs/editor-extra-helpers cmd-flyspell-mode)
         (only-in :gemacs/terminal terminal-buffer?))
 
 (def (register-parity-commands!)
@@ -629,7 +630,7 @@
   ;;; Canonical Emacs aliases
   (register-command! 'electric-pair-mode cmd-toggle-electric-pair)
   (register-command! 'visual-line-mode cmd-toggle-visual-line-mode)
-  (register-command! 'flyspell-mode cmd-toggle-flyspell)
+  (register-command! 'flyspell-mode cmd-flyspell-mode)
   (register-command! 'read-only-mode cmd-toggle-read-only)
   (register-command! 'overwrite-mode cmd-toggle-overwrite-mode)
   (register-command! 'hl-line-mode cmd-toggle-hl-line)

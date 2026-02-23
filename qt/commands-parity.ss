@@ -1453,3 +1453,91 @@
                           (if (string-contains new-line "DONE")
                             "TODO → DONE"
                             "DONE → TODO"))))))))))))))
+
+;;;============================================================================
+;;; Flyspell mode (Qt) — spell-check and report misspelled words
+;;;============================================================================
+
+(def *qt-flyspell-active* #f)
+
+(def (qt-aspell-check-word word)
+  "Check a word with aspell. Returns list of suggestions or #f if correct."
+  (with-catch
+    (lambda (e) #f)
+    (lambda ()
+      (let* ((proc (open-process
+                      (list path: "aspell"
+                            arguments: '("pipe")
+                            stdin-redirection: #t stdout-redirection: #t
+                            stderr-redirection: #f)))
+             (_ (begin (display (string-append "^" word "\n") proc)
+                       (force-output proc)))
+             (header (read-line proc))
+             (result (read-line proc)))
+        (close-port proc)
+        (cond
+          ((or (eof-object? result) (string=? result "")) #f)
+          ((char=? (string-ref result 0) #\*) #f) ;; correct
+          ((char=? (string-ref result 0) #\&) ;; suggestions
+           (let* ((parts (string-split result #\:))
+                  (suggestions (if (>= (length parts) 2)
+                                 (map string-trim (string-split (cadr parts) #\,))
+                                 '())))
+             suggestions))
+          ((char=? (string-ref result 0) #\#) '()) ;; no suggestions
+          (else #f))))))
+
+(def (qt-flyspell-is-word-char? ch)
+  (or (char-alphabetic? ch) (char=? ch #\')))
+
+(def (qt-flyspell-extract-words text)
+  "Extract words with positions from text."
+  (let ((len (string-length text)))
+    (let loop ((i 0) (words '()))
+      (if (>= i len)
+        (reverse words)
+        (if (qt-flyspell-is-word-char? (string-ref text i))
+          (let find-end ((j (+ i 1)))
+            (if (or (>= j len) (not (qt-flyspell-is-word-char? (string-ref text j))))
+              (let ((word (substring text i j)))
+                (if (> (string-length word) 1)
+                  (loop j (cons (list word i j) words))
+                  (loop j words)))
+              (find-end (+ j 1))))
+          (loop (+ i 1) words))))))
+
+(def (cmd-flyspell-mode app)
+  "Toggle flyspell mode: check buffer for misspelled words."
+  (let* ((ed (current-qt-editor app))
+         (text (qt-plain-text-edit-text ed)))
+    (if *qt-flyspell-active*
+      (begin
+        (set! *qt-flyspell-active* #f)
+        (echo-message! (app-state-echo app) "Flyspell mode OFF"))
+      (begin
+        (set! *qt-flyspell-active* #t)
+        (let* ((words (qt-flyspell-extract-words text))
+               (misspelled-words '()))
+          (for-each
+            (lambda (entry)
+              (let ((word (car entry)))
+                (when (> (string-length word) 1)
+                  (let ((suggestions (qt-aspell-check-word word)))
+                    (when suggestions
+                      (set! misspelled-words (cons word misspelled-words)))))))
+            words)
+          (let ((count (length misspelled-words)))
+            (if (= count 0)
+              (echo-message! (app-state-echo app)
+                (string-append "Flyspell: no misspelled words (" (number->string (length words)) " checked)"))
+              (echo-message! (app-state-echo app)
+                (string-append "Flyspell: " (number->string count) " misspelled — "
+                               (string-join (take-n (reverse misspelled-words) 5) ", ")
+                               (if (> count 5) "..." ""))))))))))
+
+(def (take-n lst n)
+  "Take first N elements of list."
+  (let loop ((l lst) (i 0) (acc '()))
+    (if (or (null? l) (>= i n))
+      (reverse acc)
+      (loop (cdr l) (+ i 1) (cons (car l) acc)))))

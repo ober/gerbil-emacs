@@ -625,12 +625,12 @@
 | Ispell region | :large_blue_circle: | Scan region for misspellings |
 | Ispell buffer | :large_blue_circle: | Whole-buffer check |
 | Suggestion menu | :white_check_mark: | Interactive selection from ispell output |
-| Flyspell (on-the-fly) | :red_circle: | Not implemented — no background checking |
+| Flyspell (on-the-fly) | :large_blue_circle: | `flyspell-mode` toggles on-demand spell check with aspell; TUI uses Scintilla squiggle indicators, Qt reports misspelled words |
 | Personal dictionary | :large_blue_circle: | Supported via ispell |
 | Language selection | :red_circle: | Not implemented |
 | Aspell/Hunspell backend | :large_blue_circle: | Uses ispell subprocess |
 
-**Summary:** Interactive spell-checking works via ispell. Missing flyspell for real-time as-you-type checking.
+**Summary:** Interactive spell-checking works via ispell. Flyspell mode provides on-demand buffer spell-checking with visual indicators (TUI) and word-list reporting (Qt) using aspell backend.
 
 ---
 
@@ -990,7 +990,7 @@
 | **Multiple cursors / iedit** | Can't edit multiple occurrences simultaneously | Medium |
 | ~~Snippet system (YASnippet)~~ | ~~No template expansion~~ Implemented: 100+ snippets, tabstops | ~~Medium~~ Done |
 | ~~Ediff / Smerge~~ | ~~Can't resolve merge conflicts~~ Implemented: smerge-mode with keep-mine/other/both | ~~Medium~~ Done |
-| **Flyspell (on-the-fly spell)** | No background spell checking | Small |
+| ~~Flyspell (on-the-fly spell)~~ | ~~No background spell checking~~ Implemented: flyspell-mode with aspell, squiggle indicators | ~~Small~~ Done |
 | **Undo tree** | Linear undo only, no branch visualization | Medium |
 | ~~Interactive agenda~~ | ~~Can't act on agenda items~~ Implemented: goto source, toggle TODO | ~~Medium~~ Done |
 
@@ -1138,7 +1138,7 @@
 | **Snippets** (yasnippet + file-templates)               | Active           | :large_blue_circle: Substantial | **Low** — 100+ snippets, TAB expand, field nav, file loading |
 | **Dired extensions** (dired-k, dired-imenu, etc.)       | Enhanced         | :large_blue_circle: Substantial | **Low** — batch ops, wdired, find-dired work |
 | **Gerbil mode + LSP** (custom gerbil-mode.el)           | Custom written   | :large_blue_circle: Built-in | Low — gemacs IS the Gerbil editor        |
-| **Flycheck + Flyspell**                                 | Both active      | :yellow_circle: Flycheck OK  | **Low** — flycheck via LSP, no flyspell  |
+| **Flycheck + Flyspell**                                 | Both active      | :large_blue_circle: Both work | **None** — flycheck via LSP, flyspell via aspell |
 | **EditorConfig**                                        | Installed        | :white_check_mark: Works     | None — auto-applied on file open         |
 | **GitLab issue tracking** (28 custom modes)             | Extensive custom | :red_circle: Missing         | **Low** — very personal workflow         |
 
@@ -1179,7 +1179,7 @@
 ### Phase 3: Polish & Power Features
 9. **AI integration** — At minimum: Copilot-like inline suggestions or a chat buffer for LLM interaction. The user has 6 AI packages installed.
 10. **Snippet system** — YASnippet equivalent with tabstop navigation. The user has snippets + file-templates enabled.
-11. **Flyspell** — Background spell checking. User has flyspell enabled.
+11. ~~Flyspell~~ — ~~Background spell checking.~~ Done: `flyspell-mode` with aspell backend, squiggle indicators (TUI), word-list reporting (Qt).
 12. **Bracket/paren swap** — Input-level key remapping to swap `[`↔`(`. User has this configured.
 13. **DevOps syntax modes** — At minimum: Terraform, Ansible, Docker highlighting via Scintilla lexers.
 14. **EditorConfig support** — Read `.editorconfig` files for indent style/size.

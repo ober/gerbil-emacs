@@ -651,3 +651,71 @@
           (when mine (editor-goto-pos ed mine))))
       (echo-message! echo "No merge conflicts found"))))
 
+;;;============================================================================
+;;; Flyspell mode: spell-check buffer and underline misspelled words (TUI)
+;;;============================================================================
+
+(def *flyspell-active* #f)
+(def *flyspell-indicator* 1) ;; Scintilla indicator number (0 = highlight-symbol)
+
+(def (flyspell-is-word-char? ch)
+  "Check if character is part of a word for spell-checking."
+  (or (char-alphabetic? ch) (char=? ch #\')))
+
+(def (flyspell-extract-words text)
+  "Extract word positions from text. Returns list of (word start end)."
+  (let ((len (string-length text)))
+    (let loop ((i 0) (words '()))
+      (if (>= i len)
+        (reverse words)
+        (if (flyspell-is-word-char? (string-ref text i))
+          ;; Found word start
+          (let find-end ((j (+ i 1)))
+            (if (or (>= j len) (not (flyspell-is-word-char? (string-ref text j))))
+              ;; Word is text[i..j)
+              (let ((word (substring text i j)))
+                (if (> (string-length word) 1)
+                  (loop j (cons (list word i j) words))
+                  (loop j words)))
+              (find-end (+ j 1))))
+          (loop (+ i 1) words))))))
+
+(def (cmd-flyspell-mode app)
+  "Toggle flyspell mode: check buffer and underline misspelled words."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app))
+         (text (editor-get-text ed))
+         (len (string-length text)))
+    (if *flyspell-active*
+      ;; Turn off: clear indicators
+      (begin
+        (set! *flyspell-active* #f)
+        (send-message ed SCI_SETINDICATORCURRENT *flyspell-indicator* 0)
+        (send-message ed SCI_INDICATORCLEARRANGE 0 len)
+        (echo-message! echo "Flyspell mode OFF"))
+      ;; Turn on: scan and underline
+      (begin
+        (set! *flyspell-active* #t)
+        ;; Setup indicator: INDIC_SQUIGGLE = 1, red color
+        (send-message ed SCI_INDICSETSTYLE *flyspell-indicator* 1) ;; squiggle
+        (send-message ed SCI_INDICSETFORE *flyspell-indicator* #x0000FF) ;; red (BGR)
+        (send-message ed SCI_SETINDICATORCURRENT *flyspell-indicator* 0)
+        ;; Clear old indicators
+        (send-message ed SCI_INDICATORCLEARRANGE 0 len)
+        ;; Check each word
+        (let* ((words (flyspell-extract-words text))
+               (misspelled 0))
+          (for-each
+            (lambda (entry)
+              (let ((word (car entry))
+                    (start (cadr entry))
+                    (end (caddr entry)))
+                (let ((suggestions (flyspell-check-word word)))
+                  (when suggestions  ;; non-#f means misspelled
+                    (set! misspelled (+ misspelled 1))
+                    (send-message ed SCI_INDICATORFILLRANGE start (- end start))))))
+            words)
+          (echo-message! echo
+            (string-append "Flyspell: " (number->string misspelled) " misspelled in "
+                           (number->string (length words)) " words")))))))
+
