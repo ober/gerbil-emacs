@@ -1577,7 +1577,10 @@
   (register-command! 'customize cmd-customize)
   (register-command! 'set-variable cmd-set-variable)
   (register-command! 'load-plugin cmd-load-plugin)
-  (register-command! 'list-plugins cmd-list-plugins))
+  (register-command! 'list-plugins cmd-list-plugins)
+  ;; Batch 10: advice, autoloads
+  (register-command! 'describe-advice cmd-describe-advice)
+  (register-command! 'list-autoloads cmd-list-autoloads))
 
 ;;; Qt versions of batch 6 commands
 

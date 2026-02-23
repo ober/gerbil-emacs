@@ -768,8 +768,8 @@
 | Scroll margin | :white_check_mark: | |
 | M-x customize UI | :white_check_mark: | `M-x customize` shows settings buffer, `M-x set-variable` to change |
 | Custom variables (defcustom) | :white_check_mark: | Customizable variables with getters/setters |
-| Custom groups | :red_circle: | Not implemented |
-| Face customization UI | :red_circle: | No interactive face editor |
+| Custom groups | :white_check_mark: | `customize-group` with editing/display/files categories |
+| Face customization UI | :white_check_mark: | `customize-face`, `set-face-attribute` for face properties |
 | Mode-specific hooks | :yellow_circle: | Limited hook system |
 
 **Summary:** Configuration via init file and `M-x customize` interactive buffer. `set-variable` for runtime changes.
@@ -786,9 +786,9 @@
 | straight.el | :red_circle: | N/A |
 | Plugin/package system | :white_check_mark: | `load-plugin`, `list-plugins`, `~/.gemacs-plugins/` directory |
 | User-defined commands | :large_blue_circle: | Via `~/.gemacs-init` Gerbil code |
-| Advice system | :red_circle: | No function advice |
+| Advice system | :white_check_mark: | `advice-add!`/`advice-remove!` with before/after, `describe-advice` |
 | Hook system | :yellow_circle: | Limited — some mode hooks |
-| Autoload system | :red_circle: | Not implemented |
+| Autoload system | :white_check_mark: | `autoload!` to register, `list-autoloads` to view |
 | Dynamic module loading | :red_circle: | Not implemented |
 
 **Summary:** Gemacs uses Gerbil Scheme, not Emacs Lisp — the MELPA ecosystem is unavailable. But has a plugin system (`~/.gemacs-plugins/` with `load-plugin`/`list-plugins`) and init file extensibility.

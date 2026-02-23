@@ -1708,3 +1708,106 @@
           (echo-error! echo "forge: failed to create PR")
           (echo-message! echo (string-append "Created: " (string-trim output))))))))
 
+;;; Qt versions of batch 10 commands
+
+(def *qt-custom-groups* (make-hash-table))
+
+(def (qt-custom-group-add! group var-name)
+  (let ((vars (or (hash-get *qt-custom-groups* group) [])))
+    (unless (member var-name vars)
+      (hash-put! *qt-custom-groups* group (cons var-name vars)))))
+
+(qt-custom-group-add! "editing" "tab-width")
+(qt-custom-group-add! "editing" "indent-tabs-mode")
+(qt-custom-group-add! "display" "scroll-margin")
+(qt-custom-group-add! "files" "global-auto-revert-mode")
+
+(def *qt-face-definitions* (make-hash-table))
+
+(def (qt-face-set! name . props)
+  (hash-put! *qt-face-definitions* name props))
+
+(qt-face-set! "default" 'fg: "white" 'bg: "black")
+(qt-face-set! "region" 'bg: "blue")
+(qt-face-set! "modeline" 'fg: "black" 'bg: "white")
+(qt-face-set! "comment" 'fg: "gray")
+(qt-face-set! "keyword" 'fg: "cyan")
+(qt-face-set! "string" 'fg: "green")
+(qt-face-set! "error" 'fg: "red")
+
+;; Advice system (Qt)
+(def *qt-advice-before* (make-hash-table))
+(def *qt-advice-after*  (make-hash-table))
+
+(def (qt-advice-add! symbol where fn advice-name)
+  (let ((table (if (eq? where 'before) *qt-advice-before* *qt-advice-after*))
+        (entry (cons fn advice-name)))
+    (let ((existing (or (hash-get table symbol) [])))
+      (hash-put! table symbol (cons entry existing)))))
+
+(def (cmd-describe-advice app)
+  "Show active advice (Qt)."
+  (let* ((ed (current-qt-editor app))
+         (echo (app-state-echo app))
+         (fr (app-state-frame app))
+         (lines ["Command Advice" "==============" ""]))
+    (hash-for-each
+      (lambda (sym advices)
+        (for-each
+          (lambda (entry)
+            (set! lines (cons
+              (string-append "  :before " (symbol->string sym) " — " (cdr entry))
+              lines)))
+          advices))
+      *qt-advice-before*)
+    (hash-for-each
+      (lambda (sym advices)
+        (for-each
+          (lambda (entry)
+            (set! lines (cons
+              (string-append "  :after  " (symbol->string sym) " — " (cdr entry))
+              lines)))
+          advices))
+      *qt-advice-after*)
+    (when (= (length lines) 3)
+      (set! lines (cons "  (no active advice)" lines)))
+    (let* ((text (string-join (reverse lines) "\n"))
+           (buf (or (buffer-by-name "*Advice*")
+                    (qt-buffer-create! "*Advice*" ed #f))))
+      (qt-buffer-attach! ed buf)
+      (set! (qt-edit-window-buffer (qt-current-window fr)) buf)
+      (qt-plain-text-edit-set-text! ed text)
+      (qt-text-document-set-modified! (buffer-doc-pointer buf) #f)
+      (qt-plain-text-edit-set-cursor-position! ed 0))))
+
+;; Autoload system (Qt)
+(def *qt-autoloads* (make-hash-table))
+
+(def (qt-autoload! symbol file-path)
+  (hash-put! *qt-autoloads* symbol file-path))
+
+(def (cmd-list-autoloads app)
+  "Show registered autoloads (Qt)."
+  (let* ((ed (current-qt-editor app))
+         (echo (app-state-echo app))
+         (fr (app-state-frame app))
+         (lines ["Registered Autoloads" "====================" ""]))
+    (hash-for-each
+      (lambda (sym path)
+        (set! lines (cons
+          (string-append "  " (symbol->string sym) " → " path)
+          lines)))
+      *qt-autoloads*)
+    (when (= (length lines) 3)
+      (set! lines (cons "  (no autoloads registered)" lines)))
+    (set! lines (append (reverse lines)
+      ["" "Use (qt-autoload! 'symbol \"path.ss\") in ~/.gemacs-init."]))
+    (let* ((text (string-join lines "\n"))
+           (buf (or (buffer-by-name "*Autoloads*")
+                    (qt-buffer-create! "*Autoloads*" ed #f))))
+      (qt-buffer-attach! ed buf)
+      (set! (qt-edit-window-buffer (qt-current-window fr)) buf)
+      (qt-plain-text-edit-set-text! ed text)
+      (qt-text-document-set-modified! (buffer-doc-pointer buf) #f)
+      (qt-plain-text-edit-set-cursor-position! ed 0))))
+

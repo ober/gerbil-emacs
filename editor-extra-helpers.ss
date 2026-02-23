@@ -719,3 +719,168 @@
             (string-append "Flyspell: " (number->string misspelled) " misspelled in "
                            (number->string (length words)) " words")))))))
 
+;;;============================================================================
+;;; Custom groups
+;;;============================================================================
+
+(def *custom-groups* (make-hash-table))  ;; group-name -> list of var-names
+
+(def (custom-group-add! group var-name)
+  "Add a variable to a custom group."
+  (let ((vars (or (hash-get *custom-groups* group) [])))
+    (unless (member var-name vars)
+      (hash-put! *custom-groups* group (cons var-name vars)))))
+
+;; Initialize default groups
+(custom-group-add! "editing" "tab-width")
+(custom-group-add! "editing" "indent-tabs-mode")
+(custom-group-add! "editing" "require-final-newline")
+(custom-group-add! "display" "scroll-margin")
+(custom-group-add! "display" "show-paren-mode")
+(custom-group-add! "files" "global-auto-revert-mode")
+(custom-group-add! "files" "delete-trailing-whitespace-on-save")
+
+;;;============================================================================
+;;; Face customization UI
+;;;============================================================================
+
+(def *face-definitions* (make-hash-table))  ;; face-name -> alist of properties
+
+(def (face-set! name . props)
+  "Define or update a face with properties."
+  (hash-put! *face-definitions* name props))
+
+(def (face-get name)
+  "Get face properties."
+  (hash-get *face-definitions* name))
+
+;; Define some default faces
+(face-set! "default" 'fg: "white" 'bg: "black")
+(face-set! "region" 'bg: "blue")
+(face-set! "modeline" 'fg: "black" 'bg: "white")
+(face-set! "minibuffer" 'fg: "white" 'bg: "black")
+(face-set! "comment" 'fg: "gray" 'style: "italic")
+(face-set! "string" 'fg: "green")
+(face-set! "keyword" 'fg: "cyan" 'style: "bold")
+(face-set! "error" 'fg: "red" 'style: "bold")
+(face-set! "warning" 'fg: "yellow")
+(face-set! "success" 'fg: "green")
+
+;;;============================================================================
+;;; Advice system
+;;;============================================================================
+
+(def *advice-before* (make-hash-table))  ;; symbol -> list of (fn . name)
+(def *advice-after*  (make-hash-table))  ;; symbol -> list of (fn . name)
+
+(def (advice-add! symbol where fn advice-name)
+  "Add advice to a command symbol. WHERE is 'before or 'after."
+  (let ((table (if (eq? where 'before) *advice-before* *advice-after*))
+        (entry (cons fn advice-name)))
+    (let ((existing (or (hash-get table symbol) [])))
+      (hash-put! table symbol (cons entry existing)))))
+
+(def (advice-remove! symbol advice-name)
+  "Remove named advice from a command symbol."
+  (for-each
+    (lambda (table)
+      (let ((existing (or (hash-get table symbol) [])))
+        (hash-put! table symbol
+          (filter (lambda (e) (not (equal? (cdr e) advice-name))) existing))))
+    [*advice-before* *advice-after*]))
+
+(def (run-advice-before symbol app)
+  "Run all before-advice for SYMBOL."
+  (let ((advices (hash-get *advice-before* symbol)))
+    (when advices
+      (for-each (lambda (entry) ((car entry) app)) (reverse advices)))))
+
+(def (run-advice-after symbol app)
+  "Run all after-advice for SYMBOL."
+  (let ((advices (hash-get *advice-after* symbol)))
+    (when advices
+      (for-each (lambda (entry) ((car entry) app)) (reverse advices)))))
+
+(def (cmd-describe-advice app)
+  "Show all active advice on commands."
+  (let* ((echo (app-state-echo app))
+         (fr (app-state-frame app))
+         (ed (current-editor app))
+         (win (current-window fr))
+         (buf (buffer-create! "*Advice*" ed))
+         (lines ["Command Advice"
+                 "=============="
+                 ""]))
+    (hash-for-each
+      (lambda (sym advices)
+        (for-each
+          (lambda (entry)
+            (set! lines (cons
+              (string-append "  :before " (symbol->string sym) " — " (cdr entry))
+              lines)))
+          advices))
+      *advice-before*)
+    (hash-for-each
+      (lambda (sym advices)
+        (for-each
+          (lambda (entry)
+            (set! lines (cons
+              (string-append "  :after  " (symbol->string sym) " — " (cdr entry))
+              lines)))
+          advices))
+      *advice-after*)
+    (when (= (length lines) 3)
+      (set! lines (cons "  (no active advice)" lines)))
+    (buffer-attach! ed buf)
+    (set! (edit-window-buffer win) buf)
+    (editor-set-text ed (string-join (reverse lines) "\n"))
+    (editor-goto-pos ed 0)
+    (editor-set-read-only ed #t)))
+
+;;;============================================================================
+;;; Autoload system
+;;;============================================================================
+
+(def *autoloads* (make-hash-table))  ;; symbol -> file-path
+
+(def (autoload! symbol file-path)
+  "Register SYMBOL to be loaded from FILE-PATH on first use."
+  (hash-put! *autoloads* symbol file-path))
+
+(def (autoload-resolve symbol)
+  "If SYMBOL has an autoload, load the file and return #t, else #f."
+  (let ((path (hash-get *autoloads* symbol)))
+    (when path
+      (hash-remove! *autoloads* symbol)
+      (with-catch
+        (lambda (e) #f)
+        (lambda ()
+          (load (path-expand path))
+          #t)))))
+
+(def (cmd-list-autoloads app)
+  "Show registered autoloads."
+  (let* ((echo (app-state-echo app))
+         (fr (app-state-frame app))
+         (ed (current-editor app))
+         (win (current-window fr))
+         (buf (buffer-create! "*Autoloads*" ed))
+         (lines ["Registered Autoloads"
+                 "===================="
+                 ""]))
+    (hash-for-each
+      (lambda (sym path)
+        (set! lines (cons
+          (string-append "  " (symbol->string sym) " → " path)
+          lines)))
+      *autoloads*)
+    (when (= (length lines) 3)
+      (set! lines (cons "  (no autoloads registered)" lines)))
+    (set! lines (append (reverse lines)
+      ["" "Use (autoload! 'symbol \"path.ss\") in ~/.gemacs-init to register."]))
+    (buffer-attach! ed buf)
+    (set! (edit-window-buffer win) buf)
+    (editor-set-text ed (string-join lines "\n"))
+    (editor-goto-pos ed 0)
+    (editor-set-read-only ed #t)))
+
