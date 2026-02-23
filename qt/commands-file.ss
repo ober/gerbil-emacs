@@ -1206,6 +1206,12 @@
   (echo-message! (app-state-echo app)
     (if *auto-pair-mode* "Auto-pair ON" "Auto-pair OFF")))
 
+(def (cmd-paredit-strict-mode app)
+  "Toggle paredit strict mode (prevent unbalancing delimiter deletion)."
+  (set! *paredit-strict-mode* (not *paredit-strict-mode*))
+  (echo-message! (app-state-echo app)
+    (if *paredit-strict-mode* "Paredit strict mode ON" "Paredit strict mode OFF")))
+
 ;;;============================================================================
 ;;; Universal argument / prefix arg system
 ;;;============================================================================

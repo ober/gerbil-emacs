@@ -154,7 +154,10 @@
   theme-gruvbox-light
   theme-dracula
   theme-nord
-  theme-zenburn)
+  theme-zenburn
+
+  ;; Paredit strict mode
+  *paredit-strict-mode*)
 
 (import :std/sugar
         :std/sort
@@ -1659,6 +1662,9 @@
 ;;;============================================================================
 ;;; Key translation map
 ;;;============================================================================
+
+;; Paredit strict mode — prevents deleting delimiters that would unbalance
+(def *paredit-strict-mode* #f)
 
 ;; Maps char→char for input translation (e.g., swap brackets and parens)
 (def *key-translation-map* (make-hash-table))

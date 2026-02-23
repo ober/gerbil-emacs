@@ -658,7 +658,8 @@
           (lambda ()
             ;; org-babel-insert-result uses Scintilla editor API (ed)
             ;; We need to get the underlying sci editor from the qt buffer
-            (let ((output (org-babel-execute lang body header-args)))
+            (let ((output (org-babel-execute lang body header-args
+                            buffer-text: text)))
               ;; Insert results manually via Qt text API
               (let* ((result-text
                        (string-append "\n#+RESULTS:\n"

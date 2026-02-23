@@ -1156,6 +1156,7 @@ S=sort by name, z=sort by size, q=quit."
 ;; --- Spelling via aspell ---
 (def *ispell-program* "aspell")
 (def *ispell-personal-dict* #f) ;; set to path for personal dictionary
+(def *ispell-dictionary* #f)    ;; language dictionary (e.g. "en", "fr", "de")
 
 (def (ispell-word-bounds ed)
   "Get word boundaries around cursor (searching backward then forward)."
@@ -1186,9 +1187,9 @@ S=sort by name, z=sort by size, q=quit."
   (with-catch
     (lambda (e) #f)
     (lambda ()
-      (let* ((args (if *ispell-personal-dict*
-                     ["-a" "--personal" *ispell-personal-dict*]
-                     ["-a"]))
+      (let* ((args (append ["-a"]
+                           (if *ispell-dictionary* ["-d" *ispell-dictionary*] [])
+                           (if *ispell-personal-dict* ["--personal" *ispell-personal-dict*] [])))
              (port (open-process
                      (list path: *ispell-program*
                            arguments: args
@@ -1278,9 +1279,9 @@ S=sort by name, z=sort by size, q=quit."
   (with-catch
     (lambda (e) [])
     (lambda ()
-      (let* ((args (if *ispell-personal-dict*
-                     ["-a" "--personal" *ispell-personal-dict*]
-                     ["-a"]))
+      (let* ((args (append ["-a"]
+                           (if *ispell-dictionary* ["-d" *ispell-dictionary*] [])
+                           (if *ispell-personal-dict* ["--personal" *ispell-personal-dict*] [])))
              (port (open-process
                      (list path: *ispell-program*
                            arguments: args
@@ -1357,6 +1358,38 @@ S=sort by name, z=sort by size, q=quit."
                            (qt-plain-text-edit-set-cursor-position! ed
                              (+ idx (string-length choice)))
                            (loop (cdr words) (+ fixed 1) new-text)))))))))))))))
+
+(def (ispell-list-dictionaries)
+  "Query aspell for available dictionaries."
+  (with-catch
+    (lambda (e) ["en"])
+    (lambda ()
+      (let* ((port (open-process
+                     (list path: *ispell-program*
+                           arguments: ["dump" "dicts"]
+                           stdout-redirection: #t
+                           stderr-redirection: #f)))
+             (output (read-line port #f)))
+        (close-port port)
+        (if (or (not output) (eof-object? output))
+          ["en"]
+          (filter (lambda (s) (not (string=? s "")))
+                  (string-split output #\newline)))))))
+
+(def (cmd-ispell-change-dictionary app)
+  "Select spelling dictionary (language) via narrowing."
+  (let* ((dicts (ispell-list-dictionaries))
+         (current (or *ispell-dictionary* "default"))
+         (prompt (string-append "Dictionary (" current "): "))
+         (choice (qt-echo-read-with-narrowing
+                   app prompt dicts)))
+    (when (and choice (not (string=? choice "")))
+      (if (string=? choice "default")
+        (begin (set! *ispell-dictionary* #f)
+               (echo-message! (app-state-echo app) "Dictionary: system default"))
+        (begin (set! *ispell-dictionary* choice)
+               (echo-message! (app-state-echo app)
+                 (string-append "Dictionary: " choice)))))))
 
 ;; --- Abbreviations ---
 (def *abbrev-mode* #f)

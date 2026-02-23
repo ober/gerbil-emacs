@@ -1738,6 +1738,13 @@
   (echo-message! (app-state-echo app) "TUI uses full terminal — maximize terminal window"))
 
 ;; --- Spell checking ---
+(def *ispell-dictionary* #f) ;; language dictionary (e.g. "en", "fr", "de")
+
+(def (ispell-args)
+  "Build aspell argument list with current dictionary."
+  (if *ispell-dictionary*
+    (list "-a" "-d" *ispell-dictionary*)
+    (list "-a")))
 
 (def (cmd-ispell-word app)
   "Check spelling of word at point using aspell."
@@ -1754,7 +1761,7 @@
             (lambda ()
               (let* ((proc (open-process
                              (list path: "aspell"
-                                   arguments: (list "-a")
+                                   arguments: (ispell-args)
                                    stdin-redirection: #t
                                    stdout-redirection: #t
                                    stderr-redirection: #f)))
@@ -1816,7 +1823,7 @@
         (lambda ()
           (let* ((proc (open-process
                          (list path: "aspell"
-                               arguments: (list "-a")
+                               arguments: (ispell-args)
                                stdin-redirection: #t
                                stdout-redirection: #t
                                stderr-redirection: #f))))
@@ -1880,7 +1887,7 @@
             (lambda ()
               (let* ((proc (open-process
                              (list path: "aspell"
-                                   arguments: (list "-a")
+                                   arguments: (ispell-args)
                                    stdin-redirection: #t
                                    stdout-redirection: #t
                                    stderr-redirection: #f))))
@@ -1905,6 +1912,20 @@
                          (loop (cons word misspelled) #f)))
                       (else (loop misspelled #f)))))))))))))
 
+
+(def (cmd-ispell-change-dictionary app)
+  "Select spelling dictionary (language)."
+  (let* ((echo (app-state-echo app))
+         (current (or *ispell-dictionary* "default"))
+         (choice (app-read-string app
+                   (string-append "Dictionary (" current "): "))))
+    (when (and choice (not (string=? choice "")))
+      (if (string=? choice "default")
+        (begin (set! *ispell-dictionary* #f)
+               (echo-message! echo "Dictionary: system default"))
+        (begin (set! *ispell-dictionary* choice)
+               (echo-message! echo
+                 (string-append "Dictionary: " choice)))))))
 
 ;; --- Process management ---
 

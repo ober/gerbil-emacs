@@ -123,19 +123,25 @@
 ;;; Code Execution
 ;;;============================================================================
 
-(def (org-babel-execute lang code header-args)
-  "Execute code in the given language. Returns output string."
+(def (org-babel-execute lang code header-args buffer-text: (buffer-text #f))
+  "Execute code in the given language. Returns output string.
+   Pass buffer-text: for :noweb expansion support."
   (let* ((cmd-entry (assoc lang *org-babel-lang-commands*))
          (dir (or (hash-get header-args "dir") #f))
          (vars (org-babel-collect-vars header-args))
+         (noweb? (equal? (hash-get header-args "noweb") "yes"))
          (results-type (or (hash-get header-args "results") "output")))
     (if (not cmd-entry)
       (string-append "Error: unknown language '" lang "'")
       (let* ((cmd (cadr cmd-entry))
+             ;; Expand noweb references if enabled
+             (expanded-code (if (and noweb? buffer-text)
+                              (org-babel-expand-noweb buffer-text code)
+                              code))
              ;; Inject variable preamble
              (full-code (if (null? vars)
-                          code
-                          (string-append (org-babel-inject-variables lang vars) "\n" code)))
+                          expanded-code
+                          (string-append (org-babel-inject-variables lang vars) "\n" expanded-code)))
              ;; Write to temp file
              (ext (org-babel-file-extension lang))
              (tmp (string-append "/tmp/org-babel-" lang "." ext)))

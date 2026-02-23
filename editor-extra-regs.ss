@@ -580,6 +580,7 @@
   (register-command! 'ispell-buffer cmd-ispell-buffer)
   (register-command! 'ispell-region cmd-ispell-region)
   (register-command! 'ispell-word cmd-ispell-word)
+  (register-command! 'ispell-change-dictionary cmd-ispell-change-dictionary)
   (register-command! 'list-abbrevs cmd-list-abbrevs)
   (register-command! 'list-colors cmd-list-colors)
   (register-command! 'load-theme cmd-load-theme)
@@ -1272,7 +1273,8 @@
                         (string-append "Babel error: "
                           (with-output-to-string (lambda () (display-exception e))))))
           (lambda ()
-            (let ((output (org-babel-execute lang body header-args)))
+            (let ((output (org-babel-execute lang body header-args
+                            buffer-text: text)))
               (org-babel-insert-result ed end-line output
                 (or (hash-get header-args "results") "output"))
               (echo-message! (app-state-echo app)

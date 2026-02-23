@@ -58,6 +58,12 @@
   (echo-message! (app-state-echo app)
     (if *auto-pair-mode* "Electric pair mode ON" "Electric pair mode OFF")))
 
+(def (cmd-paredit-strict-mode app)
+  "Toggle paredit strict mode (prevent unbalancing delimiter deletion)."
+  (set! *paredit-strict-mode* (not *paredit-strict-mode*))
+  (echo-message! (app-state-echo app)
+    (if *paredit-strict-mode* "Paredit strict mode ON" "Paredit strict mode OFF")))
+
 (def (cmd-previous-buffer app)
   "Switch to the previous buffer in the buffer list."
   (let* ((bufs (buffer-list))

@@ -22,7 +22,8 @@
         :gemacs/persist
         :gemacs/qt/echo
         :gemacs/qt/highlight
-        :gemacs/qt/modeline)
+        :gemacs/qt/modeline
+        (only-in :gemacs/editor-core paredit-delimiter? auto-pair-char))
 
 ;;; ========================================================================
 ;;; Winner mode — undo/redo window configuration changes
@@ -576,11 +577,43 @@ Returns #t if changed, #f if not or if no record exists."
 ;;; Editing commands
 ;;;============================================================================
 
+(def (qt-paredit-strict-allow-delete? ed pos direction)
+  "Check if deleting char at pos is allowed in strict mode.
+   direction: 'forward or 'backward."
+  (let* ((text (qt-plain-text-edit-text ed))
+         (len (string-length text)))
+    (if (or (< pos 0) (>= pos len))
+      #t
+      (let ((ch (char->integer (string-ref text pos))))
+        (if (not (paredit-delimiter? ch))
+          #t
+          ;; Delimiter — only allow if empty pair
+          (cond
+            ((or (= ch 40) (= ch 91) (= ch 123))
+             (and (< (+ pos 1) len)
+                  (eqv? (char->integer (string-ref text (+ pos 1)))
+                         (auto-pair-char ch))))
+            ((= ch 41)
+             (and (> pos 0)
+                  (= (char->integer (string-ref text (- pos 1))) 40)))
+            ((= ch 93)
+             (and (> pos 0)
+                  (= (char->integer (string-ref text (- pos 1))) 91)))
+            ((= ch 125)
+             (and (> pos 0)
+                  (= (char->integer (string-ref text (- pos 1))) 123)))
+            (else #t)))))))
+
 (def (cmd-delete-char app)
-  (let ((ed (current-qt-editor app)))
-    (qt-plain-text-edit-move-cursor! ed QT_CURSOR_NEXT_CHAR
-                                     mode: QT_KEEP_ANCHOR)
-    (qt-plain-text-edit-remove-selected-text! ed)))
+  (let* ((ed (current-qt-editor app))
+         (pos (qt-plain-text-edit-cursor-position ed)))
+    (if (and *paredit-strict-mode*
+             (not (qt-paredit-strict-allow-delete? ed pos 'forward)))
+      (echo-message! (app-state-echo app) "Paredit: cannot delete delimiter")
+      (begin
+        (qt-plain-text-edit-move-cursor! ed QT_CURSOR_NEXT_CHAR
+                                         mode: QT_KEEP_ANCHOR)
+        (qt-plain-text-edit-remove-selected-text! ed)))))
 
 (def (cmd-backward-delete-char app)
   (let ((buf (current-qt-buffer app)))
@@ -608,10 +641,15 @@ Returns #t if changed, #f if not or if no record exists."
                                             mode: QT_KEEP_ANCHOR)
            (qt-plain-text-edit-remove-selected-text! ed))))
       (else
-       (let ((ed (current-qt-editor app)))
-         (qt-plain-text-edit-move-cursor! ed QT_CURSOR_PREVIOUS_CHAR
-                                          mode: QT_KEEP_ANCHOR)
-         (qt-plain-text-edit-remove-selected-text! ed))))))
+       (let* ((ed (current-qt-editor app))
+              (pos (qt-plain-text-edit-cursor-position ed)))
+         (if (and *paredit-strict-mode* (> pos 0)
+                  (not (qt-paredit-strict-allow-delete? ed (- pos 1) 'backward)))
+           (echo-message! (app-state-echo app) "Paredit: cannot delete delimiter")
+           (begin
+             (qt-plain-text-edit-move-cursor! ed QT_CURSOR_PREVIOUS_CHAR
+                                              mode: QT_KEEP_ANCHOR)
+             (qt-plain-text-edit-remove-selected-text! ed))))))))
 
 (def (cmd-backward-delete-char-untabify app)
   "Delete backward, converting tabs to spaces if in leading whitespace."

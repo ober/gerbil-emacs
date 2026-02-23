@@ -475,6 +475,7 @@
   (register-command! 'ispell-word cmd-ispell-word)
   (register-command! 'ispell-region cmd-ispell-region)
   (register-command! 'ispell-buffer cmd-ispell-buffer)
+  (register-command! 'ispell-change-dictionary cmd-ispell-change-dictionary)
   ;; Abbreviations
   (register-command! 'abbrev-mode cmd-abbrev-mode)
   (register-command! 'define-abbrev cmd-define-abbrev)
@@ -956,7 +957,9 @@
   (register-command! 'yasnippet-mode cmd-snippet-expand)
   (register-command! 'yas-expand cmd-snippet-expand)
   (register-command! 'paredit-mode cmd-toggle-auto-pair-mode)
+  (register-command! 'paredit-strict-mode cmd-paredit-strict-mode)
   (register-command! 'smartparens-mode cmd-toggle-auto-pair-mode)
+  (register-command! 'smartparens-strict-mode cmd-paredit-strict-mode)
   (register-command! 'undo-tree-mode cmd-undo-history)
   (register-command! 'treemacs-toggle cmd-treemacs)
   (register-command! 'treemacs-select-window cmd-treemacs)

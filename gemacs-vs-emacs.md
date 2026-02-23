@@ -473,7 +473,7 @@
 | **Babel** (code blocks) | :large_blue_circle: | 8 languages, execution, tangling |
 | Babel session persistence | :red_circle: | Sessions stored but not reused |
 | Babel :var evaluation | :red_circle: | Only literal values |
-| Babel :noweb expansion | :red_circle: | Not implemented |
+| Babel :noweb expansion | :white_check_mark: | `<<block-name>>` refs expanded when `:noweb yes` |
 | **Export** | :large_blue_circle: | HTML, Markdown, LaTeX, ASCII |
 | Export footnotes/cross-refs | :red_circle: | Not implemented |
 | Custom export backends | :red_circle: | Not implemented |
@@ -627,10 +627,10 @@
 | Suggestion menu | :white_check_mark: | Interactive selection from ispell output |
 | Flyspell (on-the-fly) | :large_blue_circle: | `flyspell-mode` toggles on-demand spell check with aspell; TUI uses Scintilla squiggle indicators, Qt reports misspelled words |
 | Personal dictionary | :large_blue_circle: | Supported via ispell |
-| Language selection | :red_circle: | Not implemented |
+| Language selection | :white_check_mark: | `ispell-change-dictionary` with narrowing (Qt) or prompt (TUI) |
 | Aspell/Hunspell backend | :large_blue_circle: | Uses ispell subprocess |
 
-**Summary:** Interactive spell-checking works via ispell. Flyspell mode provides on-demand buffer spell-checking with visual indicators (TUI) and word-list reporting (Qt) using aspell backend.
+**Summary:** Interactive spell-checking works via ispell with language selection. Flyspell mode provides on-demand buffer spell-checking with visual indicators (TUI) and word-list reporting (Qt) using aspell backend.
 
 ---
 
@@ -683,10 +683,10 @@
 | Join sexps | :white_check_mark: | Merge adjacent |
 | Backward slurp/barf | :white_check_mark: | `paredit-slurp-backward`, `paredit-barf-backward` |
 | Convolute sexp | :white_check_mark: | `M-x paredit-convolute-sexp` swaps inner/outer |
-| Paredit strict mode | :red_circle: | No delimiter balance enforcement |
-| Smartparens | :red_circle: | Not implemented |
+| Paredit strict mode | :white_check_mark: | Prevents deleting delimiters that would unbalance; allows empty pair deletion |
+| Smartparens | :large_blue_circle: | Aliased to paredit strict mode |
 
-**Summary:** Comprehensive paredit: forward and backward slurp/barf, wrap, splice, raise, split, join. Missing strict mode and smartparens.
+**Summary:** Complete paredit: forward and backward slurp/barf, wrap, splice, raise, split, join, convolute, strict mode.
 
 ---
 

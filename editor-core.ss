@@ -292,6 +292,39 @@
   "Return #t if ch is a closing delimiter that should be skipped over."
   (or (= ch 41) (= ch 93) (= ch 125) (= ch 34)))  ; ) ] } "
 
+(def (paredit-delimiter? ch)
+  "Return #t if ch is a paren/bracket/brace delimiter (not quotes)."
+  (or (= ch 40) (= ch 41) (= ch 91) (= ch 93) (= ch 123) (= ch 125)))
+
+(def (paredit-strict-allow-delete? ed pos direction)
+  "In strict mode, check if deleting char at pos is allowed.
+   direction: 'backward (backspace) or 'forward (delete).
+   Allows deletion of empty pairs () [] {} and non-delimiter chars."
+  (let* ((text-len (send-message ed SCI_GETLENGTH 0 0)))
+    (if (or (<= text-len 0) (< pos 0) (>= pos text-len))
+      #t
+      (let ((ch (send-message ed SCI_GETCHARAT pos 0)))
+        (if (not (paredit-delimiter? ch))
+          #t
+          ;; It's a delimiter — only allow if it's an empty pair
+          (cond
+            ;; Opening delimiter: allow if next char is matching close
+            ((or (= ch 40) (= ch 91) (= ch 123))
+             (and (< (+ pos 1) text-len)
+                  (let ((next (send-message ed SCI_GETCHARAT (+ pos 1) 0)))
+                    (eqv? next (auto-pair-char ch)))))
+            ;; Closing delimiter: allow if prev char is matching open
+            ((= ch 41)  ; )
+             (and (> pos 0)
+                  (= (send-message ed SCI_GETCHARAT (- pos 1) 0) 40)))
+            ((= ch 93)  ; ]
+             (and (> pos 0)
+                  (= (send-message ed SCI_GETCHARAT (- pos 1) 0) 91)))
+            ((= ch 125) ; }
+             (and (> pos 0)
+                  (= (send-message ed SCI_GETCHARAT (- pos 1) 0) 123)))
+            (else #t)))))))
+
 (def (cmd-self-insert! app ch)
   ;; Clear search highlights on any text insertion
   (clear-search-highlights! (current-editor app))
@@ -491,7 +524,11 @@
 ;;;============================================================================
 
 (def (cmd-delete-char app)
-  (editor-send-key (current-editor app) SCK_DELETE))
+  (let ((ed (current-editor app)))
+    (if (and *paredit-strict-mode*
+             (not (paredit-strict-allow-delete? ed (editor-get-current-pos ed) 'forward)))
+      (echo-message! (app-state-echo app) "Paredit: cannot delete delimiter")
+      (editor-send-key ed SCK_DELETE))))
 
 (def (cmd-backward-delete-char app)
   (let ((buf (current-buffer-from-app app)))
@@ -516,7 +553,13 @@
          (when ts
            (terminal-send-raw! ts "\x7f;"))))  ; DEL character
       (else
-       (editor-send-key (current-editor app) SCK_BACK)))))
+       (let ((ed (current-editor app)))
+         (if (and *paredit-strict-mode*
+                  (let ((pos (editor-get-current-pos ed)))
+                    (and (> pos 0)
+                         (not (paredit-strict-allow-delete? ed (- pos 1) 'backward)))))
+           (echo-message! (app-state-echo app) "Paredit: cannot delete delimiter")
+           (editor-send-key ed SCK_BACK)))))))
 
 (def (cmd-backward-delete-char-untabify app)
   "Delete backward, converting tabs to spaces if in leading whitespace."
