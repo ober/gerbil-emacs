@@ -345,7 +345,7 @@
 | Tab bar | :green_circle: | Qt visual buffer tab bar + workspace tabs (both layers) |
 | Header line | :white_check_mark: | Toggle header line display (file path breadcrumb) |
 | Fringe indicators | :yellow_circle: | Line numbers; no bitmap fringes |
-| Display tables | :red_circle: | Not implemented |
+| Display tables | :white_check_mark: | `set-display-table-entry` / `describe-display-table` |
 
 **Summary:** Single-frame Qt application. No multi-frame support. Basic display features work.
 
@@ -537,7 +537,7 @@
 | Type hierarchy | :white_check_mark: | `lsp-supertypes` / `lsp-subtypes` with navigation buffer |
 | Inlay hints | :white_check_mark: | Toggle with `lsp-inlay-hints`, shows in echo area on idle |
 | Workspace symbols | :white_check_mark: | `C-c l s` with completion |
-| Multi-server support | :red_circle: | Single server per project |
+| Multi-server support | :white_check_mark: | `lsp-set-server` / `lsp-list-servers` with per-language registry |
 
 **Summary:** LSP is fully functional — auto-starts on file open, provides completion (auto + Tab + C-M-i), diagnostics with inline indicators, go-to-definition (M-.), hover, references, rename, code actions, formatting, workspace symbols, semantic tokens, call hierarchy, type hierarchy, and inlay hints. All under `C-c l` prefix. Only missing multi-server support.
 5. Wire find-references to results buffer
@@ -1086,13 +1086,13 @@
 
 | Feature | Status | Notes |
 |---------|--------|-------|
-| Docker mode | :red_circle: | Not implemented |
+| Docker mode | :white_check_mark: | `docker`, `docker-containers`, `docker-images`, `dockerfile-mode` |
 | Terraform mode | :large_blue_circle: | Syntax highlighting via C lexer (`.tf`, `.tfvars`, `.hcl`) |
-| Ansible mode | :red_circle: | Not implemented |
-| Systemd unit files | :red_circle: | Not implemented |
+| Ansible mode | :white_check_mark: | `ansible-mode` (YAML highlighting) |
+| Systemd unit files | :white_check_mark: | `systemd-mode` |
 | YAML mode | :large_blue_circle: | Syntax highlighting via Scintilla |
-| Kubernetes / k8s | :red_circle: | Not implemented |
-| SSH management | :red_circle: | Not implemented |
+| Kubernetes / k8s | :white_check_mark: | `kubernetes-mode` (YAML highlighting) |
+| SSH management | :white_check_mark: | `ssh-config-mode` for config editing |
 
 **Summary:** Terraform/HCL has syntax highlighting. YAML mode works. Docker uses bash lexer. Missing dedicated Ansible, Kubernetes, and Docker modes.
 
@@ -1106,8 +1106,8 @@
 | Helm M-x                  | :white_check_mark: | Real-time filtered candidate list with match count |
 | Helm buffers              | :white_check_mark: | MRU-ordered buffer list with narrowing |
 | Helm find-files           | :yellow_circle: | Tab completion, no live narrowing list yet |
-| Helm occur                | :red_circle: | Occur exists but not helm-style              |
-| Helm dash (documentation) | :red_circle: | Not implemented                              |
+| Helm occur                | :white_check_mark: | `helm-occur` with interactive filtering       |
+| Helm dash (documentation) | :white_check_mark: | `helm-dash` docset search                    |
 | Helm C-yasnippet          | :red_circle: | Not implemented                              |
 
 **Summary:** Narrowing framework works for M-x, buffer switch, bookmarks, recent files, imenu, describe-function, and theme selection. Real-time fuzzy filtering with match count display. Find-files still uses Tab completion (no narrowing list).

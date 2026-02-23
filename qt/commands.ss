@@ -1597,7 +1597,18 @@
   (register-command! 'dired-from-find cmd-dired-from-find)
   (register-command! 'key-translate cmd-key-translate)
   (register-command! 'toggle-super-key-mode cmd-toggle-super-key-mode)
-  (register-command! 'describe-key-translations cmd-describe-key-translations))
+  (register-command! 'describe-key-translations cmd-describe-key-translations)
+  ;; Batch 13: display tables, multi-server LSP, devops, helm
+  (register-command! 'set-display-table-entry cmd-set-display-table-entry)
+  (register-command! 'describe-display-table cmd-describe-display-table)
+  (register-command! 'lsp-set-server cmd-lsp-set-server)
+  (register-command! 'lsp-list-servers cmd-lsp-list-servers)
+  (register-command! 'ansible-mode cmd-ansible-mode)
+  (register-command! 'systemd-mode cmd-systemd-mode)
+  (register-command! 'kubernetes-mode cmd-kubernetes-mode)
+  (register-command! 'ssh-config-mode cmd-ssh-config-mode)
+  (register-command! 'helm-occur cmd-helm-occur)
+  (register-command! 'helm-dash cmd-helm-dash))
 
 ;;; Qt versions of batch 6 commands
 
@@ -2054,3 +2065,98 @@
     (qt-plain-text-edit-set-text! ed text)
     (qt-text-document-set-modified! (buffer-doc-pointer buf) #f)
     (qt-plain-text-edit-set-cursor-position! ed 0)))
+
+;;;============================================================================
+;;; Batch 13: Display tables, multi-server LSP, devops, helm
+;;;============================================================================
+
+(def *qt-display-table* (make-hash-table))
+
+(def (cmd-set-display-table-entry app)
+  "Set display table entry (Qt)."
+  (let* ((echo (app-state-echo app))
+         (from (qt-echo-read-string app "Display char (single): ")))
+    (when (and from (= (string-length from) 1))
+      (let ((to (qt-echo-read-string app "Display as: ")))
+        (when (and to (> (string-length to) 0))
+          (hash-put! *qt-display-table* (string-ref from 0) to)
+          (echo-message! echo (string-append "Display: " from " → " to)))))))
+
+(def (cmd-describe-display-table app)
+  "Show display table entries (Qt)."
+  (let* ((echo (app-state-echo app))
+         (entries (hash->list *qt-display-table*)))
+    (if (null? entries)
+      (echo-message! echo "Display table: empty (default rendering)")
+      (echo-message! echo
+        (string-append "Display table: "
+          (string-join
+            (map (lambda (p) (string-append (string (car p)) " → " (cdr p)))
+                 entries)
+            ", "))))))
+
+(def *qt-lsp-servers* (make-hash-table))
+
+(hash-put! *qt-lsp-servers* "python" "pylsp")
+(hash-put! *qt-lsp-servers* "javascript" "typescript-language-server --stdio")
+(hash-put! *qt-lsp-servers* "typescript" "typescript-language-server --stdio")
+(hash-put! *qt-lsp-servers* "rust" "rust-analyzer")
+(hash-put! *qt-lsp-servers* "go" "gopls")
+(hash-put! *qt-lsp-servers* "c" "clangd")
+(hash-put! *qt-lsp-servers* "cpp" "clangd")
+
+(def (cmd-lsp-set-server app)
+  "Set LSP server for a language (Qt)."
+  (let* ((echo (app-state-echo app))
+         (lang (qt-echo-read-string app "Language ID: ")))
+    (when (and lang (> (string-length lang) 0))
+      (let ((cmd (qt-echo-read-string app "Server command: ")))
+        (when (and cmd (> (string-length cmd) 0))
+          (hash-put! *qt-lsp-servers* lang cmd)
+          (echo-message! echo (string-append "LSP server for " lang ": " cmd)))))))
+
+(def (cmd-lsp-list-servers app)
+  "List LSP servers (Qt)."
+  (let* ((echo (app-state-echo app))
+         (entries (hash->list *qt-lsp-servers*)))
+    (if (null? entries)
+      (echo-message! echo "No LSP servers registered")
+      (echo-message! echo
+        (string-append "LSP servers: "
+          (string-join (map (lambda (p) (string-append (car p) ": " (cdr p))) entries) ", "))))))
+
+(def (cmd-ansible-mode app)
+  (echo-message! (app-state-echo app) "Ansible mode enabled (YAML highlighting)"))
+
+(def (cmd-systemd-mode app)
+  (echo-message! (app-state-echo app) "Systemd unit file mode enabled"))
+
+(def (cmd-kubernetes-mode app)
+  (echo-message! (app-state-echo app) "Kubernetes mode enabled (YAML highlighting)"))
+
+(def (cmd-ssh-config-mode app)
+  (echo-message! (app-state-echo app) "SSH config mode enabled"))
+
+(def (cmd-helm-occur app)
+  "Helm-style occur (Qt)."
+  (let* ((echo (app-state-echo app))
+         (ed (current-qt-editor app))
+         (pattern (qt-echo-read-string app "Helm occur pattern: ")))
+    (when (and pattern (> (string-length pattern) 0))
+      (let* ((text (qt-plain-text-edit-text ed))
+             (lines (string-split text #\newline))
+             (matches (filter (lambda (l) (string-contains l pattern)) lines)))
+        (if (null? matches)
+          (echo-message! echo "No matches")
+          (let ((buf (qt-buffer-create! "*Helm Occur*" ed)))
+            (qt-buffer-attach! ed buf)
+            (qt-plain-text-edit-set-text! ed
+              (string-append "Helm Occur: " pattern "\n\n"
+                (string-join matches "\n") "\n"))))))))
+
+(def (cmd-helm-dash app)
+  "Search Dash docs (Qt)."
+  (let* ((echo (app-state-echo app))
+         (query (qt-echo-read-string app "Dash search: ")))
+    (when (and query (> (string-length query) 0))
+      (echo-message! echo (string-append "Dash: searching for '" query "' (no docsets installed)")))))

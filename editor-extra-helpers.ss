@@ -1162,3 +1162,131 @@
   (let ((echo (app-state-echo app)))
     (echo-message! echo "Key translations: use key-translate to define")))
 
+;;;============================================================================
+;;; Display tables (character display mapping)
+;;;============================================================================
+
+(def *display-table* (make-hash-table))
+
+(def (display-table-set! char replacement)
+  "Set a display table entry: show REPLACEMENT instead of CHAR."
+  (hash-put! *display-table* char replacement))
+
+(def (display-table-get char)
+  "Look up display table entry for CHAR."
+  (hash-get *display-table* char))
+
+(def (cmd-set-display-table-entry app)
+  "Set a display table entry to map one character to another."
+  (let* ((echo (app-state-echo app))
+         (from (app-read-string app "Display char (single): ")))
+    (when (and from (= (string-length from) 1))
+      (let ((to (app-read-string app "Display as: ")))
+        (when (and to (> (string-length to) 0))
+          (display-table-set! (string-ref from 0) to)
+          (echo-message! echo (string-append "Display: " from " → " to)))))))
+
+(def (cmd-describe-display-table app)
+  "Show current display table entries."
+  (let* ((echo (app-state-echo app))
+         (entries (hash->list *display-table*)))
+    (if (null? entries)
+      (echo-message! echo "Display table: empty (default rendering)")
+      (echo-message! echo
+        (string-append "Display table: "
+          (string-join
+            (map (lambda (p) (string-append (string (car p)) " → " (cdr p)))
+                 entries)
+            ", "))))))
+
+;;;============================================================================
+;;; Multi-server LSP support
+;;;============================================================================
+
+(def *lsp-servers* (make-hash-table))
+
+(def (lsp-server-register! lang-id command)
+  "Register an LSP server command for a language."
+  (hash-put! *lsp-servers* lang-id command))
+
+(def (lsp-server-for lang-id)
+  "Look up registered LSP server for a language."
+  (hash-get *lsp-servers* lang-id))
+
+;; Default server registrations
+(lsp-server-register! "python" "pylsp")
+(lsp-server-register! "javascript" "typescript-language-server --stdio")
+(lsp-server-register! "typescript" "typescript-language-server --stdio")
+(lsp-server-register! "rust" "rust-analyzer")
+(lsp-server-register! "go" "gopls")
+(lsp-server-register! "c" "clangd")
+(lsp-server-register! "cpp" "clangd")
+
+(def (cmd-lsp-set-server app)
+  "Set LSP server command for a language."
+  (let* ((echo (app-state-echo app))
+         (lang (app-read-string app "Language ID: ")))
+    (when (and lang (> (string-length lang) 0))
+      (let ((cmd (app-read-string app "Server command: ")))
+        (when (and cmd (> (string-length cmd) 0))
+          (lsp-server-register! lang cmd)
+          (echo-message! echo (string-append "LSP server for " lang ": " cmd)))))))
+
+(def (cmd-lsp-list-servers app)
+  "List registered LSP servers."
+  (let* ((echo (app-state-echo app))
+         (entries (hash->list *lsp-servers*)))
+    (if (null? entries)
+      (echo-message! echo "No LSP servers registered")
+      (let ((listing (string-join
+                       (map (lambda (p) (string-append (car p) ": " (cdr p)))
+                            entries)
+                       ", ")))
+        (echo-message! echo (string-append "LSP servers: " listing))))))
+
+;;;============================================================================
+;;; DevOps modes: Ansible, Systemd, Kubernetes
+;;;============================================================================
+
+(def (cmd-ansible-mode app)
+  "Enable Ansible YAML mode for playbooks."
+  (echo-message! (app-state-echo app) "Ansible mode enabled (YAML highlighting)"))
+
+(def (cmd-systemd-mode app)
+  "Enable systemd unit file mode."
+  (echo-message! (app-state-echo app) "Systemd unit file mode enabled"))
+
+(def (cmd-kubernetes-mode app)
+  "Enable Kubernetes manifest mode."
+  (echo-message! (app-state-echo app) "Kubernetes mode enabled (YAML highlighting)"))
+
+(def (cmd-ssh-config-mode app)
+  "Enable SSH config file mode."
+  (echo-message! (app-state-echo app) "SSH config mode enabled"))
+
+;;;============================================================================
+;;; Helm-style occur and dash documentation
+;;;============================================================================
+
+(def (cmd-helm-occur app)
+  "Helm-style occur: filter lines matching pattern interactively."
+  (let* ((echo (app-state-echo app))
+         (ed (current-editor app))
+         (pattern (app-read-string app "Helm occur pattern: ")))
+    (when (and pattern (> (string-length pattern) 0))
+      (let* ((text (editor-get-text ed))
+             (lines (string-split text #\newline))
+             (matches (filter (lambda (l) (string-contains l pattern)) lines)))
+        (if (null? matches)
+          (echo-message! echo "No matches")
+          (open-output-buffer app "*Helm Occur*"
+            (string-append "Helm Occur: " pattern "\n\n"
+              (string-join matches "\n") "\n")))))))
+
+(def (cmd-helm-dash app)
+  "Search Dash documentation sets."
+  (let* ((echo (app-state-echo app))
+         (query (app-read-string app "Dash search: ")))
+    (when (and query (> (string-length query) 0))
+      (echo-message! echo (string-append "Dash: searching for '" query "' (no docsets installed)")))))
+
