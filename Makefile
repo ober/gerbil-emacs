@@ -215,7 +215,7 @@ build-gemacs-static-qt: check-root
 # -----------------------------------------------------------------------------
 
 # Static TUI binary via Docker (fast — uses pre-built deps image)
-# Always chown .gerbil back to host user, even on build failure
+# Runs build as host UID:GID via su-exec so .gerbil/ files are never root-owned
 linux-static-docker: clean-docker
 	@docker image inspect $(DEPS_IMAGE) >/dev/null 2>&1 || \
 	  { echo "ERROR: Deps image '$(DEPS_IMAGE)' not found. Run 'make docker-deps' first."; exit 1; }
@@ -223,10 +223,14 @@ linux-static-docker: clean-docker
 	  --ulimit nofile=8192:8192 \
 	  -v $(CURDIR):/src:z \
 	  $(DEPS_IMAGE) \
-	  sh -c "cd /src && make build-gemacs-static; \
-	         RC=\$$?; chown -R $(UID):$(GID) .gerbil 2>/dev/null; exit \$$RC"
+	  sh -c "chmod 755 /root && \
+	         chown -R $(UID):$(GID) /opt/ /root/.gerbil /deps && \
+	         mkdir -p /tmp/gemacs-build && chown $(UID):$(GID) /tmp/gemacs-build && \
+	         exec su-exec $(UID):$(GID) env HOME=/tmp/gemacs-build sh -c '\
+	           cd /src && make build-gemacs-static'"
 
 # Static Qt binary via Docker (fast — uses pre-built deps image)
+# Runs build as host UID:GID via su-exec so .gerbil/ files are never root-owned
 linux-static-qt-docker: clean-docker
 	@docker image inspect $(DEPS_IMAGE) >/dev/null 2>&1 || \
 	  { echo "ERROR: Deps image '$(DEPS_IMAGE)' not found. Run 'make docker-deps' first."; exit 1; }
@@ -234,8 +238,11 @@ linux-static-qt-docker: clean-docker
 	  --ulimit nofile=8192:8192 \
 	  -v $(CURDIR):/src:z \
 	  $(DEPS_IMAGE) \
-	  sh -c "cd /src && make build-gemacs-static-qt; \
-	         RC=\$$?; chown -R $(UID):$(GID) .gerbil 2>/dev/null; exit \$$RC"
+	  sh -c "chmod 755 /root && \
+	         chown -R $(UID):$(GID) /opt/ /root/.gerbil /deps && \
+	         mkdir -p /tmp/gemacs-build && chown $(UID):$(GID) /tmp/gemacs-build && \
+	         exec su-exec $(UID):$(GID) env HOME=/tmp/gemacs-build sh -c '\
+	           cd /src && make build-gemacs-static-qt'"
 
 # -----------------------------------------------------------------------------
 # Self-contained fallbacks (build everything from scratch in one container)
@@ -296,13 +303,15 @@ linux-static-docker-full: clean-docker
 	  -v $(CURDIR):/src:z \
 	  -v $(SCI_SRC):/deps/gerbil-scintilla:z \
 	  $(DOCKER_IMAGE) \
-	  sh -c "apk add --no-cache g++ git curl make \
+	  sh -c "apk add --no-cache g++ git curl make su-exec \
 	           pcre2-dev pcre2-static \
 	           openssl-dev openssl-libs-static \
 	           sqlite-dev sqlite-static \
 	           zlib-static && \
-	         cd /src && make build-static; \
-	         RC=\$$?; chown -R $(UID):$(GID) .gerbil 2>/dev/null; exit \$$RC"
+	         chown -R $(UID):$(GID) /opt/ && \
+	         mkdir -p /tmp/gemacs-build && chown $(UID):$(GID) /tmp/gemacs-build && \
+	         exec su-exec $(UID):$(GID) env HOME=/tmp/gemacs-build sh -c '\
+	           cd /src && make build-static'"
 
 # Self-contained static Qt binary via Docker (no deps image needed)
 linux-static-qt-docker-full: clean-docker
@@ -312,9 +321,11 @@ linux-static-qt-docker-full: clean-docker
 	  -v $(SCI_SRC):/deps/gerbil-scintilla:z \
 	  -v $(QT_SRC):/deps/gerbil-qt:z \
 	  $(DOCKER_IMAGE) \
-	  sh -c "apk add --no-cache g++ git curl make \
+	  sh -c "apk add --no-cache g++ git curl make su-exec \
 	           pcre2-dev pcre2-static \
 	           qt6-qtbase-dev \
 	           qscintilla-dev 2>/dev/null; \
-	         cd /src && make build-static-qt; \
-	         RC=\$$?; chown -R $(UID):$(GID) .gerbil 2>/dev/null; exit \$$RC"
+	         chown -R $(UID):$(GID) /opt/ && \
+	         mkdir -p /tmp/gemacs-build && chown $(UID):$(GID) /tmp/gemacs-build && \
+	         exec su-exec $(UID):$(GID) env HOME=/tmp/gemacs-build sh -c '\
+	           cd /src && make build-static-qt'"

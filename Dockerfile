@@ -14,6 +14,7 @@ FROM gerbil/gerbil:${ARCH}-master
 
 # ── Phase 1: Alpine build deps ──────────────────────────────────────────
 RUN apk add --no-cache \
+    su-exec \
     cmake samurai perl python3 linux-headers patchelf \
     libxcb-dev xcb-util-dev xcb-util-image-dev \
     xcb-util-keysyms-dev xcb-util-renderutil-dev \
