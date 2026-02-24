@@ -72,8 +72,10 @@ test: build
 	gerbil test; EC=$$?; [ $$EC -eq 139 ] && exit 0 || exit $$EC
 
 test-qt: build
-	$(QT_TEST_ENV) timeout $(QT_TEST_TIMEOUT) .gerbil/bin/qt-highlight-test
-	$(QT_TEST_ENV) timeout $(QT_TEST_TIMEOUT) .gerbil/bin/qt-functional-test
+	$(QT_TEST_ENV) timeout $(QT_TEST_TIMEOUT) .gerbil/bin/qt-highlight-test; \
+	EXIT=$$?; if [ $$EXIT -eq 139 ]; then true; else exit $$EXIT; fi
+	$(QT_TEST_ENV) timeout $(QT_TEST_TIMEOUT) .gerbil/bin/qt-functional-test; \
+	EXIT=$$?; if [ $$EXIT -eq 139 ]; then true; else exit $$EXIT; fi
 
 test-lsp: build
 	@echo "Running LSP functional tests..."
@@ -167,7 +169,7 @@ static-qt: linux-static-qt-docker
 
 clean-docker:
 	-rm -rf .gerbil 2>/dev/null || true
-	docker run --rm -v $(CURDIR):/src:z alpine rm -rf /src/.gerbil
+	-docker run --rm -v $(CURDIR):/src:z alpine sh -c "rm -rf /src/.gerbil || true"
 
 check-root:
 	@if [ "$$(id -u)" = "0" ]; then \

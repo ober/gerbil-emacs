@@ -32,35 +32,50 @@ Org-mode `<s TAB` has regressed 5 times. Each time, the leaf-function tests in `
 3. **Key sequences**: Test via `(sim-key! app ev)` for single keys, or multiple `sim-key!` calls for multi-key sequences.
 4. **Command registration**: Always call `(register-all-commands!)` and `(setup-default-bindings!)` at the start of functional tests.
 
-## Build Verification: MANDATORY Before Commit
+## Build Verification: MANDATORY Before Commit or Push
 
-**You MUST verify ALL builds and run tests BEFORE committing and pushing.** Never commit code that hasn't been verified to build and pass tests. Follow this checklist in order:
+**NEVER commit or push code without completing ALL of the following steps.** Every step must pass. If ANY step fails, fix it before committing. No exceptions.
 
-1. **`make build`** — dynamic TUI + Qt build must complete without errors
-2. **Verify binaries**: `.gerbil/bin/gemacs --version` and `QT_QPA_PLATFORM=offscreen .gerbil/bin/gemacs-qt --version`
-3. **`make test`** — all TUI tests must pass
-4. **`make static-qt`** — static Qt Docker build must complete and produce a working binary
-5. **Verify static binary**: `QT_QPA_PLATFORM=offscreen .gerbil/bin/gemacs-qt --version`
+### Full verification checklist (run in order)
 
-**BOTH `make build` AND `make static-qt` are required.** The static build uses a Docker image with pinned dependency versions and may fail even when the dynamic build succeeds (e.g., new constants/exports added to gerbil-scintilla or gerbil-qt that aren't in the Docker deps image). If `make static-qt` fails with unbound identifier errors, rebuild the deps image with `make docker-deps` first.
+1. **`make clean && make build`** — dynamic TUI + Qt build must complete without errors
+2. **Verify dynamic TUI**: `.gerbil/bin/gemacs --version` must print version without error
+3. **Verify dynamic Qt**: `QT_QPA_PLATFORM=offscreen .gerbil/bin/gemacs-qt --version` must print version without error
+4. **`make test`** — all TUI tests must pass
+5. **`make test-qt`** — all Qt headless tests must pass
+6. **`make static-qt`** — static Qt Docker build must complete without errors
+7. **Verify static TUI**: `.gerbil/bin/gemacs --version` must print version without error
+8. **Verify static Qt**: `QT_QPA_PLATFORM=offscreen .gerbil/bin/gemacs-qt --version` must print version without error
 
-If any step fails, **fix it before committing**. Do not push broken builds.
+### Why ALL FOUR binaries matter
+
+There are 4 distinct build outputs that can break independently:
+- **Dynamic TUI** (`make build` → `gemacs`) — the terminal editor
+- **Dynamic Qt** (`make build` → `gemacs-qt`) — the GUI editor
+- **Static TUI** (`make static-qt` → `gemacs`) — statically linked terminal editor
+- **Static Qt** (`make static-qt` → `gemacs-qt`) — statically linked GUI editor
+
+The static build uses a Docker image with pinned dependency versions and may fail even when the dynamic build succeeds (e.g., new constants/exports added to gerbil-scintilla or gerbil-qt that aren't in the Docker deps image). If `make static-qt` fails with unbound identifier errors, rebuild the deps image with `make docker-deps` first.
+
+**All 4 binaries must compile AND run `--version` without error.** A commit that breaks any one of them is a broken commit.
 
 ### Build commands
 
 ```bash
+make clean      # Clean all build artifacts (run before switching dynamic ↔ static)
 make build      # Build TUI and Qt binaries (dynamic)
-make test       # Build + run all TUI tests
+make test       # Build + run TUI tests
 make test-qt    # Build + run Qt headless tests
 make test-all   # Build + run all tests (TUI + Qt)
-make static-qt  # Static Qt binary via Docker (requires docker-deps image)
+make static-qt  # Static TUI + Qt binaries via Docker (requires docker-deps image)
+make docker-deps  # Rebuild Docker deps image (when dependencies change)
 ```
 
-Individual test file:
-```bash
-HOME=/home/user LD_LIBRARY_PATH=/home/linuxbrew/.linuxbrew/opt/openssl@3/lib \
-  GERBIL_LOADPATH=/home/user/.gerbil/lib gxi functional-test.ss
-```
+### Troubleshooting
+
+- **`clean-docker` fails with permission errors**: Previous Docker builds may leave root-owned files in `.gerbil/`. Run `sudo rm -rf .gerbil` on the host, then retry.
+- **`patchelf` errors on static binaries**: Expected — static binaries don't have `.dynamic` sections. The `-` prefix in the Makefile lets these errors be ignored safely.
+- **Stale artifacts after switching static ↔ dynamic**: Always `make clean` (or `rm -rf .gerbil`) when switching between build modes.
 
 ## Feature Parity: "As is in Qt, it is in TUI!"
 
