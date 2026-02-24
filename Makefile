@@ -218,7 +218,7 @@ linux-static-docker: clean-docker
 	@docker image inspect $(DEPS_IMAGE) >/dev/null 2>&1 || \
 	  { echo "ERROR: Deps image '$(DEPS_IMAGE)' not found. Run 'make docker-deps' first."; exit 1; }
 	docker run --rm \
-	  --ulimit nofile=1024:1024 \
+	  --ulimit nofile=8192:8192 \
 	  -v $(CURDIR):/src:z \
 	  $(DEPS_IMAGE) \
 	  sh -c "cd /src && make build-gemacs-static; \
@@ -229,7 +229,7 @@ linux-static-qt-docker: clean-docker
 	@docker image inspect $(DEPS_IMAGE) >/dev/null 2>&1 || \
 	  { echo "ERROR: Deps image '$(DEPS_IMAGE)' not found. Run 'make docker-deps' first."; exit 1; }
 	docker run --rm \
-	  --ulimit nofile=1024:1024 \
+	  --ulimit nofile=8192:8192 \
 	  -v $(CURDIR):/src:z \
 	  $(DEPS_IMAGE) \
 	  sh -c "cd /src && make build-gemacs-static-qt; \
@@ -290,7 +290,7 @@ build-static-qt: check-root
 # Self-contained static TUI binary via Docker (no deps image needed)
 linux-static-docker-full: clean-docker
 	docker run --rm \
-	  --ulimit nofile=1024:1024 \
+	  --ulimit nofile=8192:8192 \
 	  -v $(CURDIR):/src:z \
 	  -v $(SCI_SRC):/deps/gerbil-scintilla:z \
 	  $(DOCKER_IMAGE) \
@@ -305,7 +305,7 @@ linux-static-docker-full: clean-docker
 # Self-contained static Qt binary via Docker (no deps image needed)
 linux-static-qt-docker-full: clean-docker
 	docker run --rm \
-	  --ulimit nofile=1024:1024 \
+	  --ulimit nofile=8192:8192 \
 	  -v $(CURDIR):/src:z \
 	  -v $(SCI_SRC):/deps/gerbil-scintilla:z \
 	  -v $(QT_SRC):/deps/gerbil-qt:z \
