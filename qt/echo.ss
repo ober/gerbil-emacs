@@ -324,10 +324,12 @@
                (narrowing-move-selection! -1)))
             (else (void))))))
     ;; Connect text-changed for real-time narrowing filter
+    ;; qt-on-text-changed! dispatches via ffi_qt_callback_string which passes
+    ;; the new text as an argument — handler must accept it.
     (qt-on-text-changed! input
-      (lambda ()
+      (lambda (text)
         (when *mb-narrowing?*
-          (narrowing-update-list! (qt-line-edit-text input)))))
+          (narrowing-update-list! text))))
     ;; Double-click on list item selects it
     (qt-on-item-double-clicked! list-widget
       (lambda ()
