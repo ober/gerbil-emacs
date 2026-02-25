@@ -191,6 +191,10 @@ docker-deps:
 # In-container targets (for use inside the deps image)
 # -----------------------------------------------------------------------------
 
+# gerbil-shell package path inside deps image
+GSH_PKG_DIR = /root/.gerbil/pkg/github.com/ober/gerbil-shell
+GSH_LIB_DIR = $(GSH_PKG_DIR)/.gerbil/lib
+
 # Build only gemacs TUI inside the pre-built deps image
 build-gemacs-static: check-root
 	cd /src && \
@@ -198,7 +202,8 @@ build-gemacs-static: check-root
 	  GEMACS_BUILD_TUI_ONLY=1 \
 	  GEMACS_STATIC=1 \
 	  GEMACS_SCI_BASE=/deps/gerbil-scintilla \
-	  GERBIL_LOADPATH=/deps/gerbil-scintilla/.gerbil/lib:/root/.gerbil/lib \
+	  GEMACS_GSH_BASE=$(GSH_PKG_DIR) \
+	  GERBIL_LOADPATH=/deps/gerbil-scintilla/.gerbil/lib:$(GSH_LIB_DIR):/root/.gerbil/lib \
 	  gerbil build
 
 # Build gemacs TUI + Qt inside the pre-built deps image
@@ -208,8 +213,9 @@ build-gemacs-static-qt: check-root
 	  GEMACS_STATIC=1 \
 	  GEMACS_SCI_BASE=/deps/gerbil-scintilla \
 	  GEMACS_QT_BASE=/deps/gerbil-qt \
+	  GEMACS_GSH_BASE=$(GSH_PKG_DIR) \
 	  PKG_CONFIG_PATH=/opt/qt6-static/lib/pkgconfig \
-	  GERBIL_LOADPATH=/deps/gerbil-scintilla/.gerbil/lib:/deps/gerbil-qt/.gerbil/lib:/root/.gerbil/lib \
+	  GERBIL_LOADPATH=/deps/gerbil-scintilla/.gerbil/lib:/deps/gerbil-qt/.gerbil/lib:$(GSH_LIB_DIR):/root/.gerbil/lib \
 	  gerbil build
 
 # -----------------------------------------------------------------------------

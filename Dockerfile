@@ -191,6 +191,11 @@ RUN gxpkg link gerbil-scintilla /deps/gerbil-scintilla && \
 # Install gerbil-pcre2
 RUN gxpkg install github.com/ober/gerbil-pcre2
 
+# Install gerbil-shell (lib-only: no exe, just modules for gemacs integration)
+RUN gxpkg install github.com/ober/gerbil-shell || \
+    (cd /root/.gerbil/pkg/github.com/ober/gerbil-shell && \
+     GSH_LIB_ONLY=1 gerbil build)
+
 # Build gerbil-qt
 COPY --from=qt-src . /deps/gerbil-qt
 RUN gxpkg link gerbil-qt /deps/gerbil-qt && \
