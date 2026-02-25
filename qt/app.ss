@@ -562,29 +562,7 @@
                                   (qt-plain-text-edit-ensure-cursor-visible! ed))
                                 (loop (cdr wins)))))))))))
               (buffer-list))
-            ;; Also poll shell buffers
-            (for-each
-              (lambda (buf)
-                (when (shell-buffer? buf)
-                  (let ((ss (hash-get *shell-state* buf)))
-                    (when ss
-                      (let ((raw-output (shell-read-available ss)))
-                        (when raw-output
-                          (let ((output (shell-filter-echo raw-output
-                                          (shell-state-last-sent ss))))
-                            (set! (shell-state-last-sent ss) #f)
-                            (when (and output (> (string-length output) 0))
-                              (let loop ((wins (qt-frame-windows fr)))
-                                (when (pair? wins)
-                                  (if (eq? (qt-edit-window-buffer (car wins)) buf)
-                                    (let ((ed (qt-edit-window-editor (car wins))))
-                                      (qt-plain-text-edit-append! ed output)
-                                      (set! (shell-state-prompt-pos ss)
-                                        (string-length (qt-plain-text-edit-text ed)))
-                                      (qt-plain-text-edit-move-cursor! ed QT_CURSOR_END)
-                                      (qt-plain-text-edit-ensure-cursor-visible! ed))
-                                    (loop (cdr wins)))))))))))))
-              (buffer-list))
+            ;; Shell buffers: gsh-backed, no polling needed (synchronous execution)
             ;; Terminal buffers: gsh-backed, no polling needed (synchronous execution)
             ;; Also poll chat buffers (Claude CLI)
             (for-each

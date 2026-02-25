@@ -634,16 +634,13 @@
         (check (strip-ansi-codes (string-append esc "[1;34mbold-blue" esc "[0m"))
                => "bold-blue")))
 
-    (test-case "shell subprocess lifecycle"
+    (test-case "shell gsh lifecycle"
       (let ((ss (shell-start!)))
         ;; Verify state
         (check (shell-state? ss) => #t)
         (check (shell-state-prompt-pos ss) => 0)
-        ;; Send a simple command
-        (shell-send! ss "echo test123")
-        ;; Wait for output
-        (thread-sleep! 1.0)
-        (let ((output (shell-read-available ss)))
+        ;; Execute a simple command
+        (let-values (((output cwd) (shell-execute! "echo test123" ss)))
           (check (string? output) => #t)
           (check (not (not (string-contains output "test123"))) => #t))
         ;; Clean shutdown
@@ -655,43 +652,33 @@
 
     (test-case "shell command produces output"
       (let ((ss (shell-start!)))
-        (shell-send! ss "echo hello")
-        (thread-sleep! 1.0)
-        (let ((output (shell-read-available ss)))
+        (let-values (((output cwd) (shell-execute! "echo hello" ss)))
           (check (string? output) => #t)
           (check (not (not (string-contains output "hello"))) => #t))
         (shell-stop! ss)))
 
     (test-case "shell multiple sequential commands"
       (let ((ss (shell-start!)))
-        (shell-send! ss "echo first")
-        (thread-sleep! 1.0)
-        (let ((out1 (shell-read-available ss)))
+        (let-values (((out1 cwd1) (shell-execute! "echo first" ss)))
           (check (not (not (and out1 (string-contains out1 "first")))) => #t))
-        (shell-send! ss "echo second")
-        (thread-sleep! 1.0)
-        (let ((out2 (shell-read-available ss)))
+        (let-values (((out2 cwd2) (shell-execute! "echo second" ss)))
           (check (not (not (and out2 (string-contains out2 "second")))) => #t))
         (shell-stop! ss)))
 
     (test-case "shell empty input handling"
       (let ((ss (shell-start!)))
-        ;; Sending empty string should not crash
-        (shell-send! ss "")
-        (thread-sleep! 0.5)
+        ;; Executing empty string should return empty output
+        (let-values (((output cwd) (shell-execute! "" ss)))
+          (check output => ""))
         ;; Shell should still be responsive
-        (shell-send! ss "echo alive")
-        (thread-sleep! 1.0)
-        (let ((output (shell-read-available ss)))
-          (check (not (not (and output (string-contains output "alive")))) => #t))
+        (let-values (((output2 cwd2) (shell-execute! "echo alive" ss)))
+          (check (not (not (and output2 (string-contains output2 "alive")))) => #t))
         (shell-stop! ss)))
 
     (test-case "shell stop/cleanup"
       (let ((ss (shell-start!)))
         ;; Stop should not throw
-        (shell-stop! ss)
-        ;; Read after stop returns #f (process closed)
-        (check (shell-read-available ss) => #f)))
+        (shell-stop! ss)))
 
     (test-case "shell prompt-pos tracking"
       (let ((ss (shell-start!)))
@@ -701,31 +688,24 @@
         (check (shell-state-prompt-pos ss) => 42)
         (shell-stop! ss)))
 
-    (test-case "shell send-char"
+    (test-case "shell exit command"
       (let ((ss (shell-start!)))
-        ;; Send individual characters then newline (PTY mode)
-        (shell-send-char! ss #\e)
-        (shell-send-char! ss #\c)
-        (shell-send-char! ss #\h)
-        (shell-send-char! ss #\o)
-        (shell-send-char! ss #\space)
-        (shell-send-char! ss #\h)
-        (shell-send-char! ss #\i)
-        (shell-send-char! ss #\newline)
-        (thread-sleep! 1.0)
-        (let ((output (shell-read-available ss)))
-          (check (not (not (and output (string-contains output "hi")))) => #t))
+        (let-values (((output cwd) (shell-execute! "exit" ss)))
+          (check output => 'exit))
         (shell-stop! ss)))
 
-    (test-case "shell-filter-echo strips echoed command"
-      (check (shell-filter-echo "echo hello\nhello\n$ " "echo hello")
-             => "hello\n$ ")
-      (check (shell-filter-echo "hello\n$ " "echo hello")
-             => "hello\n$ ")  ; no match, keep as-is
-      (check (shell-filter-echo "some output" #f)
-             => "some output")  ; no last-sent, keep as-is
-      (check (shell-filter-echo "\n$ " "")
-             => "\n$ "))  ; empty command, keep as-is
+    (test-case "shell clear command"
+      (let ((ss (shell-start!)))
+        (let-values (((output cwd) (shell-execute! "clear" ss)))
+          (check output => 'clear))
+        (shell-stop! ss)))
+
+    (test-case "shell prompt shows cwd"
+      (let ((ss (shell-start!)))
+        (let ((prompt (shell-prompt ss)))
+          (check (string? prompt) => #t)
+          (check (not (not (string-contains prompt "$"))) => #t))
+        (shell-stop! ss)))
 
     (test-case "new keybindings: redo, toggles, zoom, etc"
       (setup-default-bindings!)
@@ -3393,8 +3373,8 @@
         (set! (buffer-lexer-lang buf) 'shell)
         ;; Simulate shell prompt output
         (editor-set-text ed "$ ")
-        ;; Create a fake shell-state with process=#f (no-op sends)
-        (let ((ss (make-shell-state #f 2 #f)))
+        ;; Create a fake shell-state with env=#f (for testing self-insert)
+        (let ((ss (make-shell-state #f 2)))
           (hash-put! *shell-state* buf ss)
           ;; Position cursor after prompt
           (editor-goto-pos ed 2)

@@ -724,7 +724,7 @@
 (def shell-buffer-name "*shell*")
 
 (def (cmd-shell app)
-  "Open or switch to the *shell* buffer."
+  "Open or switch to the *shell* buffer (gsh-backed)."
   (let ((existing (buffer-by-name shell-buffer-name)))
     (if existing
       (let* ((fr (app-state-frame app))
@@ -738,14 +738,23 @@
         (set! (buffer-lexer-lang buf) 'shell)
         (qt-buffer-attach! ed buf)
         (set! (qt-edit-window-buffer (qt-current-window fr)) buf)
-        (let ((ss (shell-start!)))
-          (hash-put! *shell-state* buf ss)
-          (qt-plain-text-edit-set-text! ed "")
-          (set! (shell-state-prompt-pos ss) 0))
-        (echo-message! (app-state-echo app) "Shell started")))))
+        (with-catch
+          (lambda (e)
+            (let ((msg (with-output-to-string "" (lambda () (display-exception e)))))
+              (gemacs-log! "cmd-shell: gsh init failed: " msg)
+              (echo-error! (app-state-echo app)
+                (string-append "Shell failed: " msg))))
+          (lambda ()
+            (let ((ss (shell-start!)))
+              (hash-put! *shell-state* buf ss)
+              (let ((prompt (shell-prompt ss)))
+                (qt-plain-text-edit-set-text! ed prompt)
+                (set! (shell-state-prompt-pos ss) (string-length prompt))
+                (qt-plain-text-edit-move-cursor! ed QT_CURSOR_END)))
+            (echo-message! (app-state-echo app) "gsh started")))))))
 
 (def (cmd-shell-send app)
-  "Extract typed text since prompt and send as a complete line to the shell."
+  "Execute the current input line in the shell via gsh."
   (let* ((buf (current-qt-buffer app))
          (ss (hash-get *shell-state* buf)))
     (when ss
@@ -760,17 +769,31 @@
         (let ((trimmed-input (string-trim-both input)))
           (when (> (string-length trimmed-input) 0)
             (gsh-history-add! trimmed-input (current-directory))))
-        ;; Append newline to buffer
-        (qt-plain-text-edit-append! ed "")
-        ;; Send complete line to shell
-        (shell-send! ss input)
-        ;; Record sent command for echo filtering
-        (set! (shell-state-last-sent ss) input)
-        ;; Update prompt-pos
-        (set! (shell-state-prompt-pos ss)
-          (string-length (qt-plain-text-edit-text ed)))
+        ;; Append newline after user input
         (qt-plain-text-edit-move-cursor! ed QT_CURSOR_END)
-        (qt-plain-text-edit-ensure-cursor-visible! ed)))))
+        (qt-plain-text-edit-insert-text! ed "\n")
+        (let-values (((output new-cwd) (shell-execute! input ss)))
+          (cond
+            ((eq? output 'clear)
+             (qt-plain-text-edit-set-text! ed ""))
+            ((eq? output 'exit)
+             (hash-remove! *shell-state* buf)
+             (echo-message! (app-state-echo app) "Shell exited"))
+            (else
+             ;; Append command output
+             (when (and (string? output) (> (string-length output) 0))
+               (qt-plain-text-edit-move-cursor! ed QT_CURSOR_END)
+               (qt-plain-text-edit-insert-text! ed output)
+               (unless (char=? (string-ref output (- (string-length output) 1)) #\newline)
+                 (qt-plain-text-edit-insert-text! ed "\n"))))))
+        ;; Display new prompt (unless exited)
+        (when (hash-get *shell-state* buf)
+          (let ((prompt (shell-prompt ss)))
+            (qt-plain-text-edit-move-cursor! ed QT_CURSOR_END)
+            (qt-plain-text-edit-insert-text! ed prompt)
+            (set! (shell-state-prompt-pos ss)
+              (string-length (qt-plain-text-edit-text ed)))
+            (qt-plain-text-edit-ensure-cursor-visible! ed)))))))
 ;;;============================================================================
 ;;; AI Chat commands (Claude CLI integration)
 ;;;============================================================================

@@ -39,6 +39,7 @@
   "Initialize the gsh engine once (idempotent)."
   (unless *gsh-initialized*
     (set! *gsh-shared-env* (gsh-init!))
+    (env-set! *gsh-shared-env* "SHELL" "gsh")
     (set! *gsh-initialized* #t)))
 
 (def (gsh-eshell-init-buffer! buf)

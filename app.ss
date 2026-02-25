@@ -214,34 +214,8 @@
 ;;; Shell output polling
 ;;;============================================================================
 
-(def (poll-shell-output! app)
-  "Check all shell buffers for new output from $SHELL and insert it."
-  (for-each
-    (lambda (buf)
-      (when (shell-buffer? buf)
-        (let ((ss (hash-get *shell-state* buf)))
-          (when ss
-            (let ((raw-output (shell-read-available ss)))
-              (when raw-output
-                (let ((output (shell-filter-echo raw-output
-                                (shell-state-last-sent ss))))
-                  (set! (shell-state-last-sent ss) #f)
-                  (when (and output (> (string-length output) 0))
-                    (let ((win (find-window-for-buffer (app-state-frame app) buf)))
-                      (when win
-                        (let ((ed (edit-window-editor win)))
-                          ;; Insert output at end
-                          (editor-append-text ed output)
-                          ;; Update prompt-pos to after output
-                          (set! (shell-state-prompt-pos ss)
-                            (editor-get-text-length ed))
-                          ;; Move cursor to end and scroll
-                          (editor-goto-pos ed (editor-get-text-length ed))
-                          (editor-scroll-caret ed))))))))))))
-    (buffer-list)))
-
 ;;;============================================================================
-;;; Terminal: gsh-backed, no polling needed (synchronous execution)
+;;; Shell/Terminal: gsh-backed, no polling needed (synchronous execution)
 ;;;============================================================================
 
 ;;;============================================================================
@@ -301,10 +275,7 @@
       ;; Poll REPL subprocess output
       (poll-repl-output! app)
 
-      ;; Poll shell subprocess output
-      (poll-shell-output! app)
-
-      ;; Terminal: gsh-backed, no polling needed
+      ;; Shell/Terminal: gsh-backed, no polling needed
 
       ;; Poll AI chat output
       (poll-chat-output! app)

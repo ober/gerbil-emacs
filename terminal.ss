@@ -254,6 +254,7 @@
 (def (terminal-start!)
   "Create a gsh-backed terminal and return a terminal-state."
   (let ((env (gsh-init!)))
+    (env-set! env "SHELL" "gsh")
     (make-terminal-state env 0 -1 #f)))
 
 (def (terminal-prompt ts)

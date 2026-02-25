@@ -1423,7 +1423,7 @@
 (def shell-buffer-name "*shell*")
 
 (def (cmd-shell app)
-  "Open or switch to the *shell* buffer."
+  "Open or switch to the *shell* buffer (gsh-backed)."
   (let ((existing (buffer-by-name shell-buffer-name)))
     (if existing
       ;; Switch to existing shell buffer
@@ -1441,16 +1441,25 @@
         ;; Attach buffer to editor
         (buffer-attach! ed buf)
         (set! (edit-window-buffer (current-window fr)) buf)
-        ;; Spawn shell subprocess
-        (let ((ss (shell-start!)))
-          (hash-put! *shell-state* buf ss)
-          ;; Start with empty buffer; shell output will appear via polling
-          (editor-set-text ed "")
-          (set! (shell-state-prompt-pos ss) 0))
-        (echo-message! (app-state-echo app) "Shell started")))))
+        ;; Initialize gsh-backed shell
+        (with-catch
+          (lambda (e)
+            (let ((msg (with-output-to-string "" (lambda () (display-exception e)))))
+              (gemacs-log! "cmd-shell: gsh init failed: " msg)
+              (echo-error! (app-state-echo app)
+                (string-append "Shell failed: " msg))))
+          (lambda ()
+            (let ((ss (shell-start!)))
+              (hash-put! *shell-state* buf ss)
+              (let ((prompt (shell-prompt ss)))
+                (editor-set-text ed prompt)
+                (set! (shell-state-prompt-pos ss) (string-length prompt))
+                (editor-goto-pos ed (string-length prompt))
+                (editor-scroll-caret ed)))
+            (echo-message! (app-state-echo app) "gsh started")))))))
 
 (def (cmd-shell-send app)
-  "Extract typed text since prompt and send as a complete line to the shell."
+  "Execute the current input line in the shell via gsh."
   (let* ((buf (current-buffer-from-app app))
          (ss (hash-get *shell-state* buf)))
     (when ss
@@ -1465,16 +1474,28 @@
         (let ((trimmed-input (string-trim-both input)))
           (when (> (string-length trimmed-input) 0)
             (gsh-history-add! trimmed-input (current-directory))))
-        ;; Append newline to buffer
+        ;; Append newline after user input
         (editor-append-text ed "\n")
-        ;; Send complete line to shell
-        (shell-send! ss input)
-        ;; Record sent command for echo filtering
-        (set! (shell-state-last-sent ss) input)
-        ;; Update prompt-pos to after the newline
-        (set! (shell-state-prompt-pos ss) (editor-get-text-length ed))
-        (editor-goto-pos ed (editor-get-text-length ed))
-        (editor-scroll-caret ed)))))
+        (let-values (((output new-cwd) (shell-execute! input ss)))
+          (cond
+            ((eq? output 'clear)
+             (editor-set-text ed ""))
+            ((eq? output 'exit)
+             (hash-remove! *shell-state* buf)
+             (echo-message! (app-state-echo app) "Shell exited"))
+            (else
+             ;; Append command output
+             (when (and (string? output) (> (string-length output) 0))
+               (editor-append-text ed output)
+               (unless (char=? (string-ref output (- (string-length output) 1)) #\newline)
+                 (editor-append-text ed "\n"))))))
+        ;; Display new prompt (unless exited)
+        (when (hash-get *shell-state* buf)
+          (let ((prompt (shell-prompt ss)))
+            (editor-append-text ed prompt)
+            (set! (shell-state-prompt-pos ss) (editor-get-text-length ed))
+            (editor-goto-pos ed (editor-get-text-length ed))
+            (editor-scroll-caret ed)))))))
 
 ;;;============================================================================
 ;;; AI Chat commands (Claude CLI integration)
