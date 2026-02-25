@@ -34,7 +34,7 @@ Org-mode `<s TAB` has regressed 5 times. Each time, the leaf-function tests in `
 
 ## Build Verification: MANDATORY Before Commit or Push
 
-**NEVER commit or push code without completing ALL of the following steps.** Every step must pass. If ANY step fails, fix it before committing. No exceptions.
+**NEVER commit or push code without completing ALL of the following steps.** Every `make` target must build successfully AND every resulting binary must run without error. If ANY step fails, fix it before committing. No exceptions.
 
 ### Full verification checklist (run in order)
 
