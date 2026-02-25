@@ -1512,11 +1512,18 @@
     ;; Set up terminal ANSI color styles
     (setup-terminal-styles! ed)
     ;; Spawn PTY-backed shell
-    (let ((ts (terminal-start!)))
-      (hash-put! *terminal-state* buf ts)
-      (editor-set-text ed "")
-      (set! (terminal-state-prompt-pos ts) 0))
-    (echo-message! (app-state-echo app) (string-append name " started"))))
+    (with-catch
+      (lambda (e)
+        (let ((msg (with-output-to-string "" (lambda () (display-exception e)))))
+          (gemacs-log! "cmd-term: shell spawn failed: " msg)
+          (echo-error! (app-state-echo app)
+            (string-append "Terminal failed: " msg))))
+      (lambda ()
+        (let ((ts (terminal-start!)))
+          (hash-put! *terminal-state* buf ts)
+          (editor-set-text ed "")
+          (set! (terminal-state-prompt-pos ts) 0))
+        (echo-message! (app-state-echo app) (string-append name " started"))))))
 
 (def (cmd-terminal-send app)
   "Send Enter (newline) to the terminal PTY."

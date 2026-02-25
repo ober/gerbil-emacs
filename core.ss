@@ -172,6 +172,7 @@
 (import :std/sugar
         :std/sort
         :std/srfi/13
+        (only-in :std/srfi/19 current-date date->string)
         :gerbil/runtime/init
         :gerbil/expander
         :gemacs/face
@@ -1487,7 +1488,7 @@
    Arguments are concatenated as strings."
   (when *gemacs-log-port*
     (let ((port *gemacs-log-port*)
-          (ts (number->string (inexact->exact (floor (time->seconds (current-time)))))))
+          (ts (date->string (current-date 0) "~Y-~m-~d ~H:~M:~S")))
       (display "[" port)
       (display ts port)
       (display "] " port)

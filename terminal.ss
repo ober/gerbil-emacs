@@ -250,15 +250,28 @@
 ;;;============================================================================
 
 (def (terminal-start!)
-  "Spawn $SHELL with a pseudo-terminal and return a terminal-state."
+  "Spawn $SHELL with a pseudo-terminal and return a terminal-state.
+   Falls back to pipe mode (no PTY) if pseudo-terminal allocation fails."
   (let* ((shell-path (getenv "SHELL" "/bin/bash"))
-         (proc (open-process
-                 (list path: shell-path
-                       arguments: '("-i")  ; interactive
-                       stdin-redirection: #t
-                       stdout-redirection: #t
-                       stderr-redirection: #t
-                       pseudo-terminal: #t))))
+         (proc (with-catch
+                 (lambda (e)
+                   (gemacs-log! "terminal-start!: PTY failed ("
+                                (with-output-to-string "" (lambda () (display-exception e)))
+                                "), falling back to pipe mode")
+                   (open-process
+                     (list path: shell-path
+                           arguments: '("-i")
+                           stdin-redirection: #t
+                           stdout-redirection: #t
+                           stderr-redirection: #t)))
+                 (lambda ()
+                   (open-process
+                     (list path: shell-path
+                           arguments: '("-i")  ; interactive
+                           stdin-redirection: #t
+                           stdout-redirection: #t
+                           stderr-redirection: #t
+                           pseudo-terminal: #t))))))
     (make-terminal-state proc 0 -1 #f)))
 
 (def (terminal-send! ts input)
