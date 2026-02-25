@@ -54,6 +54,10 @@
    (path-expand "bin/termbox.a" termbox-dir) " "
    "-lstdc++ -lpthread -lpcre2-8"))
 
+;; gerbil-shell (gsh) package path
+(def gsh-base (or (getenv "GEMACS_GSH_BASE" #f)
+                  (find-pkg-source "gerbil-shell")))
+
 ;; gerbil-qt FFI paths (needed for Qt exe linking)
 (def qt-base (or (getenv "GEMACS_QT_BASE" #f)
                  (find-pkg-source "gerbil-qt")))
@@ -191,8 +195,12 @@
     "repl"
     ;; Syntax highlighting (depends on gerbil-scintilla/lexer)
     "highlight"
-    ;; Eshell (built-in Gerbil shell)
+    ;; Eshell (built-in Gerbil shell — legacy toy)
     "eshell"
+    ;; gsh-powered eshell (full POSIX shell via gerbil-shell)
+    "gsh-eshell"
+    ;; gsh-powered subprocess execution (replaces bash fork for M-!, grep, etc.)
+    "gsh-subprocess"
     ;; Shell history (persistent command history)
     "shell-history"
     ;; Shell (external $SHELL subprocess)

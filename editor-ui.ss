@@ -16,6 +16,7 @@
         :gerbil-scintilla/tui
         :gemacs/core
         :gemacs/subprocess
+        :gemacs/gsh-subprocess
         :gemacs/snippets
         :gemacs/repl
         :gemacs/eshell
@@ -923,7 +924,7 @@
         (echo-message! echo (string-append "Running: " cmd " (C-g to cancel)"))
         (frame-refresh! (app-state-frame app))
         (let-values (((result status)
-                      (run-process-interruptible
+                      (gsh-run-command
                         cmd tui-peek-event tui-event-key? tui-event-key)))
           (let* ((output (string-append
                            (or result "")
@@ -967,7 +968,7 @@
                  (text (editor-get-text ed))
                  (region-text (substring text start end)))
             (let-values (((output _status)
-                          (run-process-interruptible
+                          (gsh-run-command
                             cmd tui-peek-event tui-event-key? tui-event-key
                             stdin-text: region-text)))
               (let ((out-buf (or (buffer-by-name "*Shell Output*")

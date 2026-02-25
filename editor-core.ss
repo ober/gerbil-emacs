@@ -17,6 +17,7 @@
         :gemacs/core
         :gemacs/repl
         :gemacs/eshell
+        :gemacs/gsh-eshell
         :gemacs/shell
         :gemacs/shell-history
         :gemacs/terminal
@@ -1292,7 +1293,7 @@
 (def eshell-buffer-name "*eshell*")
 
 (def (cmd-eshell app)
-  "Open or switch to the *eshell* buffer."
+  "Open or switch to the *eshell* buffer (powered by gsh)."
   (let ((existing (buffer-by-name eshell-buffer-name)))
     (if existing
       ;; Switch to existing eshell buffer
@@ -1310,50 +1311,81 @@
         ;; Attach buffer to editor
         (buffer-attach! ed buf)
         (set! (edit-window-buffer (current-window fr)) buf)
-        ;; Store eshell state (just current directory for now)
-        (hash-put! *eshell-state* buf (current-directory))
+        ;; Initialize gsh environment for this buffer
+        (gsh-eshell-init-buffer! buf)
         ;; Insert welcome message and prompt
-        (let ((welcome (string-append "Gerbil Eshell\n"
-                                       "Type commands, Gerbil expressions, or 'exit' to close.\n\n"
-                                       eshell-prompt)))
+        (let ((welcome (string-append "gsh — Gerbil Shell\n"
+                                       "Type commands or 'exit' to close.\n\n"
+                                       gsh-eshell-prompt)))
           (editor-set-text ed welcome)
           (let ((len (editor-get-text-length ed)))
             (editor-goto-pos ed len)))
-        (echo-message! (app-state-echo app) "Eshell started")))))
+        (echo-message! (app-state-echo app) "gsh started")))))
 
 (def (cmd-eshell-send app)
-  "Process eshell input."
+  "Process eshell input via gsh."
   (let* ((buf (current-buffer-from-app app))
-         (cwd (hash-get *eshell-state* buf)))
-    (when cwd
+         (env (hash-get *gsh-eshell-state* buf)))
+    ;; Fall back to legacy eshell if no gsh env (e.g. old buffer)
+    (if (not env)
+      (cmd-eshell-send-legacy app)
       (let* ((ed (current-editor app))
              (all-text (editor-get-text ed))
              ;; Find the last prompt position
-             (prompt-pos (eshell-find-last-prompt all-text))
+             (prompt-pos (gsh-eshell-find-last-prompt all-text))
              (end-pos (string-length all-text))
-             (input (if (and prompt-pos (> end-pos (+ prompt-pos (string-length eshell-prompt))))
-                      (substring all-text (+ prompt-pos (string-length eshell-prompt)) end-pos)
+             (input (if (and prompt-pos (> end-pos (+ prompt-pos (string-length gsh-eshell-prompt))))
+                      (substring all-text (+ prompt-pos (string-length gsh-eshell-prompt)) end-pos)
                       "")))
         ;; Record in shell history before processing
         (let ((trimmed-input (string-trim-both input)))
           (when (> (string-length trimmed-input) 0)
-            (gsh-history-add! trimmed-input cwd)))
+            (gsh-history-add! trimmed-input (current-directory))))
         ;; Append newline
         (editor-append-text ed "\n")
-        ;; Process the input
-        (let-values (((output new-cwd) (eshell-process-input input cwd)))
-          ;; Update cwd
-          (hash-put! *eshell-state* buf new-cwd)
+        ;; Process the input via gsh
+        (let-values (((output new-cwd) (gsh-eshell-process-input input buf)))
           (cond
             ((eq? output 'clear)
              ;; Clear buffer, re-insert prompt
-             (editor-set-text ed eshell-prompt)
+             (editor-set-text ed gsh-eshell-prompt)
              (editor-goto-pos ed (editor-get-text-length ed)))
             ((eq? output 'exit)
              ;; Kill eshell buffer
              (cmd-kill-buffer-cmd app))
             (else
              ;; Insert output + new prompt
+             (when (and (string? output) (> (string-length output) 0))
+               (editor-append-text ed output))
+             (editor-append-text ed gsh-eshell-prompt)
+             (editor-goto-pos ed (editor-get-text-length ed))
+             (editor-scroll-caret ed))))))))
+
+(def (cmd-eshell-send-legacy app)
+  "Legacy eshell input processing (for buffers without gsh env)."
+  (let* ((buf (current-buffer-from-app app))
+         (cwd (hash-get *eshell-state* buf)))
+    (when cwd
+      (let* ((ed (current-editor app))
+             (all-text (editor-get-text ed))
+             (prompt-pos (eshell-find-last-prompt all-text))
+             (end-pos (string-length all-text))
+             (input (if (and prompt-pos (> end-pos (+ prompt-pos (string-length eshell-prompt))))
+                      (substring all-text (+ prompt-pos (string-length eshell-prompt)) end-pos)
+                      "")))
+        (let ((trimmed-input (string-trim-both input)))
+          (when (> (string-length trimmed-input) 0)
+            (gsh-history-add! trimmed-input cwd)))
+        (editor-append-text ed "\n")
+        (let-values (((output new-cwd) (eshell-process-input input cwd)))
+          (hash-put! *eshell-state* buf new-cwd)
+          (cond
+            ((eq? output 'clear)
+             (editor-set-text ed eshell-prompt)
+             (editor-goto-pos ed (editor-get-text-length ed)))
+            ((eq? output 'exit)
+             (cmd-kill-buffer-cmd app))
+            (else
              (when (and (string? output) (> (string-length output) 0))
                (editor-append-text ed output))
              (editor-append-text ed eshell-prompt)
@@ -1364,6 +1396,16 @@
   "Find the position of the last eshell prompt in text."
   (let ((prompt eshell-prompt)
         (prompt-len (string-length eshell-prompt)))
+    (let loop ((pos (- (string-length text) prompt-len)))
+      (cond
+        ((< pos 0) #f)
+        ((string=? (substring text pos (+ pos prompt-len)) prompt) pos)
+        (else (loop (- pos 1)))))))
+
+(def (gsh-eshell-find-last-prompt text)
+  "Find the position of the last gsh eshell prompt in text."
+  (let ((prompt gsh-eshell-prompt)
+        (prompt-len (string-length gsh-eshell-prompt)))
     (let loop ((pos (- (string-length text) prompt-len)))
       (cond
         ((< pos 0) #f)

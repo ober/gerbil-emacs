@@ -11,6 +11,7 @@
         :gemacs/qt/sci-shim
         :gemacs/core
         :gemacs/subprocess
+        :gemacs/gsh-subprocess
         :gemacs/editor
         :gemacs/repl
         :gemacs/eshell
@@ -180,7 +181,7 @@ Returns (file line col message) or #f."
     (echo-message! echo (string-append "Running: " cmd " (C-g to cancel)"))
     (when *qt-app-ptr* (qt-app-process-events! *qt-app-ptr*))
     (let-values (((result _status)
-                  (run-process-interruptible/qt
+                  (gsh-run-command/qt
                     cmd (lambda () (when *qt-app-ptr*
                                     (qt-app-process-events! *qt-app-ptr*))))))
       (let* ((errors (parse-compilation-errors result))
@@ -1083,7 +1084,7 @@ Returns (file line col message) or #f."
                  (text (qt-plain-text-edit-text ed))
                  (region (substring text start end)))
             (let-values (((result _status)
-                          (run-process-interruptible/qt
+                          (gsh-run-command/qt
                             cmd (lambda () (when *qt-app-ptr*
                                             (qt-app-process-events! *qt-app-ptr*)))
                             stdin-text: region)))
@@ -1718,7 +1719,7 @@ Returns (file line col message) or #f."
                                   (grep-shell-quote pattern) " "
                                   (grep-shell-quote dir) " 2>/dev/null || true")))
     (let-values (((output _status)
-                  (run-process-interruptible/qt
+                  (gsh-run-command/qt
                     grep-cmd (lambda () (when *qt-app-ptr*
                                           (qt-app-process-events! *qt-app-ptr*))))))
       ;; Parse results

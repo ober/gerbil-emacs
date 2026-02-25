@@ -11,9 +11,11 @@
         :gemacs/qt/sci-shim
         :gemacs/core
         :gemacs/subprocess
+        :gemacs/gsh-subprocess
         :gemacs/editor
         :gemacs/repl
         :gemacs/eshell
+        :gemacs/gsh-eshell
         :gemacs/shell
         :gemacs/shell-history
         :gemacs/terminal
@@ -596,7 +598,7 @@
 (def eshell-buffer-name "*eshell*")
 
 (def (cmd-eshell app)
-  "Open or switch to the *eshell* buffer."
+  "Open or switch to the *eshell* buffer (powered by gsh)."
   (let ((existing (buffer-by-name eshell-buffer-name)))
     (if existing
       (let* ((fr (app-state-frame app))
@@ -610,22 +612,73 @@
         (set! (buffer-lexer-lang buf) 'eshell)
         (qt-buffer-attach! ed buf)
         (set! (qt-edit-window-buffer (qt-current-window fr)) buf)
-        (hash-put! *eshell-state* buf (current-directory))
-        (let ((welcome (string-append "Gerbil Eshell\n"
-                                       "Type commands, Gerbil expressions, or 'exit' to close.\n\n"
-                                       eshell-prompt)))
+        ;; Initialize gsh environment for this buffer
+        (gsh-eshell-init-buffer! buf)
+        (let ((welcome (string-append "gsh — Gerbil Shell\n"
+                                       "Type commands or 'exit' to close.\n\n"
+                                       gsh-eshell-prompt)))
           (qt-plain-text-edit-set-text! ed welcome)
           (qt-plain-text-edit-move-cursor! ed QT_CURSOR_END))
-        (echo-message! (app-state-echo app) "Eshell started")))))
+        (echo-message! (app-state-echo app) "gsh started")))))
 
 (def (cmd-eshell-send app)
-  "Process eshell input in Qt backend."
+  "Process eshell input in Qt backend via gsh."
+  (let* ((buf (current-qt-buffer app))
+         (env (hash-get *gsh-eshell-state* buf)))
+    ;; Fall back to legacy if no gsh env
+    (if (not env)
+      (cmd-eshell-send-legacy/qt app)
+      (let* ((ed (current-qt-editor app))
+             (all-text (qt-plain-text-edit-text ed))
+             ;; Find the last gsh prompt
+             (prompt-pos (let ((prompt gsh-eshell-prompt)
+                               (prompt-len (string-length gsh-eshell-prompt)))
+                           (let loop ((pos (- (string-length all-text) prompt-len)))
+                             (cond
+                               ((< pos 0) #f)
+                               ((string=? (substring all-text pos (+ pos prompt-len)) prompt) pos)
+                               (else (loop (- pos 1)))))))
+             (end-pos (string-length all-text))
+             (input (if (and prompt-pos (> end-pos (+ prompt-pos (string-length gsh-eshell-prompt))))
+                      (substring all-text (+ prompt-pos (string-length gsh-eshell-prompt)) end-pos)
+                      "")))
+        ;; Record in shell history before processing
+        (let ((trimmed-input (string-trim-both input)))
+          (when (> (string-length trimmed-input) 0)
+            (gsh-history-add! trimmed-input (current-directory))))
+        (qt-plain-text-edit-append! ed "")
+        (let-values (((output new-cwd) (gsh-eshell-process-input input buf)))
+          (cond
+            ((eq? output 'clear)
+             (qt-plain-text-edit-set-text! ed gsh-eshell-prompt)
+             (qt-plain-text-edit-move-cursor! ed QT_CURSOR_END))
+            ((eq? output 'exit)
+             ;; Kill eshell buffer directly
+             (let* ((fr (app-state-frame app))
+                    (ed (current-qt-editor app))
+                    (other (let loop ((bs (buffer-list)))
+                             (cond ((null? bs) #f)
+                                   ((eq? (car bs) buf) (loop (cdr bs)))
+                                   (else (car bs))))))
+               (when other
+                 (qt-buffer-attach! ed other)
+                 (set! (qt-edit-window-buffer (qt-current-window fr)) other))
+               (hash-remove! *gsh-eshell-state* buf)
+               (qt-buffer-kill! buf)
+               (echo-message! (app-state-echo app) "gsh finished")))
+            (else
+             (when (and (string? output) (> (string-length output) 0))
+               (qt-plain-text-edit-append! ed output))
+             (qt-plain-text-edit-append! ed gsh-eshell-prompt)
+             (qt-plain-text-edit-move-cursor! ed QT_CURSOR_END))))))))
+
+(def (cmd-eshell-send-legacy/qt app)
+  "Legacy eshell input processing for Qt (buffers without gsh env)."
   (let* ((buf (current-qt-buffer app))
          (cwd (hash-get *eshell-state* buf)))
     (when cwd
       (let* ((ed (current-qt-editor app))
              (all-text (qt-plain-text-edit-text ed))
-             ;; Find the last prompt
              (prompt-pos (let loop ((pos (- (string-length all-text) (string-length eshell-prompt))))
                            (cond
                              ((< pos 0) #f)
@@ -635,7 +688,6 @@
              (input (if (and prompt-pos (> end-pos (+ prompt-pos (string-length eshell-prompt))))
                       (substring all-text (+ prompt-pos (string-length eshell-prompt)) end-pos)
                       "")))
-        ;; Record in shell history before processing
         (let ((trimmed-input (string-trim-both input)))
           (when (> (string-length trimmed-input) 0)
             (gsh-history-add! trimmed-input cwd)))
@@ -647,7 +699,6 @@
              (qt-plain-text-edit-set-text! ed eshell-prompt)
              (qt-plain-text-edit-move-cursor! ed QT_CURSOR_END))
             ((eq? output 'exit)
-             ;; Kill eshell buffer directly
              (let* ((fr (app-state-frame app))
                     (ed (current-qt-editor app))
                     (other (let loop ((bs (buffer-list)))
@@ -1446,7 +1497,7 @@
       (echo-message! echo (string-append "Running... (C-g to cancel)"))
       (when *qt-app-ptr* (qt-app-process-events! *qt-app-ptr*))
       (let-values (((result _status)
-                    (run-process-interruptible/qt
+                    (gsh-run-command/qt
                       cmd (lambda () (when *qt-app-ptr*
                                       (qt-app-process-events! *qt-app-ptr*))))))
         (let* ((fr (app-state-frame app))

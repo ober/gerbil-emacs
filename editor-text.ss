@@ -18,6 +18,7 @@
         :gerbil-scintilla/tui
         :gemacs/core
         :gemacs/subprocess
+        :gemacs/gsh-subprocess
         :gemacs/repl
         :gemacs/eshell
         :gemacs/shell
@@ -404,7 +405,7 @@
 ;;;============================================================================
 
 (def (cmd-shell-command app)
-  "Run a shell command and display output."
+  "Run a shell command via gsh and display output."
   (let* ((echo (app-state-echo app))
          (fr (app-state-frame app))
          (row (- (frame-height fr) 1))
@@ -414,7 +415,7 @@
       (echo-message! echo (string-append "Running... (C-g to cancel)"))
       (frame-refresh! fr)
       (let-values (((output _status)
-                    (run-process-interruptible
+                    (gsh-run-command
                       cmd tui-peek-event tui-event-key? tui-event-key)))
         (let ((ed (current-editor app)))
           ;; If short output (1 line), show in echo area
@@ -522,7 +523,7 @@
                                         "-- " (shell-quote pattern) " "
                                         (shell-quote search-dir) " 2>&1 || true")))
           (let-values (((output _status)
-                        (run-process-interruptible
+                        (gsh-run-command
                           grep-cmd tui-peek-event tui-event-key? tui-event-key)))
             (let* ((text (string-append "-*- Grep -*-\n"
                                         "Pattern: " pattern "\n"
