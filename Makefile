@@ -194,6 +194,7 @@ docker-deps:
 # Build only gemacs TUI inside the pre-built deps image
 build-gemacs-static: check-root
 	cd /src && \
+	  GERBIL_BUILD_CORES=1 \
 	  GEMACS_BUILD_TUI_ONLY=1 \
 	  GEMACS_STATIC=1 \
 	  GEMACS_SCI_BASE=/deps/gerbil-scintilla \
@@ -203,6 +204,7 @@ build-gemacs-static: check-root
 # Build gemacs TUI + Qt inside the pre-built deps image
 build-gemacs-static-qt: check-root
 	cd /src && \
+	  GERBIL_BUILD_CORES=1 \
 	  GEMACS_STATIC=1 \
 	  GEMACS_SCI_BASE=/deps/gerbil-scintilla \
 	  GEMACS_QT_BASE=/deps/gerbil-qt \
@@ -263,6 +265,7 @@ build-static: check-root
 	gxpkg install github.com/ober/gerbil-pcre2
 	@echo "=== Building gemacs (TUI, static) ==="
 	cd /src && \
+	  GERBIL_BUILD_CORES=1 \
 	  GEMACS_BUILD_TUI_ONLY=1 \
 	  GEMACS_STATIC=1 \
 	  GEMACS_SCI_BASE=/tmp/gerbil-scintilla \
@@ -289,6 +292,7 @@ build-static-qt: check-root
 	  gerbil build
 	@echo "=== Building gemacs (TUI + Qt, static) ==="
 	cd /src && \
+	  GERBIL_BUILD_CORES=1 \
 	  GEMACS_STATIC=1 \
 	  GEMACS_SCI_BASE=/tmp/gerbil-scintilla \
 	  GEMACS_QT_BASE=/deps/gerbil-qt \

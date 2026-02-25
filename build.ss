@@ -326,4 +326,8 @@
           (exe: "qt/main" bin: "gemacs-qt"
                 "-cc-options" ,qt-cc-opts
                 "-ld-options" ,qt-exe-ld-opts))))
-  parallelize: (max 1 (quotient (##cpu-count) 2)))
+  ;; GERBIL_BUILD_CORES overrides the default cpu-count/2 parallelism.
+  ;; Docker static builds set GERBIL_BUILD_CORES=1 to avoid a race condition
+  ;; where compile-exe reads a .c file while compile-file is still writing it.
+  parallelize: (let ((env (getenv "GERBIL_BUILD_CORES" #f)))
+                 (if env (string->number env) (max 1 (quotient (##cpu-count) 2)))))
