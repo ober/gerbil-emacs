@@ -357,11 +357,13 @@
               (str (string (integer->char ch))))
          (editor-insert-text ed pos str)
          (editor-goto-pos ed (+ pos 1))))
-      ;; Terminal: forward character directly to PTY
+      ;; Terminal: insert character into buffer (gsh line mode)
       ((terminal-buffer? buf)
-       (let ((ts (hash-get *terminal-state* buf)))
-         (when ts
-           (terminal-send-raw! ts (string (integer->char ch))))))
+       (let* ((ed (current-editor app))
+              (pos (editor-get-current-pos ed))
+              (str (string (integer->char ch))))
+         (editor-insert-text ed pos str)
+         (editor-goto-pos ed (+ pos 1))))
       (else
        (let* ((ed (current-editor app))
               (close-ch (and *auto-pair-mode* (auto-pair-char ch)))
@@ -549,11 +551,13 @@
               (ss (hash-get *shell-state* buf)))
          (when (and ss (> pos (shell-state-prompt-pos ss)))
            (editor-send-key ed SCK_BACK))))
-      ;; Terminal: send backspace to PTY
+      ;; Terminal: delete in buffer but not past the prompt
       ((terminal-buffer? buf)
-       (let ((ts (hash-get *terminal-state* buf)))
-         (when ts
-           (terminal-send-raw! ts "\x7f;"))))  ; DEL character
+       (let* ((ed (current-editor app))
+              (pos (editor-get-current-pos ed))
+              (ts (hash-get *terminal-state* buf)))
+         (when (and ts (> pos (terminal-state-prompt-pos ts)))
+           (editor-send-key ed SCK_BACK))))
       (else
        (let ((ed (current-editor app)))
          (if (and *paredit-strict-mode*
@@ -1530,13 +1534,13 @@
             (chat-send! cs input)))))))
 
 ;;;============================================================================
-;;; Terminal commands (PTY-backed vterm-like terminal)
+;;; Terminal commands (gsh-backed)
 ;;;============================================================================
 
 (def terminal-buffer-counter 0)
 
 (def (cmd-term app)
-  "Open a new PTY-backed terminal buffer (vterm-like)."
+  "Open a new gsh-backed terminal buffer."
   (let* ((fr (app-state-frame app))
          (ed (current-editor app))
          (name (begin
@@ -1553,51 +1557,111 @@
     (set! (edit-window-buffer (current-window fr)) buf)
     ;; Set up terminal ANSI color styles
     (setup-terminal-styles! ed)
-    ;; Spawn PTY-backed shell
+    ;; Initialize gsh-backed terminal
     (with-catch
       (lambda (e)
         (let ((msg (with-output-to-string "" (lambda () (display-exception e)))))
-          (gemacs-log! "cmd-term: shell spawn failed: " msg)
+          (gemacs-log! "cmd-term: gsh init failed: " msg)
           (echo-error! (app-state-echo app)
             (string-append "Terminal failed: " msg))))
       (lambda ()
         (let ((ts (terminal-start!)))
           (hash-put! *terminal-state* buf ts)
-          (editor-set-text ed "")
-          (set! (terminal-state-prompt-pos ts) 0))
+          ;; Show initial prompt
+          (let* ((prompt (terminal-prompt ts))
+                 (prompt-len (string-length prompt)))
+            (editor-set-text ed "")
+            (editor-append-text ed prompt)
+            (set! (terminal-state-prompt-pos ts) prompt-len)
+            (editor-goto-pos ed prompt-len)
+            (editor-scroll-caret ed)))
         (echo-message! (app-state-echo app) (string-append name " started"))))))
 
 (def (cmd-terminal-send app)
-  "Send Enter (newline) to the terminal PTY."
+  "Execute the current input line in the terminal via gsh."
   (let* ((buf (current-buffer-from-app app))
          (ts (hash-get *terminal-state* buf)))
     (when ts
-      ;; Send newline to PTY — output will come back via polling
-      (terminal-send-raw! ts "\n"))))
+      (let* ((ed (current-editor app))
+             (text (editor-get-text ed))
+             (text-len (string-length text))
+             (prompt-pos (terminal-state-prompt-pos ts))
+             (input (if (< prompt-pos text-len)
+                      (substring text prompt-pos text-len)
+                      "")))
+        ;; Append newline after user input
+        (editor-append-text ed "\n")
+        (let-values (((output new-cwd) (terminal-execute! input ts)))
+          (cond
+            ((eq? output 'clear)
+             (editor-set-text ed ""))
+            ((eq? output 'exit)
+             (hash-remove! *terminal-state* buf)
+             (echo-message! (app-state-echo app) "Terminal exited"))
+            (else
+             ;; Append command output (with ANSI styling)
+             (when (and (string? output) (> (string-length output) 0))
+               (let* ((segments (parse-ansi-segments output))
+                      (start-pos (editor-get-text-length ed)))
+                 (terminal-insert-styled! ed segments start-pos))
+               ;; Add trailing newline if output doesn't end with one
+               (unless (char=? (string-ref output (- (string-length output) 1)) #\newline)
+                 (editor-append-text ed "\n"))))))
+        ;; Display new prompt (unless exited)
+        (when (hash-get *terminal-state* buf)
+          (let* ((prompt (terminal-prompt ts))
+                 (prompt-len (string-length prompt)))
+            (editor-append-text ed prompt)
+            (set! (terminal-state-prompt-pos ts) (editor-get-text-length ed))
+            (editor-goto-pos ed (editor-get-text-length ed))
+            (editor-scroll-caret ed)))))))
 
 (def (cmd-term-interrupt app)
-  "Send Ctrl-C (interrupt) to the terminal PTY."
+  "Cancel current input in the terminal buffer."
   (let* ((buf (current-buffer-from-app app))
          (ts (and (terminal-buffer? buf) (hash-get *terminal-state* buf))))
     (if ts
-      (terminal-send-raw! ts "\x03;")  ; Ctrl-C
+      (let* ((ed (current-editor app))
+             (prompt (terminal-prompt ts)))
+        ;; Display ^C and new prompt
+        (editor-append-text ed "^C\n")
+        (editor-append-text ed prompt)
+        (set! (terminal-state-prompt-pos ts) (editor-get-text-length ed))
+        (editor-goto-pos ed (editor-get-text-length ed))
+        (editor-scroll-caret ed))
       (echo-message! (app-state-echo app) "Not in a terminal buffer"))))
 
 (def (cmd-term-send-eof app)
-  "Send Ctrl-D (EOF) to the terminal PTY."
+  "Close the terminal buffer (Ctrl-D) if input is empty."
   (let* ((buf (current-buffer-from-app app))
          (ts (and (terminal-buffer? buf) (hash-get *terminal-state* buf))))
     (if ts
-      (terminal-send-raw! ts "\x04;")  ; Ctrl-D
-      ;; Fall back to normal Ctrl-D behavior (delete char)
+      (let* ((ed (current-editor app))
+             (text (editor-get-text ed))
+             (text-len (string-length text))
+             (prompt-pos (terminal-state-prompt-pos ts))
+             (input (if (< prompt-pos text-len)
+                      (substring text prompt-pos text-len)
+                      "")))
+        (if (string=? input "")
+          (begin
+            (terminal-stop! ts)
+            (hash-remove! *terminal-state* buf)
+            (echo-message! (app-state-echo app) "Terminal exited"))
+          ;; Fall back to normal Ctrl-D behavior (delete char)
+          (editor-send-key ed SCK_DELETE)))
+      ;; Not in terminal — normal Ctrl-D
       (editor-send-key (current-editor app) SCK_DELETE))))
 
 (def (cmd-term-send-tab app)
-  "Send Tab to the terminal PTY (for tab completion)."
+  "Insert tab in the terminal buffer."
   (let* ((buf (current-buffer-from-app app))
          (ts (and (terminal-buffer? buf) (hash-get *terminal-state* buf))))
     (if ts
-      (terminal-send-raw! ts "\t")
+      (let* ((ed (current-editor app))
+             (pos (editor-get-current-pos ed)))
+        (editor-insert-text ed pos "\t")
+        (editor-goto-pos ed (+ pos 1)))
       ;; Fall back to normal Tab behavior
       (editor-send-key (current-editor app) (char->integer #\tab)))))
 

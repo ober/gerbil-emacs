@@ -405,11 +405,12 @@
                                  (when (< i n)
                                    (qt-plain-text-edit-insert-text! ed (string ch))
                                    (loop (+ i 1)))))
-                              ;; Terminal: send character directly to PTY
+                              ;; Terminal: insert character into buffer (gsh line mode)
                               ((terminal-buffer? buf)
-                               (let ((ts (hash-get *terminal-state* buf)))
-                                 (when ts
-                                   (terminal-send-raw! ts (string ch)))))
+                               (let loop ((i 0))
+                                 (when (< i n)
+                                   (qt-plain-text-edit-insert-text! ed (string ch))
+                                   (loop (+ i 1)))))
                               ;; Shell: insert char locally (sent as complete line on Enter)
                               ((shell-buffer? buf)
                                (let loop ((i 0))
@@ -584,32 +585,7 @@
                                       (qt-plain-text-edit-ensure-cursor-visible! ed))
                                     (loop (cdr wins)))))))))))))
               (buffer-list))
-            ;; Also poll terminal buffers
-            (for-each
-              (lambda (buf)
-                (when (terminal-buffer? buf)
-                  (let ((ts (hash-get *terminal-state* buf)))
-                    (when ts
-                      (let ((segs (terminal-read-available ts)))
-                        (when segs
-                          ;; Extract plain text from segments (strip ANSI colors)
-                          (let ((plain (let ((out (open-output-string)))
-                                         (for-each
-                                           (lambda (seg) (display (text-segment-text seg) out))
-                                           segs)
-                                         (get-output-string out))))
-                            (when (> (string-length plain) 0)
-                              (let loop ((wins (qt-frame-windows fr)))
-                                (when (pair? wins)
-                                  (if (eq? (qt-edit-window-buffer (car wins)) buf)
-                                    (let ((ed (qt-edit-window-editor (car wins))))
-                                      (qt-plain-text-edit-append! ed plain)
-                                      (set! (terminal-state-prompt-pos ts)
-                                        (string-length (qt-plain-text-edit-text ed)))
-                                      (qt-plain-text-edit-move-cursor! ed QT_CURSOR_END)
-                                      (qt-plain-text-edit-ensure-cursor-visible! ed))
-                                    (loop (cdr wins)))))))))))))
-              (buffer-list))
+            ;; Terminal buffers: gsh-backed, no polling needed (synchronous execution)
             ;; Also poll chat buffers (Claude CLI)
             (for-each
               (lambda (buf)

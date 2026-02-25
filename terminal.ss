@@ -1,17 +1,16 @@
 ;;; -*- Gerbil -*-
-;;; Terminal mode: PTY-backed shell with ANSI color rendering
+;;; Terminal mode: gsh-backed shell with ANSI color rendering
 ;;;
-;;; Like Emacs vterm: spawns bash/zsh with a real pseudo-terminal,
-;;; parses ANSI SGR escape sequences for colors, and renders them
+;;; Uses gerbil-shell (gsh) for in-process POSIX shell execution.
+;;; Parses ANSI SGR escape sequences for colors and renders them
 ;;; via Scintilla styles.
 
 (export terminal-buffer?
         *terminal-state*
         (struct-out terminal-state)
         terminal-start!
-        terminal-send!
-        terminal-send-raw!
-        terminal-read-available
+        terminal-execute!
+        terminal-prompt
         terminal-stop!
         setup-terminal-styles!
         parse-ansi-segments
@@ -25,8 +24,11 @@
         *term-style-base*)
 
 (import :std/sugar
+        :std/srfi/13
         :gerbil-scintilla/constants
         :gerbil-scintilla/scintilla
+        :gsh/lib
+        :gsh/environment
         :gemacs/core)
 
 ;;;============================================================================
@@ -79,10 +81,10 @@
 (def *terminal-state* (make-hash-table-eq))
 
 (defstruct terminal-state
-  (process      ; Gambit process port (bidirectional, PTY-backed)
-   prompt-pos   ; byte position where current input starts
-   fg-color     ; current ANSI foreground color index (0-15, or -1 for default)
-   bold?)       ; ANSI bold/bright flag (shifts color index +8)
+  (env         ; gsh shell-environment
+   prompt-pos  ; character position where current input starts (after prompt)
+   fg-color    ; current ANSI foreground color index (0-15, or -1 for default)
+   bold?)      ; ANSI bold/bright flag (shifts color index +8)
   transparent: #t)
 
 ;;;============================================================================
@@ -246,71 +248,53 @@
        (+ *term-style-base* idx)))))
 
 ;;;============================================================================
-;;; Terminal lifecycle
+;;; Terminal lifecycle (gsh-backed)
 ;;;============================================================================
 
 (def (terminal-start!)
-  "Spawn $SHELL with a pseudo-terminal and return a terminal-state.
-   Falls back to pipe mode (no PTY) if pseudo-terminal allocation fails."
-  (let* ((shell-path (getenv "SHELL" "/bin/bash"))
-         (proc (with-catch
-                 (lambda (e)
-                   (gemacs-log! "terminal-start!: PTY failed ("
-                                (with-output-to-string "" (lambda () (display-exception e)))
-                                "), falling back to pipe mode")
-                   (open-process
-                     (list path: shell-path
-                           arguments: '("-i")
-                           stdin-redirection: #t
-                           stdout-redirection: #t
-                           stderr-redirection: #t)))
-                 (lambda ()
-                   (open-process
-                     (list path: shell-path
-                           arguments: '("-i")  ; interactive
-                           stdin-redirection: #t
-                           stdout-redirection: #t
-                           stderr-redirection: #t
-                           pseudo-terminal: #t))))))
-    (make-terminal-state proc 0 -1 #f)))
+  "Create a gsh-backed terminal and return a terminal-state."
+  (let ((env (gsh-init!)))
+    (make-terminal-state env 0 -1 #f)))
 
-(def (terminal-send! ts input)
-  "Send a line of input to the terminal (with newline)."
-  (let ((proc (terminal-state-process ts)))
-    (display input proc)
-    (newline proc)
-    (force-output proc)))
+(def (terminal-prompt ts)
+  "Return the terminal prompt string showing cwd."
+  (let* ((env (terminal-state-env ts))
+         (cwd (or (env-get env "PWD") (current-directory)))
+         (home (getenv "HOME" ""))
+         (display-cwd (if (and (> (string-length home) 0)
+                               (string-prefix? home cwd))
+                        (string-append "~" (substring cwd (string-length home)
+                                                          (string-length cwd)))
+                        cwd)))
+    (string-append display-cwd " $ ")))
 
-(def (terminal-send-raw! ts str)
-  "Send raw string to the terminal (no newline added).
-   Used for special keys like Ctrl-C, arrow keys, etc."
-  (let ((proc (terminal-state-process ts)))
-    (display str proc)
-    (force-output proc)))
-
-(def (terminal-read-available ts)
-  "Read all available output from the terminal PTY (non-blocking).
-   Returns a list of text-segments with ANSI color info, or #f if nothing."
-  (let ((proc (terminal-state-process ts)))
-    (if (char-ready? proc)
-      (let ((out (open-output-string)))
-        (let loop ()
-          (when (char-ready? proc)
-            (let ((ch (read-char proc)))
-              (unless (eof-object? ch)
-                (write-char ch out)
-                (loop)))))
-        (let ((raw (get-output-string out)))
-          (if (string=? raw "")
-            #f
-            (parse-ansi-segments raw))))
-      #f)))
+(def (terminal-execute! input ts)
+  "Execute a command via gsh, return (values output-string new-cwd).
+   Output may be a string, 'clear, or 'exit."
+  (let ((env (terminal-state-env ts))
+        (trimmed (string-trim-both input)))
+    (cond
+      ((string=? trimmed "")
+       (values "" (or (env-get env "PWD") (current-directory))))
+      ((string=? trimmed "clear")
+       (values 'clear (or (env-get env "PWD") (current-directory))))
+      ((string=? trimmed "exit")
+       (values 'exit (or (env-get env "PWD") (current-directory))))
+      (else
+       (with-catch
+         (lambda (e)
+           (values (string-append "gsh: "
+                     (with-output-to-string (lambda () (display-exception e)))
+                     "\n")
+                   (or (env-get env "PWD") (current-directory))))
+         (lambda ()
+           (let-values (((output status) (gsh-capture trimmed env)))
+             (values (or output "")
+                     (or (env-get env "PWD") (current-directory))))))))))
 
 (def (terminal-stop! ts)
-  "Shut down the terminal subprocess."
-  (let ((proc (terminal-state-process ts)))
-    (with-catch void (lambda () (close-output-port proc)))
-    (with-catch void (lambda () (process-status proc)))))
+  "Clean up the terminal state (no-op for gsh-backed terminals)."
+  (void))
 
 ;;;============================================================================
 ;;; Terminal text insertion with styling

@@ -567,23 +567,13 @@
       (string-append (number->string count) " lines with trailing whitespace"))))
 
 ;;;============================================================================
-;;; Terminal commands (PTY-backed)
+;;; Terminal commands (gsh-backed)
 ;;;============================================================================
 
 (def terminal-buffer-counter 0)
 
-(def (terminal-read-plain ts)
-  "Read available terminal output and return as plain text (ANSI stripped)."
-  (let ((segs (terminal-read-available ts)))
-    (if segs
-      (let ((out (open-output-string)))
-        (for-each (lambda (seg) (display (text-segment-text seg) out)) segs)
-        (let ((s (get-output-string out)))
-          (if (string=? s "") #f s)))
-      #f)))
-
 (def (cmd-term app)
-  "Open a new PTY-backed terminal buffer."
+  "Open a new gsh-backed terminal buffer."
   (let* ((fr (app-state-frame app))
          (ed (current-qt-editor app))
          (name (begin
@@ -598,49 +588,105 @@
     ;; Attach buffer to editor
     (qt-buffer-attach! ed buf)
     (set! (qt-edit-window-buffer (qt-current-window fr)) buf)
-    ;; Spawn PTY-backed shell
+    ;; Initialize gsh-backed terminal
     (with-catch
       (lambda (e)
         (let ((msg (with-output-to-string "" (lambda () (display-exception e)))))
-          (gemacs-log! "cmd-term: shell spawn failed: " msg)
+          (gemacs-log! "cmd-term: gsh init failed: " msg)
           (echo-error! (app-state-echo app)
             (string-append "Terminal failed: " msg))))
       (lambda ()
         (let ((ts (terminal-start!)))
           (hash-put! *terminal-state* buf ts)
-          (qt-plain-text-edit-set-text! ed "")
-          (set! (terminal-state-prompt-pos ts) 0))
+          ;; Show initial prompt
+          (let ((prompt (terminal-prompt ts)))
+            (qt-plain-text-edit-set-text! ed prompt)
+            (set! (terminal-state-prompt-pos ts) (string-length prompt))
+            (qt-plain-text-edit-move-cursor! ed QT_CURSOR_END)))
         (echo-message! (app-state-echo app) (string-append name " started"))))))
 
 (def (cmd-terminal-send app)
-  "Send Enter (newline) to the terminal PTY."
+  "Execute the current input line in the terminal via gsh."
   (let* ((buf (current-qt-buffer app))
          (ts (hash-get *terminal-state* buf)))
     (when ts
-      (terminal-send-raw! ts "\n"))))
+      (let* ((ed (current-qt-editor app))
+             (text (qt-plain-text-edit-text ed))
+             (prompt-pos (terminal-state-prompt-pos ts))
+             (input (if (< prompt-pos (string-length text))
+                      (substring text prompt-pos (string-length text))
+                      "")))
+        ;; Append newline after user input
+        (qt-plain-text-edit-move-cursor! ed QT_CURSOR_END)
+        (qt-plain-text-edit-insert-text! ed "\n")
+        (let-values (((output new-cwd) (terminal-execute! input ts)))
+          (cond
+            ((eq? output 'clear)
+             (qt-plain-text-edit-set-text! ed ""))
+            ((eq? output 'exit)
+             (hash-remove! *terminal-state* buf)
+             (echo-message! (app-state-echo app) "Terminal exited"))
+            (else
+             ;; Append command output
+             (when (and (string? output) (> (string-length output) 0))
+               (qt-plain-text-edit-move-cursor! ed QT_CURSOR_END)
+               (qt-plain-text-edit-insert-text! ed output)
+               ;; Add trailing newline if output doesn't end with one
+               (unless (char=? (string-ref output (- (string-length output) 1)) #\newline)
+                 (qt-plain-text-edit-insert-text! ed "\n"))))))
+        ;; Display new prompt (unless exited)
+        (when (hash-get *terminal-state* buf)
+          (let ((prompt (terminal-prompt ts)))
+            (qt-plain-text-edit-move-cursor! ed QT_CURSOR_END)
+            (qt-plain-text-edit-insert-text! ed prompt)
+            (set! (terminal-state-prompt-pos ts)
+              (string-length (qt-plain-text-edit-text ed)))
+            (qt-plain-text-edit-ensure-cursor-visible! ed)))))))
 
 (def (cmd-term-interrupt app)
-  "Send Ctrl-C (interrupt) to the terminal PTY."
+  "Cancel current input in the terminal buffer."
   (let* ((buf (current-qt-buffer app))
          (ts (and (terminal-buffer? buf) (hash-get *terminal-state* buf))))
     (if ts
-      (terminal-send-raw! ts "\x03;")
+      (let* ((ed (current-qt-editor app))
+             (prompt (terminal-prompt ts)))
+        ;; Display ^C and new prompt
+        (qt-plain-text-edit-move-cursor! ed QT_CURSOR_END)
+        (qt-plain-text-edit-insert-text! ed "^C\n")
+        (qt-plain-text-edit-insert-text! ed prompt)
+        (set! (terminal-state-prompt-pos ts)
+          (string-length (qt-plain-text-edit-text ed)))
+        (qt-plain-text-edit-ensure-cursor-visible! ed))
       (echo-message! (app-state-echo app) "Not in a terminal buffer"))))
 
 (def (cmd-term-send-eof app)
-  "Send Ctrl-D (EOF) to the terminal PTY."
+  "Close the terminal buffer (Ctrl-D)."
   (let* ((buf (current-qt-buffer app))
          (ts (and (terminal-buffer? buf) (hash-get *terminal-state* buf))))
     (if ts
-      (terminal-send-raw! ts "\x04;")
+      (let ((ed (current-qt-editor app)))
+        ;; Only exit if input is empty (standard shell behavior)
+        (let* ((text (qt-plain-text-edit-text ed))
+               (prompt-pos (terminal-state-prompt-pos ts))
+               (input (if (< prompt-pos (string-length text))
+                        (substring text prompt-pos (string-length text))
+                        "")))
+          (if (string=? input "")
+            (begin
+              (terminal-stop! ts)
+              (hash-remove! *terminal-state* buf)
+              (echo-message! (app-state-echo app) "Terminal exited"))
+            (echo-message! (app-state-echo app)
+              "Use 'exit' to close terminal (input not empty)"))))
       (echo-message! (app-state-echo app) "Not in a terminal buffer"))))
 
 (def (cmd-term-send-tab app)
-  "Send Tab to the terminal PTY (for tab completion)."
+  "Insert tab character in the terminal buffer."
   (let* ((buf (current-qt-buffer app))
          (ts (and (terminal-buffer? buf) (hash-get *terminal-state* buf))))
     (if ts
-      (terminal-send-raw! ts "\t")
+      (let ((ed (current-qt-editor app)))
+        (qt-plain-text-edit-insert-text! ed "\t"))
       (echo-message! (app-state-echo app) "Not in a terminal buffer"))))
 
 ;;;============================================================================

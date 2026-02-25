@@ -619,10 +619,15 @@ Returns #t if changed, #f if not or if no record exists."
 (def (cmd-backward-delete-char app)
   (let ((buf (current-qt-buffer app)))
     (cond
-      ;; Terminal buffers: send DEL to PTY (PTY handles echo)
+      ;; Terminal buffers: delete in buffer but not past the prompt
       ((terminal-buffer? buf)
-       (let ((ts (hash-get *terminal-state* buf)))
-         (when ts (terminal-send-raw! ts "\x7f;"))))
+       (let* ((ed (current-qt-editor app))
+              (pos (qt-plain-text-edit-cursor-position ed))
+              (ts (hash-get *terminal-state* buf)))
+         (when (and ts (> pos (terminal-state-prompt-pos ts)))
+           (qt-plain-text-edit-move-cursor! ed QT_CURSOR_PREVIOUS_CHAR
+                                            mode: QT_KEEP_ANCHOR)
+           (qt-plain-text-edit-remove-selected-text! ed))))
       ;; In REPL buffers, don't delete past the prompt.
       ((repl-buffer? buf)
        (let* ((ed (current-qt-editor app))
