@@ -1462,7 +1462,8 @@
             (echo-message! (app-state-echo app) "gsh started")))))))
 
 (def (cmd-shell-send app)
-  "Execute the current input line in the shell via gsh."
+  "Execute the current input line in the shell via gsh.
+   Builtins run synchronously, external commands run async via PTY."
   (let* ((buf (current-buffer-from-app app))
          (ss (hash-get *shell-state* buf)))
     (when ss
@@ -1479,28 +1480,39 @@
             (gsh-history-add! trimmed-input (current-directory))))
         ;; Append newline after user input
         (editor-append-text ed "\n")
-        (let-values (((output new-cwd) (shell-execute! input ss)))
-          (cond
-            ((eq? output 'clear)
-             (editor-set-text ed ""))
-            ((eq? output 'exit)
-             ;; Kill shell buffer
-             (hash-remove! *shell-state* buf)
-             (cmd-kill-buffer-cmd app)
-             (echo-message! (app-state-echo app) "Shell exited"))
-            (else
-             ;; Append command output
-             (when (and (string? output) (> (string-length output) 0))
-               (editor-append-text ed output)
-               (unless (char=? (string-ref output (- (string-length output) 1)) #\newline)
-                 (editor-append-text ed "\n"))))))
-        ;; Display new prompt (unless exited)
-        (when (hash-get *shell-state* buf)
-          (let ((prompt (shell-prompt ss)))
-            (editor-append-text ed prompt)
-            (set! (shell-state-prompt-pos ss) (editor-get-text-length ed))
-            (editor-goto-pos ed (editor-get-text-length ed))
-            (editor-scroll-caret ed)))))))
+        (let-values (((mode output new-cwd) (shell-execute-async! input ss)))
+          (case mode
+            ((sync)
+             (cond
+               ((and (string? output) (> (string-length output) 0))
+                (editor-append-text ed output)
+                (unless (char=? (string-ref output (- (string-length output) 1)) #\newline)
+                  (editor-append-text ed "\n"))))
+             ;; Display prompt after sync command
+             (when (hash-get *shell-state* buf)
+               (let ((prompt (shell-prompt ss)))
+                 (editor-append-text ed prompt)
+                 (set! (shell-state-prompt-pos ss) (editor-get-text-length ed))
+                 (editor-goto-pos ed (editor-get-text-length ed))
+                 (editor-scroll-caret ed))))
+            ((async)
+             ;; Command dispatched to PTY — output will arrive via polling
+             (editor-goto-pos ed (editor-get-text-length ed))
+             (editor-scroll-caret ed))
+            ((special)
+             (cond
+               ((eq? output 'clear)
+                (editor-set-text ed "")
+                (let ((prompt (shell-prompt ss)))
+                  (editor-append-text ed prompt)
+                  (set! (shell-state-prompt-pos ss) (editor-get-text-length ed))
+                  (editor-goto-pos ed (editor-get-text-length ed))
+                  (editor-scroll-caret ed)))
+               ((eq? output 'exit)
+                (shell-stop! ss)
+                (hash-remove! *shell-state* buf)
+                (cmd-kill-buffer-cmd app)
+                (echo-message! (app-state-echo app) "Shell exited"))))))))))
 
 ;;;============================================================================
 ;;; AI Chat commands (Claude CLI integration)
@@ -1604,7 +1616,8 @@
         (echo-message! (app-state-echo app) (string-append name " started"))))))
 
 (def (cmd-terminal-send app)
-  "Execute the current input line in the terminal via gsh."
+  "Execute the current input line in the terminal via gsh.
+   Builtins run synchronously, external commands run async via PTY."
   (let* ((buf (current-buffer-from-app app))
          (ts (hash-get *terminal-state* buf)))
     (when ts
@@ -1617,49 +1630,77 @@
                       "")))
         ;; Append newline after user input
         (editor-append-text ed "\n")
-        (let-values (((output new-cwd) (terminal-execute! input ts)))
-          (cond
-            ((eq? output 'clear)
-             (editor-set-text ed ""))
-            ((eq? output 'exit)
-             (hash-remove! *terminal-state* buf)
-             (cmd-kill-buffer-cmd app)
-             (echo-message! (app-state-echo app) "Terminal exited"))
-            (else
+        (let-values (((mode output new-cwd) (terminal-execute-async! input ts)))
+          (case mode
+            ((sync)
              ;; Append command output (with ANSI styling)
              (when (and (string? output) (> (string-length output) 0))
                (let* ((segments (parse-ansi-segments output))
                       (start-pos (editor-get-text-length ed)))
                  (terminal-insert-styled! ed segments start-pos))
-               ;; Add trailing newline if output doesn't end with one
                (unless (char=? (string-ref output (- (string-length output) 1)) #\newline)
-                 (editor-append-text ed "\n"))))))
-        ;; Display new prompt (unless exited)
-        (when (hash-get *terminal-state* buf)
-          (let* ((raw-prompt (terminal-prompt-raw ts))
-                 (segments (parse-ansi-segments raw-prompt))
-                 (start-pos (editor-get-text-length ed)))
-            (terminal-insert-styled! ed segments start-pos)
-            (set! (terminal-state-prompt-pos ts) (editor-get-text-length ed))
-            (editor-goto-pos ed (editor-get-text-length ed))
-            (editor-scroll-caret ed)))))))
+                 (editor-append-text ed "\n")))
+             ;; Display prompt after sync command
+             (when (hash-get *terminal-state* buf)
+               (let* ((raw-prompt (terminal-prompt-raw ts))
+                      (segments (parse-ansi-segments raw-prompt))
+                      (start-pos (editor-get-text-length ed)))
+                 (terminal-insert-styled! ed segments start-pos)
+                 (set! (terminal-state-prompt-pos ts) (editor-get-text-length ed))
+                 (editor-goto-pos ed (editor-get-text-length ed))
+                 (editor-scroll-caret ed))))
+            ((async)
+             ;; Command dispatched to PTY — output will arrive via polling
+             (editor-goto-pos ed (editor-get-text-length ed))
+             (editor-scroll-caret ed))
+            ((special)
+             (cond
+               ((eq? output 'clear)
+                (editor-set-text ed "")
+                (let* ((raw-prompt (terminal-prompt-raw ts))
+                       (segments (parse-ansi-segments raw-prompt)))
+                  (editor-set-text ed "")
+                  (let ((prompt-len (terminal-insert-styled! ed segments 0)))
+                    (set! (terminal-state-prompt-pos ts) prompt-len)
+                    (editor-goto-pos ed prompt-len)
+                    (editor-scroll-caret ed))))
+               ((eq? output 'exit)
+                (terminal-stop! ts)
+                (hash-remove! *terminal-state* buf)
+                (cmd-kill-buffer-cmd app)
+                (echo-message! (app-state-echo app) "Terminal exited"))))))))))
 
 (def (cmd-term-interrupt app)
-  "Cancel current input in the terminal buffer."
+  "Send SIGINT to running PTY process, or cancel current input."
   (let* ((buf (current-buffer-from-app app))
          (ts (and (terminal-buffer? buf) (hash-get *terminal-state* buf))))
-    (if ts
-      (let* ((ed (current-editor app))
-             (raw-prompt (terminal-prompt-raw ts))
-             (segments (parse-ansi-segments raw-prompt)))
-        ;; Display ^C and new prompt
-        (editor-append-text ed "^C\n")
-        (let ((start-pos (editor-get-text-length ed)))
-          (terminal-insert-styled! ed segments start-pos))
-        (set! (terminal-state-prompt-pos ts) (editor-get-text-length ed))
-        (editor-goto-pos ed (editor-get-text-length ed))
-        (editor-scroll-caret ed))
-      (echo-message! (app-state-echo app) "Not in a terminal buffer"))))
+    (cond
+      ((not ts)
+       ;; Also handle shell buffers
+       (let ((ss (and (shell-buffer? buf) (hash-get *shell-state* buf))))
+         (if (and ss (shell-pty-busy? ss))
+           (begin
+             (shell-interrupt! ss)
+             (echo-message! (app-state-echo app) "Interrupt sent"))
+           (echo-message! (app-state-echo app) "Not in a terminal buffer"))))
+      ((terminal-pty-busy? ts)
+       ;; Send real SIGINT to the PTY child process
+       (terminal-interrupt! ts)
+       (let ((ed (current-editor app)))
+         (editor-append-text ed "^C\n")
+         (editor-goto-pos ed (editor-get-text-length ed))
+         (editor-scroll-caret ed)))
+      (else
+       ;; No PTY running — just cancel current input line
+       (let* ((ed (current-editor app))
+              (raw-prompt (terminal-prompt-raw ts))
+              (segments (parse-ansi-segments raw-prompt)))
+         (editor-append-text ed "^C\n")
+         (let ((start-pos (editor-get-text-length ed)))
+           (terminal-insert-styled! ed segments start-pos))
+         (set! (terminal-state-prompt-pos ts) (editor-get-text-length ed))
+         (editor-goto-pos ed (editor-get-text-length ed))
+         (editor-scroll-caret ed))))))
 
 (def (cmd-term-send-eof app)
   "Close the terminal/shell/eshell buffer (Ctrl-D) if input is empty."

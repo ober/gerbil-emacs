@@ -52,7 +52,7 @@
    (path-expand "bin/scintilla.a" sci-dir) " "
    (path-expand "bin/liblexilla.a" lexilla-dir) " "
    (path-expand "bin/termbox.a" termbox-dir) " "
-   "-lstdc++ -lpthread -lpcre2-8"))
+   "-lstdc++ -lpthread -lpcre2-8 -lutil"))
 
 ;; gerbil-shell (gsh) package path
 (def gsh-base (or (getenv "GEMACS_GSH_BASE" #f)
@@ -169,7 +169,7 @@
    (if static-build?
      "-Wl,--whole-archive -lpthread -Wl,--no-whole-archive"
      "-lpthread")
-   " -lpcre2-8"))
+   " -lpcre2-8 -lutil"))
 
 ;; For gxc: module compilation (no -static)
 (def qt-ld-opts qt-ld-opts-base)
@@ -191,6 +191,8 @@
     "core"
     ;; Interruptible subprocess execution (depends on core)
     "subprocess"
+    ;; PTY (pseudo-terminal) subprocess support via forkpty(3)
+    (gxc: "pty" "-ld-options" "-lutil")
     "persist"
     "repl"
     ;; Syntax highlighting (depends on gerbil-scintilla/lexer)

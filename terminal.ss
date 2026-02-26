@@ -10,6 +10,13 @@
         (struct-out terminal-state)
         terminal-start!
         terminal-execute!
+        terminal-execute-async!
+        terminal-poll-output
+        terminal-interrupt!
+        terminal-resize!
+        terminal-send-input!
+        terminal-pty-busy?
+        terminal-cleanup-pty!
         terminal-prompt
         terminal-prompt-raw
         terminal-stop!
@@ -26,13 +33,16 @@
 
 (import :std/sugar
         :std/srfi/13
+        :std/misc/channel
         :gerbil-scintilla/constants
         :gerbil-scintilla/scintilla
         :gsh/lib
         :gsh/environment
         :gsh/startup
+        :gsh/registry
         (only-in :gsh/prompt expand-prompt)
-        :gemacs/core)
+        :gemacs/core
+        :gemacs/pty)
 
 ;;;============================================================================
 ;;; Scintilla styling message IDs (not in constants.ss)
@@ -87,7 +97,12 @@
   (env         ; gsh shell-environment
    prompt-pos  ; character position where current input starts (after prompt)
    fg-color    ; current ANSI foreground color index (0-15, or -1 for default)
-   bold?)      ; ANSI bold/bright flag (shifts color index +8)
+   bold?       ; ANSI bold/bright flag (shifts color index +8)
+   ;; Async PTY fields
+   pty-master  ; master fd (int) or #f when no PTY child running
+   pty-pid     ; child PID or #f
+   pty-channel ; channel for reader thread -> UI communication, or #f
+   pty-thread) ; reader thread or #f
   transparent: #t)
 
 ;;;============================================================================
@@ -268,7 +283,7 @@
     (with-catch
       (lambda (e) (void))
       (lambda () (load-startup-files! env #f #t)))
-    (make-terminal-state env 0 -1 #f)))
+    (make-terminal-state env 0 -1 #f #f #f #f #f)))
 
 (def (make-cmd-exec-fn env)
   "Create a command-execution function for PS1 $(...) expansion."
@@ -370,8 +385,8 @@
                          cwd))))))))))
 
 (def (terminal-stop! ts)
-  "Clean up the terminal state (no-op for gsh-backed terminals)."
-  (void))
+  "Clean up the terminal state. Kills PTY child if running."
+  (terminal-cleanup-pty! ts))
 
 ;;;============================================================================
 ;;; Terminal text insertion with styling
@@ -396,3 +411,197 @@
           (send-message ed SCI_STARTSTYLING pos 0)
           (send-message ed SCI_SETSTYLING text-len style))
         (loop (cdr segs) (+ pos text-len) (+ total text-len))))))
+
+;;;============================================================================
+;;; Async PTY execution
+;;;============================================================================
+
+(def (pure-simple-command? input)
+  "Check if input is a simple command (no pipes, &&, ||, ;, &, backticks).
+   Returns #t if safe to run as an in-process builtin."
+  (let ((len (string-length input)))
+    (let loop ((i 0) (in-sq? #f) (in-dq? #f))
+      (if (>= i len)
+        #t
+        (let ((ch (string-ref input i)))
+          (cond
+            ;; Toggle single-quote state
+            ((and (char=? ch #\') (not in-dq?))
+             (loop (+ i 1) (not in-sq?) in-dq?))
+            ;; Toggle double-quote state
+            ((and (char=? ch #\") (not in-sq?))
+             (loop (+ i 1) in-sq? (not in-dq?)))
+            ;; Inside quotes: skip
+            ((or in-sq? in-dq?)
+             (loop (+ i 1) in-sq? in-dq?))
+            ;; Metacharacters outside quotes
+            ((memv ch '(#\| #\; #\& #\` #\( #\)))
+             #f)
+            (else
+             (loop (+ i 1) in-sq? in-dq?))))))))
+
+(def (extract-first-word input)
+  "Extract the first command word from input, skipping leading var assignments.
+   Returns the word or #f."
+  (let* ((trimmed (string-trim input))
+         (len (string-length trimmed)))
+    (let loop ((i 0))
+      (if (>= i len)
+        #f
+        (let ((ch (string-ref trimmed i)))
+          (cond
+            ;; Skip leading variable assignments (FOO=bar)
+            ((and (or (char-alphabetic? ch) (char=? ch #\_))
+                  (let scan ((j (+ i 1)))
+                    (and (< j len)
+                         (let ((c (string-ref trimmed j)))
+                           (cond
+                             ((char=? c #\=) #t)
+                             ((or (char-alphabetic? c) (char-numeric? c) (char=? c #\_))
+                              (scan (+ j 1)))
+                             (else #f))))))
+             ;; Skip past the value
+             (let skip-val ((j i))
+               (if (>= j len) #f
+                 (if (char=? (string-ref trimmed j) #\space)
+                   (loop (+ j 1))
+                   (skip-val (+ j 1))))))
+            ;; Found start of command word
+            ((not (char-whitespace? ch))
+             (let end ((j i))
+               (if (or (>= j len) (char-whitespace? (string-ref trimmed j)))
+                 (substring trimmed i j)
+                 (end (+ j 1)))))
+            (else (loop (+ i 1)))))))))
+
+(def (pty-waitpid-status pid nohang?)
+  "Wait for child and return just the exit status integer."
+  (let-values (((status exited?) (pty-waitpid pid nohang?)))
+    status))
+
+(def (pty-reader-loop mfd pid ch)
+  "Reader thread body: poll PTY output and post to channel.
+   Posts (cons 'data string) for output chunks,
+   (cons 'done exit-status) when child exits."
+  (with-catch
+    (lambda (e)
+      (gemacs-log! "PTY reader error: "
+        (with-output-to-string
+          (lambda () (display-exception e))))
+      (channel-put ch (cons 'done -1)))
+    (lambda ()
+      (let loop ()
+        (thread-sleep! 0.05)
+        (let ((data (pty-read mfd)))
+          (cond
+            ((string? data)
+             (channel-put ch (cons 'data data))
+             (loop))
+            ((eq? data 'eof)
+             ;; Child exited, reap and get status
+             (let ((status (pty-waitpid-status pid #f)))
+               (channel-put ch (cons 'done status))))
+            (else
+             ;; EAGAIN: no data yet
+             (if (pty-child-alive? pid)
+               (loop)
+               ;; Child died but no EOF yet, drain remaining output
+               (let drain ()
+                 (let ((d (pty-read mfd)))
+                   (cond
+                     ((string? d)
+                      (channel-put ch (cons 'data d))
+                      (drain))
+                     (else
+                      (let ((status (pty-waitpid-status pid #t)))
+                        (channel-put ch (cons 'done status)))))))))))))))
+
+(def (terminal-execute-async! input ts)
+  "Execute command: builtins go through gsh-capture (sync),
+   external commands go through PTY subprocess (async).
+   Returns:
+   - (values 'sync output cwd) for sync builtins
+   - (values 'async #f #f) when command dispatched to PTY
+   - (values 'special 'clear|'exit #f) for clear/exit"
+  (let ((trimmed (string-trim-both input)))
+    (cond
+      ((string=? trimmed "")
+       (values 'sync "" (or (env-get (terminal-state-env ts) "PWD")
+                            (current-directory))))
+      ((string=? trimmed "clear")
+       (values 'special 'clear #f))
+      ((string=? trimmed "exit")
+       (values 'special 'exit #f))
+      (else
+       (let ((first-word (extract-first-word trimmed)))
+         (if (and first-word
+                  (builtin? first-word)
+                  (pure-simple-command? trimmed))
+           ;; Builtin: run in-process via gsh-capture (synchronous)
+           (let-values (((output cwd) (terminal-execute! trimmed ts)))
+             (values 'sync output cwd))
+           ;; External/compound: spawn PTY subprocess (async)
+           (let* ((env (terminal-state-env ts))
+                  (env-alist (env-exported-alist env))
+                  (rows 24) (cols 80))
+             (let-values (((mfd pid) (pty-spawn trimmed env-alist rows cols)))
+               (if (and mfd pid)
+                 (let ((ch (make-channel)))
+                   ;; Store PTY state
+                   (set! (terminal-state-pty-master ts) mfd)
+                   (set! (terminal-state-pty-pid ts) pid)
+                   (set! (terminal-state-pty-channel ts) ch)
+                   ;; Spawn reader thread
+                   (let ((thread (spawn (lambda () (pty-reader-loop mfd pid ch)))))
+                     (set! (terminal-state-pty-thread ts) thread)
+                     (values 'async #f #f)))
+                 ;; forkpty failed, fall back to sync
+                 (let-values (((output cwd) (terminal-execute! trimmed ts)))
+                   (values 'sync output cwd)))))))))))
+
+(def (terminal-poll-output ts)
+  "Non-blocking check for PTY output. Returns:
+   - (cons 'data string) — output chunk
+   - (cons 'done exit-status) — child exited
+   - #f — nothing available"
+  (let ((ch (terminal-state-pty-channel ts)))
+    (and ch (channel-try-get ch))))
+
+(def (terminal-pty-busy? ts)
+  "Check if a PTY command is currently running."
+  (and (terminal-state-pty-pid ts) #t))
+
+(def (terminal-interrupt! ts)
+  "Send SIGINT to the PTY child process group."
+  (let ((pid (terminal-state-pty-pid ts)))
+    (when pid
+      (pty-kill! pid 2))))  ;; SIGINT = 2
+
+(def (terminal-resize! ts rows cols)
+  "Notify PTY child of window size change."
+  (let ((master (terminal-state-pty-master ts)))
+    (when master
+      (pty-resize! master rows cols))))
+
+(def (terminal-send-input! ts str)
+  "Send keystrokes to PTY child's stdin."
+  (let ((master (terminal-state-pty-master ts)))
+    (when master
+      (pty-write master str))))
+
+(def (terminal-cleanup-pty! ts)
+  "Clean up PTY resources: kill child, close fd, terminate reader thread."
+  (let ((master (terminal-state-pty-master ts))
+        (pid (terminal-state-pty-pid ts))
+        (thread (terminal-state-pty-thread ts))
+        (ch (terminal-state-pty-channel ts)))
+    (when thread
+      (with-catch void (lambda () (thread-terminate! thread))))
+    (when (and master pid)
+      (pty-close! master pid))
+    (when ch
+      (with-catch void (lambda () (channel-close ch))))
+    (set! (terminal-state-pty-master ts) #f)
+    (set! (terminal-state-pty-pid ts) #f)
+    (set! (terminal-state-pty-channel ts) #f)
+    (set! (terminal-state-pty-thread ts) #f)))

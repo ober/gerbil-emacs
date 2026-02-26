@@ -170,6 +170,66 @@
         ;; Add stretch at the end to push tabs left
         (qt-layout-add-stretch! *tab-bar-layout*)))))
 
+;;;============================================================================
+;;; PTY output polling helpers (used by timer callback)
+;;;============================================================================
+
+(def (qt-poll-shell-pty-msg! fr buf ss msg)
+  "Handle one PTY message for a shell buffer in Qt."
+  (let ((tag (car msg))
+        (data (cdr msg)))
+    (cond
+      ((eq? tag 'data)
+       (let loop ((wins (qt-frame-windows fr)))
+         (when (pair? wins)
+           (if (eq? (qt-edit-window-buffer (car wins)) buf)
+             (let ((ed (qt-edit-window-editor (car wins))))
+               (qt-plain-text-edit-move-cursor! ed QT_CURSOR_END)
+               (qt-plain-text-edit-insert-text! ed (strip-ansi-codes data))
+               (qt-plain-text-edit-ensure-cursor-visible! ed))
+             (loop (cdr wins))))))
+      ((eq? tag 'done)
+       (shell-cleanup-pty! ss)
+       (let loop ((wins (qt-frame-windows fr)))
+         (when (pair? wins)
+           (if (eq? (qt-edit-window-buffer (car wins)) buf)
+             (let ((ed (qt-edit-window-editor (car wins))))
+               (let ((prompt (shell-prompt ss)))
+                 (qt-plain-text-edit-move-cursor! ed QT_CURSOR_END)
+                 (qt-plain-text-edit-insert-text! ed prompt)
+                 (set! (shell-state-prompt-pos ss)
+                   (string-length (qt-plain-text-edit-text ed)))
+                 (qt-plain-text-edit-ensure-cursor-visible! ed)))
+             (loop (cdr wins)))))))))
+
+(def (qt-poll-terminal-pty-msg! fr buf ts msg)
+  "Handle one PTY message for a terminal buffer in Qt."
+  (let ((tag (car msg))
+        (data (cdr msg)))
+    (cond
+      ((eq? tag 'data)
+       (let loop ((wins (qt-frame-windows fr)))
+         (when (pair? wins)
+           (if (eq? (qt-edit-window-buffer (car wins)) buf)
+             (let ((ed (qt-edit-window-editor (car wins))))
+               (qt-plain-text-edit-move-cursor! ed QT_CURSOR_END)
+               (qt-plain-text-edit-insert-text! ed (strip-ansi-codes data))
+               (qt-plain-text-edit-ensure-cursor-visible! ed))
+             (loop (cdr wins))))))
+      ((eq? tag 'done)
+       (terminal-cleanup-pty! ts)
+       (let loop ((wins (qt-frame-windows fr)))
+         (when (pair? wins)
+           (if (eq? (qt-edit-window-buffer (car wins)) buf)
+             (let ((ed (qt-edit-window-editor (car wins))))
+               (let ((prompt (terminal-prompt ts)))
+                 (qt-plain-text-edit-move-cursor! ed QT_CURSOR_END)
+                 (qt-plain-text-edit-insert-text! ed prompt)
+                 (set! (terminal-state-prompt-pos ts)
+                   (string-length (qt-plain-text-edit-text ed)))
+                 (qt-plain-text-edit-ensure-cursor-visible! ed)))
+             (loop (cdr wins)))))))))
+
 (def (qt-main . args)
   (with-qt-app qt-app
     ;; Initialize runtime error log (~/.gemacs-errors.log)
@@ -562,8 +622,30 @@
                                   (qt-plain-text-edit-ensure-cursor-visible! ed))
                                 (loop (cdr wins)))))))))))
               (buffer-list))
-            ;; Shell buffers: gsh-backed, no polling needed (synchronous execution)
-            ;; Terminal buffers: gsh-backed, no polling needed (synchronous execution)
+            ;; Poll Shell/Terminal PTY output
+            (for-each
+              (lambda (buf)
+                ;; Shell buffers with active PTY
+                (when (shell-buffer? buf)
+                  (let ((ss (hash-get *shell-state* buf)))
+                    (when (and ss (shell-pty-busy? ss))
+                      (let drain ()
+                        (let ((msg (shell-poll-output ss)))
+                          (when msg
+                            (qt-poll-shell-pty-msg! fr buf ss msg)
+                            (when (eq? (car msg) 'data)
+                              (drain))))))))
+                ;; Terminal buffers with active PTY
+                (when (terminal-buffer? buf)
+                  (let ((ts (hash-get *terminal-state* buf)))
+                    (when (and ts (terminal-pty-busy? ts))
+                      (let drain ()
+                        (let ((msg (terminal-poll-output ts)))
+                          (when msg
+                            (qt-poll-terminal-pty-msg! fr buf ts msg)
+                            (when (eq? (car msg) 'data)
+                              (drain)))))))))
+              (buffer-list))
             ;; Also poll chat buffers (Claude CLI)
             (for-each
               (lambda (buf)

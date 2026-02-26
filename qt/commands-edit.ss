@@ -756,7 +756,8 @@
             (echo-message! (app-state-echo app) "gsh started")))))))
 
 (def (cmd-shell-send app)
-  "Execute the current input line in the shell via gsh."
+  "Execute the current input line in the shell via gsh.
+   Builtins run synchronously, external commands run async via PTY."
   (let* ((buf (current-qt-buffer app))
          (ss (hash-get *shell-state* buf)))
     (when ss
@@ -774,38 +775,48 @@
         ;; Append newline after user input
         (qt-plain-text-edit-move-cursor! ed QT_CURSOR_END)
         (qt-plain-text-edit-insert-text! ed "\n")
-        (let-values (((output new-cwd) (shell-execute! input ss)))
-          (cond
-            ((eq? output 'clear)
-             (qt-plain-text-edit-set-text! ed ""))
-            ((eq? output 'exit)
-             ;; Kill shell buffer and switch to another
-             (let* ((fr (app-state-frame app))
-                    (other (let loop ((bs (buffer-list)))
-                             (cond ((null? bs) #f)
-                                   ((eq? (car bs) buf) (loop (cdr bs)))
-                                   (else (car bs))))))
-               (when other
-                 (qt-buffer-attach! ed other)
-                 (set! (qt-edit-window-buffer (qt-current-window fr)) other))
-               (hash-remove! *shell-state* buf)
-               (qt-buffer-kill! buf)
-               (echo-message! (app-state-echo app) "Shell exited")))
-            (else
-             ;; Append command output
+        (let-values (((mode output new-cwd) (shell-execute-async! input ss)))
+          (case mode
+            ((sync)
              (when (and (string? output) (> (string-length output) 0))
                (qt-plain-text-edit-move-cursor! ed QT_CURSOR_END)
                (qt-plain-text-edit-insert-text! ed output)
                (unless (char=? (string-ref output (- (string-length output) 1)) #\newline)
-                 (qt-plain-text-edit-insert-text! ed "\n"))))))
-        ;; Display new prompt (unless exited)
-        (when (hash-get *shell-state* buf)
-          (let ((prompt (shell-prompt ss)))
-            (qt-plain-text-edit-move-cursor! ed QT_CURSOR_END)
-            (qt-plain-text-edit-insert-text! ed prompt)
-            (set! (shell-state-prompt-pos ss)
-              (string-length (qt-plain-text-edit-text ed)))
-            (qt-plain-text-edit-ensure-cursor-visible! ed)))))))
+                 (qt-plain-text-edit-insert-text! ed "\n")))
+             ;; Display prompt after sync command
+             (when (hash-get *shell-state* buf)
+               (let ((prompt (shell-prompt ss)))
+                 (qt-plain-text-edit-move-cursor! ed QT_CURSOR_END)
+                 (qt-plain-text-edit-insert-text! ed prompt)
+                 (set! (shell-state-prompt-pos ss)
+                   (string-length (qt-plain-text-edit-text ed)))
+                 (qt-plain-text-edit-ensure-cursor-visible! ed))))
+            ((async)
+             ;; Command dispatched to PTY — output arrives via timer polling
+             (qt-plain-text-edit-move-cursor! ed QT_CURSOR_END)
+             (qt-plain-text-edit-ensure-cursor-visible! ed))
+            ((special)
+             (cond
+               ((eq? output 'clear)
+                (qt-plain-text-edit-set-text! ed "")
+                (let ((prompt (shell-prompt ss)))
+                  (qt-plain-text-edit-insert-text! ed prompt)
+                  (set! (shell-state-prompt-pos ss)
+                    (string-length (qt-plain-text-edit-text ed)))
+                  (qt-plain-text-edit-ensure-cursor-visible! ed)))
+               ((eq? output 'exit)
+                (shell-stop! ss)
+                (let* ((fr (app-state-frame app))
+                       (other (let loop ((bs (buffer-list)))
+                                (cond ((null? bs) #f)
+                                      ((eq? (car bs) buf) (loop (cdr bs)))
+                                      (else (car bs))))))
+                  (when other
+                    (qt-buffer-attach! ed other)
+                    (set! (qt-edit-window-buffer (qt-current-window fr)) other))
+                  (hash-remove! *shell-state* buf)
+                  (qt-buffer-kill! buf)
+                  (echo-message! (app-state-echo app) "Shell exited")))))))))))
 ;;;============================================================================
 ;;; AI Chat commands (Claude CLI integration)
 ;;;============================================================================

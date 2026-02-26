@@ -211,12 +211,84 @@
     (buffer-list)))
 
 ;;;============================================================================
-;;; Shell output polling
+;;; Shell/Terminal PTY output polling
 ;;;============================================================================
 
-;;;============================================================================
-;;; Shell/Terminal: gsh-backed, no polling needed (synchronous execution)
-;;;============================================================================
+(def (poll-shell-pty-msg! app buf ss msg)
+  "Handle one PTY message for a shell buffer."
+  (let ((tag (car msg))
+        (data (cdr msg)))
+    (cond
+      ((eq? tag 'data)
+       (let ((win (find-window-for-buffer (app-state-frame app) buf)))
+         (when win
+           (let ((ed (edit-window-editor win)))
+             (editor-append-text ed (strip-ansi-codes data))
+             (editor-goto-pos ed (editor-get-text-length ed))
+             (editor-scroll-caret ed)))))
+      ((eq? tag 'done)
+       (shell-cleanup-pty! ss)
+       (let ((win (find-window-for-buffer (app-state-frame app) buf)))
+         (when win
+           (let ((ed (edit-window-editor win)))
+             (let ((prompt (shell-prompt ss)))
+               (editor-append-text ed prompt)
+               (set! (shell-state-prompt-pos ss) (editor-get-text-length ed))
+               (editor-goto-pos ed (editor-get-text-length ed))
+               (editor-scroll-caret ed)))))))))
+
+(def (poll-terminal-pty-msg! app buf ts msg)
+  "Handle one PTY message for a terminal buffer."
+  (let ((tag (car msg))
+        (data (cdr msg)))
+    (cond
+      ((eq? tag 'data)
+       (let ((win (find-window-for-buffer (app-state-frame app) buf)))
+         (when win
+           (let* ((ed (edit-window-editor win))
+                  (segments (parse-ansi-segments data))
+                  (start-pos (editor-get-text-length ed)))
+             (terminal-insert-styled! ed segments start-pos)
+             (editor-goto-pos ed (editor-get-text-length ed))
+             (editor-scroll-caret ed)))))
+      ((eq? tag 'done)
+       (terminal-cleanup-pty! ts)
+       (let ((win (find-window-for-buffer (app-state-frame app) buf)))
+         (when win
+           (let* ((ed (edit-window-editor win))
+                  (raw-prompt (terminal-prompt-raw ts))
+                  (segments (parse-ansi-segments raw-prompt))
+                  (start-pos (editor-get-text-length ed)))
+             (terminal-insert-styled! ed segments start-pos)
+             (set! (terminal-state-prompt-pos ts) (editor-get-text-length ed))
+             (editor-goto-pos ed (editor-get-text-length ed))
+             (editor-scroll-caret ed))))))))
+
+(def (poll-pty-output! app)
+  "Check all shell and terminal buffers for async PTY output."
+  (for-each
+    (lambda (buf)
+      ;; Shell buffers with active PTY
+      (when (shell-buffer? buf)
+        (let ((ss (hash-get *shell-state* buf)))
+          (when (and ss (shell-pty-busy? ss))
+            (let drain ()
+              (let ((msg (shell-poll-output ss)))
+                (when msg
+                  (poll-shell-pty-msg! app buf ss msg)
+                  (when (eq? (car msg) 'data)
+                    (drain))))))))
+      ;; Terminal buffers with active PTY
+      (when (terminal-buffer? buf)
+        (let ((ts (hash-get *terminal-state* buf)))
+          (when (and ts (terminal-pty-busy? ts))
+            (let drain ()
+              (let ((msg (terminal-poll-output ts)))
+                (when msg
+                  (poll-terminal-pty-msg! app buf ts msg)
+                  (when (eq? (car msg) 'data)
+                    (drain)))))))))
+    (buffer-list)))
 
 ;;;============================================================================
 ;;; Chat output polling (Claude CLI streaming responses)
@@ -275,7 +347,8 @@
       ;; Poll REPL subprocess output
       (poll-repl-output! app)
 
-      ;; Shell/Terminal: gsh-backed, no polling needed
+      ;; Poll Shell/Terminal PTY output
+      (poll-pty-output! app)
 
       ;; Poll AI chat output
       (poll-chat-output! app)

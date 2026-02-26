@@ -3374,7 +3374,7 @@
         ;; Simulate shell prompt output
         (editor-set-text ed "$ ")
         ;; Create a fake shell-state with env=#f (for testing self-insert)
-        (let ((ss (make-shell-state #f 2)))
+        (let ((ss (make-shell-state #f 2 #f #f #f #f)))
           (hash-put! *shell-state* buf ss)
           ;; Position cursor after prompt
           (editor-goto-pos ed 2)

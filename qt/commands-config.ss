@@ -607,7 +607,8 @@
         (echo-message! (app-state-echo app) (string-append name " started"))))))
 
 (def (cmd-terminal-send app)
-  "Execute the current input line in the terminal via gsh."
+  "Execute the current input line in the terminal via gsh.
+   Builtins run synchronously, external commands run async via PTY."
   (let* ((buf (current-qt-buffer app))
          (ts (hash-get *terminal-state* buf)))
     (when ts
@@ -620,55 +621,79 @@
         ;; Append newline after user input
         (qt-plain-text-edit-move-cursor! ed QT_CURSOR_END)
         (qt-plain-text-edit-insert-text! ed "\n")
-        (let-values (((output new-cwd) (terminal-execute! input ts)))
-          (cond
-            ((eq? output 'clear)
-             (qt-plain-text-edit-set-text! ed ""))
-            ((eq? output 'exit)
-             ;; Kill terminal buffer and switch to another
-             (let* ((fr (app-state-frame app))
-                    (other (let loop ((bs (buffer-list)))
-                             (cond ((null? bs) #f)
-                                   ((eq? (car bs) buf) (loop (cdr bs)))
-                                   (else (car bs))))))
-               (when other
-                 (qt-buffer-attach! ed other)
-                 (set! (qt-edit-window-buffer (qt-current-window fr)) other))
-               (hash-remove! *terminal-state* buf)
-               (qt-buffer-kill! buf)
-               (echo-message! (app-state-echo app) "Terminal exited")))
-            (else
-             ;; Append command output
+        (let-values (((mode output new-cwd) (terminal-execute-async! input ts)))
+          (case mode
+            ((sync)
              (when (and (string? output) (> (string-length output) 0))
                (qt-plain-text-edit-move-cursor! ed QT_CURSOR_END)
                (qt-plain-text-edit-insert-text! ed output)
-               ;; Add trailing newline if output doesn't end with one
                (unless (char=? (string-ref output (- (string-length output) 1)) #\newline)
-                 (qt-plain-text-edit-insert-text! ed "\n"))))))
-        ;; Display new prompt (unless exited)
-        (when (hash-get *terminal-state* buf)
-          (let ((prompt (terminal-prompt ts)))
-            (qt-plain-text-edit-move-cursor! ed QT_CURSOR_END)
-            (qt-plain-text-edit-insert-text! ed prompt)
-            (set! (terminal-state-prompt-pos ts)
-              (string-length (qt-plain-text-edit-text ed)))
-            (qt-plain-text-edit-ensure-cursor-visible! ed)))))))
+                 (qt-plain-text-edit-insert-text! ed "\n")))
+             ;; Display prompt after sync command
+             (when (hash-get *terminal-state* buf)
+               (let ((prompt (terminal-prompt ts)))
+                 (qt-plain-text-edit-move-cursor! ed QT_CURSOR_END)
+                 (qt-plain-text-edit-insert-text! ed prompt)
+                 (set! (terminal-state-prompt-pos ts)
+                   (string-length (qt-plain-text-edit-text ed)))
+                 (qt-plain-text-edit-ensure-cursor-visible! ed))))
+            ((async)
+             ;; Command dispatched to PTY — output arrives via timer polling
+             (qt-plain-text-edit-move-cursor! ed QT_CURSOR_END)
+             (qt-plain-text-edit-ensure-cursor-visible! ed))
+            ((special)
+             (cond
+               ((eq? output 'clear)
+                (qt-plain-text-edit-set-text! ed "")
+                (let ((prompt (terminal-prompt ts)))
+                  (qt-plain-text-edit-insert-text! ed prompt)
+                  (set! (terminal-state-prompt-pos ts)
+                    (string-length (qt-plain-text-edit-text ed)))
+                  (qt-plain-text-edit-ensure-cursor-visible! ed)))
+               ((eq? output 'exit)
+                (terminal-stop! ts)
+                (let* ((fr (app-state-frame app))
+                       (other (let loop ((bs (buffer-list)))
+                                (cond ((null? bs) #f)
+                                      ((eq? (car bs) buf) (loop (cdr bs)))
+                                      (else (car bs))))))
+                  (when other
+                    (qt-buffer-attach! ed other)
+                    (set! (qt-edit-window-buffer (qt-current-window fr)) other))
+                  (hash-remove! *terminal-state* buf)
+                  (qt-buffer-kill! buf)
+                  (echo-message! (app-state-echo app) "Terminal exited")))))))))))
 
 (def (cmd-term-interrupt app)
-  "Cancel current input in the terminal buffer."
+  "Send SIGINT to running PTY process, or cancel current input."
   (let* ((buf (current-qt-buffer app))
          (ts (and (terminal-buffer? buf) (hash-get *terminal-state* buf))))
-    (if ts
-      (let* ((ed (current-qt-editor app))
-             (prompt (terminal-prompt ts)))
-        ;; Display ^C and new prompt
-        (qt-plain-text-edit-move-cursor! ed QT_CURSOR_END)
-        (qt-plain-text-edit-insert-text! ed "^C\n")
-        (qt-plain-text-edit-insert-text! ed prompt)
-        (set! (terminal-state-prompt-pos ts)
-          (string-length (qt-plain-text-edit-text ed)))
-        (qt-plain-text-edit-ensure-cursor-visible! ed))
-      (echo-message! (app-state-echo app) "Not in a terminal buffer"))))
+    (cond
+      ((not ts)
+       ;; Also handle shell buffers
+       (let ((ss (and (shell-buffer? buf) (hash-get *shell-state* buf))))
+         (if (and ss (shell-pty-busy? ss))
+           (begin
+             (shell-interrupt! ss)
+             (echo-message! (app-state-echo app) "Interrupt sent"))
+           (echo-message! (app-state-echo app) "Not in a terminal buffer"))))
+      ((terminal-pty-busy? ts)
+       ;; Send real SIGINT to the PTY child process
+       (terminal-interrupt! ts)
+       (let ((ed (current-qt-editor app)))
+         (qt-plain-text-edit-move-cursor! ed QT_CURSOR_END)
+         (qt-plain-text-edit-insert-text! ed "^C\n")
+         (qt-plain-text-edit-ensure-cursor-visible! ed)))
+      (else
+       ;; No PTY running — just cancel current input line
+       (let* ((ed (current-qt-editor app))
+              (prompt (terminal-prompt ts)))
+         (qt-plain-text-edit-move-cursor! ed QT_CURSOR_END)
+         (qt-plain-text-edit-insert-text! ed "^C\n")
+         (qt-plain-text-edit-insert-text! ed prompt)
+         (set! (terminal-state-prompt-pos ts)
+           (string-length (qt-plain-text-edit-text ed)))
+         (qt-plain-text-edit-ensure-cursor-visible! ed))))))
 
 (def (cmd-term-send-eof app)
   "Close the terminal/shell/eshell buffer (Ctrl-D).

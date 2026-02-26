@@ -9,17 +9,26 @@
         (struct-out shell-state)
         shell-start!
         shell-execute!
+        shell-execute-async!
+        shell-poll-output
+        shell-pty-busy?
+        shell-interrupt!
+        shell-send-input!
+        shell-cleanup-pty!
         shell-stop!
         shell-prompt
         strip-ansi-codes)
 
 (import :std/sugar
         :std/srfi/13
+        :std/misc/channel
         :gsh/lib
         :gsh/environment
         :gsh/startup
         (only-in :gsh/prompt expand-prompt)
-        :gemacs/core)
+        (only-in :gsh/registry builtin?)
+        :gemacs/core
+        :gemacs/pty)
 
 ;;;============================================================================
 ;;; Shell state
@@ -35,7 +44,11 @@
 
 (defstruct shell-state
   (env          ; gsh shell-environment
-   prompt-pos)  ; integer: byte position where current input starts
+   prompt-pos   ; integer: byte position where current input starts
+   pty-master   ; PTY master fd (or #f)
+   pty-pid      ; child process PID (or #f)
+   pty-channel  ; channel for PTY output messages (or #f)
+   pty-thread)  ; reader thread (or #f)
   transparent: #t)
 
 ;;;============================================================================
@@ -102,7 +115,7 @@
     (with-catch
       (lambda (e) (void))  ; ignore errors in rc file
       (lambda () (load-startup-files! env #f #t)))  ; login?=#f interactive?=#t
-    (make-shell-state env 0)))
+    (make-shell-state env 0 #f #f #f #f)))
 
 (def (make-cmd-exec-fn env)
   "Create a command-execution function for PS1 $(...) expansion."
@@ -164,5 +177,152 @@
                          cwd))))))))))
 
 (def (shell-stop! ss)
-  "Clean up the shell state (no-op for gsh-backed shells)."
-  (void))
+  "Clean up the shell state."
+  (shell-cleanup-pty! ss))
+
+;;;============================================================================
+;;; Async PTY execution
+;;;============================================================================
+
+(def (shell-pure-simple-command? input)
+  "Check if input is a simple command without shell metacharacters."
+  (let ((len (string-length input)))
+    (let loop ((i 0) (in-quote #f))
+      (if (>= i len) #t
+        (let ((ch (string-ref input i)))
+          (cond
+            ((and (not in-quote) (memv ch '(#\| #\; #\& #\`)))
+             #f)
+            ((char=? ch #\') (loop (+ i 1) (not in-quote)))
+            (else (loop (+ i 1) in-quote))))))))
+
+(def (shell-extract-first-word input)
+  "Extract the first command word, skipping leading VAR=val assignments."
+  (let ((len (string-length input)))
+    (let loop ((i 0))
+      (if (>= i len) #f
+        (let ((ch (string-ref input i)))
+          (cond
+            ((char-whitespace? ch) (loop (+ i 1)))
+            ((not (char-whitespace? ch))
+             (let end ((j i))
+               (if (or (>= j len) (char-whitespace? (string-ref input j)))
+                 (let ((word (substring input i j)))
+                   (if (string-index word #\=)
+                     (loop j)  ; skip VAR=val
+                     word))
+                 (end (+ j 1)))))
+            (else (loop (+ i 1)))))))))
+
+(def (shell-pty-waitpid-status pid nohang?)
+  "Wait for child and return just the exit status integer."
+  (let-values (((status exited?) (pty-waitpid pid nohang?)))
+    status))
+
+(def (shell-pty-reader-loop mfd pid ch)
+  "Reader thread body: poll PTY output and post to channel."
+  (with-catch
+    (lambda (e)
+      (gemacs-log! "Shell PTY reader error: "
+        (with-output-to-string
+          (lambda () (display-exception e))))
+      (channel-put ch (cons 'done -1)))
+    (lambda ()
+      (let loop ()
+        (thread-sleep! 0.05)
+        (let ((data (pty-read mfd)))
+          (cond
+            ((string? data)
+             (channel-put ch (cons 'data data))
+             (loop))
+            ((eq? data 'eof)
+             (let ((status (shell-pty-waitpid-status pid #f)))
+               (channel-put ch (cons 'done status))))
+            (else
+             (if (pty-child-alive? pid)
+               (loop)
+               (let drain ()
+                 (let ((d (pty-read mfd)))
+                   (cond
+                     ((string? d)
+                      (channel-put ch (cons 'data d))
+                      (drain))
+                     (else
+                      (let ((status (shell-pty-waitpid-status pid #t)))
+                        (channel-put ch (cons 'done status)))))))))))))))
+
+(def (shell-execute-async! input ss)
+  "Execute command: builtins go through gsh-capture (sync),
+   external commands go through PTY subprocess (async).
+   Returns:
+   - (values 'sync output cwd) for sync builtins
+   - (values 'async #f #f) when command dispatched to PTY
+   - (values 'special 'clear|'exit cwd) for clear/exit"
+  (let ((env (shell-state-env ss))
+        (trimmed (string-trim-both input)))
+    (env-inc-cmd-number! env)
+    (cond
+      ((string=? trimmed "")
+       (values 'sync "" (or (env-get env "PWD") (current-directory))))
+      ((string=? trimmed "clear")
+       (values 'special 'clear (or (env-get env "PWD") (current-directory))))
+      ((string=? trimmed "exit")
+       (values 'special 'exit (or (env-get env "PWD") (current-directory))))
+      (else
+       (let ((first-word (shell-extract-first-word trimmed)))
+         (if (and first-word
+                  (builtin? first-word)
+                  (shell-pure-simple-command? trimmed))
+           ;; Builtin: run in-process via gsh-capture (synchronous)
+           (let-values (((output cwd) (shell-execute! input ss)))
+             (values 'sync output cwd))
+           ;; External/compound: spawn PTY subprocess (async)
+           (let* ((env-alist (env-exported-alist env))
+                  (rows 24) (cols 80))
+             (let-values (((mfd pid) (pty-spawn trimmed env-alist rows cols)))
+               (if (and mfd pid)
+                 (let ((ch (make-channel)))
+                   (set! (shell-state-pty-master ss) mfd)
+                   (set! (shell-state-pty-pid ss) pid)
+                   (set! (shell-state-pty-channel ss) ch)
+                   (let ((thread (spawn (lambda () (shell-pty-reader-loop mfd pid ch)))))
+                     (set! (shell-state-pty-thread ss) thread)
+                     (values 'async #f #f)))
+                 ;; forkpty failed, fall back to sync
+                 (let-values (((output cwd) (shell-execute! input ss)))
+                   (values 'sync output cwd)))))))))))
+
+(def (shell-poll-output ss)
+  "Non-blocking check for PTY output. Returns:
+   - (cons 'data string) — output chunk
+   - (cons 'done exit-status) — child exited
+   - #f — nothing available"
+  (let ((ch (shell-state-pty-channel ss)))
+    (and ch (channel-try-get ch))))
+
+(def (shell-pty-busy? ss)
+  "Check if a PTY command is currently running."
+  (and (shell-state-pty-pid ss) #t))
+
+(def (shell-interrupt! ss)
+  "Send SIGINT to the PTY child process group."
+  (let ((pid (shell-state-pty-pid ss)))
+    (when pid
+      (pty-kill! pid 2))))
+
+(def (shell-send-input! ss str)
+  "Send string to the PTY child's stdin."
+  (let ((mfd (shell-state-pty-master ss)))
+    (when mfd
+      (pty-write mfd str))))
+
+(def (shell-cleanup-pty! ss)
+  "Clean up PTY state after command finishes or on stop."
+  (let ((mfd (shell-state-pty-master ss))
+        (pid (shell-state-pty-pid ss)))
+    (when mfd
+      (pty-close! mfd pid))
+    (set! (shell-state-pty-master ss) #f)
+    (set! (shell-state-pty-pid ss) #f)
+    (set! (shell-state-pty-channel ss) #f)
+    (set! (shell-state-pty-thread ss) #f)))
