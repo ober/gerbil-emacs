@@ -18,6 +18,7 @@
         :gemacs/editor
         :gemacs/repl
         :gemacs/eshell
+        :gemacs/gsh-eshell
         :gemacs/shell
         :gemacs/terminal
         :gemacs/qt/buffer
@@ -624,8 +625,18 @@
             ((eq? output 'clear)
              (qt-plain-text-edit-set-text! ed ""))
             ((eq? output 'exit)
-             (hash-remove! *terminal-state* buf)
-             (echo-message! (app-state-echo app) "Terminal exited"))
+             ;; Kill terminal buffer and switch to another
+             (let* ((fr (app-state-frame app))
+                    (other (let loop ((bs (buffer-list)))
+                             (cond ((null? bs) #f)
+                                   ((eq? (car bs) buf) (loop (cdr bs)))
+                                   (else (car bs))))))
+               (when other
+                 (qt-buffer-attach! ed other)
+                 (set! (qt-edit-window-buffer (qt-current-window fr)) other))
+               (hash-remove! *terminal-state* buf)
+               (qt-buffer-kill! buf)
+               (echo-message! (app-state-echo app) "Terminal exited")))
             (else
              ;; Append command output
              (when (and (string? output) (> (string-length output) 0))
@@ -660,25 +671,61 @@
       (echo-message! (app-state-echo app) "Not in a terminal buffer"))))
 
 (def (cmd-term-send-eof app)
-  "Close the terminal buffer (Ctrl-D)."
+  "Close the terminal/shell/eshell buffer (Ctrl-D).
+   Only exits if the current input line is empty (standard shell behavior)."
   (let* ((buf (current-qt-buffer app))
-         (ts (and (terminal-buffer? buf) (hash-get *terminal-state* buf))))
-    (if ts
-      (let ((ed (current-qt-editor app)))
-        ;; Only exit if input is empty (standard shell behavior)
-        (let* ((text (qt-plain-text-edit-text ed))
-               (prompt-pos (terminal-state-prompt-pos ts))
-               (input (if (< prompt-pos (string-length text))
-                        (substring text prompt-pos (string-length text))
-                        "")))
-          (if (string=? input "")
-            (begin
-              (terminal-stop! ts)
-              (hash-remove! *terminal-state* buf)
-              (echo-message! (app-state-echo app) "Terminal exited"))
-            (echo-message! (app-state-echo app)
-              "Use 'exit' to close terminal (input not empty)"))))
-      (echo-message! (app-state-echo app) "Not in a terminal buffer"))))
+         (ed (current-qt-editor app))
+         (fr (app-state-frame app)))
+    (define (kill-and-switch! cleanup!)
+      (cleanup!)
+      (let ((other (let loop ((bs (buffer-list)))
+                     (cond ((null? bs) #f)
+                           ((eq? (car bs) buf) (loop (cdr bs)))
+                           (else (car bs))))))
+        (when other
+          (qt-buffer-attach! ed other)
+          (set! (qt-edit-window-buffer (qt-current-window fr)) other))
+        (qt-buffer-kill! buf)))
+    (cond
+      ;; Terminal buffer
+      ((and (terminal-buffer? buf) (hash-get *terminal-state* buf))
+       => (lambda (ts)
+            (let* ((text (qt-plain-text-edit-text ed))
+                   (prompt-pos (terminal-state-prompt-pos ts))
+                   (input (if (< prompt-pos (string-length text))
+                            (substring text prompt-pos (string-length text))
+                            "")))
+              (if (string=? input "")
+                (begin
+                  (terminal-stop! ts)
+                  (kill-and-switch! (lambda () (hash-remove! *terminal-state* buf)))
+                  (echo-message! (app-state-echo app) "Terminal exited"))
+                (echo-message! (app-state-echo app)
+                  "Use 'exit' to close (input not empty)")))))
+      ;; Shell buffer
+      ((and (shell-buffer? buf) (hash-get *shell-state* buf))
+       => (lambda (ss)
+            (let* ((text (qt-plain-text-edit-text ed))
+                   (prompt-pos (shell-state-prompt-pos ss))
+                   (input (if (< prompt-pos (string-length text))
+                            (substring text prompt-pos (string-length text))
+                            "")))
+              (if (string=? input "")
+                (begin
+                  (shell-stop! ss)
+                  (kill-and-switch! (lambda () (hash-remove! *shell-state* buf)))
+                  (echo-message! (app-state-echo app) "Shell exited"))
+                (echo-message! (app-state-echo app)
+                  "Use 'exit' to close (input not empty)")))))
+      ;; Eshell buffer
+      ((and (gsh-eshell-buffer? buf) (hash-get *gsh-eshell-state* buf))
+       => (lambda (env)
+            ;; Eshell doesn't track prompt-pos, so just exit unconditionally
+            (kill-and-switch! (lambda () (hash-remove! *gsh-eshell-state* buf)))
+            (echo-message! (app-state-echo app) "Eshell exited")))
+      (else
+        ;; Not in a shell buffer — normal delete-char
+        (cmd-delete-char app)))))
 
 (def (cmd-term-send-tab app)
   "Insert tab character in the terminal buffer."

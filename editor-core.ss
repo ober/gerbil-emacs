@@ -1320,7 +1320,7 @@
         ;; Insert welcome message and prompt
         (let ((welcome (string-append "gsh — Gerbil Shell\n"
                                        "Type commands or 'exit' to close.\n\n"
-                                       gsh-eshell-prompt)))
+                                       (gsh-eshell-get-prompt buf))))
           (editor-set-text ed welcome)
           (let ((len (editor-get-text-length ed)))
             (editor-goto-pos ed len)))
@@ -1335,11 +1335,12 @@
       (cmd-eshell-send-legacy app)
       (let* ((ed (current-editor app))
              (all-text (editor-get-text ed))
-             ;; Find the last prompt position
+             ;; Find the last prompt position (use current prompt for matching)
+             (cur-prompt gsh-eshell-prompt)
              (prompt-pos (gsh-eshell-find-last-prompt all-text))
              (end-pos (string-length all-text))
-             (input (if (and prompt-pos (> end-pos (+ prompt-pos (string-length gsh-eshell-prompt))))
-                      (substring all-text (+ prompt-pos (string-length gsh-eshell-prompt)) end-pos)
+             (input (if (and prompt-pos (> end-pos (+ prompt-pos (string-length cur-prompt))))
+                      (substring all-text (+ prompt-pos (string-length cur-prompt)) end-pos)
                       "")))
         ;; Record in shell history before processing
         (let ((trimmed-input (string-trim-both input)))
@@ -1352,8 +1353,9 @@
           (cond
             ((eq? output 'clear)
              ;; Clear buffer, re-insert prompt
-             (editor-set-text ed gsh-eshell-prompt)
-             (editor-goto-pos ed (editor-get-text-length ed)))
+             (let ((new-prompt (gsh-eshell-get-prompt buf)))
+               (editor-set-text ed new-prompt)
+               (editor-goto-pos ed (editor-get-text-length ed))))
             ((eq? output 'exit)
              ;; Kill eshell buffer
              (cmd-kill-buffer-cmd app))
@@ -1361,7 +1363,8 @@
              ;; Insert output + new prompt
              (when (and (string? output) (> (string-length output) 0))
                (editor-append-text ed output))
-             (editor-append-text ed gsh-eshell-prompt)
+             (let ((new-prompt (gsh-eshell-get-prompt buf)))
+               (editor-append-text ed new-prompt))
              (editor-goto-pos ed (editor-get-text-length ed))
              (editor-scroll-caret ed))))))))
 
@@ -1481,7 +1484,9 @@
             ((eq? output 'clear)
              (editor-set-text ed ""))
             ((eq? output 'exit)
+             ;; Kill shell buffer
              (hash-remove! *shell-state* buf)
+             (cmd-kill-buffer-cmd app)
              (echo-message! (app-state-echo app) "Shell exited"))
             (else
              ;; Append command output
@@ -1618,6 +1623,7 @@
              (editor-set-text ed ""))
             ((eq? output 'exit)
              (hash-remove! *terminal-state* buf)
+             (cmd-kill-buffer-cmd app)
              (echo-message! (app-state-echo app) "Terminal exited"))
             (else
              ;; Append command output (with ANSI styling)
@@ -1653,26 +1659,52 @@
       (echo-message! (app-state-echo app) "Not in a terminal buffer"))))
 
 (def (cmd-term-send-eof app)
-  "Close the terminal buffer (Ctrl-D) if input is empty."
-  (let* ((buf (current-buffer-from-app app))
-         (ts (and (terminal-buffer? buf) (hash-get *terminal-state* buf))))
-    (if ts
-      (let* ((ed (current-editor app))
-             (text (editor-get-text ed))
-             (text-len (string-length text))
-             (prompt-pos (terminal-state-prompt-pos ts))
-             (input (if (< prompt-pos text-len)
-                      (substring text prompt-pos text-len)
-                      "")))
-        (if (string=? input "")
-          (begin
-            (terminal-stop! ts)
-            (hash-remove! *terminal-state* buf)
-            (echo-message! (app-state-echo app) "Terminal exited"))
-          ;; Fall back to normal Ctrl-D behavior (delete char)
-          (editor-send-key ed SCK_DELETE)))
-      ;; Not in terminal — normal Ctrl-D
-      (editor-send-key (current-editor app) SCK_DELETE))))
+  "Close the terminal/shell/eshell buffer (Ctrl-D) if input is empty."
+  (let ((buf (current-buffer-from-app app)))
+    (cond
+      ;; Terminal buffer
+      ((and (terminal-buffer? buf) (hash-get *terminal-state* buf))
+       => (lambda (ts)
+            (let* ((ed (current-editor app))
+                   (text (editor-get-text ed))
+                   (text-len (string-length text))
+                   (prompt-pos (terminal-state-prompt-pos ts))
+                   (input (if (< prompt-pos text-len)
+                            (substring text prompt-pos text-len)
+                            "")))
+              (if (string=? input "")
+                (begin
+                  (terminal-stop! ts)
+                  (hash-remove! *terminal-state* buf)
+                  (cmd-kill-buffer-cmd app)
+                  (echo-message! (app-state-echo app) "Terminal exited"))
+                (editor-send-key ed SCK_DELETE)))))
+      ;; Shell buffer
+      ((and (shell-buffer? buf) (hash-get *shell-state* buf))
+       => (lambda (ss)
+            (let* ((ed (current-editor app))
+                   (text (editor-get-text ed))
+                   (text-len (string-length text))
+                   (prompt-pos (shell-state-prompt-pos ss))
+                   (input (if (< prompt-pos text-len)
+                            (substring text prompt-pos text-len)
+                            "")))
+              (if (string=? input "")
+                (begin
+                  (shell-stop! ss)
+                  (hash-remove! *shell-state* buf)
+                  (cmd-kill-buffer-cmd app)
+                  (echo-message! (app-state-echo app) "Shell exited"))
+                (editor-send-key ed SCK_DELETE)))))
+      ;; Eshell buffer
+      ((and (gsh-eshell-buffer? buf) (hash-get *gsh-eshell-state* buf))
+       => (lambda (env)
+            (hash-remove! *gsh-eshell-state* buf)
+            (cmd-kill-buffer-cmd app)
+            (echo-message! (app-state-echo app) "Eshell exited")))
+      ;; Not in any shell — normal delete-char (respects paredit)
+      (else
+        (cmd-delete-char app)))))
 
 (def (cmd-term-send-tab app)
   "Insert tab in the terminal buffer."

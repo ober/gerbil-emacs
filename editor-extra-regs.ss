@@ -90,7 +90,7 @@
   (register-command! 'beginning-of-buffer cmd-beginning-of-buffer)
   (register-command! 'beginning-of-line cmd-beginning-of-line)
   (register-command! 'copy-region cmd-copy-region)
-  (register-command! 'delete-char cmd-delete-char)
+  (register-command! 'delete-char cmd-term-send-eof)  ; dispatches: shell EOF or normal delete
   (register-command! 'delete-other-windows cmd-delete-other-windows)
   (register-command! 'delete-window cmd-delete-window)
   (register-command! 'dired-find-file cmd-dired-find-file)

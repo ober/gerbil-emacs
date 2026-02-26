@@ -29,6 +29,8 @@
         :gerbil-scintilla/scintilla
         :gsh/lib
         :gsh/environment
+        :gsh/startup
+        (only-in :gsh/prompt expand-prompt)
         :gemacs/core)
 
 ;;;============================================================================
@@ -252,28 +254,66 @@
 ;;;============================================================================
 
 (def (terminal-start!)
-  "Create a gsh-backed terminal and return a terminal-state."
-  (let ((env (gsh-init!)))
+  "Create a gsh-backed terminal and return a terminal-state.
+   Sources ~/.gshrc for PS1, aliases, etc."
+  (let ((env (gsh-init! #t)))  ; interactive? = #t for alias expansion
     (env-set! env "SHELL" "gsh")
+    (unless (env-get env "PS1")
+      (env-set! env "PS1" "\\u@\\h:\\w\\$ "))
+    (with-catch
+      (lambda (e) (void))
+      (lambda () (load-startup-files! env #f #t)))
     (make-terminal-state env 0 -1 #f)))
 
 (def (terminal-prompt ts)
-  "Return the terminal prompt string showing cwd."
+  "Return the expanded PS1 prompt string."
   (let* ((env (terminal-state-env ts))
-         (cwd (or (env-get env "PWD") (current-directory)))
-         (home (getenv "HOME" ""))
-         (display-cwd (if (and (> (string-length home) 0)
-                               (string-prefix? home cwd))
-                        (string-append "~" (substring cwd (string-length home)
-                                                          (string-length cwd)))
-                        cwd)))
-    (string-append display-cwd " $ ")))
+         (ps1 (or (env-get env "PS1") "$ "))
+         (env-getter (lambda (name) (env-get env name))))
+    (strip-ansi-codes
+      (expand-prompt ps1 env-getter
+                     0  ; job-count
+                     (shell-environment-cmd-number env)))))
+
+(def (strip-ansi-codes str)
+  "Remove ANSI escape sequences from a string."
+  (let* ((len (string-length str))
+         (esc (integer->char 27))
+         (bel (integer->char 7)))
+    (let loop ((i 0) (acc []))
+      (if (>= i len)
+        (list->string (reverse acc))
+        (let ((ch (string-ref str i)))
+          (if (char=? ch esc)
+            (if (< (+ i 1) len)
+              (let ((next (string-ref str (+ i 1))))
+                (cond
+                  ((char=? next #\[)
+                   (let skip ((j (+ i 2)))
+                     (if (>= j len) (loop j acc)
+                       (let ((c (string-ref str j)))
+                         (if (and (char>=? c #\@) (char<=? c #\~))
+                           (loop (+ j 1) acc)
+                           (skip (+ j 1)))))))
+                  ((char=? next #\])
+                   (let skip ((j (+ i 2)))
+                     (if (>= j len) (loop j acc)
+                       (if (char=? (string-ref str j) bel)
+                         (loop (+ j 1) acc)
+                         (skip (+ j 1))))))
+                  (else (loop (+ i 2) acc))))
+              (loop (+ i 1) acc))
+            (if (char=? ch #\return)
+              (loop (+ i 1) acc)
+              (loop (+ i 1) (cons ch acc)))))))))
 
 (def (terminal-execute! input ts)
   "Execute a command via gsh, return (values output-string new-cwd).
-   Output may be a string, 'clear, or 'exit."
+   Output may be a string, 'clear, or 'exit.
+   Captures both stdout and stderr."
   (let ((env (terminal-state-env ts))
         (trimmed (string-trim-both input)))
+    (env-inc-cmd-number! env)
     (cond
       ((string=? trimmed "")
        (values "" (or (env-get env "PWD") (current-directory))))
@@ -289,9 +329,15 @@
                      "\n")
                    (or (env-get env "PWD") (current-directory))))
          (lambda ()
-           (let-values (((output status) (gsh-capture trimmed env)))
-             (values (or output "")
-                     (or (env-get env "PWD") (current-directory))))))))))
+           (let* ((err-port (open-output-string))
+                  (result (parameterize ((current-error-port err-port))
+                            (gsh-capture trimmed env))))
+             (let-values (((stdout status) result))
+               (let ((stderr (get-output-string err-port))
+                     (cwd (or (env-get env "PWD") (current-directory))))
+                 (values (string-append (or stdout "")
+                                        (if (> (string-length stderr) 0) stderr ""))
+                         cwd))))))))))
 
 (def (terminal-stop! ts)
   "Clean up the terminal state (no-op for gsh-backed terminals)."

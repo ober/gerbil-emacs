@@ -1031,7 +1031,7 @@
   (register-command! 'scroll-up cmd-scroll-up)
   (register-command! 'recenter cmd-recenter)
   ;; Editing
-  (register-command! 'delete-char cmd-delete-char)
+  (register-command! 'delete-char cmd-term-send-eof)  ; dispatches: shell EOF or normal delete
   (register-command! 'backward-delete-char cmd-backward-delete-char)
   (register-command! 'backward-delete-char-untabify cmd-backward-delete-char-untabify)
   (register-command! 'newline cmd-newline)

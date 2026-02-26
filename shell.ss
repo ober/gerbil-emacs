@@ -2,7 +2,7 @@
 ;;; Shell mode: gsh-backed in-process shell
 ;;;
 ;;; Uses gerbil-shell (gsh) for in-process POSIX shell execution.
-;;; No subprocess or PTY — commands are executed synchronously via gsh-capture.
+;;; Sources ~/.gshrc, honors PS1, captures both stdout and stderr.
 
 (export shell-buffer?
         *shell-state*
@@ -17,6 +17,8 @@
         :std/srfi/13
         :gsh/lib
         :gsh/environment
+        :gsh/startup
+        (only-in :gsh/prompt expand-prompt)
         :gemacs/core)
 
 ;;;============================================================================
@@ -83,28 +85,36 @@
 ;;;============================================================================
 
 (def (shell-start!)
-  "Create a gsh-backed shell and return a shell-state."
-  (let ((env (gsh-init!)))
+  "Create a gsh-backed shell and return a shell-state.
+   Sources ~/.gshrc for PS1, aliases, etc."
+  (let ((env (gsh-init! #t)))  ; interactive? = #t for alias expansion
     (env-set! env "SHELL" "gsh")
+    ;; Set default PS1 before sourcing rc (rc may override)
+    (unless (env-get env "PS1")
+      (env-set! env "PS1" "\\u@\\h:\\w\\$ "))
+    ;; Source ~/.gshrc for interactive shells
+    (with-catch
+      (lambda (e) (void))  ; ignore errors in rc file
+      (lambda () (load-startup-files! env #f #t)))  ; login?=#f interactive?=#t
     (make-shell-state env 0)))
 
 (def (shell-prompt ss)
-  "Return the shell prompt string showing cwd."
+  "Return the expanded PS1 prompt string."
   (let* ((env (shell-state-env ss))
-         (cwd (or (env-get env "PWD") (current-directory)))
-         (home (getenv "HOME" ""))
-         (display-cwd (if (and (> (string-length home) 0)
-                               (string-prefix? home cwd))
-                        (string-append "~" (substring cwd (string-length home)
-                                                          (string-length cwd)))
-                        cwd)))
-    (string-append display-cwd " $ ")))
+         (ps1 (or (env-get env "PS1") "$ "))
+         (env-getter (lambda (name) (env-get env name))))
+    (strip-ansi-codes
+      (expand-prompt ps1 env-getter
+                     0  ; job-count
+                     (shell-environment-cmd-number env)))))
 
 (def (shell-execute! input ss)
   "Execute a command via gsh, return (values output-string new-cwd).
-   Output may be a string, 'clear, or 'exit."
+   Output may be a string, 'clear, or 'exit.
+   Captures both stdout and stderr."
   (let ((env (shell-state-env ss))
         (trimmed (string-trim-both input)))
+    (env-inc-cmd-number! env)
     (cond
       ((string=? trimmed "")
        (values "" (or (env-get env "PWD") (current-directory))))
@@ -120,9 +130,16 @@
                      "\n")
                    (or (env-get env "PWD") (current-directory))))
          (lambda ()
-           (let-values (((output status) (gsh-capture trimmed env)))
-             (values (or output "")
-                     (or (env-get env "PWD") (current-directory))))))))))
+           ;; Capture both stdout and stderr
+           (let* ((err-port (open-output-string))
+                  (result (parameterize ((current-error-port err-port))
+                            (gsh-capture trimmed env))))
+             (let-values (((stdout status) result))
+               (let ((stderr (get-output-string err-port))
+                     (cwd (or (env-get env "PWD") (current-directory))))
+                 (values (string-append (or stdout "")
+                                        (if (> (string-length stderr) 0) stderr ""))
+                         cwd))))))))))
 
 (def (shell-stop! ss)
   "Clean up the shell state (no-op for gsh-backed shells)."

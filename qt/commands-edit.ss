@@ -616,7 +616,7 @@
         (gsh-eshell-init-buffer! buf)
         (let ((welcome (string-append "gsh — Gerbil Shell\n"
                                        "Type commands or 'exit' to close.\n\n"
-                                       gsh-eshell-prompt)))
+                                       (gsh-eshell-get-prompt buf))))
           (qt-plain-text-edit-set-text! ed welcome)
           (qt-plain-text-edit-move-cursor! ed QT_CURSOR_END))
         (echo-message! (app-state-echo app) "gsh started")))))
@@ -630,17 +630,17 @@
       (cmd-eshell-send-legacy/qt app)
       (let* ((ed (current-qt-editor app))
              (all-text (qt-plain-text-edit-text ed))
-             ;; Find the last gsh prompt
-             (prompt-pos (let ((prompt gsh-eshell-prompt)
-                               (prompt-len (string-length gsh-eshell-prompt)))
+             ;; Find the last gsh prompt (use current prompt string for matching)
+             (cur-prompt gsh-eshell-prompt)
+             (prompt-pos (let ((prompt-len (string-length cur-prompt)))
                            (let loop ((pos (- (string-length all-text) prompt-len)))
                              (cond
                                ((< pos 0) #f)
-                               ((string=? (substring all-text pos (+ pos prompt-len)) prompt) pos)
+                               ((string=? (substring all-text pos (+ pos prompt-len)) cur-prompt) pos)
                                (else (loop (- pos 1)))))))
              (end-pos (string-length all-text))
-             (input (if (and prompt-pos (> end-pos (+ prompt-pos (string-length gsh-eshell-prompt))))
-                      (substring all-text (+ prompt-pos (string-length gsh-eshell-prompt)) end-pos)
+             (input (if (and prompt-pos (> end-pos (+ prompt-pos (string-length cur-prompt))))
+                      (substring all-text (+ prompt-pos (string-length cur-prompt)) end-pos)
                       "")))
         ;; Record in shell history before processing
         (let ((trimmed-input (string-trim-both input)))
@@ -650,8 +650,9 @@
         (let-values (((output new-cwd) (gsh-eshell-process-input input buf)))
           (cond
             ((eq? output 'clear)
-             (qt-plain-text-edit-set-text! ed gsh-eshell-prompt)
-             (qt-plain-text-edit-move-cursor! ed QT_CURSOR_END))
+             (let ((new-prompt (gsh-eshell-get-prompt buf)))
+               (qt-plain-text-edit-set-text! ed new-prompt)
+               (qt-plain-text-edit-move-cursor! ed QT_CURSOR_END)))
             ((eq? output 'exit)
              ;; Kill eshell buffer directly
              (let* ((fr (app-state-frame app))
@@ -669,7 +670,8 @@
             (else
              (when (and (string? output) (> (string-length output) 0))
                (qt-plain-text-edit-append! ed output))
-             (qt-plain-text-edit-append! ed gsh-eshell-prompt)
+             (let ((new-prompt (gsh-eshell-get-prompt buf)))
+               (qt-plain-text-edit-append! ed new-prompt))
              (qt-plain-text-edit-move-cursor! ed QT_CURSOR_END))))))))
 
 (def (cmd-eshell-send-legacy/qt app)
@@ -777,8 +779,18 @@
             ((eq? output 'clear)
              (qt-plain-text-edit-set-text! ed ""))
             ((eq? output 'exit)
-             (hash-remove! *shell-state* buf)
-             (echo-message! (app-state-echo app) "Shell exited"))
+             ;; Kill shell buffer and switch to another
+             (let* ((fr (app-state-frame app))
+                    (other (let loop ((bs (buffer-list)))
+                             (cond ((null? bs) #f)
+                                   ((eq? (car bs) buf) (loop (cdr bs)))
+                                   (else (car bs))))))
+               (when other
+                 (qt-buffer-attach! ed other)
+                 (set! (qt-edit-window-buffer (qt-current-window fr)) other))
+               (hash-remove! *shell-state* buf)
+               (qt-buffer-kill! buf)
+               (echo-message! (app-state-echo app) "Shell exited")))
             (else
              ;; Append command output
              (when (and (string? output) (> (string-length output) 0))

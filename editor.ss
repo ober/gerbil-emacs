@@ -60,7 +60,7 @@
   (register-command! 'recenter cmd-recenter)
   (register-command! 'recenter-top-bottom cmd-recenter-top-bottom)
   ;; Editing
-  (register-command! 'delete-char cmd-delete-char)
+  (register-command! 'delete-char cmd-term-send-eof)  ; dispatches: shell EOF or normal delete
   (register-command! 'backward-delete-char cmd-backward-delete-char)
   (register-command! 'backward-delete-char-untabify cmd-backward-delete-char-untabify)
   (register-command! 'newline cmd-newline)

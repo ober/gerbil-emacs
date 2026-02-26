@@ -7,6 +7,7 @@
 (export gsh-eshell-buffer?
         *gsh-eshell-state*
         gsh-eshell-prompt
+        gsh-eshell-get-prompt
         gsh-eshell-init-buffer!
         gsh-eshell-process-input)
 
@@ -15,6 +16,8 @@
         :std/srfi/13
         :gsh/lib
         :gsh/environment
+        :gsh/startup
+        (only-in :gsh/prompt expand-prompt)
         :gemacs/core)
 
 ;;;============================================================================
@@ -25,31 +28,79 @@
 ;; Use eq? table: buffer structs are mutable (transparent: #t)
 (def *gsh-eshell-state* (make-hash-table-eq))
 
-;; Shared gsh initialization flag — call gsh-init! once
-(def *gsh-initialized* #f)
-(def *gsh-shared-env* #f)
-
 (def gsh-eshell-prompt "gsh> ")
 
 (def (gsh-eshell-buffer? buf)
   "Check if this buffer is a gsh eshell buffer."
   (eq? (buffer-lexer-lang buf) 'eshell))
 
-(def (ensure-gsh-initialized!)
-  "Initialize the gsh engine once (idempotent)."
-  (unless *gsh-initialized*
-    (set! *gsh-shared-env* (gsh-init!))
-    (env-set! *gsh-shared-env* "SHELL" "gsh")
-    (set! *gsh-initialized* #t)))
-
 (def (gsh-eshell-init-buffer! buf)
   "Initialize a gsh environment for an eshell buffer.
-   Returns the shell-environment for this buffer."
-  (ensure-gsh-initialized!)
-  ;; Each buffer gets a fresh environment so cd, variables, etc. are independent
-  (let ((env (gsh-init!)))
+   Sources ~/.gshrc for aliases, PS1, etc."
+  (let ((env (gsh-init! #t)))  ; interactive? = #t
+    (env-set! env "SHELL" "gsh")
+    (unless (env-get env "PS1")
+      (env-set! env "PS1" "\\u@\\h:\\w\\$ "))
+    (with-catch
+      (lambda (e) (void))
+      (lambda () (load-startup-files! env #f #t)))
     (hash-put! *gsh-eshell-state* buf env)
+    ;; Update the prompt from PS1
+    (let* ((ps1 (or (env-get env "PS1") "gsh> "))
+           (env-getter (lambda (name) (env-get env name))))
+      (set! gsh-eshell-prompt
+        (with-catch
+          (lambda (e) "gsh> ")
+          (lambda () (strip-ansi-codes
+                       (expand-prompt ps1 env-getter))))))
     env))
+
+(def (gsh-eshell-get-prompt buf)
+  "Return the expanded PS1 prompt for this eshell buffer."
+  (let ((env (hash-get *gsh-eshell-state* buf)))
+    (if env
+      (let* ((ps1 (or (env-get env "PS1") "gsh> "))
+             (env-getter (lambda (name) (env-get env name))))
+        (with-catch
+          (lambda (e) "gsh> ")
+          (lambda ()
+            (strip-ansi-codes
+              (expand-prompt ps1 env-getter
+                             0  ; job-count
+                             (shell-environment-cmd-number env))))))
+      "gsh> ")))
+
+(def (strip-ansi-codes str)
+  "Remove ANSI escape sequences from a string."
+  (let* ((len (string-length str))
+         (esc (integer->char 27))
+         (bel (integer->char 7)))
+    (let loop ((i 0) (acc []))
+      (if (>= i len)
+        (list->string (reverse acc))
+        (let ((ch (string-ref str i)))
+          (if (char=? ch esc)
+            (if (< (+ i 1) len)
+              (let ((next (string-ref str (+ i 1))))
+                (cond
+                  ((char=? next #\[)
+                   (let skip ((j (+ i 2)))
+                     (if (>= j len) (loop j acc)
+                       (let ((c (string-ref str j)))
+                         (if (and (char>=? c #\@) (char<=? c #\~))
+                           (loop (+ j 1) acc)
+                           (skip (+ j 1)))))))
+                  ((char=? next #\])
+                   (let skip ((j (+ i 2)))
+                     (if (>= j len) (loop j acc)
+                       (if (char=? (string-ref str j) bel)
+                         (loop (+ j 1) acc)
+                         (skip (+ j 1))))))
+                  (else (loop (+ i 2) acc))))
+              (loop (+ i 1) acc))
+            (if (char=? ch #\return)
+              (loop (+ i 1) acc)
+              (loop (+ i 1) (cons ch acc)))))))))
 
 ;;;============================================================================
 ;;; Input processing
@@ -89,6 +140,7 @@
 (def (gsh-execute-and-capture input env)
   "Execute INPUT via gsh, capturing stdout+stderr.
    Returns (values output-string cwd-string)."
+  (env-inc-cmd-number! env)
   (with-catch
     (lambda (e)
       (values (string-append "gsh: "
@@ -96,12 +148,15 @@
                 "\n")
               (or (env-get env "PWD") (current-directory))))
     (lambda ()
-      (let-values (((output status) (gsh-capture input env)))
-        ;; gsh-capture strips trailing newlines (command substitution behavior)
-        ;; but for display we want a trailing newline if there's output
-        (let ((display-output (if (and (string? output)
-                                       (> (string-length output) 0))
-                                (string-append output "\n")
-                                "")))
-          (values display-output
-                  (or (env-get env "PWD") (current-directory))))))))
+      (let* ((err-port (open-output-string))
+             (result (parameterize ((current-error-port err-port))
+                       (gsh-capture input env))))
+        (let-values (((stdout status) result))
+          (let ((stderr (get-output-string err-port))
+                (display-output (if (and (string? stdout)
+                                         (> (string-length stdout) 0))
+                                  (string-append stdout "\n")
+                                  "")))
+            (values (string-append display-output
+                                  (if (> (string-length stderr) 0) stderr ""))
+                    (or (env-get env "PWD") (current-directory)))))))))
