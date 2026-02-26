@@ -11,6 +11,7 @@
         terminal-start!
         terminal-execute!
         terminal-prompt
+        terminal-prompt-raw
         terminal-stop!
         setup-terminal-styles!
         parse-ansi-segments
@@ -161,6 +162,10 @@
                           (if (char=? (string-ref str j) bel)
                             (loop (+ j 1) fg bold? [] new-segments)
                             (skip (+ j 1))))))
+                     ;; Character set designation: ESC ( X, ESC ) X, etc. (3 bytes)
+                     ((and (memv next '(#\( #\) #\* #\+))
+                           (< (+ i 2) len))
+                      (loop (+ i 3) fg bold? [] new-segments))
                      ;; Other: ESC + single char (skip)
                      (else (loop (+ i 2) fg bold? [] new-segments))))
                  (loop (+ i 1) fg bold? [] new-segments))))
@@ -279,17 +284,20 @@
               (substring s 0 (- (string-length s) 1))
               s)))))))
 
-(def (terminal-prompt ts)
-  "Return the expanded PS1 prompt string."
+(def (terminal-prompt-raw ts)
+  "Return the expanded PS1 prompt string with ANSI codes intact."
   (let* ((env (terminal-state-env ts))
          (ps1 (or (env-get env "PS1") "$ "))
          (env-getter (lambda (name) (env-get env name))))
-    (strip-ansi-codes
-      (expand-prompt ps1 env-getter
-                     0  ; job-count
-                     (shell-environment-cmd-number env)
-                     0  ; history-number
-                     (make-cmd-exec-fn env)))))
+    (expand-prompt ps1 env-getter
+                   0  ; job-count
+                   (shell-environment-cmd-number env)
+                   0  ; history-number
+                   (make-cmd-exec-fn env))))
+
+(def (terminal-prompt ts)
+  "Return the expanded PS1 prompt string (ANSI stripped)."
+  (strip-ansi-codes (terminal-prompt-raw ts)))
 
 (def (strip-ansi-codes str)
   "Remove ANSI escape sequences from a string."
@@ -317,6 +325,10 @@
                        (if (char=? (string-ref str j) bel)
                          (loop (+ j 1) acc)
                          (skip (+ j 1))))))
+                  ;; Character set designation: ESC ( X, ESC ) X, etc. (3 bytes)
+                  ((and (memv next '(#\( #\) #\* #\+))
+                        (< (+ i 2) len))
+                   (loop (+ i 3) acc))
                   (else (loop (+ i 2) acc))))
               (loop (+ i 1) acc))
             (if (or (char=? ch #\return)

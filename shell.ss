@@ -72,6 +72,10 @@
                        (if (char=? (string-ref str j) bel)
                          (loop (+ j 1) acc)
                          (skip (+ j 1))))))
+                  ;; Character set designation: ESC ( X, ESC ) X, etc. (3 bytes)
+                  ((and (memv next '(#\( #\) #\* #\+))
+                        (< (+ i 2) len))
+                   (loop (+ i 3) acc))
                   ;; Other: ESC + single char
                   (else (loop (+ i 2) acc))))
               (loop (+ i 1) acc))
