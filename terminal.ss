@@ -265,6 +265,20 @@
       (lambda () (load-startup-files! env #f #t)))
     (make-terminal-state env 0 -1 #f)))
 
+(def (make-cmd-exec-fn env)
+  "Create a command-execution function for PS1 $(...) expansion."
+  (lambda (cmd)
+    (with-catch
+      (lambda (e) "")
+      (lambda ()
+        (let-values (((output status) (gsh-capture cmd env)))
+          (let ((s (or output "")))
+            ;; Strip trailing newline (command substitution convention)
+            (if (and (> (string-length s) 0)
+                     (char=? (string-ref s (- (string-length s) 1)) #\newline))
+              (substring s 0 (- (string-length s) 1))
+              s)))))))
+
 (def (terminal-prompt ts)
   "Return the expanded PS1 prompt string."
   (let* ((env (terminal-state-env ts))
@@ -273,7 +287,9 @@
     (strip-ansi-codes
       (expand-prompt ps1 env-getter
                      0  ; job-count
-                     (shell-environment-cmd-number env)))))
+                     (shell-environment-cmd-number env)
+                     0  ; history-number
+                     (make-cmd-exec-fn env)))))
 
 (def (strip-ansi-codes str)
   "Remove ANSI escape sequences from a string."
@@ -303,7 +319,9 @@
                          (skip (+ j 1))))))
                   (else (loop (+ i 2) acc))))
               (loop (+ i 1) acc))
-            (if (char=? ch #\return)
+            (if (or (char=? ch #\return)
+                    (char=? ch (integer->char 1))   ; RL_PROMPT_START_IGNORE
+                    (char=? ch (integer->char 2)))   ; RL_PROMPT_END_IGNORE
               (loop (+ i 1) acc)
               (loop (+ i 1) (cons ch acc)))))))))
 
