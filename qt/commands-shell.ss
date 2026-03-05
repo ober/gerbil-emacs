@@ -535,28 +535,37 @@ S=sort by name, z=sort by size, q=quit."
 ;;; ========================================================================
 
 (def (auto-fill-check! ed)
-  "If auto-fill-mode is on and current line exceeds fill-column, break at word boundary."
+  "If auto-fill-mode is on and current line exceeds fill-column, break at word boundary.
+   Skips special buffers (shell, terminal, REPL, image, dired) where auto-fill is inappropriate."
   (when *auto-fill-mode*
-    (let* ((text (qt-plain-text-edit-text ed))
-           (pos (qt-plain-text-edit-cursor-position ed))
-           ;; Find start of current line
-           (line-start (let loop ((i (- pos 1)))
-                         (cond ((< i 0) 0)
-                               ((char=? (string-ref text i) #\newline) (+ i 1))
-                               (else (loop (- i 1))))))
-           (col (- pos line-start)))
-      (when (> col *fill-column*)
-        ;; Find last space before fill-column boundary
-        (let loop ((i (+ line-start *fill-column*)))
-          (cond
-            ((<= i line-start) #f)  ; no break point found
-            ((char=? (string-ref text i) #\space)
-             ;; Break here: replace space with newline
-             (let ((before (substring text 0 i))
-                   (after (substring text (+ i 1) (string-length text))))
-               (qt-plain-text-edit-set-text! ed (string-append before "\n" after))
-               (qt-plain-text-edit-set-cursor-position! ed pos)))
-            (else (loop (- i 1)))))))))
+    (let* ((win (hash-get *editor-window-map* ed))
+           (buf (and win (qt-edit-window-buffer win))))
+      (when (and buf
+                 (not (shell-buffer? buf))
+                 (not (terminal-buffer? buf))
+                 (not (repl-buffer? buf))
+                 (not (image-buffer? buf))
+                 (not (dired-buffer? buf)))
+        (let* ((text (qt-plain-text-edit-text ed))
+               (len (string-length text))
+               (pos (min (qt-plain-text-edit-cursor-position ed) len)))
+          (when (and (> pos 0) (> len 0))
+            (let* ((line-start (let loop ((i (- pos 1)))
+                                 (cond ((< i 0) 0)
+                                       ((char=? (string-ref text i) #\newline) (+ i 1))
+                                       (else (loop (- i 1))))))
+                   (col (- pos line-start)))
+              (when (> col *fill-column*)
+                (let ((break-end (min (+ line-start *fill-column*) (- len 1))))
+                  (let loop ((i break-end))
+                    (cond
+                      ((<= i line-start) #f)
+                      ((char=? (string-ref text i) #\space)
+                       (let ((before (substring text 0 i))
+                             (after (substring text (+ i 1) len)))
+                         (qt-plain-text-edit-set-text! ed (string-append before "\n" after))
+                         (qt-plain-text-edit-set-cursor-position! ed pos)))
+                      (else (loop (- i 1))))))))))))))
 
 ;;; ========================================================================
 ;;; Delete trailing whitespace on save

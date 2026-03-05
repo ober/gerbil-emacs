@@ -389,6 +389,14 @@
              (set! (qt-frame-current-idx fr) (or new-idx 0)))
            ;; 50/50 split in nested splitter
            (with-catch void (lambda () (qt-splitter-set-sizes! new-spl (list 500 500))))
+           ;; Re-equalize parent splitter so all children get equal space
+           (with-catch void
+             (lambda ()
+               (let* ((n (qt-splitter-count parent-spl))
+                      (sizes (let loop ((i 0) (acc '()))
+                               (if (>= i n) (reverse acc)
+                                 (loop (+ i 1) (cons 500 acc))))))
+                 (qt-splitter-set-sizes! parent-spl sizes))))
            (qt-edit-window-editor new-win))))))
       ;; Restore main window size — prevent Qt from growing the window
       (when (and main-win saved-w saved-h)

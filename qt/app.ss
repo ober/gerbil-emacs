@@ -319,11 +319,25 @@
                    (number->string (hash-length *all-commands*)) " total")
 
       ;; Set up post-buffer-attach hook for image/text display toggling
-      (set! *post-buffer-attach-hook*
-        (lambda (editor buf)
-          (if (image-buffer? buf)
-            (qt-show-image-buffer! editor buf)
-            (qt-hide-image-buffer! editor))))
+      ;; When showing an image, install key handler on the scroll area and
+      ;; set focus there — the Scintilla editor is hidden by QStackedWidget
+      ;; so it can't receive key events.
+      (let ((image-key-installed (make-hash-table-eq)))
+        (set! *post-buffer-attach-hook*
+          (lambda (editor buf)
+            (if (image-buffer? buf)
+              (begin
+                (qt-show-image-buffer! editor buf)
+                (let ((win (hash-get *editor-window-map* editor)))
+                  (when (and win (qt-edit-window-image-scroll win))
+                    (let ((scroll (qt-edit-window-image-scroll win)))
+                      (unless (hash-get image-key-installed scroll)
+                        ((app-state-key-handler app) scroll)
+                        (hash-put! image-key-installed scroll #t))
+                      (qt-widget-set-focus! scroll)))))
+              (begin
+                (qt-hide-image-buffer! editor)
+                (qt-widget-set-focus! editor))))))
 
       ;; Load recent files, bookmarks, keys, abbrevs, history from disk
       (recent-files-load!)
