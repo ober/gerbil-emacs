@@ -189,7 +189,7 @@ static int ffi_pty_get_wait_status(void) {
 END-C
   )
 
-  (define-c-lambda ffi-pty-spawn (char-string char-string int int) int
+  (define-c-lambda ffi-pty-spawn (UTF-8-string UTF-8-string int int) int
     "ffi_pty_spawn_impl")
   (define-c-lambda ffi-pty-get-master-fd () int
     "ffi_pty_get_master_fd_impl")
@@ -284,12 +284,16 @@ END-C
 ;;;============================================================================
 
 (def (env-alist->string alist)
-  "Convert ((name . value) ...) to newline-separated KEY=VALUE string."
+  "Convert environment list to newline-separated KEY=VALUE string.
+   Accepts either ((name . value) ...) pairs or (\"KEY=VALUE\" ...) strings."
   (if (or (not alist) (null? alist))
     ""
-    (let loop ((pairs alist) (acc []))
-      (if (null? pairs)
+    (let loop ((entries alist) (acc []))
+      (if (null? entries)
         (string-join (reverse acc) "\n")
-        (let ((p (car pairs)))
-          (loop (cdr pairs)
-                (cons (string-append (car p) "=" (cdr p)) acc)))))))
+        (let ((e (car entries)))
+          (loop (cdr entries)
+                (cons (if (pair? e)
+                        (string-append (car e) "=" (cdr e))
+                        e)  ;; already a "KEY=VALUE" string
+                      acc)))))))

@@ -1343,7 +1343,7 @@
                       (substring all-text (+ prompt-pos (string-length cur-prompt)) end-pos)
                       "")))
         ;; Record in shell history before processing
-        (let ((trimmed-input (string-trim-both input)))
+        (let ((trimmed-input (safe-string-trim-both input)))
           (when (> (string-length trimmed-input) 0)
             (gsh-history-add! trimmed-input (current-directory))))
         ;; Append newline
@@ -1380,7 +1380,7 @@
              (input (if (and prompt-pos (> end-pos (+ prompt-pos (string-length eshell-prompt))))
                       (substring all-text (+ prompt-pos (string-length eshell-prompt)) end-pos)
                       "")))
-        (let ((trimmed-input (string-trim-both input)))
+        (let ((trimmed-input (safe-string-trim-both input)))
           (when (> (string-length trimmed-input) 0)
             (gsh-history-add! trimmed-input cwd)))
         (editor-append-text ed "\n")
@@ -1475,7 +1475,7 @@
                       (substring all-text prompt-pos end-pos)
                       "")))
         ;; Record in shell history
-        (let ((trimmed-input (string-trim-both input)))
+        (let ((trimmed-input (safe-string-trim-both input)))
           (when (> (string-length trimmed-input) 0)
             (gsh-history-add! trimmed-input (current-directory))))
         ;; Append newline after user input

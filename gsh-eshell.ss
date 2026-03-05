@@ -53,8 +53,9 @@
    Sources ~/.gshrc for aliases, PS1, etc."
   (let ((env (gsh-init! #t)))  ; interactive? = #t
     (env-set! env "SHELL" "gsh")
-    (unless (env-get env "PS1")
-      (env-set! env "PS1" "\\u@\\h:\\w\\$ "))
+    ;; Always override PS1 — inherited bash PS1 contains bash-specific
+    ;; syntax (\[...\], $(cmd), etc.) that gsh can't parse.
+    (env-set! env "PS1" "\\u@\\h:\\w\\$ ")
     (with-catch
       (lambda (e) (void))
       (lambda () (load-startup-files! env #f #t)))
@@ -142,7 +143,7 @@
      - 'clear to clear the buffer
      - 'exit to close the eshell"
   (let ((env (hash-get *gsh-eshell-state* buf))
-        (trimmed (string-trim-both input)))
+        (trimmed (safe-string-trim-both input)))
     (cond
       ;; No environment — shouldn't happen
       ((not env)

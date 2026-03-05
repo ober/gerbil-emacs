@@ -278,8 +278,9 @@
    Sources ~/.gshrc for PS1, aliases, etc."
   (let ((env (gsh-init! #t)))  ; interactive? = #t for alias expansion
     (env-set! env "SHELL" "gsh")
-    (unless (env-get env "PS1")
-      (env-set! env "PS1" "\\u@\\h:\\w\\$ "))
+    ;; Always override PS1 — inherited bash PS1 contains bash-specific
+    ;; syntax (\[...\], $(cmd), etc.) that gsh can't parse.
+    (env-set! env "PS1" "\\u@\\h:\\w\\$ ")
     (with-catch
       (lambda (e) (void))
       (lambda () (load-startup-files! env #f #t)))
@@ -357,7 +358,7 @@
    Output may be a string, 'clear, or 'exit.
    Captures both stdout and stderr."
   (let ((env (terminal-state-env ts))
-        (trimmed (string-trim-both input)))
+        (trimmed (safe-string-trim-both input)))
     (env-inc-cmd-number! env)
     (cond
       ((string=? trimmed "")
@@ -523,7 +524,7 @@
    - (values 'sync output cwd) for sync builtins
    - (values 'async #f #f) when command dispatched to PTY
    - (values 'special 'clear|'exit #f) for clear/exit"
-  (let ((trimmed (string-trim-both input)))
+  (let ((trimmed (safe-string-trim-both input)))
     (cond
       ((string=? trimmed "")
        (values 'sync "" (or (env-get (terminal-state-env ts) "PWD")

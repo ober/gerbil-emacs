@@ -65,6 +65,7 @@
 
   ;; Shared helpers
   brace-char?
+  safe-string-trim-both
 
   ;; Hooks
   *post-buffer-attach-hook*
@@ -1346,6 +1347,23 @@
   (or (= ch 40) (= ch 41)    ; ( )
       (= ch 91) (= ch 93)    ; [ ]
       (= ch 123) (= ch 125))) ; { }
+
+(def (safe-string-trim-both str)
+  "Unicode-safe string-trim-both. SRFI-13's version crashes on chars > 255."
+  (let ((len (string-length str)))
+    (if (= len 0) ""
+      (let ((start (let loop ((i 0))
+                     (if (>= i len) len
+                       (if (char-whitespace? (string-ref str i))
+                         (loop (+ i 1))
+                         i))))
+            (end (let loop ((i (- len 1)))
+                   (if (< i 0) 0
+                     (if (char-whitespace? (string-ref str i))
+                       (loop (- i 1))
+                       (+ i 1))))))
+        (if (>= start end) ""
+          (substring str start end))))))
 
 ;;;============================================================================
 ;;; File I/O helpers

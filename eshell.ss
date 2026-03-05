@@ -479,7 +479,7 @@
      - a string to display
      - 'clear to clear the buffer
      - 'exit to close the eshell"
-  (let ((trimmed (string-trim-both input)))
+  (let ((trimmed (safe-string-trim-both input)))
     (cond
       ;; Empty input
       ((string=? trimmed "")

@@ -51,7 +51,7 @@
 (def (gsh-history-add! command (cwd #f))
   "Record a shell command with timestamp and working directory.
    Appends to disk immediately and prepends to in-memory list."
-  (let ((trimmed (string-trim-both command)))
+  (let ((trimmed (safe-string-trim-both command)))
     (when (and (string? trimmed) (> (string-length trimmed) 0))
       (let* ((ts (inexact->exact (floor (time->seconds (current-time)))))
              (dir (or cwd (current-directory)))
@@ -192,7 +192,7 @@
 
 (def (gsh-history-search pattern (max-results 50))
   "Fuzzy search history commands. Returns matching entries sorted by recency."
-  (let ((query (string-downcase (string-trim-both pattern))))
+  (let ((query (string-downcase (safe-string-trim-both pattern))))
     (if (string=? query "")
       (gsh-history-recent max-results)
       (let loop ((lst *gsh-history*) (acc []) (n 0))
