@@ -61,7 +61,7 @@
    (path-expand "bin/scintilla.a" sci-dir) " "
    (path-expand "bin/liblexilla.a" lexilla-dir) " "
    (path-expand "bin/termbox.a" termbox-dir) " "
-   "-L" lh-vendor-dir " -lhtml_shim -llitehtml "
+   "-L" lh-vendor-dir " -lhtml_shim -llitehtml -lgumbo "
    "-Wl,-rpath," lh-vendor-dir " "
    "-lstdc++ -lpthread -lpcre2-8 -lutil"))
 
@@ -172,7 +172,7 @@
      (ldflags "Qt6Widgets" "-lQt6Widgets"))
    " "
    qsci-ldflags " "
-   "-L" lh-vendor-dir " -lhtml_shim -llitehtml "
+   "-L" lh-vendor-dir " -lhtml_shim -llitehtml -lgumbo "
    "-Wl,-rpath," lh-vendor-dir " "
    (path-expand "bin/scintilla.a" sci-dir) " "
    (path-expand "bin/liblexilla.a" lexilla-dir) " "

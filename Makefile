@@ -161,6 +161,7 @@ GID := $(shell id -g)
 GERBIL_PATH ?= $(HOME)/.gerbil
 SCI_SRC ?= $(shell readlink -f $(GERBIL_PATH)/pkg/gerbil-scintilla 2>/dev/null || echo $(GERBIL_PATH)/pkg/github.com/ober/gerbil-scintilla)
 QT_SRC  ?= $(shell readlink -f $(GERBIL_PATH)/pkg/gerbil-qt 2>/dev/null || echo $(GERBIL_PATH)/pkg/github.com/ober/gerbil-qt)
+LH_SRC  ?= $(shell readlink -f $(GERBIL_PATH)/pkg/gerbil-litehtml 2>/dev/null || echo $(GERBIL_PATH)/pkg/github.com/ober/gerbil-litehtml)
 
 DEPS_IMAGE := gemacs-deps:$(ARCH)
 
@@ -185,6 +186,7 @@ docker-deps:
 	  --build-arg ARCH=$(ARCH) \
 	  --build-context sci-src=$(SCI_SRC) \
 	  --build-context qt-src=$(QT_SRC) \
+	  --build-context lh-src=$(LH_SRC) \
 	  -t $(DEPS_IMAGE) \
 	  $(CURDIR)
 
@@ -203,8 +205,9 @@ build-gemacs-static: check-root
 	  GEMACS_BUILD_TUI_ONLY=1 \
 	  GEMACS_STATIC=1 \
 	  GEMACS_SCI_BASE=/deps/gerbil-scintilla \
+	  GEMACS_LH_BASE=/deps/gerbil-litehtml \
 	  GEMACS_GSH_BASE=$(GSH_PKG_DIR) \
-	  GERBIL_LOADPATH=/deps/gerbil-scintilla/.gerbil/lib:$(GSH_LIB_DIR):/root/.gerbil/lib \
+	  GERBIL_LOADPATH=/deps/gerbil-scintilla/.gerbil/lib:/deps/gerbil-litehtml/.gerbil/lib:$(GSH_LIB_DIR):/root/.gerbil/lib \
 	  gerbil build
 
 # Build gemacs TUI + Qt inside the pre-built deps image
@@ -214,9 +217,10 @@ build-gemacs-static-qt: check-root
 	  GEMACS_STATIC=1 \
 	  GEMACS_SCI_BASE=/deps/gerbil-scintilla \
 	  GEMACS_QT_BASE=/deps/gerbil-qt \
+	  GEMACS_LH_BASE=/deps/gerbil-litehtml \
 	  GEMACS_GSH_BASE=$(GSH_PKG_DIR) \
 	  PKG_CONFIG_PATH=/opt/qt6-static/lib/pkgconfig \
-	  GERBIL_LOADPATH=/deps/gerbil-scintilla/.gerbil/lib:/deps/gerbil-qt/.gerbil/lib:$(GSH_LIB_DIR):/root/.gerbil/lib \
+	  GERBIL_LOADPATH=/deps/gerbil-scintilla/.gerbil/lib:/deps/gerbil-qt/.gerbil/lib:/deps/gerbil-litehtml/.gerbil/lib:$(GSH_LIB_DIR):/root/.gerbil/lib \
 	  gerbil build
 
 # -----------------------------------------------------------------------------
@@ -270,13 +274,17 @@ build-static: check-root
 	cd /tmp/gerbil-scintilla && gerbil build
 	@echo "=== Installing gerbil-pcre2 ==="
 	gxpkg install github.com/ober/gerbil-pcre2
+	@echo "=== Building gerbil-litehtml (static) ==="
+	gxpkg link gerbil-litehtml /deps/gerbil-litehtml
+	cd /deps/gerbil-litehtml && GEMACS_LH_STATIC=1 gerbil build
 	@echo "=== Building gemacs (TUI, static) ==="
 	cd /src && \
 	  GERBIL_BUILD_CORES=1 \
 	  GEMACS_BUILD_TUI_ONLY=1 \
 	  GEMACS_STATIC=1 \
 	  GEMACS_SCI_BASE=/tmp/gerbil-scintilla \
-	  GERBIL_LOADPATH=/tmp/gerbil-scintilla/.gerbil/lib:$(HOME)/.gerbil/lib \
+	  GEMACS_LH_BASE=/deps/gerbil-litehtml \
+	  GERBIL_LOADPATH=/tmp/gerbil-scintilla/.gerbil/lib:/deps/gerbil-litehtml/.gerbil/lib:$(HOME)/.gerbil/lib \
 	  gerbil build
 
 # Build static Qt binary inside Docker container (self-contained)
@@ -297,14 +305,18 @@ build-static-qt: check-root
 	cd /deps/gerbil-qt && \
 	  GERBIL_LOADPATH=/deps/gerbil-scintilla/.gerbil/lib:$(HOME)/.gerbil/lib \
 	  gerbil build
+	@echo "=== Building gerbil-litehtml (static) ==="
+	gxpkg link gerbil-litehtml /deps/gerbil-litehtml
+	cd /deps/gerbil-litehtml && GEMACS_LH_STATIC=1 gerbil build
 	@echo "=== Building gemacs (TUI + Qt, static) ==="
 	cd /src && \
 	  GERBIL_BUILD_CORES=1 \
 	  GEMACS_STATIC=1 \
 	  GEMACS_SCI_BASE=/tmp/gerbil-scintilla \
 	  GEMACS_QT_BASE=/deps/gerbil-qt \
+	  GEMACS_LH_BASE=/deps/gerbil-litehtml \
 	  PKG_CONFIG_PATH=/opt/qt6-static/lib/pkgconfig \
-	  GERBIL_LOADPATH=/tmp/gerbil-scintilla/.gerbil/lib:/deps/gerbil-qt/.gerbil/lib:$(HOME)/.gerbil/lib \
+	  GERBIL_LOADPATH=/tmp/gerbil-scintilla/.gerbil/lib:/deps/gerbil-qt/.gerbil/lib:/deps/gerbil-litehtml/.gerbil/lib:$(HOME)/.gerbil/lib \
 	  gerbil build
 
 # Self-contained static TUI binary via Docker (no deps image needed)
@@ -313,12 +325,17 @@ linux-static-docker-full: clean-docker
 	  --ulimit nofile=8192:8192 \
 	  -v $(CURDIR):/src:z \
 	  -v $(SCI_SRC):/deps/gerbil-scintilla:z \
+	  -v $(LH_SRC):/deps/gerbil-litehtml:z \
 	  $(DOCKER_IMAGE) \
-	  sh -c "apk add --no-cache g++ git curl make su-exec \
+	  sh -c "apk add --no-cache g++ git curl make su-exec cmake samurai \
 	           pcre2-dev pcre2-static \
+	           gumbo-parser-dev gumbo-parser-static \
 	           openssl-dev openssl-libs-static \
 	           sqlite-dev sqlite-static \
 	           zlib-static && \
+	         cd /tmp && git clone --depth 1 --branch v0.6 https://github.com/litehtml/litehtml.git && \
+	         cd litehtml && cmake -B build -G Ninja -DBUILD_SHARED_LIBS=OFF -DCMAKE_INSTALL_PREFIX=/usr/local -DLITEHTML_BUILD_TESTING=OFF -DEXTERNAL_GUMBO=ON && \
+	         cmake --build build && cmake --install build && cd / && rm -rf /tmp/litehtml && \
 	         chown -R $(UID):$(GID) /opt/ && \
 	         mkdir -p /tmp/gemacs-build && chown $(UID):$(GID) /tmp/gemacs-build && \
 	         exec su-exec $(UID):$(GID) env HOME=/tmp/gemacs-build sh -c '\
@@ -331,11 +348,16 @@ linux-static-qt-docker-full: clean-docker
 	  -v $(CURDIR):/src:z \
 	  -v $(SCI_SRC):/deps/gerbil-scintilla:z \
 	  -v $(QT_SRC):/deps/gerbil-qt:z \
+	  -v $(LH_SRC):/deps/gerbil-litehtml:z \
 	  $(DOCKER_IMAGE) \
-	  sh -c "apk add --no-cache g++ git curl make su-exec \
+	  sh -c "apk add --no-cache g++ git curl make su-exec cmake samurai \
 	           pcre2-dev pcre2-static \
+	           gumbo-parser-dev gumbo-parser-static \
 	           qt6-qtbase-dev \
 	           qscintilla-dev 2>/dev/null; \
+	         cd /tmp && git clone --depth 1 --branch v0.6 https://github.com/litehtml/litehtml.git && \
+	         cd litehtml && cmake -B build -G Ninja -DBUILD_SHARED_LIBS=OFF -DCMAKE_INSTALL_PREFIX=/usr/local -DLITEHTML_BUILD_TESTING=OFF -DEXTERNAL_GUMBO=ON && \
+	         cmake --build build && cmake --install build && cd / && rm -rf /tmp/litehtml; \
 	         chown -R $(UID):$(GID) /opt/ && \
 	         mkdir -p /tmp/gemacs-build && chown $(UID):$(GID) /tmp/gemacs-build && \
 	         exec su-exec $(UID):$(GID) env HOME=/tmp/gemacs-build sh -c '\

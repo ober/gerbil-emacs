@@ -23,6 +23,7 @@ RUN apk add --no-cache \
     fontconfig-dev freetype-dev harfbuzz-dev \
     libpng-dev zlib-dev mesa-dev \
     pcre2-dev pcre2-static \
+    gumbo-parser-dev gumbo-parser-static \
     at-spi2-core-dev libdrm-dev \
     zlib-static libxcb-static \
     fontconfig-static freetype-static harfbuzz-static \
@@ -177,6 +178,19 @@ RUN mkdir -p /opt/qt6-static/lib/pkgconfig && \
       > /opt/qt6-static/lib/pkgconfig/QScintilla.pc && \
     echo "Generated .pc files:" && ls /opt/qt6-static/lib/pkgconfig/
 
+# ── Phase 3c: Build litehtml v0.6 static (HTML rendering engine) ───────
+RUN cd /tmp && \
+    git clone --depth 1 --branch v0.6 https://github.com/litehtml/litehtml.git && \
+    cd litehtml && \
+    cmake -B build -G Ninja \
+      -DBUILD_SHARED_LIBS=OFF \
+      -DCMAKE_INSTALL_PREFIX=/usr/local \
+      -DLITEHTML_BUILD_TESTING=OFF \
+      -DEXTERNAL_GUMBO=ON && \
+    cmake --build build && \
+    cmake --install build && \
+    cd / && rm -rf /tmp/litehtml
+
 # ── Phase 4: Gerbil dependencies ────────────────────────────────────────
 ENV PKG_CONFIG_PATH=/opt/qt6-static/lib/pkgconfig
 
@@ -202,6 +216,14 @@ RUN gxpkg link gerbil-qt /deps/gerbil-qt && \
     cd /deps/gerbil-qt && \
     PKG_CONFIG_PATH=/opt/qt6-static/lib/pkgconfig \
     GERBIL_LOADPATH=/deps/gerbil-scintilla/.gerbil/lib:/root/.gerbil/lib \
+    gerbil build
+
+# Build gerbil-litehtml (static libhtml_shim.a for exe linking)
+COPY --from=lh-src . /deps/gerbil-litehtml
+RUN gxpkg link gerbil-litehtml /deps/gerbil-litehtml && \
+    cd /deps/gerbil-litehtml && \
+    GEMACS_LH_STATIC=1 \
+    GERBIL_LOADPATH=/root/.gerbil/lib \
     gerbil build
 
 # Build static libqt_shim.a + qt_static_plugins.o (kept separate)
