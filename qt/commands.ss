@@ -283,21 +283,25 @@
           (set! (qt-edit-window-buffer (qt-current-window fr)) buf)
           (when (file-exists? filename)
             (let ((text (read-file-as-string filename)))
-              (when text
-                ;; Cache line ending style for modeline
-                (hash-put! *buffer-eol-cache* name (detect-eol-from-text text))
-                (qt-plain-text-edit-set-text! ed2 text)
-                (qt-text-document-set-modified! (buffer-doc-pointer buf) #f)
-                (if default-line
-                  ;; Jump to the line from file:line
-                  (let ((target-pos (text-line-position text default-line)))
-                    (qt-plain-text-edit-set-cursor-position! ed2 target-pos))
-                  ;; Restore saved cursor position if save-place enabled
-                  (let ((saved-pos (and *save-place-enabled*
-                                       (save-place-restore filename))))
-                    (if (and saved-pos (< saved-pos (string-length text)))
-                      (qt-plain-text-edit-set-cursor-position! ed2 saved-pos)
-                      (qt-plain-text-edit-set-cursor-position! ed2 0))))))
+              (if text
+                (begin
+                  ;; Cache line ending style for modeline
+                  (hash-put! *buffer-eol-cache* name (detect-eol-from-text text))
+                  (qt-plain-text-edit-set-text! ed2 text)
+                  (qt-text-document-set-modified! (buffer-doc-pointer buf) #f)
+                  (if default-line
+                    ;; Jump to the line from file:line
+                    (let ((target-pos (text-line-position text default-line)))
+                      (qt-plain-text-edit-set-cursor-position! ed2 target-pos))
+                    ;; Restore saved cursor position if save-place enabled
+                    (let ((saved-pos (and *save-place-enabled*
+                                         (save-place-restore filename))))
+                      (if (and saved-pos (< saved-pos (string-length text)))
+                        (qt-plain-text-edit-set-cursor-position! ed2 saved-pos)
+                        (qt-plain-text-edit-set-cursor-position! ed2 0)))))
+                ;; Binary file — can't read as text
+                (qt-plain-text-edit-set-text! ed2
+                  (string-append "[Binary file: " filename "]"))))
             (file-mtime-record! filename))
           (qt-setup-highlighting! app buf)
           (apply-dir-locals! app filename)
@@ -354,17 +358,21 @@
             (set! (qt-edit-window-buffer (qt-current-window fr)) buf)
             (when (file-exists? filename)
               (let ((text (read-file-as-string filename)))
-                (when text
-                  ;; Cache line ending style for modeline
-                  (hash-put! *buffer-eol-cache* name (detect-eol-from-text text))
-                  (qt-plain-text-edit-set-text! ed text)
-                  (qt-text-document-set-modified! (buffer-doc-pointer buf) #f)
-                  ;; Restore saved cursor position if save-place is enabled
-                  (let ((saved-pos (and *save-place-enabled*
-                                       (save-place-restore filename))))
-                    (if (and saved-pos (< saved-pos (string-length text)))
-                      (qt-plain-text-edit-set-cursor-position! ed saved-pos)
-                      (qt-plain-text-edit-set-cursor-position! ed 0)))))
+                (if text
+                  (begin
+                    ;; Cache line ending style for modeline
+                    (hash-put! *buffer-eol-cache* name (detect-eol-from-text text))
+                    (qt-plain-text-edit-set-text! ed text)
+                    (qt-text-document-set-modified! (buffer-doc-pointer buf) #f)
+                    ;; Restore saved cursor position if save-place is enabled
+                    (let ((saved-pos (and *save-place-enabled*
+                                         (save-place-restore filename))))
+                      (if (and saved-pos (< saved-pos (string-length text)))
+                        (qt-plain-text-edit-set-cursor-position! ed saved-pos)
+                        (qt-plain-text-edit-set-cursor-position! ed 0))))
+                  ;; Binary file — can't read as text
+                  (qt-plain-text-edit-set-text! ed
+                    (string-append "[Binary file: " filename "]"))))
               (file-mtime-record! filename))
             (qt-setup-highlighting! app buf)
             ;; Apply directory-locals and editorconfig settings

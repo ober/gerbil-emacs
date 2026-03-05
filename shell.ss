@@ -279,7 +279,9 @@
            ;; External/compound: spawn PTY subprocess (async)
            (let* ((env-alist (env-exported-alist env))
                   (rows 24) (cols 80))
-             (let-values (((mfd pid) (pty-spawn trimmed env-alist rows cols)))
+             (let-values (((mfd pid) (with-catch
+                                       (lambda (e) (values #f #f))
+                                       (lambda () (pty-spawn trimmed env-alist rows cols)))))
                (if (and mfd pid)
                  (let ((ch (make-channel)))
                    (set! (shell-state-pty-master ss) mfd)

@@ -444,7 +444,7 @@
 (def (extract-first-word input)
   "Extract the first command word from input, skipping leading var assignments.
    Returns the word or #f."
-  (let* ((trimmed (string-trim input))
+  (let* ((trimmed (safe-string-trim input))
          (len (string-length trimmed)))
     (let loop ((i 0))
       (if (>= i len)
@@ -545,7 +545,9 @@
            (let* ((env (terminal-state-env ts))
                   (env-alist (env-exported-alist env))
                   (rows 24) (cols 80))
-             (let-values (((mfd pid) (pty-spawn trimmed env-alist rows cols)))
+             (let-values (((mfd pid) (with-catch
+                                       (lambda (e) (values #f #f))
+                                       (lambda () (pty-spawn trimmed env-alist rows cols)))))
                (if (and mfd pid)
                  (let ((ch (make-channel)))
                    ;; Store PTY state

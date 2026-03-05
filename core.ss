@@ -65,6 +65,7 @@
 
   ;; Shared helpers
   brace-char?
+  safe-string-trim
   safe-string-trim-both
 
   ;; Hooks
@@ -1348,6 +1349,19 @@
       (= ch 91) (= ch 93)    ; [ ]
       (= ch 123) (= ch 125))) ; { }
 
+(def (safe-string-trim str)
+  "Unicode-safe left-trim. SRFI-13's string-trim crashes on chars > 255."
+  (let ((len (string-length str)))
+    (if (= len 0) ""
+      (let ((start (let loop ((i 0))
+                     (if (>= i len) len
+                       (if (char-whitespace? (string-ref str i))
+                         (loop (+ i 1))
+                         i)))))
+        (if (= start 0) str
+          (if (>= start len) ""
+            (substring str start len)))))))
+
 (def (safe-string-trim-both str)
   "Unicode-safe string-trim-both. SRFI-13's version crashes on chars > 255."
   (let ((len (string-length str)))
@@ -1370,8 +1384,11 @@
 ;;;============================================================================
 
 (def (read-file-as-string path)
-  (call-with-input-file path
-    (lambda (port) (read-line port #f))))
+  (with-catch
+    (lambda (e) #f)  ;; binary/unreadable files return #f
+    (lambda ()
+      (call-with-input-file path
+        (lambda (port) (read-line port #f))))))
 
 (def (write-string-to-file path str)
   (call-with-output-file path
