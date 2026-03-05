@@ -1190,8 +1190,16 @@
           (lambda (e)
             (if (keyboard-quit-exception? e)
               (echo-message! (app-state-echo app) "Quit")
-              (let ((msg (with-output-to-string "" (lambda () (display-exception e)))))
-                (gemacs-log! "COMMAND-ERROR: " (symbol->string name) ": " msg)
+              (let ((msg (with-output-to-string ""
+                           (lambda () (display-exception e (current-output-port))))))
+                (gemacs-log! "COMMAND-ERROR: " (symbol->string name) ": \n" msg)
+                ;; Also log continuation backtrace
+                (let ((bt (with-output-to-string ""
+                            (lambda () (display-continuation-backtrace
+                                         (##continuation-capture (lambda (k) k))
+                                         (current-output-port))))))
+                  (when (> (string-length bt) 0)
+                    (gemacs-log! "--- continuation backtrace:\n" bt)))
                 (echo-error! (app-state-echo app)
                   (string-append (symbol->string name) ": " msg)))))
           (lambda () (cmd app)))
@@ -1201,8 +1209,13 @@
                             digit-argument-7 digit-argument-8 digit-argument-9 negative-argument))
           (set! (app-state-prefix-arg app) #f)
           (set! (app-state-prefix-digit-mode? app) #f)))
-      (echo-error! (app-state-echo app)
-                   (string-append (symbol->string name) " is undefined")))))
+      (let ((buf-name (with-catch (lambda (e) "<unknown>")
+                        (lambda ()
+                          (let ((bufs (buffer-list)))
+                            (if (pair? bufs) (buffer-name (car bufs)) "<no-buffer>"))))))
+        (gemacs-log! "UNDEFINED-CMD: " (symbol->string name) " in buffer=" buf-name)
+        (echo-error! (app-state-echo app)
+                     (string-append (symbol->string name) " is undefined"))))))
 
 (def (setup-command-docs!)
   "Register docstrings for commonly used commands."

@@ -53,12 +53,15 @@
    Sources ~/.gshrc for aliases, PS1, etc."
   (let ((env (gsh-init! #t)))  ; interactive? = #t
     (env-set! env "SHELL" "gsh")
-    ;; Always override PS1 — inherited bash PS1 contains bash-specific
-    ;; syntax (\[...\], $(cmd), etc.) that gsh can't parse.
+    ;; Clear inherited bash PS1 BEFORE sourcing .gshrc — bash PS1 has
+    ;; \[...\], $(cmd) syntax that gsh can't parse. .gshrc will set its own.
     (env-set! env "PS1" "\\u@\\h:\\w\\$ ")
     (with-catch
-      (lambda (e) (void))
+      (lambda (e)
+        (gemacs-log! "gsh-eshell: startup file error: "
+          (with-output-to-string "" (lambda () (display-exception e (current-output-port))))))
       (lambda () (load-startup-files! env #f #t)))
+    (gemacs-log! "gsh-eshell: PS1=" (or (env-get env "PS1") "<none>"))
     (hash-put! *gsh-eshell-state* buf env)
     ;; Update the prompt from PS1
     (let* ((ps1 (or (env-get env "PS1") "gsh> "))

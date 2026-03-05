@@ -108,12 +108,13 @@
    Sources ~/.gshrc for PS1, aliases, etc."
   (let ((env (gsh-init! #t)))  ; interactive? = #t for alias expansion
     (env-set! env "SHELL" "gsh")
-    ;; Always override PS1 — inherited bash PS1 contains bash-specific
-    ;; syntax (\[...\], $(cmd), etc.) that gsh can't parse.
+    ;; Clear inherited bash PS1 before sourcing .gshrc
     (env-set! env "PS1" "\\u@\\h:\\w\\$ ")
     ;; Source ~/.gshrc for interactive shells
     (with-catch
-      (lambda (e) (void))  ; ignore errors in rc file
+      (lambda (e)
+        (gemacs-log! "shell: startup file error: "
+          (with-output-to-string "" (lambda () (display-exception e (current-output-port))))))
       (lambda () (load-startup-files! env #f #t)))  ; login?=#f interactive?=#t
     (make-shell-state env 0 #f #f #f #f)))
 
@@ -280,7 +281,11 @@
            (let* ((env-alist (env-exported-alist env))
                   (rows 24) (cols 80))
              (let-values (((mfd pid) (with-catch
-                                       (lambda (e) (values #f #f))
+                                       (lambda (e)
+                                         (gemacs-log! "PTY-SPAWN-ERROR: "
+                                           (with-output-to-string ""
+                                             (lambda () (display-exception e (current-output-port)))))
+                                         (values #f #f))
                                        (lambda () (pty-spawn trimmed env-alist rows cols)))))
                (if (and mfd pid)
                  (let ((ch (make-channel)))
