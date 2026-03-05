@@ -8,6 +8,7 @@
         :std/sort
         :std/srfi/13
         :std/text/base64
+        :gerbil-litehtml/html
         :gemacs/qt/sci-shim
         :gemacs/core
         :gemacs/editor
@@ -145,9 +146,15 @@
          (write-char (string-ref text i) out)
          (loop (+ i 1)))))))
 
-;; --- EWW-style web browser ---
+;; --- EWW-style web browser (litehtml-powered) ---
 (def *eww-history* [])
 (def *eww-current-url* #f)
+(def *qt-eww-lh-context* #f)
+
+(def (qt-eww-ensure-context!)
+  "Lazily create the shared litehtml context for Qt EWW."
+  (unless *qt-eww-lh-context*
+    (set! *qt-eww-lh-context* (html-context-create))))
 
 (def (eww-fetch-url url)
   "Fetch a URL using curl and return the raw HTML."
@@ -168,7 +175,65 @@
         output))))
 
 (def (eww-html-to-text html)
-  "Simple HTML to text converter. Strips tags, decodes basic entities, adds newlines."
+  "Convert HTML to text using litehtml for proper CSS layout."
+  (qt-eww-ensure-context!)
+  (let* ((text-runs [])
+         (container (html-container-create))
+         (width 78))
+    (html-container-set-callbacks! container
+      create-font:
+        (lambda (face size weight italic decoration)
+          [1 1 1 0 1 #t])
+      text-width:
+        (lambda (text font)
+          (string-length text))
+      draw-text:
+        (lambda (hdc text font r g b a x y w h)
+          (set! text-runs (cons (list text x y) text-runs)))
+      default-font-size: (lambda () 1)
+      default-font-name: (lambda () "monospace"))
+    (html-container-set-viewport! container width 1000)
+    (html-container-set-media-type! container 'screen)
+    (html-container-set-media-color! container 8)
+    (let ((doc (html-document-create html container *qt-eww-lh-context*)))
+      (html-document-render! doc width)
+      (html-document-draw! doc 0 0 0)
+      (let ((result (qt-eww-assemble-runs (reverse text-runs) width)))
+        (html-document-destroy! doc)
+        (html-container-destroy! container)
+        result))))
+
+(def (qt-eww-assemble-runs runs width)
+  "Assemble draw_text runs into text, sorted by y then x."
+  (if (null? runs) ""
+    (let* ((sorted (sort runs (lambda (a b)
+                     (let ((ya (caddr a)) (yb (caddr b)))
+                       (if (= ya yb) (< (cadr a) (cadr b)) (< ya yb))))))
+           (lines (make-hash-table))
+           (max-y 0))
+      (for-each (lambda (run)
+        (let ((text (car run)) (x (cadr run)) (y (caddr run)))
+          (when (> y max-y) (set! max-y y))
+          (hash-update! lines y
+            (lambda (existing) (cons (cons x text) existing)) [])))
+        sorted)
+      (let ((out (open-output-string)))
+        (let loop ((y 0))
+          (when (<= y max-y)
+            (let ((lr (sort (or (hash-ref lines y #f) [])
+                            (lambda (a b) (< (car a) (car b))))))
+              (let fill ((rs lr) (col 0))
+                (if (null? rs) (newline out)
+                  (let* ((r (car rs)) (x (car r)) (text (cdr r))
+                         (gap (max 0 (- x col))))
+                    (when (> gap 0) (display (make-string gap #\space) out))
+                    (display text out)
+                    (fill (cdr rs) (+ (max x col) (string-length text)))))))
+            (loop (+ y 1))))
+        (get-output-string out)))))
+
+(def (eww-html-to-text-legacy html)
+  "Legacy HTML to text converter. Kept as fallback."
   (let* ((len (string-length html))
          (out (open-output-string))
          (col 0)

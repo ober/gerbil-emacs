@@ -18,12 +18,15 @@
 ;; NOTE: GERBIL_PATH points to the project-local .gerbil during builds,
 ;; but packages are installed/linked under $HOME/.gerbil/pkg/.
 (def user-gerbil-dir (path-expand ".gerbil" (getenv "HOME")))
+(def here (path-directory (this-source-file)))
 
 (def (find-pkg-source name)
   "Find package source dir via Gerbil package system."
-  (let ((linked (path-expand (string-append "pkg/" name) user-gerbil-dir))
+  (let ((local-linked (path-expand (string-append ".gerbil/pkg/" name) here))
+        (linked (path-expand (string-append "pkg/" name) user-gerbil-dir))
         (github (path-expand (string-append "pkg/github.com/ober/" name) user-gerbil-dir)))
     (cond
+      ((file-exists? local-linked) local-linked)
       ((file-exists? linked) linked)
       ((file-exists? github) github)
       (else (error (string-append "Package not found: " name
@@ -38,13 +41,19 @@
 (def termbox-dir (path-expand "termbox_next" sci-tb-dir))
 (def lexilla-dir (path-expand "lexilla" vendor-dir))
 
+;; gerbil-litehtml FFI paths (needed for exe linking)
+(def lh-base (or (getenv "GEMACS_LH_BASE" #f)
+                 (find-pkg-source "gerbil-litehtml")))
+(def lh-vendor-dir (path-expand "vendor" lh-base))
+
 (def cc-opts
   (string-append
    "-I" (path-expand "include" sci-dir) " "
    "-I" (path-expand "src" sci-dir) " "
    "-I" sci-tb-dir " "
    "-I" (path-expand "src" termbox-dir) " "
-   "-I" (path-expand "include" lexilla-dir)))
+   "-I" (path-expand "include" lexilla-dir) " "
+   "-I" lh-vendor-dir))
 
 (def ld-opts
   (string-append
@@ -52,6 +61,8 @@
    (path-expand "bin/scintilla.a" sci-dir) " "
    (path-expand "bin/liblexilla.a" lexilla-dir) " "
    (path-expand "bin/termbox.a" termbox-dir) " "
+   "-L" lh-vendor-dir " -lhtml_shim -llitehtml "
+   "-Wl,-rpath," lh-vendor-dir " "
    "-lstdc++ -lpthread -lpcre2-8 -lutil"))
 
 ;; gerbil-shell (gsh) package path
@@ -161,6 +172,8 @@
      (ldflags "Qt6Widgets" "-lQt6Widgets"))
    " "
    qsci-ldflags " "
+   "-L" lh-vendor-dir " -lhtml_shim -llitehtml "
+   "-Wl,-rpath," lh-vendor-dir " "
    (path-expand "bin/scintilla.a" sci-dir) " "
    (path-expand "bin/liblexilla.a" lexilla-dir) " "
    (path-expand "bin/termbox.a" termbox-dir) " "

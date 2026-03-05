@@ -1604,11 +1604,12 @@
               (let* ((bm (car bms))
                      (label (string-append (car bm) " — " (cdr bm))))
                 (if (string=? label choice)
-                  (let ((content (eww-fetch-url (cdr bm))))
-                    (if content
+                  (let ((html (eww-fetch-url (cdr bm))))
+                    (if html
                       (begin
                         (set! *eww-current-url* (cdr bm))
-                        (let* ((fr (app-state-frame app))
+                        (let* ((text (eww-html-to-text html))
+                               (fr (app-state-frame app))
                                (ed (qt-current-editor fr))
                                (buf-name "*eww*")
                                (existing (buffer-by-name buf-name))
@@ -1616,7 +1617,7 @@
                           (qt-buffer-attach! ed buf)
                           (set! (qt-edit-window-buffer (qt-current-window fr)) buf)
                           (qt-plain-text-edit-set-text! ed
-                            (string-append "URL: " (cdr bm) "\n\n" content))
+                            (string-append "URL: " (cdr bm) "\n\n" text))
                           (qt-plain-text-edit-set-cursor-position! ed 0)))
                       (echo-error! echo "Failed to fetch page")))
                   (loop (cdr bms)))))))))))

@@ -13,6 +13,7 @@
         :gerbil-scintilla/constants
         :gerbil-scintilla/scintilla
         :gerbil-scintilla/tui
+        :gerbil-litehtml/html
         :gemacs/core
         :gemacs/keymap
         :gemacs/buffer
@@ -22,40 +23,128 @@
         :gemacs/editor-extra-helpers)
 
 
-;; EWW browser - text-mode web browser using curl + html2text
+;; EWW browser - text-mode web browser using litehtml for HTML rendering
 ;; Maintains history for back/forward navigation
 
 (def *eww-history* '())        ; list of URLs visited
 (def *eww-history-idx* 0)      ; current position in history
 (def *eww-current-url* #f)     ; currently displayed URL
 
-(def (eww-fetch-url url)
-  "Fetch URL content and convert to text. Returns text or #f."
+;; Shared litehtml context (holds master CSS, reused across documents)
+(def *eww-lh-context* #f)
+
+(def (eww-ensure-context!)
+  "Lazily create the shared litehtml context."
+  (unless *eww-lh-context*
+    (set! *eww-lh-context* (html-context-create))))
+
+(def (eww-fetch-html url)
+  "Fetch raw HTML from URL using curl. Returns HTML string or #f."
   (with-exception-catcher
     (lambda (e) #f)
     (lambda ()
       (let* ((proc (open-process
                      (list path: "curl"
-                           arguments: (list "-sL" "-A" "Mozilla/5.0" url)
+                           arguments: (list "-sL" "-A" "Mozilla/5.0"
+                                            "--max-time" "30" url)
                            stdin-redirection: #f
                            stdout-redirection: #t
                            stderr-redirection: #f)))
              (html (read-line proc #f)))
         (process-status proc)
-        (if (not html)
-          #f
-          ;; Try to convert HTML to text using various tools
-          (let* ((text-proc (open-process
-                              (list path: "lynx"
-                                    arguments: (list "-dump" "-stdin")
-                                    stdin-redirection: #t
-                                    stdout-redirection: #t
-                                    stderr-redirection: #f))))
-            (display html text-proc)
-            (close-output-port text-proc)
-            (let ((text (read-line text-proc #f)))
-              (process-status text-proc)
-              (or text html))))))))
+        html))))
+
+(def (eww-render-html html-string width)
+  "Render HTML to text using litehtml. Returns rendered text string.
+   The draw_text callback accumulates text runs at their (x,y) positions,
+   then we assemble them into lines."
+  (eww-ensure-context!)
+  (let* ((text-runs [])   ; list of (text x y bold?)
+         (container (html-container-create)))
+    ;; Set up TUI-oriented callbacks:
+    ;; - 1 character = 1 pixel width
+    ;; - font height = 1 line
+    (html-container-set-callbacks! container
+      create-font:
+        (lambda (face size weight italic decoration)
+          ;; Return: [font-handle height ascent descent x-height draw-spaces?]
+          ;; Use weight > 400 as "bold" flag encoded in font handle
+          (let ((bold? (if (> weight 400) 1 0)))
+            [bold? 1 1 0 1 #t]))
+      text-width:
+        (lambda (text font)
+          (string-length text))
+      draw-text:
+        (lambda (hdc text font r g b a x y w h)
+          (set! text-runs (cons (list text x y font) text-runs)))
+      default-font-size: (lambda () 1)
+      default-font-name: (lambda () "monospace"))
+
+    (html-container-set-viewport! container width 1000)
+    (html-container-set-media-type! container 'tty)
+    (html-container-set-media-color! container 1)
+
+    (let* ((doc (html-document-create html-string container *eww-lh-context*)))
+      (html-document-render! doc width)
+      (html-document-draw! doc 0 0 0)
+
+      ;; Assemble text runs into lines
+      (let ((result (eww-assemble-text-runs (reverse text-runs) width)))
+        (html-document-destroy! doc)
+        (html-container-destroy! container)
+        result))))
+
+(def (eww-assemble-text-runs runs width)
+  "Assemble draw_text output into a text string.
+   Each run is (text x y font-handle). We sort by y then x,
+   fill gaps with spaces, and join lines with newlines."
+  (if (null? runs)
+    ""
+    (let* (;; Group runs by y coordinate
+           (sorted (sort runs (lambda (a b)
+                     (let ((ya (caddr a)) (yb (caddr b)))
+                       (if (= ya yb)
+                         (< (cadr a) (cadr b))
+                         (< ya yb))))))
+           (lines (make-hash-table))
+           (max-y 0))
+      ;; Collect runs per line
+      (for-each
+        (lambda (run)
+          (let ((text (car run))
+                (x (cadr run))
+                (y (caddr run)))
+            (when (> y max-y) (set! max-y y))
+            (hash-update! lines y
+              (lambda (existing) (cons (cons x text) existing))
+              [])))
+        sorted)
+      ;; Build output
+      (let ((out (open-output-string)))
+        (let loop ((y 0))
+          (when (<= y max-y)
+            (let ((line-runs (sort (or (hash-ref lines y #f) [])
+                                   (lambda (a b) (< (car a) (car b))))))
+              (let fill ((runs line-runs) (col 0))
+                (if (null? runs)
+                  (newline out)
+                  (let* ((run (car runs))
+                         (x (car run))
+                         (text (cdr run))
+                         (gap (max 0 (- x col))))
+                    ;; Fill gap with spaces
+                    (when (> gap 0)
+                      (display (make-string gap #\space) out))
+                    (display text out)
+                    (fill (cdr runs) (+ (max x col) (string-length text)))))))
+            (loop (+ y 1))))
+        (get-output-string out)))))
+
+(def (eww-fetch-url url)
+  "Fetch URL and render HTML to text via litehtml. Returns text or #f.
+   Kept for backward compatibility with callers in editor-extra-media.ss etc."
+  (let ((html (eww-fetch-html url)))
+    (and html (eww-render-html html 80))))
 
 (def (eww-display-page app url content)
   "Display web content in EWW buffer."
@@ -88,13 +177,15 @@
                         url
                         (string-append "https://" url))))
         (echo-message! echo (string-append "Fetching: " full-url))
-        (let ((content (eww-fetch-url full-url)))
-          (if content
+        (let ((html (eww-fetch-html full-url)))
+          (if html
             (begin
               ;; Update history
               (set! *eww-history* (cons full-url *eww-history*))
               (set! *eww-history-idx* 0)
-              (eww-display-page app full-url content))
+              ;; Render HTML via litehtml
+              (let ((rendered (eww-render-html html width)))
+                (eww-display-page app full-url rendered)))
             (echo-error! echo "Failed to fetch URL")))))))
 
 (def (cmd-eww-browse-url app)

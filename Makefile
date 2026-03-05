@@ -8,7 +8,8 @@ export GERBIL_BUILD_CORES := $(shell echo $$(( $$(nproc) / 2 )))
 
 OPENSSL_RPATH = /home/linuxbrew/.linuxbrew/opt/openssl@3/lib
 SCI_RPATH = $(HOME)/.gerbil/lib/gerbil-scintilla
-QT_SHIM_RPATH = $(HOME)/.gerbil/lib/gerbil-qt
+QT_SHIM_RPATH = $(shell readlink -f $(HOME)/.gerbil/pkg/gerbil-qt 2>/dev/null)/vendor
+LH_RPATH = $(shell readlink -f $(HOME)/.gerbil/pkg/gerbil-litehtml 2>/dev/null)/vendor
 
 all: help
 
@@ -43,19 +44,19 @@ help:
 	@echo "  clean-docker                Clean .gerbil dir via Docker"
 
 QT_TEST_TIMEOUT ?= 600
-QT_TEST_ENV = QT_QPA_PLATFORM=offscreen LD_LIBRARY_PATH=$(OPENSSL_RPATH):$(SCI_RPATH):$(QT_SHIM_RPATH)
+QT_TEST_ENV = QT_QPA_PLATFORM=offscreen LD_LIBRARY_PATH=$(OPENSSL_RPATH):$(SCI_RPATH):$(QT_SHIM_RPATH):$(LH_RPATH)
 
 build:
 	chmod +x build.ss
 	LD_LIBRARY_PATH=$(OPENSSL_RPATH) gerbil build
-	-patchelf --set-rpath $(OPENSSL_RPATH):$(SCI_RPATH) .gerbil/bin/gemacs
-	-patchelf --set-rpath $(OPENSSL_RPATH):$(SCI_RPATH):$(QT_SHIM_RPATH) .gerbil/bin/gemacs-qt
-	-patchelf --set-rpath $(OPENSSL_RPATH):$(SCI_RPATH):$(QT_SHIM_RPATH) .gerbil/bin/qt-highlight-test
-	-patchelf --set-rpath $(OPENSSL_RPATH):$(SCI_RPATH):$(QT_SHIM_RPATH) .gerbil/bin/qt-functional-test
-	-patchelf --set-rpath $(OPENSSL_RPATH):$(SCI_RPATH):$(QT_SHIM_RPATH) .gerbil/bin/lsp-functional-test
-	-patchelf --set-rpath $(OPENSSL_RPATH):$(SCI_RPATH):$(QT_SHIM_RPATH) .gerbil/bin/qt-split-comprehensive-test
-	-patchelf --set-rpath $(OPENSSL_RPATH):$(SCI_RPATH):$(QT_SHIM_RPATH) .gerbil/bin/qt-split-debug-test
-	-patchelf --set-rpath $(OPENSSL_RPATH):$(SCI_RPATH):$(QT_SHIM_RPATH) .gerbil/bin/qt-split-simple-test
+	-patchelf --set-rpath $(OPENSSL_RPATH):$(SCI_RPATH):$(LH_RPATH) .gerbil/bin/gemacs
+	-patchelf --set-rpath $(OPENSSL_RPATH):$(SCI_RPATH):$(QT_SHIM_RPATH):$(LH_RPATH) .gerbil/bin/gemacs-qt
+	-patchelf --set-rpath $(OPENSSL_RPATH):$(SCI_RPATH):$(QT_SHIM_RPATH):$(LH_RPATH) .gerbil/bin/qt-highlight-test
+	-patchelf --set-rpath $(OPENSSL_RPATH):$(SCI_RPATH):$(QT_SHIM_RPATH):$(LH_RPATH) .gerbil/bin/qt-functional-test
+	-patchelf --set-rpath $(OPENSSL_RPATH):$(SCI_RPATH):$(QT_SHIM_RPATH):$(LH_RPATH) .gerbil/bin/lsp-functional-test
+	-patchelf --set-rpath $(OPENSSL_RPATH):$(SCI_RPATH):$(QT_SHIM_RPATH):$(LH_RPATH) .gerbil/bin/qt-split-comprehensive-test
+	-patchelf --set-rpath $(OPENSSL_RPATH):$(SCI_RPATH):$(QT_SHIM_RPATH):$(LH_RPATH) .gerbil/bin/qt-split-debug-test
+	-patchelf --set-rpath $(OPENSSL_RPATH):$(SCI_RPATH):$(QT_SHIM_RPATH):$(LH_RPATH) .gerbil/bin/qt-split-simple-test
 
 clean:
 	gerbil clean

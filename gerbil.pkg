@@ -2,4 +2,5 @@
 (depend: (github: "ober/gerbil-pcre2")
          (github: "ober/gerbil-scintilla")
          (github: "ober/gerbil-qt")
-         (github: "ober/gerbil-shell"))
+         (github: "ober/gerbil-shell")
+         (github: "ober/gerbil-litehtml"))
