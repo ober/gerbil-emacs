@@ -25,10 +25,25 @@
   ;; Periodic task scheduler
   schedule-periodic!
   master-timer-tick!
-  current-time-ms)
+  current-time-ms
+
+  ;; Background services
+  *file-index*
+  start-file-indexer!
+  stop-file-indexer!
+  file-index-lookup
+  *git-status-cache*
+  start-git-watcher!
+  stop-git-watcher!
+  *flycheck-trigger*
+  flycheck-trigger!
+  start-flycheck-watcher!
+  stop-flycheck-watcher!)
 
 (import :std/misc/channel
+        :std/misc/atom
         :std/sugar
+        :std/srfi/13
         :gemacs/core)
 
 ;;;============================================================================
@@ -198,3 +213,168 @@
                       (lambda (e) (values 'error e))
                       thunk)))
         (ui-queue-push! (lambda () (callback result)))))))
+
+;;;============================================================================
+;;; Background Services
+;;;============================================================================
+
+;;; 8.1 File Indexer — builds file index for fast find-file completion
+
+(def *file-index* (atom (make-hash-table)))
+(def *file-indexer-thread* #f)
+
+(def (build-file-index root-dir)
+  "Walk directory tree and build a hash of basename -> full-path list."
+  (let ((index (make-hash-table)))
+    (with-catch
+      (lambda (e) index)
+      (lambda ()
+        (let walk ((dir root-dir))
+          (for-each
+            (lambda (entry)
+              (let ((path (path-expand entry dir)))
+                (with-catch
+                  (lambda (e) #f)
+                  (lambda ()
+                    (let ((info (file-info path)))
+                      (if (eq? 'directory (file-info-type info))
+                        ;; Skip hidden directories
+                        (unless (string-prefix? "." entry)
+                          (walk path))
+                        ;; Index the file
+                        (let* ((name (path-strip-directory path))
+                               (existing (or (hash-get index name) [])))
+                          (hash-put! index name (cons path existing)))))))))
+            (directory-files dir)))
+        index))))
+
+(def (start-file-indexer! root-dir)
+  "Start background file indexer that re-indexes every 30 seconds."
+  (stop-file-indexer!)
+  (set! *file-indexer-thread*
+    (spawn/name 'file-indexer
+      (lambda ()
+        (let loop ()
+          (let ((index (build-file-index root-dir)))
+            (atom-reset! *file-index* index))
+          (thread-sleep! 30)
+          (loop))))))
+
+(def (stop-file-indexer!)
+  "Stop the file indexer background thread."
+  (when *file-indexer-thread*
+    (with-catch (lambda (e) #f)
+      (lambda () (thread-interrupt! *file-indexer-thread*
+                   (lambda () (raise 'stop)))))
+    (set! *file-indexer-thread* #f)))
+
+(def (file-index-lookup name)
+  "Look up a filename in the index. Returns list of full paths."
+  (or (hash-get (atom-deref *file-index*) name) []))
+
+;;; 8.2 Git Status Watcher — polls git status for modeline
+
+(def *git-status-cache* (atom (make-hash-table)))
+(def *git-watcher-thread* #f)
+
+(def (parse-git-status-line line)
+  "Parse one line of git status --porcelain output into (status . file)."
+  (when (>= (string-length line) 4)
+    (let ((status (substring line 0 2))
+          (file (substring line 3 (string-length line))))
+      (cons (string-trim-both status) file))))
+
+(def (start-git-watcher! dir (on-update #f))
+  "Poll git status in background every 5 seconds.
+   Optional on-update callback is called on UI thread with the status hash."
+  (stop-git-watcher!)
+  (set! *git-watcher-thread*
+    (spawn/name 'git-watcher
+      (lambda ()
+        (let loop ()
+          (with-catch
+            (lambda (e) #f)
+            (lambda ()
+              (let* ((proc (open-process
+                             [path: "/usr/bin/git"
+                              arguments: ["status" "--porcelain" "-b"]
+                              directory: dir
+                              stdout-redirection: #t
+                              stderr-redirection: #t]))
+                     (lines (let rd ((acc []))
+                              (let ((line (read-line proc)))
+                                (if (eof-object? line)
+                                  (reverse acc)
+                                  (rd (cons line acc)))))))
+                (close-port proc)
+                (let ((status (make-hash-table))
+                      (modified 0) (staged 0) (untracked 0))
+                  (for-each
+                    (lambda (line)
+                      (when (>= (string-length line) 3)
+                        (let ((xy (substring line 0 2)))
+                          (cond
+                            ((string-prefix? "##" xy)
+                             (hash-put! status 'branch
+                               (substring line 3 (string-length line))))
+                            ((string-contains xy "?")
+                             (set! untracked (+ untracked 1)))
+                            ((or (string-contains xy "M")
+                                 (string-contains xy "D"))
+                             (set! modified (+ modified 1)))
+                            ((or (string-contains xy "A")
+                                 (string-contains xy "R"))
+                             (set! staged (+ staged 1)))))))
+                    lines)
+                  (hash-put! status 'modified modified)
+                  (hash-put! status 'staged staged)
+                  (hash-put! status 'untracked untracked)
+                  (atom-reset! *git-status-cache* status)
+                  (when on-update
+                    (ui-queue-push! (lambda () (on-update status))))))))
+          (thread-sleep! 5)
+          (loop))))))
+
+(def (stop-git-watcher!)
+  "Stop the git status watcher."
+  (when *git-watcher-thread*
+    (with-catch (lambda (e) #f)
+      (lambda () (thread-interrupt! *git-watcher-thread*
+                   (lambda () (raise 'stop)))))
+    (set! *git-watcher-thread* #f)))
+
+;;; 8.3 Flycheck Watcher — runs linter on save via channel trigger
+
+(def *flycheck-trigger* (make-channel 64))
+(def *flycheck-watcher-thread* #f)
+
+(def (flycheck-trigger! path)
+  "Trigger a flycheck run for the given file path."
+  (channel-try-put *flycheck-trigger* path))
+
+(def (start-flycheck-watcher! lint-fn on-result)
+  "Start flycheck watcher. lint-fn: (path) -> error-list.
+   on-result: (path errors) called on UI thread."
+  (stop-flycheck-watcher!)
+  (set! *flycheck-watcher-thread*
+    (spawn/name 'flycheck-watcher
+      (lambda ()
+        (let loop ()
+          (let ((path (channel-get *flycheck-trigger*)))
+            (when (string? path)
+              (with-catch
+                (lambda (e)
+                  (gemacs-log! "flycheck error: " (##object->string e)))
+                (lambda ()
+                  (let ((errors (lint-fn path)))
+                    (ui-queue-push!
+                      (lambda () (on-result path errors))))))))
+          (loop))))))
+
+(def (stop-flycheck-watcher!)
+  "Stop the flycheck watcher."
+  (when *flycheck-watcher-thread*
+    (with-catch (lambda (e) #f)
+      (lambda () (thread-interrupt! *flycheck-watcher-thread*
+                   (lambda () (raise 'stop)))))
+    (set! *flycheck-watcher-thread* #f)))
