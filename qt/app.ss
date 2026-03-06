@@ -7,6 +7,7 @@
         :std/misc/string
         :gemacs/qt/sci-shim
         :gemacs/core
+        :gemacs/async
         :gemacs/editor
         (only-in :gemacs/persist init-file-load!
                  detect-major-mode buffer-local-set!
@@ -653,229 +654,204 @@
               (lambda (editor)
                 (qt-on-key-press-consuming! editor key-handler))))
 
-      ;; REPL output polling timer
-      (let ((repl-timer (qt-timer-create)))
-        (qt-on-timeout! repl-timer
-          (lambda ()
+      ;; ================================================================
+      ;; Periodic tasks — registered with schedule-periodic!, driven
+      ;; by one master Qt timer that also drains the async UI queue.
+      ;; ================================================================
+
+      ;; REPL/Shell/Terminal/Chat output polling (50ms)
+      (schedule-periodic! 'repl-poll 50
+        (lambda ()
+          (for-each
+            (lambda (buf)
+              (when (repl-buffer? buf)
+                (let ((rs (hash-get *repl-state* buf)))
+                  (when rs
+                    (let ((output (repl-read-available rs)))
+                      (when output
+                        ;; Find a window showing this buffer
+                        (let loop ((wins (qt-frame-windows fr)))
+                          (when (pair? wins)
+                            (if (eq? (qt-edit-window-buffer (car wins)) buf)
+                              (let* ((ed (qt-edit-window-editor (car wins)))
+                                     ;; Strip trailing newline — append! adds its own
+                                     (trimmed (string-trim-eol output)))
+                                ;; Insert output + new prompt
+                                (qt-plain-text-edit-append! ed trimmed)
+                                (qt-plain-text-edit-append! ed repl-prompt)
+                                (set! (repl-state-prompt-pos rs)
+                                  (string-length (qt-plain-text-edit-text ed)))
+                                (qt-plain-text-edit-move-cursor! ed QT_CURSOR_END)
+                                (qt-plain-text-edit-ensure-cursor-visible! ed))
+                              (loop (cdr wins)))))))))))
+            (buffer-list))
+          ;; Poll Shell/Terminal PTY output
+          (for-each
+            (lambda (buf)
+              (when (shell-buffer? buf)
+                (let ((ss (hash-get *shell-state* buf)))
+                  (when (and ss (shell-pty-busy? ss))
+                    (let drain ()
+                      (let ((msg (shell-poll-output ss)))
+                        (when msg
+                          (qt-poll-shell-pty-msg! fr buf ss msg)
+                          (when (eq? (car msg) 'data)
+                            (drain))))))))
+              (when (terminal-buffer? buf)
+                (let ((ts (hash-get *terminal-state* buf)))
+                  (when (and ts (terminal-pty-busy? ts))
+                    (let drain ()
+                      (let ((msg (terminal-poll-output ts)))
+                        (when msg
+                          (qt-poll-terminal-pty-msg! fr buf ts msg)
+                          (when (eq? (car msg) 'data)
+                            (drain)))))))))
+            (buffer-list))
+          ;; Poll chat buffers (Claude CLI)
+          (for-each
+            (lambda (buf)
+              (when (chat-buffer? buf)
+                (let ((cs (hash-get *chat-state* buf)))
+                  (when (and cs (chat-busy? cs))
+                    (let ((result (chat-read-available cs)))
+                      (when result
+                        (let loop ((wins (qt-frame-windows fr)))
+                          (when (pair? wins)
+                            (if (eq? (qt-edit-window-buffer (car wins)) buf)
+                              (let ((ed (qt-edit-window-editor (car wins))))
+                                (cond
+                                  ((string? result)
+                                   (sci-send/string ed SCI_APPENDTEXT result (string-length result))
+                                   (qt-plain-text-edit-move-cursor! ed QT_CURSOR_END)
+                                   (qt-plain-text-edit-ensure-cursor-visible! ed))
+                                  ((and (pair? result) (string? (car result)))
+                                   (let ((chunk (car result)))
+                                     (sci-send/string ed SCI_APPENDTEXT chunk (string-length chunk)))
+                                   (qt-plain-text-edit-append! ed "\nYou: ")
+                                   (set! (chat-state-prompt-pos cs)
+                                     (string-length (qt-plain-text-edit-text ed)))
+                                   (qt-plain-text-edit-move-cursor! ed QT_CURSOR_END)
+                                   (qt-plain-text-edit-ensure-cursor-visible! ed))
+                                  ((eq? result 'done)
+                                   (qt-plain-text-edit-append! ed "\nYou: ")
+                                   (set! (chat-state-prompt-pos cs)
+                                     (string-length (qt-plain-text-edit-text ed)))
+                                   (qt-plain-text-edit-move-cursor! ed QT_CURSOR_END)
+                                   (qt-plain-text-edit-ensure-cursor-visible! ed))))
+                              (loop (cdr wins)))))))))))
+            (buffer-list))))
+
+      ;; Auto-save (30 seconds)
+      (schedule-periodic! 'auto-save 30000
+        (lambda ()
+          (for-each
+            (lambda (buf)
+              (let ((path (buffer-file-path buf)))
+                (when (and path
+                           (buffer-doc-pointer buf)
+                           (qt-text-document-modified? (buffer-doc-pointer buf)))
+                  (let loop ((wins (qt-frame-windows fr)))
+                    (when (pair? wins)
+                      (if (eq? (qt-edit-window-buffer (car wins)) buf)
+                        (let* ((ed (qt-edit-window-editor (car wins)))
+                               (text (qt-plain-text-edit-text ed))
+                               (auto-path (qt-make-auto-save-path path)))
+                          (with-catch
+                            (lambda (e) #f)
+                            (lambda ()
+                              (call-with-output-file auto-path
+                                (lambda (port) (display text port))))))
+                        (loop (cdr wins))))))))
+            (buffer-list))
+          ;; Cache scratch buffer text for persistence
+          (let ((scratch (buffer-by-name "*scratch*")))
+            (when scratch
+              (let loop ((wins (qt-frame-windows fr)))
+                (when (pair? wins)
+                  (if (eq? (qt-edit-window-buffer (car wins)) scratch)
+                    (scratch-update-text!
+                      (qt-plain-text-edit-text
+                        (qt-edit-window-editor (car wins))))
+                    (loop (cdr wins)))))))
+          ;; Record undo history snapshots for modified buffers
+          (for-each
+            (lambda (win)
+              (let* ((buf (qt-edit-window-buffer win))
+                     (doc (buffer-doc-pointer buf)))
+                (when (and doc (qt-text-document-modified? doc))
+                  (let ((text (qt-plain-text-edit-text (qt-edit-window-editor win))))
+                    (undo-history-record! (buffer-name buf) text)))))
+            (qt-frame-windows fr))))
+
+      ;; File modification watcher (5 seconds)
+      (schedule-periodic! 'file-watch 5000
+        (lambda ()
+          (when *auto-revert-mode*
             (for-each
               (lambda (buf)
-                (when (repl-buffer? buf)
-                  (let ((rs (hash-get *repl-state* buf)))
-                    (when rs
-                      (let ((output (repl-read-available rs)))
-                        (when output
-                          ;; Find a window showing this buffer
-                          (let loop ((wins (qt-frame-windows fr)))
-                            (when (pair? wins)
-                              (if (eq? (qt-edit-window-buffer (car wins)) buf)
-                                (let* ((ed (qt-edit-window-editor (car wins)))
-                                       ;; Strip trailing newline — append! adds its own
-                                       (trimmed (string-trim-eol output)))
-                                  ;; Insert output + new prompt
-                                  (qt-plain-text-edit-append! ed trimmed)
-                                  (qt-plain-text-edit-append! ed repl-prompt)
-                                  ;; Set prompt-pos from text length (same units
-                                  ;; as substring extraction in cmd-repl-send)
-                                  (set! (repl-state-prompt-pos rs)
-                                    (string-length (qt-plain-text-edit-text ed)))
-                                  ;; Move cursor to end so user types at the prompt
-                                  (qt-plain-text-edit-move-cursor! ed QT_CURSOR_END)
-                                  (qt-plain-text-edit-ensure-cursor-visible! ed))
-                                (loop (cdr wins)))))))))))
-              (buffer-list))
-            ;; Poll Shell/Terminal PTY output
-            (for-each
-              (lambda (buf)
-                ;; Shell buffers with active PTY
-                (when (shell-buffer? buf)
-                  (let ((ss (hash-get *shell-state* buf)))
-                    (when (and ss (shell-pty-busy? ss))
-                      (let drain ()
-                        (let ((msg (shell-poll-output ss)))
-                          (when msg
-                            (qt-poll-shell-pty-msg! fr buf ss msg)
-                            (when (eq? (car msg) 'data)
-                              (drain))))))))
-                ;; Terminal buffers with active PTY
-                (when (terminal-buffer? buf)
-                  (let ((ts (hash-get *terminal-state* buf)))
-                    (when (and ts (terminal-pty-busy? ts))
-                      (let drain ()
-                        (let ((msg (terminal-poll-output ts)))
-                          (when msg
-                            (qt-poll-terminal-pty-msg! fr buf ts msg)
-                            (when (eq? (car msg) 'data)
-                              (drain)))))))))
-              (buffer-list))
-            ;; Also poll chat buffers (Claude CLI)
-            (for-each
-              (lambda (buf)
-                (when (chat-buffer? buf)
-                  (let ((cs (hash-get *chat-state* buf)))
-                    (when (and cs (chat-busy? cs))
-                      (let ((result (chat-read-available cs)))
-                        (when result
-                          (let loop ((wins (qt-frame-windows fr)))
-                            (when (pair? wins)
-                              (if (eq? (qt-edit-window-buffer (car wins)) buf)
-                                (let ((ed (qt-edit-window-editor (car wins))))
-                                  (cond
-                                    ;; String chunk — append it
-                                    ((string? result)
-                                     (sci-send/string ed SCI_APPENDTEXT result (string-length result))
-                                     (qt-plain-text-edit-move-cursor! ed QT_CURSOR_END)
-                                     (qt-plain-text-edit-ensure-cursor-visible! ed))
-                                    ;; (string . done) — final chunk + done
-                                    ((and (pair? result) (string? (car result)))
-                                     (let ((chunk (car result)))
-                                       (sci-send/string ed SCI_APPENDTEXT chunk (string-length chunk)))
-                                     (qt-plain-text-edit-append! ed "\nYou: ")
-                                     (set! (chat-state-prompt-pos cs)
-                                       (string-length (qt-plain-text-edit-text ed)))
-                                     (qt-plain-text-edit-move-cursor! ed QT_CURSOR_END)
-                                     (qt-plain-text-edit-ensure-cursor-visible! ed))
-                                    ;; 'done — response complete
-                                    ((eq? result 'done)
-                                     (qt-plain-text-edit-append! ed "\nYou: ")
-                                     (set! (chat-state-prompt-pos cs)
-                                       (string-length (qt-plain-text-edit-text ed)))
-                                     (qt-plain-text-edit-move-cursor! ed QT_CURSOR_END)
-                                     (qt-plain-text-edit-ensure-cursor-visible! ed))))
-                                (loop (cdr wins)))))))))))
-              (buffer-list))))
-        (qt-timer-start! repl-timer 50))
+                (let ((path (buffer-file-path buf))
+                      (tail? (hash-get *auto-revert-tail-buffers* (buffer-name buf))))
+                  (when (and path (file-mtime-changed? path))
+                    (let ((doc (buffer-doc-pointer buf)))
+                      (if (and (not tail?)
+                               doc (qt-text-document-modified? doc))
+                        (echo-message! (app-state-echo app)
+                          (string-append (buffer-name buf)
+                            " changed on disk (buffer modified, not reverting)"))
+                        (let loop ((wins (qt-frame-windows fr)))
+                          (when (pair? wins)
+                            (if (eq? (qt-edit-window-buffer (car wins)) buf)
+                              (let* ((ed (qt-edit-window-editor (car wins)))
+                                     (pos (qt-plain-text-edit-cursor-position ed))
+                                     (text (read-file-as-string path)))
+                                (when text
+                                  (qt-plain-text-edit-set-text! ed text)
+                                  (qt-text-document-set-modified! doc #f)
+                                  (if tail?
+                                    (begin
+                                      (qt-plain-text-edit-move-cursor! ed QT_CURSOR_END)
+                                      (qt-plain-text-edit-ensure-cursor-visible! ed))
+                                    (begin
+                                      (qt-plain-text-edit-set-cursor-position! ed
+                                        (min pos (string-length text)))
+                                      (qt-plain-text-edit-ensure-cursor-visible! ed)))
+                                  (file-mtime-record! path)))
+                              (loop (cdr wins))))))))))
+              (buffer-list)))))
 
-      ;; Auto-save timer (every 30 seconds)
-      (let ((auto-save-timer (qt-timer-create)))
-        (qt-on-timeout! auto-save-timer
-          (lambda ()
-            (for-each
-              (lambda (buf)
-                (let ((path (buffer-file-path buf)))
-                  ;; Only auto-save file-visiting buffers that are modified
-                  (when (and path
-                             (buffer-doc-pointer buf)
-                             (qt-text-document-modified? (buffer-doc-pointer buf)))
-                    ;; Find a window showing this buffer to get the text
-                    (let loop ((wins (qt-frame-windows fr)))
-                      (when (pair? wins)
-                        (if (eq? (qt-edit-window-buffer (car wins)) buf)
-                          (let* ((ed (qt-edit-window-editor (car wins)))
-                                 (text (qt-plain-text-edit-text ed))
-                                 (auto-path (qt-make-auto-save-path path)))
-                            (with-catch
-                              (lambda (e) #f)  ; Ignore auto-save errors
-                              (lambda ()
-                                (call-with-output-file auto-path
-                                  (lambda (port) (display text port))))))
-                          (loop (cdr wins))))))))
-              (buffer-list))
-            ;; Cache scratch buffer text for persistence
-            (let ((scratch (buffer-by-name "*scratch*")))
-              (when scratch
-                (let loop ((wins (qt-frame-windows fr)))
-                  (when (pair? wins)
-                    (if (eq? (qt-edit-window-buffer (car wins)) scratch)
-                      (scratch-update-text!
-                        (qt-plain-text-edit-text
-                          (qt-edit-window-editor (car wins))))
-                      (loop (cdr wins)))))))
-            ;; Record undo history snapshots for modified buffers
-            (for-each
-              (lambda (win)
-                (let* ((buf (qt-edit-window-buffer win))
-                       (doc (buffer-doc-pointer buf)))
-                  (when (and doc (qt-text-document-modified? doc))
-                    (let ((text (qt-plain-text-edit-text (qt-edit-window-editor win))))
-                      (undo-history-record! (buffer-name buf) text)))))
-              (qt-frame-windows fr))))
-        (qt-timer-start! auto-save-timer 30000))
+      ;; Eldoc / LSP cursor-idle (300ms)
+      (schedule-periodic! 'eldoc 300
+        (lambda ()
+          (if (lsp-running?)
+            (begin
+              (lsp-eldoc-display! app)
+              (lsp-diagnostic-at-cursor! app)
+              (lsp-document-highlight! app)
+              (lsp-inlay-hint-at-cursor! app))
+            (eldoc-display! app))))
 
-      ;; File modification watcher timer (every 5 seconds)
-      (let ((file-watch-timer (qt-timer-create)))
-        (qt-on-timeout! file-watch-timer
-          (lambda ()
-            (when *auto-revert-mode*
-              (for-each
-                (lambda (buf)
-                  (let ((path (buffer-file-path buf))
-                        (tail? (hash-get *auto-revert-tail-buffers* (buffer-name buf))))
-                    (when (and path (file-mtime-changed? path))
-                      ;; File changed externally
-                      (let ((doc (buffer-doc-pointer buf)))
-                        (if (and (not tail?)
-                                 doc (qt-text-document-modified? doc))
-                          ;; Buffer has unsaved changes — warn but don't revert
-                          (echo-message! (app-state-echo app)
-                            (string-append (buffer-name buf)
-                              " changed on disk (buffer modified, not reverting)"))
-                          ;; Auto-revert (always for tail-mode, otherwise only unmodified)
-                          (let loop ((wins (qt-frame-windows fr)))
-                            (when (pair? wins)
-                              (if (eq? (qt-edit-window-buffer (car wins)) buf)
-                                (let* ((ed (qt-edit-window-editor (car wins)))
-                                       (pos (qt-plain-text-edit-cursor-position ed))
-                                       (text (read-file-as-string path)))
-                                  (when text
-                                    (qt-plain-text-edit-set-text! ed text)
-                                    (qt-text-document-set-modified! doc #f)
-                                    (if tail?
-                                      ;; Tail mode: scroll to end
-                                      (begin
-                                        (qt-plain-text-edit-move-cursor! ed QT_CURSOR_END)
-                                        (qt-plain-text-edit-ensure-cursor-visible! ed))
-                                      ;; Normal: preserve cursor position
-                                      (begin
-                                        (qt-plain-text-edit-set-cursor-position! ed
-                                          (min pos (string-length text)))
-                                        (qt-plain-text-edit-ensure-cursor-visible! ed)))
-                                    (file-mtime-record! path)))
-                                (loop (cdr wins))))))))))
-                (buffer-list)))))
-        (qt-timer-start! file-watch-timer 5000))
+      ;; LSP auto-completion (500ms)
+      (schedule-periodic! 'lsp-auto-complete 500
+        (lambda () (lsp-auto-complete! app)))
 
-      ;; Eldoc timer — show function signatures on cursor idle
-      ;; When LSP is running, also query signatureHelp and document highlight
-      (let ((eldoc-timer (qt-timer-create)))
-        (qt-on-timeout! eldoc-timer
-          (lambda ()
-            (if (lsp-running?)
-              (begin
-                (lsp-eldoc-display! app)
-                (lsp-diagnostic-at-cursor! app)
-                (lsp-document-highlight! app)
-                (lsp-inlay-hint-at-cursor! app))
-              (eldoc-display! app))))
-        (qt-timer-start! eldoc-timer 300))
+      ;; LSP UI action queue polling (50ms)
+      (schedule-periodic! 'lsp-ui 50
+        (lambda () (lsp-poll-ui-actions!)))
 
-      ;; LSP auto-completion timer — show completions popup while typing
-      (let ((auto-complete-timer (qt-timer-create)))
-        (qt-on-timeout! auto-complete-timer
-          (lambda () (lsp-auto-complete! app)))
-        (qt-timer-start! auto-complete-timer 500))
-
-      ;; LSP UI action queue polling timer
-      (let ((lsp-timer (qt-timer-create)))
-        (qt-on-timeout! lsp-timer lsp-poll-ui-actions!)
-        (qt-timer-start! lsp-timer 50))
-
-      ;; LSP didChange timer — send buffer content to server 1s after last edit,
-      ;; so diagnostics update while typing (not just on save).
-      (let ((lsp-change-timer (qt-timer-create)))
-        (qt-on-timeout! lsp-change-timer
-          (lambda ()
-            (when (lsp-running?)
-              (let* ((fr (app-state-frame app))
-                     (buf (qt-current-buffer fr))
-                     (ed (qt-current-editor fr)))
-                (when (and buf (buffer-file-path buf))
-                  (let* ((path (buffer-file-path buf))
-                         (uri (file-path->uri path))
-                         (text (qt-plain-text-edit-text ed)))
-                    (when (lsp-content-changed? uri text)
-                      (lsp-hook-did-change! app buf)
-                      (lsp-record-sent-content! uri text))))))))
-        (qt-timer-start! lsp-change-timer 1000))
+      ;; LSP didChange — send buffer content 1s after last edit
+      (schedule-periodic! 'lsp-change 1000
+        (lambda ()
+          (when (lsp-running?)
+            (let* ((fr (app-state-frame app))
+                   (buf (qt-current-buffer fr))
+                   (ed (qt-current-editor fr)))
+              (when (and buf (buffer-file-path buf))
+                (let* ((path (buffer-file-path buf))
+                       (uri (file-path->uri path))
+                       (text (qt-plain-text-edit-text ed)))
+                  (when (lsp-content-changed? uri text)
+                    (lsp-hook-did-change! app buf)
+                    (lsp-record-sent-content! uri text))))))))
 
       ;; Install LSP UI handlers
       (lsp-install-handlers! app)
@@ -970,12 +946,16 @@
 
       ;; Start IPC server for gemacs-client
       (start-ipc-server!)
-      (let ((ipc-timer (qt-timer-create)))
-        (qt-on-timeout! ipc-timer
-          (lambda ()
-            (for-each (lambda (f) (qt-open-file! app f))
-                      (ipc-poll-files!))))
-        (qt-timer-start! ipc-timer 200))
+      (schedule-periodic! 'ipc 200
+        (lambda ()
+          (for-each (lambda (f) (qt-open-file! app f))
+                    (ipc-poll-files!))))
+
+      ;; Master timer — drives all periodic tasks and drains the async UI queue.
+      ;; Single 50ms timer replaces 7+ individual Qt timers.
+      (let ((master-timer (qt-timer-create)))
+        (qt-on-timeout! master-timer master-timer-tick!)
+        (qt-timer-start! master-timer 50))
 
       ;; Enter Qt event loop (blocks until quit)
       (qt-app-exec! qt-app)
