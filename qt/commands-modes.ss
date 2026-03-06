@@ -11,6 +11,7 @@
         :gerbil-litehtml/html
         :gemacs/qt/sci-shim
         :gemacs/core
+        :gemacs/async
         :gemacs/editor
         :gemacs/repl
         :gemacs/eshell
@@ -93,42 +94,30 @@
 
 ;; --- Man page viewer ---
 (def (cmd-man app)
-  "View a man page in a buffer."
+  "View a man page in a buffer (async)."
   (let ((topic (qt-echo-read-string app "Man page: ")))
     (when (and topic (not (string=? topic "")))
+      (echo-message! (app-state-echo app) (string-append "Loading man " topic "..."))
       (let* ((parts (string-split topic #\space))
-             (args (if (= (length parts) 2)
-                     [(car parts) (cadr parts)]  ;; section + topic
-                     parts))
-             (port (open-process
-                     (list path: "/usr/bin/man"
-                           arguments: args
-                           environment: ["MANPAGER=cat" "COLUMNS=80"
-                                         "MAN_KEEP_FORMATTING=1"
-                                         (string-append "HOME=" (or (getenv "HOME" #f) "/tmp"))
-                                         (string-append "PATH=" (or (getenv "PATH" #f) "/usr/bin"))]
-                           stdout-redirection: #t
-                           stderr-redirection: #f
-                           pseudo-terminal: #f)))
-             (output (read-line port #f))
-             (_ (process-status port)))
-        (close-port port)
-        (if (or (not output) (string=? output ""))
-          (echo-error! (app-state-echo app)
-            (string-append "No man page for \"" topic "\""))
-          ;; Strip backspace-based formatting (bold: X^HX, underline: _^HX)
-          (let* ((clean (man-strip-formatting output))
-                 (buf-name (string-append "*Man " topic "*"))
-                 (fr (app-state-frame app))
-                 (ed (current-qt-editor app))
-                 (buf (or (buffer-by-name buf-name)
-                          (qt-buffer-create! buf-name ed #f))))
-            (qt-buffer-attach! ed buf)
-            (set! (qt-edit-window-buffer (qt-current-window fr)) buf)
-            (qt-plain-text-edit-set-text! ed clean)
-            (qt-text-document-set-modified! (buffer-doc-pointer buf) #f)
-            (qt-plain-text-edit-set-cursor-position! ed 0)
-            (echo-message! (app-state-echo app) buf-name)))))))
+             (cmd (string-append "MANPAGER=cat COLUMNS=80 MAN_KEEP_FORMATTING=1 man "
+                    (string-join parts " ") " 2>/dev/null")))
+        (async-process! cmd
+          callback: (lambda (output)
+            (if (or (not output) (string=? output ""))
+              (echo-error! (app-state-echo app)
+                (string-append "No man page for \"" topic "\""))
+              (let* ((clean (man-strip-formatting output))
+                     (buf-name (string-append "*Man " topic "*"))
+                     (fr (app-state-frame app))
+                     (ed (current-qt-editor app))
+                     (buf (or (buffer-by-name buf-name)
+                              (qt-buffer-create! buf-name ed #f))))
+                (qt-buffer-attach! ed buf)
+                (set! (qt-edit-window-buffer (qt-current-window fr)) buf)
+                (qt-plain-text-edit-set-text! ed clean)
+                (qt-text-document-set-modified! (buffer-doc-pointer buf) #f)
+                (qt-plain-text-edit-set-cursor-position! ed 0)
+                (echo-message! (app-state-echo app) buf-name)))))))))
 
 (def (man-strip-formatting text)
   "Remove backspace-based man page formatting (bold: X^HX, underline: _^HX)."
