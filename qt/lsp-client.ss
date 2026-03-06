@@ -11,7 +11,7 @@
 (import :std/sugar
         :std/text/json
         :std/misc/string
-        (only-in :gemacs/core *lsp-server-command*)
+        (only-in :gemacs/core *lsp-server-command* gemacs-log!)
         :gemacs/async)
 
 ;;;============================================================================
@@ -159,6 +159,26 @@
         (lambda (e) (void))
         (lambda () (lsp-write-message *lsp-process* msg)))
       id)))
+
+(def (lsp-send-request/timeout! method params callback
+                               timeout: (timeout 5.0)
+                               on-timeout: (on-timeout #f))
+  "Send a JSON-RPC request with timeout (seconds). If no response arrives
+   within timeout, remove the pending callback and call on-timeout on UI thread."
+  (let ((id (lsp-send-request! method params callback)))
+    (when id
+      (spawn/name 'lsp-timeout
+        (lambda ()
+          (thread-sleep! timeout)
+          ;; If still pending, the response never arrived
+          (let ((cb (lsp-take-pending! id)))
+            (when cb
+              (ui-queue-push!
+                (lambda ()
+                  (if on-timeout
+                    (on-timeout)
+                    (gemacs-log! "LSP request timeout: " method)))))))))
+    id))
 
 (def (lsp-send-notification! method params)
   "Send a JSON-RPC notification (no response expected)."
