@@ -93,6 +93,8 @@
                  helm-source-follow?
                  helm-session-store!
                  helm-session-resume)
+        (only-in :gemacs/async
+                 ui-queue-drain!)
         (only-in :gemacs/qt/magit
                  magit-parse-status
                  magit-format-status
@@ -122,6 +124,15 @@
   (displayln "    got:      " actual)
   (displayln "    expected: " expected)
   (force-output (current-output-port)))
+
+(def (drain-async! (retries 20) (delay 0.05))
+  "Wait for async operations to complete by draining the UI queue.
+   Sleeps briefly between drains to allow background threads to finish."
+  (let loop ((n 0))
+    (when (< n retries)
+      (thread-sleep! delay)
+      (ui-queue-drain!)
+      (loop (+ n 1)))))
 
 ;; Create a minimal headless Qt test app.
 ;; Must be called inside with-qt-app.
@@ -958,6 +969,7 @@
   (displayln "Test: cmd-magit-status creates buffer containing Head: header")
   (let-values (((ed w app) (make-qt-test-app "test.ss")))
     (execute-command! app 'magit-status)
+    (drain-async!)
     (let ((text (qt-plain-text-edit-text ed)))
       (if (contains? text "Head:")
         (pass! "cmd-magit-status buffer contains 'Head:'")
@@ -995,6 +1007,7 @@
       (displayln "Test: magit-status buffer contains Head: from temp repo")
       (force-output (current-output-port))
       (execute-command! app 'magit-status)
+      (drain-async!)
       (let ((text (qt-plain-text-edit-text ed)))
         (if (contains? text "Head:")
           (pass! "magit-status temp repo: buffer contains 'Head:'")
@@ -1004,6 +1017,7 @@
       (displayln "Test: magit-log after magit-status has content")
       (force-output (current-output-port))
       (execute-command! app 'magit-log)
+      (drain-async!)
       (let ((text (qt-plain-text-edit-text ed)))
         (if (> (string-length text) 0)
           (pass! "magit-log after magit-status: buffer non-empty")
@@ -1013,6 +1027,7 @@
       (displayln "Test: magit-refresh command is registered and works")
       (force-output (current-output-port))
       (execute-command! app 'magit-refresh)
+      (drain-async!)
       (let ((text (qt-plain-text-edit-text ed)))
         (if (contains? text "Head:")
           (pass! "magit-refresh: buffer still contains 'Head:'")
@@ -1022,6 +1037,7 @@
       (displayln "Test: show-git-status with temp repo is non-empty")
       (force-output (current-output-port))
       (execute-command! app 'show-git-status)
+      (drain-async!)
       (let ((text (qt-plain-text-edit-text ed)))
         (if (string? text)
           (pass! "show-git-status temp repo: returns string")
@@ -1035,6 +1051,7 @@
       (force-output (current-output-port))
       (with-catch (lambda (e) (void))
         (lambda () (execute-command! app 'show-git-blame)))
+      (drain-async!)
       (pass! "show-git-blame temp repo: no crash")
 
       ;; --- vc-annotate (maps to show-git-blame) ---
@@ -1042,6 +1059,7 @@
       (force-output (current-output-port))
       (with-catch (lambda (e) (void))
         (lambda () (execute-command! app 'vc-annotate)))
+      (drain-async!)
       (pass! "vc-annotate temp repo: no crash")
 
       ;; --- magit-stage-all with new file ---
@@ -1050,8 +1068,11 @@
       (with-output-to-file (string-append dir "/work.ss")
         (lambda () (display "(def (work) #t)\n")))
       (execute-command! app 'magit-status)  ; refresh to see work.ss
+      (drain-async!)
       (execute-command! app 'magit-stage-all)  ; git add -A
+      (drain-async!)
       (execute-command! app 'magit-status)  ; refresh to see Staged section
+      (drain-async!)
       (let ((text (qt-plain-text-edit-text ed)))
         (if (contains? text "Staged")
           (pass! "magit-stage-all: status shows 'Staged'")
@@ -1062,6 +1083,7 @@
       (force-output (current-output-port))
       (with-catch (lambda (e) (void))
         (lambda () (execute-command! app 'vc-revert)))
+      (drain-async!)
       (pass! "vc-revert: does not crash")
 
       ;; --- vc-log-file smoke test ---
@@ -1069,6 +1091,7 @@
       (force-output (current-output-port))
       (with-catch (lambda (e) (void))
         (lambda () (execute-command! app 'vc-log-file)))
+      (drain-async!)
       (pass! "vc-log-file: does not crash")
 
       ;; --- vc-diff-head does not crash ---
@@ -1076,6 +1099,7 @@
       (force-output (current-output-port))
       (with-catch (lambda (e) (void))
         (lambda () (execute-command! app 'vc-diff-head)))
+      (drain-async!)
       (pass! "vc-diff-head: does not crash")
 
       (destroy-qt-test-app! ed w))

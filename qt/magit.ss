@@ -5,7 +5,8 @@
 (export #t)
 
 (import :std/sugar
-        :std/srfi/13)
+        :std/srfi/13
+        :gemacs/async)
 
 ;;;============================================================================
 ;;; Git process helpers
@@ -45,6 +46,24 @@
         (let ((out (read-line proc #f)))
           (close-port proc)
           (or out ""))))))
+
+(def (magit-run-git/async args dir callback)
+  "Run git in background thread, deliver output string to callback on UI thread."
+  (spawn/name 'async-git
+    (lambda ()
+      (let ((output (with-catch
+                      (lambda (e) "")
+                      (lambda ()
+                        (let* ((proc (open-process
+                                       [path: "/usr/bin/git"
+                                        arguments: args
+                                        directory: dir
+                                        stdout-redirection: #t
+                                        stderr-redirection: #t]))
+                               (out (read-line proc #f)))
+                          (close-port proc)
+                          (or out ""))))))
+        (ui-queue-push! (lambda () (callback output)))))))
 
 ;;;============================================================================
 ;;; Status parsing and formatting

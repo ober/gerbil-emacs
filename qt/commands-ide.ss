@@ -9,8 +9,10 @@
         :std/srfi/13
         :std/format
         :std/text/base64
+        :std/misc/completion
         :gemacs/qt/sci-shim
         :gemacs/core
+        :gemacs/async
         :gemacs/editor
         :gemacs/repl
         :gemacs/eshell
@@ -375,32 +377,20 @@
 ;;;============================================================================
 
 (def (run-git-command app args buffer-name)
-  "Run a git command and show output in a buffer."
+  "Run a git command async and show output in a buffer."
   (let* ((buf (current-qt-buffer app))
          (path (buffer-file-path buf))
          (dir (if path (path-directory path) (current-directory))))
-    (with-catch
-      (lambda (e) (echo-error! (app-state-echo app)
-                    (string-append "Git error: " (with-output-to-string
-                      (lambda () (display-exception e))))))
-      (lambda ()
-        (let* ((proc (open-process
-                        (list path: "/usr/bin/git"
-                              arguments: args
-                              directory: dir
-                              stdout-redirection: #t
-                              stderr-redirection: #t)))
-               (output (read-line proc #f))
-               (_ (process-status proc)))
-          (close-port proc)
-          (let* ((ed (current-qt-editor app))
-                 (fr (app-state-frame app))
-                 (git-buf (qt-buffer-create! buffer-name ed #f)))
-            (qt-buffer-attach! ed git-buf)
-            (set! (qt-edit-window-buffer (qt-current-window fr)) git-buf)
-            (qt-plain-text-edit-set-text! ed (or output ""))
-            (qt-text-document-set-modified! (buffer-doc-pointer git-buf) #f)
-            (qt-plain-text-edit-set-cursor-position! ed 0)))))))
+    (magit-run-git/async args dir
+      (lambda (output)
+        (let* ((ed (current-qt-editor app))
+               (fr (app-state-frame app))
+               (git-buf (qt-buffer-create! buffer-name ed #f)))
+          (qt-buffer-attach! ed git-buf)
+          (set! (qt-edit-window-buffer (qt-current-window fr)) git-buf)
+          (qt-plain-text-edit-set-text! ed (or output ""))
+          (qt-text-document-set-modified! (buffer-doc-pointer git-buf) #f)
+          (qt-plain-text-edit-set-cursor-position! ed 0))))))
 
 (def (cmd-show-git-status app)
   "Show git status."
@@ -412,8 +402,20 @@
 
 (def (cmd-show-git-diff app)
   "Show git diff with syntax coloring."
-  (run-git-command app '("diff") "*Git Diff*")
-  (qt-highlight-diff! (current-qt-editor app)))
+  (let* ((buf (current-qt-buffer app))
+         (path (buffer-file-path buf))
+         (dir (if path (path-directory path) (current-directory))))
+    (magit-run-git/async '("diff") dir
+      (lambda (output)
+        (let* ((ed (current-qt-editor app))
+               (fr (app-state-frame app))
+               (git-buf (qt-buffer-create! "*Git Diff*" ed #f)))
+          (qt-buffer-attach! ed git-buf)
+          (set! (qt-edit-window-buffer (qt-current-window fr)) git-buf)
+          (qt-plain-text-edit-set-text! ed (or output ""))
+          (qt-text-document-set-modified! (buffer-doc-pointer git-buf) #f)
+          (qt-plain-text-edit-set-cursor-position! ed 0)
+          (qt-highlight-diff! ed))))))
 
 (def (cmd-show-git-blame app)
   "Show git blame for current file."
@@ -430,27 +432,44 @@
 
 (def *magit-dir* #f)
 
+(def (magit-render-status! app status-output branch-output dir)
+  "Render magit status buffer from git output (called on UI thread)."
+  (let* ((branch (string-trim branch-output))
+         (entries (magit-parse-status status-output))
+         (text (magit-format-status entries branch dir))
+         (ed (current-qt-editor app))
+         (fr (app-state-frame app))
+         (git-buf (or (buffer-by-name "*Magit*")
+                      (qt-buffer-create! "*Magit*" ed #f))))
+    (qt-buffer-attach! ed git-buf)
+    (set! (qt-edit-window-buffer (qt-current-window fr)) git-buf)
+    (qt-plain-text-edit-set-text! ed text)
+    (qt-text-document-set-modified! (buffer-doc-pointer git-buf) #f)
+    (qt-plain-text-edit-set-cursor-position! ed 0)
+    (echo-message! (app-state-echo app) "*Magit*")))
+
 (def (cmd-magit-status app)
   "Open interactive git status buffer (magit-style) with inline diffs."
   (let* ((buf (current-qt-buffer app))
          (path (buffer-file-path buf))
          (dir (if path (path-directory path) (current-directory))))
     (set! *magit-dir* dir)
-    (let* ((status-output (magit-run-git '("status" "--porcelain") dir))
-           (branch-output (magit-run-git '("rev-parse" "--abbrev-ref" "HEAD") dir))
-           (branch (string-trim branch-output))
-           (entries (magit-parse-status status-output))
-           (text (magit-format-status entries branch dir))
-           (ed (current-qt-editor app))
-           (fr (app-state-frame app))
-           (git-buf (or (buffer-by-name "*Magit*")
-                        (qt-buffer-create! "*Magit*" ed #f))))
-      (qt-buffer-attach! ed git-buf)
-      (set! (qt-edit-window-buffer (qt-current-window fr)) git-buf)
-      (qt-plain-text-edit-set-text! ed text)
-      (qt-text-document-set-modified! (buffer-doc-pointer git-buf) #f)
-      (qt-plain-text-edit-set-cursor-position! ed 0)
-      (echo-message! (app-state-echo app) "*Magit*"))))
+    (echo-message! (app-state-echo app) "Loading git status...")
+    ;; Fire two git commands in parallel
+    (let ((status-done (make-completion 'status))
+          (branch-done (make-completion 'branch)))
+      (magit-run-git/async '("status" "--porcelain") dir
+        (lambda (output) (completion-post! status-done output)))
+      (magit-run-git/async '("rev-parse" "--abbrev-ref" "HEAD") dir
+        (lambda (output) (completion-post! branch-done output)))
+      ;; Join in background thread, then deliver to UI
+      (spawn/name 'magit-status-join
+        (lambda ()
+          (let ((status-output (completion-wait! status-done))
+                (branch-output (completion-wait! branch-done)))
+            (ui-queue-push!
+              (lambda ()
+                (magit-render-status! app status-output branch-output dir)))))))))
 
 (def (cmd-magit-stage app)
   "Stage file or hunk at point."
@@ -524,10 +543,12 @@
   "Commit staged changes."
   (let ((msg (qt-echo-read-string app "Commit message: ")))
     (when (and msg (> (string-length msg) 0))
-      (let ((output (magit-run-git (list "commit" "-m" msg) *magit-dir*)))
-        (cmd-magit-status app)
-        (echo-message! (app-state-echo app)
-          (string-append "Committed: " msg))))))
+      (echo-message! (app-state-echo app) "Committing...")
+      (magit-run-git/async (list "commit" "-m" msg) *magit-dir*
+        (lambda (output)
+          (cmd-magit-status app)
+          (echo-message! (app-state-echo app)
+            (string-append "Committed: " msg)))))))
 
 (def (cmd-magit-diff app)
   "Show diff for file at point or cursor context."
@@ -539,23 +560,37 @@
              (file (or (let-values (((f _p) (magit-hunk-at-point text pos))) f)
                        (magit-file-at-point text pos))))
         (if file
-          (let* ((diff-output (magit-run-git (list "diff" file) *magit-dir*))
-                 (staged-diff (magit-run-git (list "diff" "--cached" file) *magit-dir*))
-                 (full-diff (string-append
-                              (if (> (string-length staged-diff) 0)
-                                (string-append "Staged:\n" staged-diff "\n") "")
-                              (if (> (string-length diff-output) 0)
-                                (string-append "Unstaged:\n" diff-output) "")))
-                 (fr (app-state-frame app))
-                 (diff-buf (or (buffer-by-name "*Magit Diff*")
-                               (qt-buffer-create! "*Magit Diff*" ed #f))))
-            (qt-buffer-attach! ed diff-buf)
-            (set! (qt-edit-window-buffer (qt-current-window fr)) diff-buf)
-            (qt-plain-text-edit-set-text! ed
-              (if (string=? full-diff "") "No differences.\n" full-diff))
-            (qt-text-document-set-modified! (buffer-doc-pointer diff-buf) #f)
-            (qt-plain-text-edit-set-cursor-position! ed 0)
-            (qt-highlight-diff! ed))
+          (begin
+            (echo-message! (app-state-echo app) "Loading diff...")
+            ;; Run both diff commands in parallel
+            (let ((unstaged-done (make-completion 'diff))
+                  (staged-done (make-completion 'diff-cached)))
+              (magit-run-git/async (list "diff" file) *magit-dir*
+                (lambda (out) (completion-post! unstaged-done out)))
+              (magit-run-git/async (list "diff" "--cached" file) *magit-dir*
+                (lambda (out) (completion-post! staged-done out)))
+              (spawn/name 'magit-diff-join
+                (lambda ()
+                  (let ((diff-output (completion-wait! unstaged-done))
+                        (staged-diff (completion-wait! staged-done)))
+                    (ui-queue-push!
+                      (lambda ()
+                        (let* ((full-diff (string-append
+                                            (if (> (string-length staged-diff) 0)
+                                              (string-append "Staged:\n" staged-diff "\n") "")
+                                            (if (> (string-length diff-output) 0)
+                                              (string-append "Unstaged:\n" diff-output) "")))
+                               (ed (current-qt-editor app))
+                               (fr (app-state-frame app))
+                               (diff-buf (or (buffer-by-name "*Magit Diff*")
+                                             (qt-buffer-create! "*Magit Diff*" ed #f))))
+                          (qt-buffer-attach! ed diff-buf)
+                          (set! (qt-edit-window-buffer (qt-current-window fr)) diff-buf)
+                          (qt-plain-text-edit-set-text! ed
+                            (if (string=? full-diff "") "No differences.\n" full-diff))
+                          (qt-text-document-set-modified! (buffer-doc-pointer diff-buf) #f)
+                          (qt-plain-text-edit-set-cursor-position! ed 0)
+                          (qt-highlight-diff! ed)))))))))
           (echo-error! (app-state-echo app) "No file at point"))))))
 
 (def (cmd-magit-stage-all app)
@@ -568,16 +603,18 @@
 (def (cmd-magit-log app)
   "Show git log."
   (when *magit-dir*
-    (let* ((output (magit-run-git '("log" "--oneline" "--graph" "-30") *magit-dir*))
-           (ed (current-qt-editor app))
-           (fr (app-state-frame app))
-           (log-buf (or (buffer-by-name "*Magit Log*")
-                        (qt-buffer-create! "*Magit Log*" ed #f))))
-      (qt-buffer-attach! ed log-buf)
-      (set! (qt-edit-window-buffer (qt-current-window fr)) log-buf)
-      (qt-plain-text-edit-set-text! ed (or output ""))
-      (qt-text-document-set-modified! (buffer-doc-pointer log-buf) #f)
-      (qt-plain-text-edit-set-cursor-position! ed 0))))
+    (echo-message! (app-state-echo app) "Loading git log...")
+    (magit-run-git/async '("log" "--oneline" "--graph" "-30") *magit-dir*
+      (lambda (output)
+        (let* ((ed (current-qt-editor app))
+               (fr (app-state-frame app))
+               (log-buf (or (buffer-by-name "*Magit Log*")
+                            (qt-buffer-create! "*Magit Log*" ed #f))))
+          (qt-buffer-attach! ed log-buf)
+          (set! (qt-edit-window-buffer (qt-current-window fr)) log-buf)
+          (qt-plain-text-edit-set-text! ed (or output ""))
+          (qt-text-document-set-modified! (buffer-doc-pointer log-buf) #f)
+          (qt-plain-text-edit-set-cursor-position! ed 0))))))
 
 (def (cmd-magit-refresh app)
   "Refresh the magit status buffer."
@@ -589,37 +626,45 @@
          (path (buffer-file-path buf)))
     (if (not path)
       (echo-error! (app-state-echo app) "Buffer has no file")
-      (let* ((dir (path-directory path))
-             (output (magit-run-git (list "blame" "--" path) dir))
-             (ed (current-qt-editor app))
-             (fr (app-state-frame app))
-             (blame-buf (or (buffer-by-name "*Git Blame*")
-                            (qt-buffer-create! "*Git Blame*" ed #f))))
-        (qt-buffer-attach! ed blame-buf)
-        (set! (qt-edit-window-buffer (qt-current-window fr)) blame-buf)
-        (qt-plain-text-edit-set-text! ed (if (string=? output "") "No blame info.\n" output))
-        (qt-text-document-set-modified! (buffer-doc-pointer blame-buf) #f)
-        (qt-plain-text-edit-set-cursor-position! ed 0)))))
+      (let ((dir (path-directory path)))
+        (echo-message! (app-state-echo app) "Loading git blame...")
+        (magit-run-git/async (list "blame" "--" path) dir
+          (lambda (output)
+            (let* ((ed (current-qt-editor app))
+                   (fr (app-state-frame app))
+                   (blame-buf (or (buffer-by-name "*Git Blame*")
+                                  (qt-buffer-create! "*Git Blame*" ed #f))))
+              (qt-buffer-attach! ed blame-buf)
+              (set! (qt-edit-window-buffer (qt-current-window fr)) blame-buf)
+              (qt-plain-text-edit-set-text! ed (if (string=? output "") "No blame info.\n" output))
+              (qt-text-document-set-modified! (buffer-doc-pointer blame-buf) #f)
+              (qt-plain-text-edit-set-cursor-position! ed 0))))))))
 
 (def (cmd-magit-fetch app)
   "Fetch from all remotes."
   (when *magit-dir*
-    (magit-run-git '("fetch" "--all") *magit-dir*)
-    (echo-message! (app-state-echo app) "Fetched from all remotes")))
+    (echo-message! (app-state-echo app) "Fetching...")
+    (magit-run-git/async '("fetch" "--all") *magit-dir*
+      (lambda (output)
+        (echo-message! (app-state-echo app) "Fetched from all remotes")))))
 
 (def (cmd-magit-pull app)
   "Pull from remote."
   (when *magit-dir*
-    (let ((output (magit-run-git '("pull") *magit-dir*)))
-      (echo-message! (app-state-echo app)
-        (if (string=? output "") "Pull complete" (string-trim output))))))
+    (echo-message! (app-state-echo app) "Pulling...")
+    (magit-run-git/async '("pull") *magit-dir*
+      (lambda (output)
+        (echo-message! (app-state-echo app)
+          (if (string=? output "") "Pull complete" (string-trim output)))))))
 
 (def (cmd-magit-push app)
   "Push to remote."
   (when *magit-dir*
-    (let ((output (magit-run-git '("push") *magit-dir*)))
-      (echo-message! (app-state-echo app)
-        (if (string=? output "") "Pushed" (string-trim output))))))
+    (echo-message! (app-state-echo app) "Pushing...")
+    (magit-run-git/async '("push") *magit-dir*
+      (lambda (output)
+        (echo-message! (app-state-echo app)
+          (if (string=? output "") "Pushed" (string-trim output)))))))
 
 (def (cmd-magit-rebase app)
   "Rebase onto a branch."
