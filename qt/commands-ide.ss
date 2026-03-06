@@ -1113,33 +1113,44 @@
                           (hash-put! file-changes file
                             (cons (cons line-num new-text) existing)))))))))
             result-lines)
-          ;; Apply changes to each file
-          (hash-for-each
-            (lambda (file line-edits)
-              (when (file-exists? file)
-                (let* ((content (read-file-as-string file))
-                       (lines (let loop ((s content) (acc []))
-                                (let ((nl (string-index s #\newline)))
-                                  (if nl
-                                    (loop (substring s (+ nl 1) (string-length s))
-                                          (cons (substring s 0 nl) acc))
-                                    (reverse (if (> (string-length s) 0) (cons s acc) acc))))))
-                       (new-lines
-                         (let loop ((ls lines) (i 1) (acc []))
-                           (if (null? ls) (reverse acc)
-                             (let ((edit (assoc i line-edits)))
-                               (loop (cdr ls) (+ i 1)
-                                     (cons (if edit (cdr edit) (car ls)) acc))))))
-                       (new-content (string-join new-lines "\n")))
-                  ;; Add trailing newline if original had one
-                  (let ((final (if (and (> (string-length content) 0)
-                                       (char=? (string-ref content (- (string-length content) 1))
-                                               #\newline))
-                                 (string-append new-content "\n")
-                                 new-content)))
-                    (write-string-to-file file final)
-                    (set! changes (+ changes (length line-edits)))))))
-            file-changes))
+          ;; Compute changes for each file, then write in background
+          (let ((write-jobs []))
+            (hash-for-each
+              (lambda (file line-edits)
+                (when (file-exists? file)
+                  (let* ((content (read-file-as-string file))
+                         (lines (let loop ((s content) (acc []))
+                                  (let ((nl (string-index s #\newline)))
+                                    (if nl
+                                      (loop (substring s (+ nl 1) (string-length s))
+                                            (cons (substring s 0 nl) acc))
+                                      (reverse (if (> (string-length s) 0) (cons s acc) acc))))))
+                         (new-lines
+                           (let loop ((ls lines) (i 1) (acc []))
+                             (if (null? ls) (reverse acc)
+                               (let ((edit (assoc i line-edits)))
+                                 (loop (cdr ls) (+ i 1)
+                                       (cons (if edit (cdr edit) (car ls)) acc))))))
+                         (new-content (string-join new-lines "\n")))
+                    ;; Add trailing newline if original had one
+                    (let ((final (if (and (> (string-length content) 0)
+                                         (char=? (string-ref content (- (string-length content) 1))
+                                                 #\newline))
+                                   (string-append new-content "\n")
+                                   new-content)))
+                      (set! write-jobs (cons [file . final] write-jobs))
+                      (set! changes (+ changes (length line-edits)))))))
+              file-changes)
+            ;; Write all files in background thread
+            (when (pair? write-jobs)
+              (spawn/name 'wgrep-write
+                (lambda ()
+                  (for-each
+                    (lambda (job)
+                      (with-catch
+                        (lambda (e) (gemacs-log! "wgrep write error: " (##object->string e)))
+                        (lambda () (write-string-to-file (car job) (cdr job)))))
+                    write-jobs))))))
         (set! *wgrep-mode* #f)
         (echo-message! (app-state-echo app)
           (string-append "Applied " (number->string changes) " change(s)"))))))

@@ -10,6 +10,7 @@
         :std/text/base64
         :gemacs/qt/sci-shim
         :gemacs/core
+        :gemacs/async
         :gemacs/snippets
         (only-in :gemacs/persist
                  record-face-customization!
@@ -1238,79 +1239,93 @@ If on blank line: insert comment and indent."
       [])))
 
 (def (cmd-dired-do-delete-marked app)
-  "Delete all marked files in dired."
+  "Delete all marked files in dired (async)."
   (let* ((buf (current-qt-buffer app))
-         (files (dired-marked-files buf)))
+         (files (dired-marked-files buf))
+         (dir (buffer-file-path buf)))
     (if (null? files)
       (echo-message! (app-state-echo app) "No marked files")
       (let ((confirm (qt-echo-read-string app
                        (string-append "Delete " (number->string (length files))
                                       " marked files? (yes/no): "))))
         (when (and confirm (string=? confirm "yes"))
-          (let ((count 0))
-            (for-each
-              (lambda (path)
-                (with-catch
-                  (lambda (e) #f)
+          (echo-message! (app-state-echo app) "Deleting...")
+          (spawn/name 'dired-delete
+            (lambda ()
+              (let ((count 0))
+                (for-each
+                  (lambda (path)
+                    (with-catch
+                      (lambda (e) #f)
+                      (lambda ()
+                        (delete-file path)
+                        (set! count (+ count 1)))))
+                  files)
+                (ui-queue-push!
                   (lambda ()
-                    (delete-file path)
-                    (set! count (+ count 1)))))
-              files)
-            ;; Refresh
-            (let ((dir (buffer-file-path buf)))
-              (when dir (dired-open-directory! app dir)))
-            (echo-message! (app-state-echo app)
-              (string-append "Deleted " (number->string count) " files"))))))))
+                    (when dir (dired-open-directory! app dir))
+                    (echo-message! (app-state-echo app)
+                      (string-append "Deleted " (number->string count) " files"))))))))))))
 
 (def (cmd-dired-do-copy-marked app)
-  "Copy all marked files in dired to a destination directory."
+  "Copy all marked files in dired to a destination directory (async)."
   (let* ((buf (current-qt-buffer app))
-         (files (dired-marked-files buf)))
+         (files (dired-marked-files buf))
+         (dir (buffer-file-path buf)))
     (if (null? files)
       (echo-message! (app-state-echo app) "No marked files")
       (let ((dest (qt-echo-read-string app "Copy to directory: ")))
         (when (and dest (> (string-length dest) 0))
-          (let ((dest-dir (path-expand dest))
-                (count 0))
-            (for-each
-              (lambda (path)
-                (with-catch
-                  (lambda (e) #f)
-                  (lambda ()
-                    (let ((target (path-expand (path-strip-directory path) dest-dir)))
-                      (copy-file path target)
-                      (set! count (+ count 1))))))
-              files)
-            ;; Refresh
-            (let ((dir (buffer-file-path buf)))
-              (when dir (dired-open-directory! app dir)))
-            (echo-message! (app-state-echo app)
-              (string-append "Copied " (number->string count) " files to " dest-dir))))))))
+          (let ((dest-dir (path-expand dest)))
+            (echo-message! (app-state-echo app) "Copying...")
+            (spawn/name 'dired-copy
+              (lambda ()
+                (let ((count 0))
+                  (for-each
+                    (lambda (path)
+                      (with-catch
+                        (lambda (e) #f)
+                        (lambda ()
+                          (let ((target (path-expand (path-strip-directory path) dest-dir)))
+                            (copy-file path target)
+                            (set! count (+ count 1))))))
+                    files)
+                  (ui-queue-push!
+                    (lambda ()
+                      (when dir (dired-open-directory! app dir))
+                      (echo-message! (app-state-echo app)
+                        (string-append "Copied " (number->string count)
+                                       " files to " dest-dir)))))))))))))
 
 (def (cmd-dired-do-rename-marked app)
-  "Move/rename all marked files in dired to a destination directory."
+  "Move/rename all marked files in dired to a destination directory (async)."
   (let* ((buf (current-qt-buffer app))
-         (files (dired-marked-files buf)))
+         (files (dired-marked-files buf))
+         (dir (buffer-file-path buf)))
     (if (null? files)
       (echo-message! (app-state-echo app) "No marked files")
       (let ((dest (qt-echo-read-string app "Move to directory: ")))
         (when (and dest (> (string-length dest) 0))
-          (let ((dest-dir (path-expand dest))
-                (count 0))
-            (for-each
-              (lambda (path)
-                (with-catch
-                  (lambda (e) #f)
-                  (lambda ()
-                    (let ((target (path-expand (path-strip-directory path) dest-dir)))
-                      (rename-file path target)
-                      (set! count (+ count 1))))))
-              files)
-            ;; Refresh
-            (let ((dir (buffer-file-path buf)))
-              (when dir (dired-open-directory! app dir)))
-            (echo-message! (app-state-echo app)
-              (string-append "Moved " (number->string count) " files to " dest-dir))))))))
+          (let ((dest-dir (path-expand dest)))
+            (echo-message! (app-state-echo app) "Moving...")
+            (spawn/name 'dired-rename
+              (lambda ()
+                (let ((count 0))
+                  (for-each
+                    (lambda (path)
+                      (with-catch
+                        (lambda (e) #f)
+                        (lambda ()
+                          (let ((target (path-expand (path-strip-directory path) dest-dir)))
+                            (rename-file path target)
+                            (set! count (+ count 1))))))
+                    files)
+                  (ui-queue-push!
+                    (lambda ()
+                      (when dir (dired-open-directory! app dir))
+                      (echo-message! (app-state-echo app)
+                        (string-append "Moved " (number->string count)
+                                       " files to " dest-dir)))))))))))))
 
 (def (cmd-dired-mark-by-regexp app)
   "Mark files matching a regular expression in dired."
@@ -1957,48 +1972,55 @@ If on blank line: insert comment and indent."
          (root (current-project-root app))
          (pattern (qt-echo-read-string app "Project search: ")))
     (when (and pattern (> (string-length pattern) 0))
-      (with-catch
-        (lambda (e) (echo-error! echo "Search failed"))
+      (echo-message! echo "Searching...")
+      (spawn/name 'project-search
         (lambda ()
-          (let* ((proc (open-process
-                         [path: "/usr/bin/grep"
-                          arguments: ["-rn" "--include=*.ss" "--include=*.scm"
-                                      "--include=*.el" "--include=*.py"
-                                      "--include=*.js" "--include=*.ts"
-                                      "--include=*.c" "--include=*.h"
-                                      "--include=*.rs" "--include=*.go"
-                                      "--include=*.java" "--include=*.rb"
-                                      "--include=*.md" "--include=*.txt"
-                                      "--include=*.json" "--include=*.yaml"
-                                      "--include=*.yml" "--include=*.toml"
-                                      "--include=*.html" "--include=*.css"
-                                      pattern root]
-                          stdout-redirection: #t
-                          stderr-redirection: #t]))
-                 (output (let loop ((lines '()))
-                           (let ((line (read-line proc)))
-                             (if (eof-object? line)
-                               (reverse lines)
-                               (loop (cons line lines)))))))
-            (close-port proc)
-            (if (null? output)
-              (echo-message! echo (string-append "No matches for: " pattern))
-              (let* ((fr (app-state-frame app))
-                     (ed (current-qt-editor app))
-                     (buf (or (buffer-by-name "*Project Search*")
-                              (qt-buffer-create! "*Project Search*" ed)))
-                     (result (string-join output "\n")))
-                (qt-buffer-attach! ed buf)
-                (set! (qt-edit-window-buffer (qt-current-window fr)) buf)
-                (qt-plain-text-edit-set-text! ed
-                  (string-append "=== Project search: " pattern " ===\n"
-                                 "=== Root: " root " ===\n\n"
-                                 result "\n\n"
-                                 (number->string (length output)) " match(es) found"))
-                (qt-plain-text-edit-set-read-only! ed #t)
-                (qt-modeline-update! app)
-                (echo-message! echo
-                  (string-append (number->string (length output)) " match(es) found"))))))))))
+          (let ((output
+                  (with-catch
+                    (lambda (e) [])
+                    (lambda ()
+                      (let* ((proc (open-process
+                                     [path: "/usr/bin/grep"
+                                      arguments: ["-rn" "--include=*.ss" "--include=*.scm"
+                                                  "--include=*.el" "--include=*.py"
+                                                  "--include=*.js" "--include=*.ts"
+                                                  "--include=*.c" "--include=*.h"
+                                                  "--include=*.rs" "--include=*.go"
+                                                  "--include=*.java" "--include=*.rb"
+                                                  "--include=*.md" "--include=*.txt"
+                                                  "--include=*.json" "--include=*.yaml"
+                                                  "--include=*.yml" "--include=*.toml"
+                                                  "--include=*.html" "--include=*.css"
+                                                  pattern root]
+                                      stdout-redirection: #t
+                                      stderr-redirection: #t]))
+                             (lines (let loop ((acc []))
+                                      (let ((line (read-line proc)))
+                                        (if (eof-object? line)
+                                          (reverse acc)
+                                          (loop (cons line acc)))))))
+                        (close-port proc)
+                        lines)))))
+            (ui-queue-push!
+              (lambda ()
+                (if (null? output)
+                  (echo-message! echo (string-append "No matches for: " pattern))
+                  (let* ((fr (app-state-frame app))
+                         (ed (current-qt-editor app))
+                         (buf (or (buffer-by-name "*Project Search*")
+                                  (qt-buffer-create! "*Project Search*" ed)))
+                         (result (string-join output "\n")))
+                    (qt-buffer-attach! ed buf)
+                    (set! (qt-edit-window-buffer (qt-current-window fr)) buf)
+                    (qt-plain-text-edit-set-text! ed
+                      (string-append "=== Project search: " pattern " ===\n"
+                                     "=== Root: " root " ===\n\n"
+                                     result "\n\n"
+                                     (number->string (length output)) " match(es) found"))
+                    (qt-plain-text-edit-set-read-only! ed #t)
+                    (qt-modeline-update! app)
+                    (echo-message! echo
+                      (string-append (number->string (length output)) " match(es) found"))))))))))))
 
 ;;;============================================================================
 ;;; Goto last change (navigate to last edit position)
