@@ -175,6 +175,7 @@
         :std/sort
         :std/srfi/13
         (only-in :std/srfi/19 current-date date->string)
+        :std/misc/rwlock
         :gerbil/runtime/init
         :gerbil/expander
         :gemacs/face
@@ -984,23 +985,33 @@
   transparent: #t)
 
 (def *buffer-list* [])
+(def *buffer-list-lock* (make-rwlock 'buffer-list))
 
-(def (buffer-list) *buffer-list*)
+(def (buffer-list)
+  "Thread-safe read access to buffer list via rwlock."
+  (with-read-lock *buffer-list-lock*
+    (lambda () *buffer-list*)))
 
 (def (buffer-list-add! buf)
-  (set! *buffer-list* (cons buf *buffer-list*)))
+  "Thread-safe add to buffer list."
+  (with-write-lock *buffer-list-lock*
+    (lambda ()
+      (set! *buffer-list* (cons buf *buffer-list*)))))
 
 (def (buffer-list-remove! buf)
-  (set! *buffer-list*
-    (let loop ((bufs *buffer-list*) (acc []))
-      (cond
-        ((null? bufs) (reverse acc))
-        ((eq? (car bufs) buf) (loop (cdr bufs) acc))
-        (else (loop (cdr bufs) (cons (car bufs) acc)))))))
+  "Thread-safe remove from buffer list."
+  (with-write-lock *buffer-list-lock*
+    (lambda ()
+      (set! *buffer-list*
+        (let loop ((bufs *buffer-list*) (acc []))
+          (cond
+            ((null? bufs) (reverse acc))
+            ((eq? (car bufs) buf) (loop (cdr bufs) acc))
+            (else (loop (cdr bufs) (cons (car bufs) acc)))))))))
 
 (def (buffer-by-name name)
-  "Find a buffer by name. Returns #f if not found."
-  (let loop ((bufs *buffer-list*))
+  "Find a buffer by name. Returns #f if not found. Thread-safe."
+  (let loop ((bufs (buffer-list)))
     (cond
       ((null? bufs) #f)
       ((string=? (buffer-name (car bufs)) name) (car bufs))
