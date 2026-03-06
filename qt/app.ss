@@ -1007,20 +1007,33 @@
        (buffer-touch! buf)
        (qt-buffer-attach! ed buf)
        (set! (qt-edit-window-buffer (qt-current-window fr)) buf)
-       (when (file-exists? filename)
-         (let ((text (read-file-as-string filename)))
-           (when text
-             (qt-plain-text-edit-set-text! ed text)
-             (qt-text-document-set-modified! (buffer-doc-pointer buf) #f)
-             (qt-plain-text-edit-set-cursor-position! ed 0)))
-         (file-mtime-record! filename))
-       (qt-setup-highlighting! app buf)
-       ;; Activate major mode from auto-mode-alist
-       (let ((mode (detect-major-mode filename)))
-         (when mode
-           (buffer-local-set! buf 'major-mode mode)
-           (let ((mode-cmd (find-command mode)))
-             (when mode-cmd (mode-cmd app)))))
-       ;; LSP: auto-start and notify didOpen
-       (lsp-maybe-auto-start! app buf)
-       (lsp-hook-did-open! app buf)))))
+       (if (file-exists? filename)
+         ;; Read file content in background thread
+         (begin
+           (qt-plain-text-edit-set-text! ed "Loading...")
+           (async-read-file! filename
+             (lambda (text)
+               (when text
+                 (let ((ed (qt-current-editor (app-state-frame app))))
+                   (qt-plain-text-edit-set-text! ed text)
+                   (qt-text-document-set-modified! (buffer-doc-pointer buf) #f)
+                   (qt-plain-text-edit-set-cursor-position! ed 0)))
+               (file-mtime-record! filename)
+               (qt-setup-highlighting! app buf)
+               (let ((mode (detect-major-mode filename)))
+                 (when mode
+                   (buffer-local-set! buf 'major-mode mode)
+                   (let ((mode-cmd (find-command mode)))
+                     (when mode-cmd (mode-cmd app)))))
+               (lsp-maybe-auto-start! app buf)
+               (lsp-hook-did-open! app buf))))
+         ;; New file — no content to read
+         (begin
+           (qt-setup-highlighting! app buf)
+           (let ((mode (detect-major-mode filename)))
+             (when mode
+               (buffer-local-set! buf 'major-mode mode)
+               (let ((mode-cmd (find-command mode)))
+                 (when mode-cmd (mode-cmd app)))))
+           (lsp-maybe-auto-start! app buf)
+           (lsp-hook-did-open! app buf)))))))
