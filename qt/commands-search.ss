@@ -1069,19 +1069,19 @@ Returns (file line col message) or #f."
                  (end (max mark pos))
                  (text (qt-plain-text-edit-text ed))
                  (region (substring text start end)))
-            (let-values (((result _status)
-                          (gsh-run-command/qt
-                            cmd (lambda () (when *qt-app-ptr*
-                                            (qt-app-process-events! *qt-app-ptr*)))
-                            stdin-text: region)))
-              ;; Replace region with result
-              (let ((new-text (string-append (substring text 0 start)
-                                             result
-                                             (substring text end (string-length text)))))
-                (qt-plain-text-edit-set-text! ed new-text)
-                (qt-plain-text-edit-set-cursor-position! ed start)
-                (set! (buffer-mark buf) #f)
-                (echo-message! echo "Region filtered"))))))
+            (echo-message! echo "Filtering region...")
+            (async-process! cmd
+              callback: (lambda (result)
+                (let* ((ed (current-qt-editor app))
+                       (text (qt-plain-text-edit-text ed))
+                       (new-text (string-append (substring text 0 start)
+                                                 result
+                                                 (substring text end (string-length text)))))
+                  (qt-plain-text-edit-set-text! ed new-text)
+                  (qt-plain-text-edit-set-cursor-position! ed start)
+                  (set! (buffer-mark buf) #f)
+                  (echo-message! echo "Region filtered")))
+              stdin-text: region))))
       (echo-error! echo "No mark set"))))
 
 ;;;============================================================================

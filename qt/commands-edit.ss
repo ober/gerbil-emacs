@@ -10,6 +10,7 @@
         :std/text/base64
         :gemacs/qt/sci-shim
         :gemacs/core
+        :gemacs/async
         :gemacs/subprocess
         :gemacs/gsh-subprocess
         :gemacs/editor
@@ -1540,22 +1541,19 @@
   (let* ((echo (app-state-echo app))
          (cmd (qt-echo-read-string app "Shell command: ")))
     (when (and cmd (> (string-length cmd) 0))
-      (echo-message! echo (string-append "Running... (C-g to cancel)"))
-      (when *qt-app-ptr* (qt-app-process-events! *qt-app-ptr*))
-      (let-values (((result _status)
-                    (gsh-run-command/qt
-                      cmd (lambda () (when *qt-app-ptr*
-                                      (qt-app-process-events! *qt-app-ptr*))))))
-        (let* ((fr (app-state-frame app))
-               (ed (current-qt-editor app))
-               (buf (or (buffer-by-name "*Shell Output*")
-                        (qt-buffer-create! "*Shell Output*" ed #f))))
-          (qt-buffer-attach! ed buf)
-          (set! (qt-edit-window-buffer (qt-current-window fr)) buf)
-          (qt-plain-text-edit-set-text! ed result)
-          (qt-text-document-set-modified! (buffer-doc-pointer buf) #f)
-          (qt-plain-text-edit-set-cursor-position! ed 0)
-          (echo-message! echo (string-append "Shell: " cmd)))))))
+      (echo-message! echo (string-append "Running: " cmd "..."))
+      (async-process! cmd
+        callback: (lambda (result)
+          (let* ((fr (app-state-frame app))
+                 (ed (current-qt-editor app))
+                 (buf (or (buffer-by-name "*Shell Output*")
+                          (qt-buffer-create! "*Shell Output*" ed #f))))
+            (qt-buffer-attach! ed buf)
+            (set! (qt-edit-window-buffer (qt-current-window fr)) buf)
+            (qt-plain-text-edit-set-text! ed result)
+            (qt-text-document-set-modified! (buffer-doc-pointer buf) #f)
+            (qt-plain-text-edit-set-cursor-position! ed 0)
+            (echo-message! echo (string-append "Shell: " cmd))))))))
 
 ;;;============================================================================
 ;;; Sort lines (in region)
