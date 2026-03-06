@@ -47,6 +47,9 @@ QT_TEST_TIMEOUT ?= 600
 QT_TEST_ENV = QT_QPA_PLATFORM=offscreen LD_LIBRARY_PATH=$(OPENSSL_RPATH):$(SCI_RPATH):$(QT_SHIM_RPATH):$(LH_RPATH)
 
 build:
+	@# Kill any competing gerbil build processes on this project
+	@-pkill -f 'gxi.*/home/jafourni/mine/gerbil-emacs/build.ss' 2>/dev/null; true
+	@-rm -f .gerbil/lib/static/*.lock 2>/dev/null; true
 	chmod +x build.ss
 	LD_LIBRARY_PATH=$(OPENSSL_RPATH) gerbil build
 	-patchelf --set-rpath $(OPENSSL_RPATH):$(SCI_RPATH):$(LH_RPATH) .gerbil/bin/gemacs
@@ -59,7 +62,9 @@ build:
 	-patchelf --set-rpath $(OPENSSL_RPATH):$(SCI_RPATH):$(QT_SHIM_RPATH):$(LH_RPATH) .gerbil/bin/qt-split-simple-test
 
 clean:
-	gerbil clean
+	@-pkill -f 'gxi.*/home/jafourni/mine/gerbil-emacs/build.ss' 2>/dev/null; true
+	-gerbil clean
+	rm -f .gerbil/lib/static/*.lock 2>/dev/null; true
 	rm -rf .gerbil
 	@# Remove stale global static artifacts that can shadow local builds
 	rm -f $(HOME)/.gerbil/lib/static/gemacs__*.scm
