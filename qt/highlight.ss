@@ -8,6 +8,7 @@
         qt-remove-highlighting!
         qt-setup-org-styles!
         qt-org-highlight-buffer!
+        qt-org-highlight-buffer-async!
         qt-update-visual-decorations!
         qt-highlight-search-matches!
         qt-clear-search-highlights!
@@ -21,6 +22,7 @@
         :std/misc/string
         :gemacs/qt/sci-shim
         :gemacs/core
+        :gemacs/async
         (only-in :gemacs/org-parse
                  org-heading-line? org-heading-stars-of-line
                  org-comment-line? org-keyword-line?
@@ -563,9 +565,9 @@
       ;; Disable any built-in lexer for manual styling (SCI_SETILEXER = 4033)
       (sci-send ed 4033 0)
       (qt-setup-org-styles! ed)
-      ;; Apply full-buffer org highlighting (headings, tables, blocks, etc.)
+      ;; Apply full-buffer org highlighting in background
       (let ((text (qt-plain-text-edit-text ed)))
-        (qt-org-highlight-buffer! ed text)))
+        (qt-org-highlight-buffer-async! ed text)))
     (when (and ed lexer-name)
       ;; Store language in buffer
       (set! (buffer-lexer-lang buf) lang)
@@ -814,15 +816,27 @@
 (def QT_ORG_SRC_COMMENT   61)   ; comment (gray italic)
 (def QT_ORG_SRC_NUMBER    62)   ; numeric literal (orange)
 
+;; When set to a box containing a list, style functions collect instructions
+;; instead of calling sci-send. Used for async highlighting.
+(def *org-style-collector* (make-parameter #f))
+
 (def (qt-org-style-line! ed pos len style)
   (when (> len 0)
-    (sci-send ed SCI_STARTSTYLING pos 0)
-    (sci-send ed SCI_SETSTYLING len style)))
+    (let ((collector (*org-style-collector*)))
+      (if collector
+        (set-box! collector (cons [pos len style] (unbox collector)))
+        (begin
+          (sci-send ed SCI_STARTSTYLING pos 0)
+          (sci-send ed SCI_SETSTYLING len style))))))
 
 (def (qt-org-style-range! ed pos len style)
   (when (> len 0)
-    (sci-send ed SCI_STARTSTYLING pos 0)
-    (sci-send ed SCI_SETSTYLING len style)))
+    (let ((collector (*org-style-collector*)))
+      (if collector
+        (set-box! collector (cons [pos len style] (unbox collector)))
+        (begin
+          (sci-send ed SCI_STARTSTYLING pos 0)
+          (sci-send ed SCI_SETSTYLING len style))))))
 
 (def (qt-org-heading-style level)
   (cond ((<= level 0) QT_ORG_DEFAULT)
@@ -1116,6 +1130,27 @@
             (else
              (qt-org-highlight-normal-line! ed pos line line-len)
              (loop (+ i 1) next-pos 'normal))))))))
+
+(def (qt-org-apply-styles! ed styles)
+  "Apply collected style instructions on UI thread. Styles are [pos len style] lists."
+  (for-each
+    (lambda (s)
+      (let ((pos (car s)) (len (cadr s)) (style (caddr s)))
+        (sci-send ed SCI_STARTSTYLING pos 0)
+        (sci-send ed SCI_SETSTYLING len style)))
+    styles))
+
+(def (qt-org-highlight-buffer-async! ed text)
+  "Async org highlighting: parse text in background, apply styles on UI thread."
+  (spawn/name 'org-highlight
+    (lambda ()
+      (let ((collector (box [])))
+        (parameterize ((*org-style-collector* collector))
+          (qt-org-highlight-buffer! #f text))
+        (let ((styles (reverse (unbox collector))))
+          (ui-queue-push!
+            (lambda ()
+              (qt-org-apply-styles! ed styles))))))))
 
 (def (qt-remove-highlighting! buf)
   (let* ((doc (buffer-doc-pointer buf))
