@@ -848,9 +848,7 @@
       (schedule-periodic! 'lsp-auto-complete 500
         (lambda () (lsp-auto-complete! app)))
 
-      ;; LSP UI action queue polling (50ms)
-      (schedule-periodic! 'lsp-ui 50
-        (lambda () (lsp-poll-ui-actions!)))
+      ;; LSP UI actions now drained by master timer via unified ui-queue
 
       ;; LSP didChange — send buffer content 1s after last edit
       (schedule-periodic! 'lsp-change 1000

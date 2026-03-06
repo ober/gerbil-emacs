@@ -11,7 +11,8 @@
 (import :std/sugar
         :std/text/json
         :std/misc/string
-        (only-in :gemacs/core *lsp-server-command*))
+        (only-in :gemacs/core *lsp-server-command*)
+        :gemacs/async)
 
 ;;;============================================================================
 ;;; State
@@ -30,9 +31,7 @@
 (def *lsp-pending-requests* (make-hash-table))
 (def *lsp-pending-mutex* (make-mutex 'lsp-pending))
 
-;; UI action queue (ipc.ss pattern: background thread pushes, UI timer drains)
-(def *lsp-ui-queue* [])
-(def *lsp-ui-mutex* (make-mutex 'lsp-ui-queue))
+;; UI action queue — now uses unified async ui-queue (channel-based)
 
 ;; Document version tracking: uri-string -> integer
 (def *lsp-doc-versions* (make-hash-table))
@@ -56,27 +55,14 @@
 ;;;============================================================================
 
 (def (lsp-queue-ui-action! thunk)
-  "Push a thunk onto the UI action queue (called from reader thread)."
-  (mutex-lock! *lsp-ui-mutex*)
-  (unwind-protect
-    (set! *lsp-ui-queue* (append *lsp-ui-queue* [thunk]))
-    (mutex-unlock! *lsp-ui-mutex*)))
+  "Push a thunk onto the unified UI action queue (called from reader thread).
+   Uses channel-based async queue instead of mutex-protected list."
+  (ui-queue-push! thunk))
 
 (def (lsp-poll-ui-actions!)
-  "Drain the UI action queue and execute thunks. Called from UI timer."
-  (let ((actions
-         (begin
-           (mutex-lock! *lsp-ui-mutex*)
-           (unwind-protect
-             (let ((q *lsp-ui-queue*))
-               (set! *lsp-ui-queue* [])
-               q)
-             (mutex-unlock! *lsp-ui-mutex*)))))
-    (for-each (lambda (thunk)
-                (with-catch
-                  (lambda (e) (void))  ;; don't crash UI on handler error
-                  thunk))
-              actions)))
+  "Drain the UI action queue. Now delegates to unified ui-queue-drain!.
+   Kept for backward compatibility with tests."
+  (ui-queue-drain!))
 
 ;;;============================================================================
 ;;; Pending request management (thread-safe)
@@ -374,8 +360,7 @@
   (set! *lsp-server-capabilities* (make-hash-table))
   (set! *lsp-diagnostics* (make-hash-table))
   (set! *lsp-doc-versions* (make-hash-table))
-  (set! *lsp-last-sent-content* (make-hash-table))
-  (set! *lsp-ui-queue* []))
+  (set! *lsp-last-sent-content* (make-hash-table)))
 
 (def (lsp-running?)
   "True if the LSP server is initialized and running."
