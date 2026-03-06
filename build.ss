@@ -202,6 +202,8 @@
     "themes"
     ;; Shared core (no backend dependencies)
     "core"
+    ;; Async infrastructure (depends on core, channels, atoms)
+    "async"
     ;; Interruptible subprocess execution (depends on core)
     "subprocess"
     ;; PTY (pseudo-terminal) subprocess support via forkpty(3)
