@@ -742,28 +742,39 @@
             (buffer-list))))
 
       ;; Auto-save (30 seconds)
+      ;; Collect text snapshots on UI thread (fast), write files in background
       (schedule-periodic! 'auto-save 30000
         (lambda ()
-          (for-each
-            (lambda (buf)
-              (let ((path (buffer-file-path buf)))
-                (when (and path
-                           (buffer-doc-pointer buf)
-                           (qt-text-document-modified? (buffer-doc-pointer buf)))
-                  (let loop ((wins (qt-frame-windows fr)))
-                    (when (pair? wins)
-                      (if (eq? (qt-edit-window-buffer (car wins)) buf)
-                        (let* ((ed (qt-edit-window-editor (car wins)))
-                               (text (qt-plain-text-edit-text ed))
-                               (auto-path (qt-make-auto-save-path path)))
-                          (with-catch
-                            (lambda (e) #f)
-                            (lambda ()
-                              (call-with-output-file auto-path
-                                (lambda (port) (display text port))))))
-                        (loop (cdr wins))))))))
-            (buffer-list))
-          ;; Cache scratch buffer text for persistence
+          ;; Phase 1: Collect snapshots on UI thread (must access Qt widgets here)
+          (let ((save-jobs []))
+            (for-each
+              (lambda (buf)
+                (let ((path (buffer-file-path buf)))
+                  (when (and path
+                             (buffer-doc-pointer buf)
+                             (qt-text-document-modified? (buffer-doc-pointer buf)))
+                    (let loop ((wins (qt-frame-windows fr)))
+                      (when (pair? wins)
+                        (if (eq? (qt-edit-window-buffer (car wins)) buf)
+                          (let* ((ed (qt-edit-window-editor (car wins)))
+                                 (text (qt-plain-text-edit-text ed))
+                                 (auto-path (qt-make-auto-save-path path)))
+                            (set! save-jobs (cons [auto-path . text] save-jobs)))
+                          (loop (cdr wins))))))))
+              (buffer-list))
+            ;; Phase 2: Write all auto-save files in background thread
+            (when (pair? save-jobs)
+              (spawn/name 'auto-save
+                (lambda ()
+                  (for-each
+                    (lambda (job)
+                      (with-catch
+                        (lambda (e) (gemacs-log! "Auto-save error: " (##object->string e)))
+                        (lambda ()
+                          (call-with-output-file (car job)
+                            (lambda (port) (display (cdr job) port))))))
+                    save-jobs)))))
+          ;; Cache scratch buffer text for persistence (fast, stays on UI thread)
           (let ((scratch (buffer-by-name "*scratch*")))
             (when scratch
               (let loop ((wins (qt-frame-windows fr)))
@@ -773,7 +784,7 @@
                       (qt-plain-text-edit-text
                         (qt-edit-window-editor (car wins))))
                     (loop (cdr wins)))))))
-          ;; Record undo history snapshots for modified buffers
+          ;; Record undo history snapshots for modified buffers (fast, stays on UI thread)
           (for-each
             (lambda (win)
               (let* ((buf (qt-edit-window-buffer win))
@@ -784,6 +795,7 @@
             (qt-frame-windows fr))))
 
       ;; File modification watcher (5 seconds)
+      ;; Mtime check on UI thread (fast stat), file read in background
       (schedule-periodic! 'file-watch 5000
         (lambda ()
           (when *auto-revert-mode*
@@ -798,25 +810,27 @@
                         (echo-message! (app-state-echo app)
                           (string-append (buffer-name buf)
                             " changed on disk (buffer modified, not reverting)"))
-                        (let loop ((wins (qt-frame-windows fr)))
-                          (when (pair? wins)
-                            (if (eq? (qt-edit-window-buffer (car wins)) buf)
-                              (let* ((ed (qt-edit-window-editor (car wins)))
-                                     (pos (qt-plain-text-edit-cursor-position ed))
-                                     (text (read-file-as-string path)))
-                                (when text
-                                  (qt-plain-text-edit-set-text! ed text)
-                                  (qt-text-document-set-modified! doc #f)
-                                  (if tail?
-                                    (begin
-                                      (qt-plain-text-edit-move-cursor! ed QT_CURSOR_END)
-                                      (qt-plain-text-edit-ensure-cursor-visible! ed))
-                                    (begin
-                                      (qt-plain-text-edit-set-cursor-position! ed
-                                        (min pos (string-length text)))
-                                      (qt-plain-text-edit-ensure-cursor-visible! ed)))
-                                  (file-mtime-record! path)))
-                              (loop (cdr wins))))))))))
+                        ;; Read file in background, update widget on UI thread
+                        (async-read-file! path
+                          (lambda (text)
+                            (when text
+                              (let loop ((wins (qt-frame-windows fr)))
+                                (when (pair? wins)
+                                  (if (eq? (qt-edit-window-buffer (car wins)) buf)
+                                    (let* ((ed (qt-edit-window-editor (car wins)))
+                                           (pos (qt-plain-text-edit-cursor-position ed)))
+                                      (qt-plain-text-edit-set-text! ed text)
+                                      (qt-text-document-set-modified! doc #f)
+                                      (if tail?
+                                        (begin
+                                          (qt-plain-text-edit-move-cursor! ed QT_CURSOR_END)
+                                          (qt-plain-text-edit-ensure-cursor-visible! ed))
+                                        (begin
+                                          (qt-plain-text-edit-set-cursor-position! ed
+                                            (min pos (string-length text)))
+                                          (qt-plain-text-edit-ensure-cursor-visible! ed)))
+                                      (file-mtime-record! path))
+                                    (loop (cdr wins)))))))))))))
               (buffer-list)))))
 
       ;; Eldoc / LSP cursor-idle (300ms)
@@ -905,6 +919,7 @@
                 (qt-echo-draw! (app-state-echo app) echo-label))))))
 
       ;; Restore session if no files given on command line
+      ;; Files are read in parallel (async-read-file! in qt-open-file!)
       (when (null? args)
         (let-values (((current-file entries) (session-restore-files)))
           (for-each
@@ -912,12 +927,13 @@
               (let ((path (car entry))
                     (pos (cdr entry)))
                 (when (file-exists? path)
-                  (qt-open-file! app path)
-                  ;; Restore cursor position
-                  (let ((ed (qt-current-editor fr)))
-                    (qt-plain-text-edit-set-cursor-position! ed
-                      (min pos (string-length (qt-plain-text-edit-text ed))))
-                    (qt-plain-text-edit-ensure-cursor-visible! ed)))))
+                  (qt-open-file! app path
+                    ;; Restore cursor position after async file load
+                    (lambda (app buf)
+                      (let ((ed (qt-current-editor (app-state-frame app))))
+                        (qt-plain-text-edit-set-cursor-position! ed
+                          (min pos (string-length (qt-plain-text-edit-text ed))))
+                        (qt-plain-text-edit-ensure-cursor-visible! ed)))))))
             entries)
           ;; Switch to the buffer that was current when session was saved
           (when current-file
@@ -969,8 +985,9 @@
 ;;; File opening helper
 ;;;============================================================================
 
-(def (qt-open-file! app filename)
-  "Open a file or directory in a new buffer, or view an image."
+(def (qt-open-file! app filename (on-loaded #f))
+  "Open a file or directory in a new buffer, or view an image.
+   Optional on-loaded callback is called with (app buf) after text is loaded."
   ;; Track in recent files
   (recent-files-add! filename)
   (cond
@@ -1026,7 +1043,8 @@
                    (let ((mode-cmd (find-command mode)))
                      (when mode-cmd (mode-cmd app)))))
                (lsp-maybe-auto-start! app buf)
-               (lsp-hook-did-open! app buf))))
+               (lsp-hook-did-open! app buf)
+               (when on-loaded (on-loaded app buf)))))
          ;; New file — no content to read
          (begin
            (qt-setup-highlighting! app buf)
