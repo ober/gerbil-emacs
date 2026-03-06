@@ -42,7 +42,8 @@
         :gsh/registry
         (only-in :gsh/prompt expand-prompt)
         :gemacs/core
-        :gemacs/pty)
+        :gemacs/pty
+        :gemacs/vtscreen)
 
 ;;;============================================================================
 ;;; Scintilla styling message IDs (not in constants.ss)
@@ -102,7 +103,11 @@
    pty-master  ; master fd (int) or #f when no PTY child running
    pty-pid     ; child PID or #f
    pty-channel ; channel for reader thread -> UI communication, or #f
-   pty-thread) ; reader thread or #f
+   pty-thread  ; reader thread or #f
+   ;; VT100 screen buffer for full-screen programs (top, htop, vim, etc.)
+   vtscreen    ; vtscreen struct or #f (created on PTY spawn)
+   ;; Text before PTY command started (to restore after full-screen program exits)
+   pre-pty-text) ; string or #f
   transparent: #t)
 
 ;;;============================================================================
@@ -285,7 +290,7 @@
         (gemacs-log! "terminal: startup file error: "
           (with-output-to-string "" (lambda () (display-exception e (current-output-port))))))
       (lambda () (load-startup-files! env #f #t)))
-    (make-terminal-state env 0 -1 #f #f #f #f #f)))
+    (make-terminal-state env 0 -1 #f #f #f #f #f #f #f)))
 
 (def (make-cmd-exec-fn env)
   "Create a command-execution function for PS1 $(...) expansion."
@@ -559,6 +564,8 @@
                    (set! (terminal-state-pty-master ts) mfd)
                    (set! (terminal-state-pty-pid ts) pid)
                    (set! (terminal-state-pty-channel ts) ch)
+                   ;; Create VT100 screen buffer for full-screen program support
+                   (set! (terminal-state-vtscreen ts) (new-vtscreen rows cols))
                    ;; Spawn reader thread
                    (let ((thread (spawn (lambda () (pty-reader-loop mfd pid ch)))))
                      (set! (terminal-state-pty-thread ts) thread)
@@ -612,4 +619,6 @@
     (set! (terminal-state-pty-master ts) #f)
     (set! (terminal-state-pty-pid ts) #f)
     (set! (terminal-state-pty-channel ts) #f)
-    (set! (terminal-state-pty-thread ts) #f)))
+    (set! (terminal-state-pty-thread ts) #f)
+    (set! (terminal-state-vtscreen ts) #f)
+    (set! (terminal-state-pre-pty-text ts) #f)))

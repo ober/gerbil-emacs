@@ -216,6 +216,8 @@
     "gsh-eshell"
     ;; gsh-powered subprocess execution (replaces bash fork for M-!, grep, etc.)
     "gsh-subprocess"
+    ;; VT100 virtual terminal screen buffer (for full-screen programs)
+    "vtscreen"
     ;; Shell history (persistent command history)
     "shell-history"
     ;; Shell (external $SHELL subprocess)

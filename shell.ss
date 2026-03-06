@@ -28,7 +28,8 @@
         (only-in :gsh/prompt expand-prompt)
         (only-in :gsh/registry builtin?)
         :gemacs/core
-        :gemacs/pty)
+        :gemacs/pty
+        :gemacs/vtscreen)
 
 ;;;============================================================================
 ;;; Shell state
@@ -48,7 +49,10 @@
    pty-master   ; PTY master fd (or #f)
    pty-pid      ; child process PID (or #f)
    pty-channel  ; channel for PTY output messages (or #f)
-   pty-thread)  ; reader thread (or #f)
+   pty-thread   ; reader thread (or #f)
+   ;; VT100 screen buffer for full-screen programs
+   vtscreen     ; vtscreen struct or #f
+   pre-pty-text) ; text before PTY command started, or #f
   transparent: #t)
 
 ;;;============================================================================
@@ -116,7 +120,7 @@
         (gemacs-log! "shell: startup file error: "
           (with-output-to-string "" (lambda () (display-exception e (current-output-port))))))
       (lambda () (load-startup-files! env #f #t)))  ; login?=#f interactive?=#t
-    (make-shell-state env 0 #f #f #f #f)))
+    (make-shell-state env 0 #f #f #f #f #f #f)))
 
 (def (make-cmd-exec-fn env)
   "Create a command-execution function for PS1 $(...) expansion."
@@ -292,6 +296,8 @@
                    (set! (shell-state-pty-master ss) mfd)
                    (set! (shell-state-pty-pid ss) pid)
                    (set! (shell-state-pty-channel ss) ch)
+                   ;; Create VT100 screen buffer
+                   (set! (shell-state-vtscreen ss) (new-vtscreen rows cols))
                    (let ((thread (spawn (lambda () (shell-pty-reader-loop mfd pid ch)))))
                      (set! (shell-state-pty-thread ss) thread)
                      (values 'async #f #f)))
@@ -332,4 +338,6 @@
     (set! (shell-state-pty-master ss) #f)
     (set! (shell-state-pty-pid ss) #f)
     (set! (shell-state-pty-channel ss) #f)
-    (set! (shell-state-pty-thread ss) #f)))
+    (set! (shell-state-pty-thread ss) #f)
+    (set! (shell-state-vtscreen ss) #f)
+    (set! (shell-state-pre-pty-text ss) #f)))

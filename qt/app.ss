@@ -28,7 +28,8 @@
         :gemacs/qt/lsp-client
         :gemacs/qt/commands-lsp
         :gemacs/qt/menubar
-        :gemacs/ipc)
+        :gemacs/ipc
+        :gemacs/vtscreen)
 
 ;;;============================================================================
 ;;; Qt Application
@@ -175,60 +176,106 @@
 ;;;============================================================================
 
 (def (qt-poll-shell-pty-msg! fr buf ss msg)
-  "Handle one PTY message for a shell buffer in Qt."
+  "Handle one PTY message for a shell buffer in Qt.
+   Uses VT100 screen buffer to properly handle cursor-addressing programs."
   (let ((tag (car msg))
-        (data (cdr msg)))
+        (data (cdr msg))
+        (vt (shell-state-vtscreen ss)))
     (cond
       ((eq? tag 'data)
        (let loop ((wins (qt-frame-windows fr)))
          (when (pair? wins)
            (if (eq? (qt-edit-window-buffer (car wins)) buf)
              (let ((ed (qt-edit-window-editor (car wins))))
-               (qt-plain-text-edit-move-cursor! ed QT_CURSOR_END)
-               (qt-plain-text-edit-insert-text! ed (strip-ansi-codes data))
-               (qt-plain-text-edit-ensure-cursor-visible! ed))
+               ;; Save pre-PTY text on first data chunk
+               (when (and vt (not (shell-state-pre-pty-text ss)))
+                 (set! (shell-state-pre-pty-text ss)
+                   (qt-plain-text-edit-text ed)))
+               (if vt
+                 ;; Feed data to VT100 screen buffer, then render
+                 (begin
+                   (vtscreen-feed! vt data)
+                   (let* ((pre (or (shell-state-pre-pty-text ss) ""))
+                          (rendered (vtscreen-render vt))
+                          (full (string-append pre rendered)))
+                     (qt-plain-text-edit-set-text! ed full)
+                     (qt-plain-text-edit-move-cursor! ed QT_CURSOR_END)
+                     (qt-plain-text-edit-ensure-cursor-visible! ed)))
+                 ;; Fallback: strip and append (no vtscreen)
+                 (begin
+                   (qt-plain-text-edit-move-cursor! ed QT_CURSOR_END)
+                   (qt-plain-text-edit-insert-text! ed (strip-ansi-codes data))
+                   (qt-plain-text-edit-ensure-cursor-visible! ed))))
              (loop (cdr wins))))))
       ((eq? tag 'done)
-       (shell-cleanup-pty! ss)
-       (let loop ((wins (qt-frame-windows fr)))
-         (when (pair? wins)
-           (if (eq? (qt-edit-window-buffer (car wins)) buf)
-             (let ((ed (qt-edit-window-editor (car wins))))
-               (let ((prompt (shell-prompt ss)))
-                 (qt-plain-text-edit-move-cursor! ed QT_CURSOR_END)
-                 (qt-plain-text-edit-insert-text! ed prompt)
-                 (set! (shell-state-prompt-pos ss)
-                   (string-length (qt-plain-text-edit-text ed)))
-                 (qt-plain-text-edit-ensure-cursor-visible! ed)))
-             (loop (cdr wins)))))))))
+       (let ((pre-text (shell-state-pre-pty-text ss)))
+         (shell-cleanup-pty! ss)
+         (let loop ((wins (qt-frame-windows fr)))
+           (when (pair? wins)
+             (if (eq? (qt-edit-window-buffer (car wins)) buf)
+               (let ((ed (qt-edit-window-editor (car wins))))
+                 (let ((prompt (shell-prompt ss)))
+                   (when pre-text
+                     (qt-plain-text-edit-set-text! ed pre-text))
+                   (qt-plain-text-edit-move-cursor! ed QT_CURSOR_END)
+                   (qt-plain-text-edit-insert-text! ed prompt)
+                   (set! (shell-state-prompt-pos ss)
+                     (string-length (qt-plain-text-edit-text ed)))
+                   (qt-plain-text-edit-ensure-cursor-visible! ed)))
+               (loop (cdr wins))))))))))
 
 (def (qt-poll-terminal-pty-msg! fr buf ts msg)
-  "Handle one PTY message for a terminal buffer in Qt."
+  "Handle one PTY message for a terminal buffer in Qt.
+   Uses VT100 screen buffer to properly handle cursor-addressing programs
+   (top, htop, vim, etc.) that redraw in place instead of appending."
   (let ((tag (car msg))
-        (data (cdr msg)))
+        (data (cdr msg))
+        (vt (terminal-state-vtscreen ts)))
     (cond
       ((eq? tag 'data)
        (let loop ((wins (qt-frame-windows fr)))
          (when (pair? wins)
            (if (eq? (qt-edit-window-buffer (car wins)) buf)
              (let ((ed (qt-edit-window-editor (car wins))))
-               (qt-plain-text-edit-move-cursor! ed QT_CURSOR_END)
-               (qt-plain-text-edit-insert-text! ed (strip-ansi-codes data))
-               (qt-plain-text-edit-ensure-cursor-visible! ed))
+               ;; Save pre-PTY text on first data chunk
+               (when (and vt (not (terminal-state-pre-pty-text ts)))
+                 (set! (terminal-state-pre-pty-text ts)
+                   (qt-plain-text-edit-text ed)))
+               (if vt
+                 ;; Feed data to VT100 screen buffer, then render
+                 (begin
+                   (vtscreen-feed! vt data)
+                   (let* ((pre (or (terminal-state-pre-pty-text ts) ""))
+                          (rendered (vtscreen-render vt))
+                          (full (string-append pre rendered)))
+                     (qt-plain-text-edit-set-text! ed full)
+                     (qt-plain-text-edit-move-cursor! ed QT_CURSOR_END)
+                     (qt-plain-text-edit-ensure-cursor-visible! ed)))
+                 ;; Fallback: strip and append (no vtscreen)
+                 (begin
+                   (qt-plain-text-edit-move-cursor! ed QT_CURSOR_END)
+                   (qt-plain-text-edit-insert-text! ed (strip-ansi-codes data))
+                   (qt-plain-text-edit-ensure-cursor-visible! ed))))
              (loop (cdr wins))))))
       ((eq? tag 'done)
-       (terminal-cleanup-pty! ts)
-       (let loop ((wins (qt-frame-windows fr)))
-         (when (pair? wins)
-           (if (eq? (qt-edit-window-buffer (car wins)) buf)
-             (let ((ed (qt-edit-window-editor (car wins))))
-               (let ((prompt (terminal-prompt ts)))
-                 (qt-plain-text-edit-move-cursor! ed QT_CURSOR_END)
-                 (qt-plain-text-edit-insert-text! ed prompt)
-                 (set! (terminal-state-prompt-pos ts)
-                   (string-length (qt-plain-text-edit-text ed)))
-                 (qt-plain-text-edit-ensure-cursor-visible! ed)))
-             (loop (cdr wins)))))))))
+       ;; Restore pre-PTY text (remove full-screen program output)
+       (let ((pre-text (terminal-state-pre-pty-text ts)))
+         (terminal-cleanup-pty! ts)
+         (let loop ((wins (qt-frame-windows fr)))
+           (when (pair? wins)
+             (if (eq? (qt-edit-window-buffer (car wins)) buf)
+               (let ((ed (qt-edit-window-editor (car wins))))
+                 (let ((prompt (terminal-prompt ts)))
+                   ;; If we had a vtscreen, restore the pre-PTY text
+                   ;; plus any final output, then add prompt
+                   (when pre-text
+                     (qt-plain-text-edit-set-text! ed pre-text))
+                   (qt-plain-text-edit-move-cursor! ed QT_CURSOR_END)
+                   (qt-plain-text-edit-insert-text! ed prompt)
+                   (set! (terminal-state-prompt-pos ts)
+                     (string-length (qt-plain-text-edit-text ed)))
+                   (qt-plain-text-edit-ensure-cursor-visible! ed)))
+               (loop (cdr wins))))))))))
 
 (def (qt-main . args)
   (with-qt-app qt-app
