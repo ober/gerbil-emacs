@@ -1740,17 +1740,61 @@
       (run-git-command app (list "blame" "--" path)
         (string-append "*git-blame " (path-strip-directory path) "*")))))
 
+(def (tui-git-run-in-dir args dir)
+  "Run git command synchronously in dir, return output string."
+  (with-exception-catcher
+    (lambda (e) "")
+    (lambda ()
+      (let* ((proc (open-process
+                     (list path: "git" arguments: args directory: dir
+                           stdout-redirection: #t stderr-redirection: #t)))
+             (out (read-line proc #f)))
+        (close-port proc)
+        (or out "")))))
+
+(def (tui-git-dir app)
+  "Get git directory from current buffer."
+  (let ((buf (current-buffer-from-app app)))
+    (if (and buf (buffer-file-path buf))
+      (path-directory (buffer-file-path buf))
+      (current-directory))))
+
 (def (cmd-magit-fetch app)
-  "Magit fetch — fetches from remote."
-  (run-git-command app '("fetch" "--all") #f))
+  "Magit fetch — fetches from all remotes."
+  (let ((dir (tui-git-dir app)))
+    (echo-message! (app-state-echo app) "Fetching all remotes...")
+    (run-git-command app '("fetch" "--all") #f)))
 
 (def (cmd-magit-pull app)
-  "Magit pull — pulls from remote."
-  (run-git-command app '("pull") #f))
+  "Magit pull — pulls from remote with upstream info."
+  (let* ((dir (tui-git-dir app))
+         (branch (string-trim (tui-git-run-in-dir '("rev-parse" "--abbrev-ref" "HEAD") dir)))
+         (upstream (let ((u (tui-git-run-in-dir '("rev-parse" "--abbrev-ref" "@{upstream}") dir)))
+                     (if (or (string=? u "") (string-prefix? "fatal" u)) #f (string-trim u)))))
+    (if (not upstream)
+      (echo-error! (app-state-echo app)
+        (string-append "No upstream for " branch ". Push first to set upstream."))
+      (begin
+        (echo-message! (app-state-echo app)
+          (string-append "Pulling " upstream " into " branch "..."))
+        (run-git-command app '("pull") #f)))))
 
 (def (cmd-magit-push app)
-  "Magit push — pushes to remote."
-  (run-git-command app '("push") #f))
+  "Magit push — pushes to remote, sets upstream if needed."
+  (let* ((dir (tui-git-dir app))
+         (branch (string-trim (tui-git-run-in-dir '("rev-parse" "--abbrev-ref" "HEAD") dir)))
+         (upstream (let ((u (tui-git-run-in-dir '("rev-parse" "--abbrev-ref" "@{upstream}") dir)))
+                     (if (or (string=? u "") (string-prefix? "fatal" u)) #f (string-trim u)))))
+    (if (not upstream)
+      (let ((remote (let ((r (app-read-string app "Push to remote (default origin): ")))
+                      (if (or (not r) (string-empty? r)) "origin" r))))
+        (echo-message! (app-state-echo app)
+          (string-append "Pushing " branch " to " remote " (setting upstream)..."))
+        (run-git-command app (list "push" "-u" remote branch) #f))
+      (begin
+        (echo-message! (app-state-echo app)
+          (string-append "Pushing " branch " → " upstream "..."))
+        (run-git-command app '("push") #f)))))
 
 (def (cmd-magit-rebase app)
   "Magit rebase — interactive rebase."
@@ -1763,6 +1807,22 @@
   (let ((branch (app-read-string app "Merge branch: ")))
     (when (and branch (not (string-empty? branch)))
       (run-git-command app (list "merge" branch) #f))))
+
+(def (cmd-magit-cherry-pick app)
+  "Cherry-pick a commit."
+  (let* ((dir (tui-git-dir app))
+         (hash (app-read-string app "Cherry-pick commit hash: ")))
+    (when (and hash (not (string-empty? hash)))
+      (echo-message! (app-state-echo app) (string-append "Cherry-picking " hash "..."))
+      (run-git-command app (list "cherry-pick" hash) #f))))
+
+(def (cmd-magit-revert-commit app)
+  "Revert a commit."
+  (let* ((dir (tui-git-dir app))
+         (hash (app-read-string app "Revert commit hash: ")))
+    (when (and hash (not (string-empty? hash)))
+      (echo-message! (app-state-echo app) (string-append "Reverting " hash "..."))
+      (run-git-command app (list "revert" "--no-edit" hash) #f))))
 
 ;;; ---- batch 57: environment and project configuration toggles ----
 

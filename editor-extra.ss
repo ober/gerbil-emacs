@@ -693,6 +693,8 @@
   (register-command! 'magit-push cmd-magit-push)
   (register-command! 'magit-rebase cmd-magit-rebase)
   (register-command! 'magit-merge cmd-magit-merge)
+  (register-command! 'magit-cherry-pick cmd-magit-cherry-pick)
+  (register-command! 'magit-revert-commit cmd-magit-revert-commit)
   (register-command! 'git-log-file cmd-git-log-file)
   ;; Task #51: Additional commands to cross 1000
   (register-command! 'native-compile-file cmd-native-compile-file)

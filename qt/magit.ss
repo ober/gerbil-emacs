@@ -151,9 +151,10 @@
                   untracked))
       (when (and (null? staged) (null? unstaged) (null? untracked))
         (display "\nNothing to commit, working tree clean.\n" out))
-      (display "\nKeys: s=stage u=unstage S=stage-all c=commit d=diff l=log\n" out)
-      (display "      b=branch k=checkout f=fetch F=pull P=push z=stash q=quit\n" out)
-      (display "      g=refresh n/p=navigate  (s/u on diff hunk = stage/unstage hunk)\n" out)
+      (display "\nKeys: s=stage u=unstage S=stage-all c=commit a=amend d=diff l=log\n" out)
+      (display "      b=branch k=checkout f=fetch F=pull P=push z=stash Z=pop\n" out)
+      (display "      x=cherry-pick X=revert g=refresh n/p=navigate q=quit\n" out)
+      (display "      (s/u on diff hunk = stage/unstage hunk)\n" out)
       (get-output-string out))))
 
 ;;;============================================================================
@@ -330,5 +331,30 @@
 (def (magit-branch-names dir)
   "Get list of branch names (local + remote) for narrowing."
   (let* ((output (magit-run-git '("branch" "-a" "--format=%(refname:short)") dir))
+         (lines (string-split output #\newline)))
+    (filter (lambda (s) (> (string-length s) 0)) lines)))
+
+(def (magit-remote-names dir)
+  "Get list of remote names."
+  (let* ((output (magit-run-git '("remote") dir))
+         (lines (string-split output #\newline)))
+    (filter (lambda (s) (> (string-length s) 0)) lines)))
+
+(def (magit-current-branch dir)
+  "Get the current branch name."
+  (string-trim (magit-run-git '("rev-parse" "--abbrev-ref" "HEAD") dir)))
+
+(def (magit-upstream-branch dir)
+  "Get the upstream tracking branch, or #f if none."
+  (let ((output (magit-run-git '("rev-parse" "--abbrev-ref" "@{upstream}") dir)))
+    (if (or (string=? output "") (string-prefix? "fatal" output))
+      #f
+      (string-trim output))))
+
+(def (magit-recent-commits dir (count 20))
+  "Get recent commit lines for cherry-pick selection."
+  (let* ((output (magit-run-git
+                   (list "log" (string-append "-" (number->string count))
+                         "--format=%h %s") dir))
          (lines (string-split output #\newline)))
     (filter (lambda (s) (> (string-length s) 0)) lines)))

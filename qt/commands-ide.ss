@@ -851,30 +851,86 @@
               (qt-plain-text-edit-set-cursor-position! ed 0))))))))
 
 (def (cmd-magit-fetch app)
-  "Fetch from all remotes."
-  (when *magit-dir*
-    (echo-message! (app-state-echo app) "Fetching...")
-    (magit-run-git/async '("fetch" "--all") *magit-dir*
+  "Fetch from remotes with remote selection."
+  (let* ((dir (or *magit-dir* (current-directory)))
+         (remotes (magit-remote-names dir))
+         (remote (cond
+                   ((null? remotes) "origin")
+                   ((= (length remotes) 1) (car remotes))
+                   (else
+                    (let ((r (qt-echo-read-with-narrowing app "Fetch remote:"
+                               (cons "--all--" remotes))))
+                      (if (or (not r) (string=? r "")) "origin" r)))))
+         (args (if (string=? remote "--all--")
+                 '("fetch" "--all")
+                 (list "fetch" remote))))
+    (echo-message! (app-state-echo app)
+      (string-append "Fetching " (if (string=? remote "--all--") "all remotes" remote) "..."))
+    (magit-run-git/async args dir
       (lambda (output)
-        (echo-message! (app-state-echo app) "Fetched from all remotes")))))
+        (echo-message! (app-state-echo app)
+          (string-append "Fetched "
+            (if (string=? remote "--all--") "all remotes" remote)))
+        (when (buffer-by-name "*Magit*")
+          (cmd-magit-status app))))))
 
 (def (cmd-magit-pull app)
-  "Pull from remote."
-  (when *magit-dir*
-    (echo-message! (app-state-echo app) "Pulling...")
-    (magit-run-git/async '("pull") *magit-dir*
-      (lambda (output)
+  "Pull from remote with rebase option."
+  (let* ((dir (or *magit-dir* (current-directory)))
+         (branch (magit-current-branch dir))
+         (upstream (magit-upstream-branch dir)))
+    (if (not upstream)
+      (echo-error! (app-state-echo app)
+        (string-append "No upstream for " branch ". Push first with P to set upstream."))
+      (begin
         (echo-message! (app-state-echo app)
-          (if (string=? output "") "Pull complete" (string-trim output)))))))
+          (string-append "Pulling " upstream " into " branch "..."))
+        (magit-run-git/async '("pull") dir
+          (lambda (output)
+            (let ((msg (string-trim output)))
+              (echo-message! (app-state-echo app)
+                (if (string=? msg "") "Pull complete (already up to date)"
+                    (let* ((len (string-length msg))
+                           (first-line-end (let loop ((i 0))
+                                             (cond ((>= i len) len)
+                                                   ((char=? (string-ref msg i) #\newline) i)
+                                                   (else (loop (+ i 1)))))))
+                      (substring msg 0 (min first-line-end 80))))))
+            (when (buffer-by-name "*Magit*")
+              (cmd-magit-status app))))))))
 
 (def (cmd-magit-push app)
-  "Push to remote."
-  (when *magit-dir*
-    (echo-message! (app-state-echo app) "Pushing...")
-    (magit-run-git/async '("push") *magit-dir*
-      (lambda (output)
+  "Push to remote with upstream setup and force-with-lease option."
+  (let* ((dir (or *magit-dir* (current-directory)))
+         (branch (magit-current-branch dir))
+         (upstream (magit-upstream-branch dir))
+         (remotes (magit-remote-names dir))
+         (default-remote (if (null? remotes) "origin" (car remotes))))
+    (if (not upstream)
+      ;; No upstream — offer to set one
+      (let* ((remote (if (<= (length remotes) 1) default-remote
+                       (let ((r (qt-echo-read-with-narrowing app "Push to remote:" remotes)))
+                         (if (or (not r) (string=? r "")) default-remote r)))))
         (echo-message! (app-state-echo app)
-          (if (string=? output "") "Pushed" (string-trim output)))))))
+          (string-append "Pushing " branch " to " remote " (setting upstream)..."))
+        (magit-run-git/async (list "push" "-u" remote branch) dir
+          (lambda (output)
+            (echo-message! (app-state-echo app)
+              (string-append "Pushed " branch " → " remote "/" branch))
+            (when (buffer-by-name "*Magit*")
+              (cmd-magit-status app)))))
+      ;; Has upstream — normal push
+      (begin
+        (echo-message! (app-state-echo app)
+          (string-append "Pushing " branch " → " upstream "..."))
+        (magit-run-git/async '("push") dir
+          (lambda (output)
+            (echo-message! (app-state-echo app)
+              (if (string=? output "")
+                (string-append "Pushed " branch " → " upstream)
+                (string-trim output)))
+            (when (buffer-by-name "*Magit*")
+              (cmd-magit-status app))))))))
 
 (def (cmd-magit-rebase app)
   "Rebase onto a branch."
@@ -1000,6 +1056,52 @@
           (if (string=? output "")
             (string-append "Switched to: " branch)
             (string-trim output)))))))
+
+(def (cmd-magit-cherry-pick app)
+  "Cherry-pick a commit using narrowing selection."
+  (let* ((dir (or *magit-dir* (current-directory)))
+         (commits (magit-recent-commits dir 30))
+         (selection (if (null? commits)
+                      (qt-echo-read-string app "Cherry-pick commit hash: ")
+                      (qt-echo-read-with-narrowing app "Cherry-pick commit:" commits))))
+    (when (and selection (> (string-length selection) 0))
+      (let* ((hash (let ((sp (let loop ((i 0))
+                                (cond ((>= i (string-length selection)) (string-length selection))
+                                      ((char=? (string-ref selection i) #\space) i)
+                                      (else (loop (+ i 1)))))))
+                     (substring selection 0 sp))))
+        (echo-message! (app-state-echo app) (string-append "Cherry-picking " hash "..."))
+        (magit-run-git/async (list "cherry-pick" hash) dir
+          (lambda (output)
+            (echo-message! (app-state-echo app)
+              (if (string=? output "")
+                (string-append "Cherry-picked " hash)
+                (string-trim output)))
+            (when (buffer-by-name "*Magit*")
+              (cmd-magit-status app))))))))
+
+(def (cmd-magit-revert-commit app)
+  "Revert a commit using narrowing selection."
+  (let* ((dir (or *magit-dir* (current-directory)))
+         (commits (magit-recent-commits dir 30))
+         (selection (if (null? commits)
+                      (qt-echo-read-string app "Revert commit hash: ")
+                      (qt-echo-read-with-narrowing app "Revert commit:" commits))))
+    (when (and selection (> (string-length selection) 0))
+      (let* ((hash (let ((sp (let loop ((i 0))
+                                (cond ((>= i (string-length selection)) (string-length selection))
+                                      ((char=? (string-ref selection i) #\space) i)
+                                      (else (loop (+ i 1)))))))
+                     (substring selection 0 sp))))
+        (echo-message! (app-state-echo app) (string-append "Reverting " hash "..."))
+        (magit-run-git/async (list "revert" "--no-edit" hash) dir
+          (lambda (output)
+            (echo-message! (app-state-echo app)
+              (if (string=? output "")
+                (string-append "Reverted " hash)
+                (string-trim output)))
+            (when (buffer-by-name "*Magit*")
+              (cmd-magit-status app))))))))
 
 ;;;============================================================================
 ;;; Text manipulation
