@@ -210,6 +210,7 @@
   (register-command! 'highlight-word-at-point cmd-highlight-word-at-point)
   (register-command! 'grep cmd-grep)
   (register-command! 'rgrep cmd-rgrep)
+  (register-command! 'consult-ripgrep cmd-consult-ripgrep)
   (register-command! 'grep-goto cmd-grep-goto)
   (register-command! 'next-grep-result cmd-next-grep-result)
   (register-command! 'previous-grep-result cmd-previous-grep-result)

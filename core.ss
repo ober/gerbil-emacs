@@ -625,6 +625,7 @@
 
   ;; Grep buffer
   (keymap-bind! *meta-s-map* "g" 'grep-buffer)
+  (keymap-bind! *meta-s-map* "r" 'consult-ripgrep)
 
   ;; Insert date, insert char
   (keymap-bind! *ctrl-c-map* "D" 'insert-date)

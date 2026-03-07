@@ -1095,3 +1095,35 @@
     (echo-message! (app-state-echo app)
       (if (= new 1) "Overwrite mode ON" "Overwrite mode OFF"))))
 
+(def (cmd-consult-ripgrep app)
+  "Interactive ripgrep search. Runs rg in the project root and shows
+   results in the *Grep* buffer."
+  (let* ((buf (current-buffer-from-app app))
+         (fp (buffer-file-path buf))
+         (root (or (project-current app) (current-directory)))
+         (pattern (app-read-string app
+                    (string-append "rg in " (path-strip-directory root) ": "))))
+    (when (and pattern (not (string-empty? pattern)))
+      (echo-message! (app-state-echo app) "Searching...")
+      (with-catch
+        (lambda (e)
+          (echo-error! (app-state-echo app) "rg not found or failed"))
+        (lambda ()
+          (let* ((p (open-process
+                      (list path: "rg"
+                            arguments: (list "--vimgrep" "--color" "never"
+                                             "--max-count" "500" pattern root)
+                            stdout-redirection: #t
+                            stderr-redirection: #f)))
+                 (output (read-line p #f))
+                 (rc (process-status p)))
+            (if (or (not output) (not (string? output)) (string-empty? output))
+              (echo-message! (app-state-echo app) "No matches found")
+              (let ((lines (string-split output #\newline)))
+                (open-output-buffer app "*Grep*"
+                  (string-append "-*- grep -*-\nrg " pattern " " root "\n\n"
+                    (number->string (length lines)) " matches\n\n"
+                    output "\n"))
+                (echo-message! (app-state-echo app)
+                  (string-append (number->string (length lines)) " matches"))))))))))
+

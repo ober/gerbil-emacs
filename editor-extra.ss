@@ -204,6 +204,7 @@
   (register-command! 'describe-coding-system cmd-describe-coding-system)
   (register-command! 'set-terminal-coding-system cmd-set-terminal-coding-system)
   (register-command! 'overwrite-mode cmd-overwrite-mode)
+  (register-command! 'consult-ripgrep cmd-consult-ripgrep)
   ;; Task #47: xref, ibuffer, which-key, markdown, auto-insert, and more
   ;; Xref
   (register-command! 'xref-find-definitions cmd-xref-find-definitions)

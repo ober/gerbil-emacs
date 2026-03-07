@@ -1374,3 +1374,109 @@
             (execute-command! app 'shell)
             (echo-message! echo (string-append "New terminal in: " root))))))))
 
+;;;============================================================================
+;;; Consult-ripgrep — interactive rg with narrowing
+;;;============================================================================
+
+(def (rg-available?)
+  "Check if rg (ripgrep) is on PATH."
+  (with-catch (lambda (e) #f)
+    (lambda ()
+      (let ((p (open-process (list path: "rg" arguments: '("--version")
+                                   stdout-redirection: #t
+                                   stderr-redirection: #f))))
+        (close-port p)
+        (zero? (process-status p))))))
+
+(def (run-rg pattern dir)
+  "Run rg and return list of result strings (file:line:col:text)."
+  (with-catch
+    (lambda (e) [])
+    (lambda ()
+      (let* ((p (open-process
+                  (list path: "rg"
+                        arguments: (list "--vimgrep" "--color" "never"
+                                         "--max-count" "500" pattern dir)
+                        stdout-redirection: #t
+                        stderr-redirection: #f)))
+             (output (read-line p #f))
+             (rc (process-status p)))
+        (if (and output (string? output) (> (string-length output) 0))
+          (let loop ((s output) (acc []))
+            (let ((nl (string-index s #\newline)))
+              (if nl
+                (loop (substring s (+ nl 1) (string-length s))
+                      (cons (substring s 0 nl) acc))
+                (reverse (if (> (string-length s) 0) (cons s acc) acc)))))
+          [])))))
+
+(def (parse-rg-line line)
+  "Parse rg --vimgrep output line: file:line:col:text → (file line-num text)"
+  (let ((c1 (string-index line #\:)))
+    (and c1
+      (let ((c2 (string-index line #\: (+ c1 1))))
+        (and c2
+          (let ((c3 (string-index line #\: (+ c2 1))))
+            (and c3
+              (let ((file (substring line 0 c1))
+                    (line-str (substring line (+ c1 1) c2))
+                    (text (substring line (+ c3 1) (string-length line))))
+                (let ((n (string->number line-str)))
+                  (and n (list file n (string-trim text))))))))))))
+
+(def (cmd-consult-ripgrep app)
+  "Interactive ripgrep search with narrowing. Prompts for pattern,
+   runs rg in the project root, then shows results in a narrowing
+   popup for interactive filtering."
+  (let* ((root (or (project-current app) (current-directory)))
+         (pattern (qt-echo-read-string app
+                    (string-append "rg in " (path-strip-directory root) ": "))))
+    (when (and pattern (> (string-length pattern) 0))
+      (echo-message! (app-state-echo app) "Searching...")
+      (let ((results (run-rg pattern root)))
+        (if (null? results)
+          (echo-message! (app-state-echo app) "No matches found")
+          (let* ((choice (qt-echo-read-with-narrowing app
+                           (string-append "rg [" (number->string (length results))
+                                          " matches]: ")
+                           results))
+                 (parsed (and choice (parse-rg-line choice))))
+            (if parsed
+              (let ((file (car parsed))
+                    (line-num (cadr parsed)))
+                ;; Make path absolute if relative
+                (let ((abs-file (if (string-prefix? "/" file)
+                                  file
+                                  (path-expand file root))))
+                  ;; Open file and jump to line
+                  (when (file-exists? abs-file)
+                    (let* ((ed (current-qt-editor app))
+                           (fr (app-state-frame app))
+                           (name (path-strip-directory abs-file))
+                           (existing (let loop ((bufs *buffer-list*))
+                                       (if (null? bufs) #f
+                                         (let ((b (car bufs)))
+                                           (if (and (buffer-file-path b)
+                                                    (string=? (buffer-file-path b) abs-file))
+                                             b (loop (cdr bufs)))))))
+                           (target-buf (or existing
+                                           (qt-buffer-create! name ed abs-file))))
+                      (qt-buffer-attach! ed target-buf)
+                      (set! (qt-edit-window-buffer (qt-current-window fr)) target-buf)
+                      (when (not existing)
+                        (let ((text (read-file-as-string abs-file)))
+                          (when text
+                            (qt-plain-text-edit-set-text! ed text)
+                            (qt-text-document-set-modified!
+                              (buffer-doc-pointer target-buf) #f)))
+                        (qt-setup-highlighting! app target-buf))
+                      ;; Jump to line
+                      (let* ((text (qt-plain-text-edit-text ed))
+                             (pos (text-line-position text line-num)))
+                        (qt-plain-text-edit-set-cursor-position! ed pos)
+                        (qt-plain-text-edit-ensure-cursor-visible! ed))
+                      (echo-message! (app-state-echo app)
+                        (string-append abs-file ":" (number->string line-num)))))))
+              (when choice
+                (echo-message! (app-state-echo app) "Could not parse result")))))))))
+
