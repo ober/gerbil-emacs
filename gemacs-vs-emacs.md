@@ -1,7 +1,7 @@
 # Gemacs vs GNU Emacs — Feature Comparison
 
-> **Last updated:** 2026-03-06
-> **Gemacs version:** master (42f3aae)
+> **Last updated:** 2026-03-07
+> **Gemacs version:** master (6878421)
 > **Compared against:** GNU Emacs 29.x / 30.x feature set
 
 ## Status Legend
@@ -274,7 +274,7 @@
 | Orderless matching | :large_blue_circle: | Multi-match engine: space-separated AND tokens, `!` negation, `^` prefix |
 | Marginalia (annotations) | :white_check_mark: | Annotator registry with `marginalia-annotate!`, command/buffer/file categories |
 | Embark (actions on candidates) | :white_check_mark: | Action registry with `embark-define-action!`, describe/execute/find-file actions |
-| Consult (enhanced commands) | :yellow_circle: | `consult-grep`, `consult-line` registered but basic |
+| Consult (enhanced commands) | :large_blue_circle: | `consult-ripgrep` (M-s r, narrowing), `consult-line`, `consult-buffer`, `consult-bookmark` |
 | Icomplete / Fido mode | :white_check_mark: | `icomplete-mode` / `fido-mode` toggles |
 | Savehist (persist history) | :large_blue_circle: | `~/.gemacs-history` |
 

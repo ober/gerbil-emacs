@@ -29,6 +29,10 @@ Implemented popup UX matching Ruby Scintilla editors — inline autocomplete dro
 | `qt/commands-edit2.ss` | ~1325 | OK |
 | `editor-extra-editing.ss` | ~1097 | OK (split into editing + editing2) |
 | `editor-extra-editing2.ss` | ~1130 | OK |
+| `qt/commands-config.ss` | ~1087 | OK (split into config + config2) |
+| `qt/commands-config2.ss` | ~1359 | OK |
+| `qt/commands-ide.ss` | ~1165 | OK (split into ide + ide2) |
+| `qt/commands-ide2.ss` | ~1540 | OK |
 | `editor-extra-media.ss` | ~2013 | Slightly over limit |
 | `qt/commands-vcs.ss` | ~2003 | Slightly over limit |
 
@@ -65,6 +69,9 @@ Implemented popup UX matching Ruby Scintilla editors — inline autocomplete dro
 - ~~**Magit worktree management**~~ — DONE: list/add/remove worktrees, `w` key in magit buffer
 - ~~**Project keybindings (C-x p)**~~ — DONE: Emacs 28+ standard prefix map, narrowing for find-file/switch-buffer/switch-project
 - ~~**Windmove keybindings**~~ — DONE: Shift+arrow keys for directional window navigation
+- ~~**File splits: commands-config + commands-ide**~~ — DONE: split 2415→1087+1359 and 2513→1165+1540, all under 2000 limit
+- ~~**Consult-ripgrep (M-s r)**~~ — DONE: interactive `rg` search with narrowing popup, auto-detect project root, jump to result
+- ~~**Consult-bookmark**~~ — DONE: bookmark jump with file:position info in narrowing popup
 
 ### Aspirational
 - LSP in TUI
