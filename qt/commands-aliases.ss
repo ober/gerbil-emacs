@@ -28,6 +28,7 @@
         :gemacs/qt/commands-file
         :gemacs/qt/commands-sexp
         :gemacs/qt/commands-ide
+        :gemacs/qt/commands-ide2
         :gemacs/qt/commands-vcs
         :gemacs/qt/commands-lsp
         :gemacs/qt/commands-shell
