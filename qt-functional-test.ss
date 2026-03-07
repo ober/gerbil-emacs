@@ -2813,6 +2813,11 @@
     (pass! "auto-save-mode registered")
     (fail! "auto-save-mode" #f "registered"))
 
+  ;; Test: ansi-color-apply registered
+  (if (find-command 'ansi-color-apply)
+    (pass! "ansi-color-apply registered")
+    (fail! "ansi-color-apply" #f "registered"))
+
   ;; Test: count-words dispatches without error
   (let-values (((ed _w app) (make-qt-test-app "count-words-test")))
     (qt-plain-text-edit-set-text! ed "hello world\nfoo bar baz\n")

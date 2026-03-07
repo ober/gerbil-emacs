@@ -208,7 +208,8 @@ Returns (file line col message) or #f."
           (set! *compilation-error-index* -1)
           (qt-buffer-attach! ed buf)
           (set! (qt-edit-window-buffer (qt-current-window fr)) buf)
-          (qt-plain-text-edit-set-text! ed text)
+          ;; Render ANSI color codes from compiler output
+          (qt-set-text-with-ansi! ed text)
           (qt-text-document-set-modified! (buffer-doc-pointer buf) #f)
           (qt-plain-text-edit-set-cursor-position! ed 0)
           (echo-message! echo

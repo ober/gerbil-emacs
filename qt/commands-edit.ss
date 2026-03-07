@@ -1217,3 +1217,143 @@ moves more than 5 lines from the last known position."
   (echo-message! (app-state-echo app)
     (if *qt-pulse-mode* "Pulse-on-jump enabled" "Pulse-on-jump disabled")))
 
+;;;============================================================================
+;;; ANSI color rendering for compilation/shell output buffers
+;;;============================================================================
+
+;; Standard ANSI color codes → Scintilla RGB (BGR format for Windows compat)
+(def *ansi-colors*
+  (vector #x000000   ; 0 = black
+          #x0000CC   ; 1 = red
+          #x00CC00   ; 2 = green
+          #x00CCCC   ; 3 = yellow
+          #xCC0000   ; 4 = blue
+          #xCC00CC   ; 5 = magenta
+          #xCCCC00   ; 6 = cyan
+          #xCCCCCC)) ; 7 = white
+
+(def *ansi-bright-colors*
+  (vector #x666666   ; 0 = bright black (gray)
+          #x0000FF   ; 1 = bright red
+          #x00FF00   ; 2 = bright green
+          #x00FFFF   ; 3 = bright yellow
+          #xFF0000   ; 4 = bright blue
+          #xFF00FF   ; 5 = bright magenta
+          #xFFFF00   ; 6 = bright cyan
+          #xFFFFFF)) ; 7 = bright white
+
+(def (ansi-parse-segments text)
+  "Parse text with ANSI escape codes into a list of (string fg bg bold?) segments.
+Returns (values clean-text segments) where segments is a list of
+(start-in-clean length fg-color bg-color bold?)."
+  (let* ((len (string-length text))
+         (clean (open-output-string))
+         (segments [])
+         (cur-fg #f)
+         (cur-bg #f)
+         (cur-bold #f)
+         (seg-start 0))
+    (let loop ((i 0) (clean-pos 0))
+      (cond
+        ((>= i len)
+         ;; Flush last segment
+         (when (and (> clean-pos seg-start) (or cur-fg cur-bg cur-bold))
+           (set! segments (cons (list seg-start (- clean-pos seg-start)
+                                      cur-fg cur-bg cur-bold) segments)))
+         (values (get-output-string clean) (reverse segments)))
+        ;; ESC [ sequence
+        ((and (char=? (string-ref text i) #\escape)
+              (< (+ i 1) len)
+              (char=? (string-ref text (+ i 1)) #\[))
+         ;; Flush current segment if it has styling
+         (when (and (> clean-pos seg-start) (or cur-fg cur-bg cur-bold))
+           (set! segments (cons (list seg-start (- clean-pos seg-start)
+                                      cur-fg cur-bg cur-bold) segments)))
+         ;; Parse SGR parameters
+         (let param-loop ((j (+ i 2)) (params []))
+           (cond
+             ((>= j len) (loop j clean-pos))  ; unterminated
+             ((char=? (string-ref text j) #\m) ; end of SGR
+              ;; Apply SGR codes
+              (let ((codes (reverse params)))
+                (for-each
+                  (lambda (code)
+                    (cond
+                      ((= code 0) (set! cur-fg #f) (set! cur-bg #f) (set! cur-bold #f))
+                      ((= code 1) (set! cur-bold #t))
+                      ((and (>= code 30) (<= code 37))
+                       (set! cur-fg (vector-ref
+                                      (if cur-bold *ansi-bright-colors* *ansi-colors*)
+                                      (- code 30))))
+                      ((and (>= code 40) (<= code 47))
+                       (set! cur-bg (vector-ref *ansi-colors* (- code 40))))
+                      ((and (>= code 90) (<= code 97))
+                       (set! cur-fg (vector-ref *ansi-bright-colors* (- code 90))))
+                      ((and (>= code 100) (<= code 107))
+                       (set! cur-bg (vector-ref *ansi-bright-colors* (- code 100))))))
+                  (if (null? codes) [0] codes)))  ; empty = reset
+              (set! seg-start clean-pos)
+              (loop (+ j 1) clean-pos))
+             ((or (char-numeric? (string-ref text j))
+                  (char=? (string-ref text j) #\;))
+              ;; Accumulate parameter
+              (if (char=? (string-ref text j) #\;)
+                (param-loop (+ j 1) (cons 0 params))  ; placeholder
+                ;; Build number
+                (let num-loop ((k j) (n 0))
+                  (if (and (< k len) (char-numeric? (string-ref text k)))
+                    (num-loop (+ k 1) (+ (* n 10) (- (char->integer (string-ref text k))
+                                                      (char->integer #\0))))
+                    (begin
+                      (set! params (cons n params))
+                      (if (and (< k len) (char=? (string-ref text k) #\;))
+                        (param-loop (+ k 1) params)
+                        (param-loop k params)))))))
+             (else
+              ;; Unknown char in escape — skip the whole sequence
+              (loop (+ j 1) clean-pos)))))
+        (else
+         ;; Normal character
+         (write-char (string-ref text i) clean)
+         (loop (+ i 1) (+ clean-pos 1)))))))
+
+(def (qt-apply-ansi-styles! ed segments)
+  "Apply ANSI color segments to a Scintilla editor using manual styling.
+SEGMENTS is a list of (start length fg bg bold?) from ansi-parse-segments."
+  ;; Define styles 40-55 for ANSI colors (avoid conflict with lexer styles 0-39)
+  (let ((style-id 40))
+    (for-each
+      (lambda (seg)
+        (let ((start (car seg))
+              (len (cadr seg))
+              (fg (caddr seg))
+              (bg (cadddr seg))
+              (bold? (car (cddddr seg))))
+          (when (and (> len 0) (<= style-id 55))
+            ;; Configure this style
+            (when fg (sci-send ed SCI_STYLESETFORE style-id fg))
+            (when bg (sci-send ed SCI_STYLESETBACK style-id bg))
+            (when bold? (sci-send ed SCI_STYLESETBOLD style-id 1))
+            ;; Apply styling to the range
+            (sci-send ed SCI_STARTSTYLING start 0)
+            (sci-send ed SCI_SETSTYLING len style-id)
+            (set! style-id (+ style-id 1)))))
+      segments)))
+
+(def (qt-set-text-with-ansi! ed text)
+  "Set editor text, stripping ANSI codes and applying color styles.
+Returns the clean text (without ANSI codes)."
+  ;; Disable lexer to allow manual styling
+  (sci-send ed 4033 0 0)  ; SCI_SETILEXER = 4033, set to NULL for manual styling
+  (let-values (((clean-text segments) (ansi-parse-segments text)))
+    (qt-plain-text-edit-set-text! ed clean-text)
+    (when (pair? segments)
+      (qt-apply-ansi-styles! ed segments))
+    clean-text))
+
+(def (cmd-ansi-color-apply app)
+  "Re-render current buffer, converting ANSI escape codes to colors."
+  (let* ((ed (current-qt-editor app))
+         (text (qt-plain-text-edit-text ed)))
+    (qt-set-text-with-ansi! ed text)
+    (echo-message! (app-state-echo app) "ANSI colors applied")))

@@ -959,6 +959,8 @@
   (register-command! 'linum-mode cmd-toggle-line-numbers)
   (register-command! 'pulse-line-mode cmd-toggle-pulse-line)
   (register-command! 'toggle-pulse-line cmd-toggle-pulse-line)
+  (register-command! 'ansi-color-apply cmd-ansi-color-apply)
+  (register-command! 'ansi-color-for-comint-mode-on cmd-ansi-color-apply)
   (register-command! 'sort-numeric-fields cmd-sort-numeric-fields)
   (register-command! 'find-dired cmd-find-dired)
   (register-command! 'find-name-dired cmd-find-name-dired)
