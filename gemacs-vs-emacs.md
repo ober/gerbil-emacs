@@ -1,7 +1,7 @@
 # Gemacs vs GNU Emacs — Feature Comparison
 
 > **Last updated:** 2026-03-07
-> **Gemacs version:** master (6878421)
+> **Gemacs version:** master (283de82)
 > **Compared against:** GNU Emacs 29.x / 30.x feature set
 
 ## Status Legend
@@ -346,8 +346,12 @@
 | Header line | :white_check_mark: | Toggle header line display (file path breadcrumb) |
 | Fringe indicators | :yellow_circle: | Line numbers; no bitmap fringes |
 | Display tables | :white_check_mark: | `set-display-table-entry` / `describe-display-table` |
+| Fill-column indicator | :white_check_mark: | Visual vertical line via Scintilla edge mode (TUI + Qt) |
+| Goto-address-mode | :white_check_mark: | URL detection and highlighting with Scintilla indicators (TUI + Qt) |
+| Subword-mode | :white_check_mark: | CamelCase-aware word navigation: forward, backward, kill (TUI + Qt) |
+| Rainbow delimiters | :white_check_mark: | Color-coded parentheses/brackets via Scintilla indicators |
 
-**Summary:** Single-frame Qt application. No multi-frame support. Basic display features work.
+**Summary:** Single-frame Qt application. No multi-frame support. Display features work well including fill-column indicator, URL highlighting, and rainbow delimiters.
 
 ---
 
@@ -496,7 +500,7 @@
 | S-expression navigation | :white_check_mark: | Forward/backward/up/down sexp |
 | Compile command | :white_check_mark: | `C-x d` runs compile |
 | Error navigation | :white_check_mark: | Next/prev error in compilation buffer |
-| Flycheck (syntax checking) | :yellow_circle: | Toggle registered; LSP diagnostics partial |
+| Flycheck (syntax checking) | :large_blue_circle: | Live Gerbil syntax checking, LSP diagnostics, toggle-flymake delegates to flycheck |
 | Flymake | :yellow_circle: | Registered |
 | Eldoc (function signatures) | :large_blue_circle: | Echo area display |
 | Xref (definitions) | :large_blue_circle: | Grep-based fallback |
@@ -579,7 +583,7 @@
 |---------|--------|-------|
 | Dabbrev (dynamic abbrev) | :white_check_mark: | `M-/` word completion from buffer |
 | Hippie-expand | :yellow_circle: | Registered |
-| Complete at point | :white_check_mark: | `C-M-i` |
+| Complete at point | :white_check_mark: | `C-M-i` — Scintilla native autocomplete popup with buffer-local word candidates |
 | Company mode | :large_blue_circle: | Scintilla autocomplete popup with buffer words + LSP merged |
 | Corfu mode | :large_blue_circle: | Scintilla autocomplete popup (500ms idle trigger) |
 | Cape (completion extensions) | :white_check_mark: | `cape-dabbrev`, `cape-file`, `cape-history`, `cape-keyword` |
@@ -620,7 +624,7 @@
 | Ispell region | :large_blue_circle: | Scan region for misspellings |
 | Ispell buffer | :large_blue_circle: | Whole-buffer check |
 | Suggestion menu | :white_check_mark: | Interactive selection from ispell output |
-| Flyspell (on-the-fly) | :large_blue_circle: | `flyspell-mode` toggles on-demand spell check with aspell; TUI uses Scintilla squiggle indicators, Qt reports misspelled words |
+| Flyspell (on-the-fly) | :white_check_mark: | `flyspell-mode` with aspell backend; TUI uses squiggle indicators, Qt highlights misspelled words; `toggle-flyspell` works in both layers |
 | Personal dictionary | :large_blue_circle: | Supported via ispell |
 | Language selection | :white_check_mark: | `ispell-change-dictionary` with narrowing (Qt) or prompt (TUI) |
 | Aspell/Hunspell backend | :large_blue_circle: | Uses ispell subprocess |
@@ -732,7 +736,7 @@
 
 | Feature | Status | Notes |
 |---------|--------|-------|
-| Describe key (`C-h k`) | :white_check_mark: | Shows command bound to key |
+| Describe key (`C-h k`) | :white_check_mark: | Intercepts next keypress, shows binding + help in `*Help*` buffer (TUI + Qt) |
 | Describe command (`C-h f`) | :white_check_mark: | |
 | Describe variable (`C-h v`) | :large_blue_circle: | Narrowing selection, shows value and docs in `*Help*` |
 | List all bindings (`C-h b`) | :white_check_mark: | |
@@ -740,7 +744,7 @@
 | Apropos (`C-h a`) | :white_check_mark: | Search commands by keyword |
 | View lossage (`C-h l`) | :white_check_mark: | Last 300 keystrokes |
 | Command history | :white_check_mark: | |
-| Info reader | :white_check_mark: | Built-in Info browser with topics: commands, keybindings, org, config, about |
+| Info reader | :white_check_mark: | GNU Info subprocess reader (TUI + Qt), topic prompting, built-in gemacs help |
 | Emacs tutorial | :white_check_mark: | Built-in tutorial with navigation, editing, files, search, windows, org mode |
 | Built-in documentation browser | :white_check_mark: | `gemacs-doc` with topic browsing (getting-started, keybindings, commands, org-mode) |
 
@@ -1139,7 +1143,7 @@ No remaining Tier 1 gaps. All core editing, completion, and navigation features 
 | **Multi-vterm** (multiple terminals, copy mode)         | Heavy use        | :white_check_mark: Works     | None — term-list/next/prev + copy mode   |
 | **Eglot / LSP** (completion, hover, goto-def, refs)     | Working          | :white_check_mark: Works     | None — full UI wiring with keybindings   |
 | **Copilot / AI** (gptel, claude-shell, copilot)         | Active           | :yellow_circle: Commands scaffolded | **Low** — needs API keys for real AI    |
-| **Corfu** (completion-at-point popup)                   | Active           | :yellow_circle: Echo-area    | **Medium** — works but no inline popup   |
+| **Corfu** (completion-at-point popup)                   | Active           | :white_check_mark: Popup     | **None** — Scintilla native autocomplete popup + LSP completion |
 | **Org tables + export**                                 | Heavy use        | :white_check_mark: Works     | None                                     |
 | **Org folding + TODO**                                  | Heavy use        | :white_check_mark: Works     | None                                     |
 | **Golden ratio** (window auto-sizing)                   | Enabled          | :white_check_mark: Works     | None                                     |
