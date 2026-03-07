@@ -420,7 +420,7 @@
 | Stage / unstage hunks | :large_blue_circle: | Hunk-level staging via `git apply --cached` |
 | Stage / unstage files | :white_check_mark: | `s` to stage, `u` to unstage in status buffer |
 | Commit with message | :large_blue_circle: | Dedicated `*Magit: Commit*` buffer with diff preview, C-c C-c / C-c C-k |
-| Amend commit | :yellow_circle: | Basic |
+| Amend commit | :large_blue_circle: | `a` in magit opens commit buffer pre-filled with previous message |
 | Push / pull | :yellow_circle: | Shell passthrough |
 | Log viewing | :large_blue_circle: | Interactive log with date/author, Enter shows commit diff |
 | Diff viewing | :large_blue_circle: | Shows staged + unstaged diffs for file at point |
