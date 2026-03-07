@@ -8,6 +8,7 @@
         qt-echo-read-string
         qt-echo-read-string-with-completion
         qt-echo-read-file-with-completion
+        qt-echo-read-file-with-narrowing
         qt-echo-read-with-narrowing
         qt-minibuffer-init!)
 
@@ -60,6 +61,10 @@
 (def *mb-all-candidates* [])  ; Full unfiltered candidate list
 (def *mb-filtered* [])        ; Currently filtered candidates (vector for O(1) indexing)
 (def *mb-max-visible* 15)     ; Max rows shown in narrowing list
+;; File narrowing state (helm-style find-file)
+(def *mb-file-narrowing?* #f)     ; When #t, narrowing browses filesystem
+(def *mb-file-dir* "")            ; Current directory for file narrowing
+(def *mb-user-selected?* #f)      ; Whether user explicitly navigated the list
 
 (def (mb-style)
   "Generate minibuffer Qt stylesheet with current font settings."
@@ -242,7 +247,8 @@
     (let* ((cur (qt-list-widget-current-row *mb-list*))
            (count (vector-length *mb-filtered*))
            (next (modulo (+ cur delta) count)))
-      (qt-list-widget-set-current-row! *mb-list* next))))
+      (qt-list-widget-set-current-row! *mb-list* next)
+      (set! *mb-user-selected?* #t))))
 
 (def (narrowing-selected-text)
   "Return the currently selected candidate text, or the input text if none."
@@ -252,6 +258,66 @@
         (vector-ref *mb-filtered* row)
         (qt-line-edit-text *mb-input*)))
     (qt-line-edit-text *mb-input*)))
+
+;;;============================================================================
+;;; File narrowing — Helm-style directory browser
+;;;============================================================================
+
+(def (expand-tilde-path path)
+  "Expand ~ at start of path to home directory."
+  (if (and (> (string-length path) 0)
+           (char=? (string-ref path 0) #\~))
+    (let ((home (getenv "HOME" "/")))
+      (cond
+        ((= (string-length path) 1)
+         (string-append home "/"))
+        ((char=? (string-ref path 1) #\/)
+         (string-append home (substring path 1 (string-length path))))
+        (else path)))
+    path))
+
+(def (file-narrowing-update-list! text)
+  "Parse input path, list directory contents, filter by partial filename."
+  (let* ((expanded (expand-tilde-path text))
+         (slash-pos (let loop ((i (- (string-length expanded) 1)))
+                      (cond ((< i 0) #f)
+                            ((char=? (string-ref expanded i) #\/) i)
+                            (else (loop (- i 1))))))
+         (dir (if slash-pos
+                (substring expanded 0 (+ slash-pos 1))
+                (current-directory)))
+         (partial (if slash-pos
+                    (substring expanded (+ slash-pos 1) (string-length expanded))
+                    expanded))
+         (files (list-directory-safe dir))
+         (annotated (map (lambda (f)
+                           (with-catch (lambda (e) f)
+                             (lambda ()
+                               (let ((full (string-append dir f)))
+                                 (if (and (file-exists? full)
+                                          (eq? 'directory (file-info-type (file-info full))))
+                                   (string-append f "/")
+                                   f)))))
+                         files))
+         (filtered (if (string=? partial "")
+                     annotated
+                     (filter (lambda (f) (fuzzy-file-match? partial f)) annotated)))
+         (shown (if (> (length filtered) (* *mb-max-visible* 3))
+                  (take filtered (* *mb-max-visible* 3))
+                  filtered)))
+    (set! *mb-file-dir* dir)
+    (set! *mb-user-selected?* #f)
+    (set! *mb-filtered* (list->vector shown))
+    (qt-list-widget-clear! *mb-list*)
+    (for-each (lambda (c) (qt-list-widget-add-item! *mb-list* c)) shown)
+    (when (> (vector-length *mb-filtered*) 0)
+      (qt-list-widget-set-current-row! *mb-list* 0))
+    (let ((total (length annotated))
+          (matched (length filtered)))
+      (qt-label-set-text! *mb-prompt*
+        (string-append *mb-narrowing-prompt*
+                       " (" (number->string matched)
+                       "/" (number->string total) ") ")))))
 
 ;;;============================================================================
 ;;; Initialize inline minibuffer (called once during app startup)
@@ -294,12 +360,29 @@
     (qt-layout-set-stretch-factor! parent-layout container 0)
     ;; Initially hidden
     (qt-widget-hide! container)
-    ;; Connect Enter signal — in narrowing mode, use selected item
+    ;; Connect Enter signal
     (qt-on-return-pressed! input
       (lambda ()
-        (if *mb-narrowing?*
-          (set! *mb-result* (list (narrowing-selected-text)))
-          (set! *mb-result* (list (qt-line-edit-text input))))))
+        (cond
+          (*mb-file-narrowing?*
+           (if *mb-user-selected?*
+             ;; User explicitly navigated list — use selected item
+             (let ((selected (narrowing-selected-text)))
+               (cond
+                 ((string-suffix? "/" selected)
+                  ;; Directory — descend into it
+                  (qt-line-edit-set-text! *mb-input*
+                    (string-append *mb-file-dir* selected)))
+                 (else
+                  ;; File — return full path
+                  (set! *mb-result*
+                    (list (string-append *mb-file-dir* selected))))))
+             ;; User just pressed Enter on typed input — return as-is
+             (set! *mb-result* (list (qt-line-edit-text *mb-input*)))))
+          (*mb-narrowing?*
+           (set! *mb-result* (list (narrowing-selected-text))))
+          (else
+           (set! *mb-result* (list (qt-line-edit-text input)))))))
     ;; Connect key handler for Escape, Tab, and arrow keys
     (qt-on-key-press! input
       (lambda ()
@@ -329,12 +412,21 @@
     (qt-on-text-changed! input
       (lambda (text)
         (when *mb-narrowing?*
-          (narrowing-update-list! text))))
+          (if *mb-file-narrowing?*
+            (file-narrowing-update-list! text)
+            (narrowing-update-list! text)))))
     ;; Double-click on list item selects it
     (qt-on-item-double-clicked! list-widget
       (lambda ()
         (when *mb-narrowing?*
-          (set! *mb-result* (list (narrowing-selected-text))))))
+          (if *mb-file-narrowing?*
+            (let ((selected (narrowing-selected-text)))
+              (if (string-suffix? "/" selected)
+                (qt-line-edit-set-text! *mb-input*
+                  (string-append *mb-file-dir* selected))
+                (set! *mb-result*
+                  (list (string-append *mb-file-dir* selected)))))
+            (set! *mb-result* (list (narrowing-selected-text)))))))
     ;; Store references
     (set! *mb-container* container)
     (set! *mb-prompt* prompt)
@@ -532,6 +624,60 @@
           (set! *mb-filtered* (vector))
           (qt-list-widget-clear! *mb-list*)
           ;; Restore: hide list + minibuffer, show echo label
+          (qt-widget-hide! *mb-list*)
+          (qt-widget-hide! *mb-container*)
+          (qt-widget-show! *mb-echo-label*)
+          (let ((ed (qt-current-editor fr)))
+            (when ed (qt-widget-set-focus! ed)))
+          text)
+        (loop)))))
+
+;;;============================================================================
+;;; Helm-style file browser — narrowing list of directory contents
+;;;============================================================================
+
+(def (qt-echo-read-file-with-narrowing app prompt default-dir)
+  "Helm-style file browser: narrowing list of directory contents with path pre-filled.
+   default-dir is the initial directory to browse (with trailing slash).
+   Enter on typed input returns the path as-is (e.g. for dired or new file).
+   Navigate list with C-n/C-p/Up/Down, then Enter to descend into dirs or open files."
+  (let ((fr (app-state-frame app)))
+    ;; Set up minibuffer
+    (set! *mb-narrowing-prompt* prompt)
+    (qt-label-set-text! *mb-prompt* prompt)
+    (qt-line-edit-set-completer! *mb-input* #f)
+    ;; Set up file narrowing state
+    (set! *mb-narrowing?* #t)
+    (set! *mb-file-narrowing?* #t)
+    (set! *mb-file-dir* default-dir)
+    (set! *mb-user-selected?* #f)
+    (set! *mb-all-candidates* [])
+    ;; Pre-fill with default directory — triggers text-changed → file listing
+    (qt-line-edit-set-text! *mb-input* default-dir)
+    ;; Hide echo label, show narrowing list + minibuffer
+    (qt-widget-hide! *mb-echo-label*)
+    (qt-widget-show! *mb-list*)
+    (qt-widget-show! *mb-container*)
+    (qt-widget-set-focus! *mb-input*)
+    ;; Blocking event loop
+    (set! *mb-result* #f)
+    (let loop ()
+      (qt-app-process-events! *mb-qt-app*)
+      (thread-sleep! 0.01)
+      (if *mb-result*
+        (let ((text (if (pair? *mb-result*)
+                      (if (null? *mb-result*) #f
+                        (let ((t (car *mb-result*)))
+                          (if (string=? t "") #f t)))
+                      #f)))
+          ;; Clean up
+          (set! *mb-narrowing?* #f)
+          (set! *mb-file-narrowing?* #f)
+          (set! *mb-file-dir* "")
+          (set! *mb-user-selected?* #f)
+          (set! *mb-all-candidates* [])
+          (set! *mb-filtered* (vector))
+          (qt-list-widget-clear! *mb-list*)
           (qt-widget-hide! *mb-list*)
           (qt-widget-hide! *mb-container*)
           (qt-widget-show! *mb-echo-label*)

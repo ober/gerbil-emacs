@@ -343,7 +343,12 @@
 
 (def (cmd-find-file app)
   (let* ((echo (app-state-echo app))
-         (filename (qt-echo-read-file-with-completion app "Find file: ")))
+         (buf (current-qt-buffer app))
+         (fp (and buf (buffer-file-path buf)))
+         (default-dir (if fp
+                       (path-directory fp)
+                       (current-directory)))
+         (filename (qt-echo-read-file-with-narrowing app "Find file: " default-dir)))
     (when filename
       (when (> (string-length filename) 0)
         (let ((filename (expand-filename filename)))

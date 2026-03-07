@@ -39,7 +39,7 @@ Implemented popup UX matching Ruby Scintilla editors — inline autocomplete dro
 ## Backlog (Prioritized)
 
 ### High Impact
-- **Helm-style C-x C-f find-file** — popup file selector with default path pre-filled (current buffer's directory), incremental narrowing, like Emacs helm-find-files
+- ~~**Helm-style C-x C-f find-file**~~ — DONE: popup file selector with default path pre-filled, incremental narrowing, directory descent on Enter
 - **Persistent M-x command history** — track frequently used commands, sort to top, persist across sessions
 - **Proper narrow-to-defun** — detect function boundaries for Scheme/Lisp and common languages
 

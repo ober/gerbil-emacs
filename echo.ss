@@ -264,7 +264,7 @@
 ;;; Returns the file path string, or #f if cancelled (C-g).
 ;;;============================================================================
 
-(def (echo-read-file-with-completion echo prompt row width)
+(def (echo-read-file-with-completion echo prompt row width (initial-input ""))
   (echo-clear! echo)
   ;; Helper: expand tilde at start of path
   (def (expand-tilde path)
@@ -303,7 +303,7 @@
           (values dir partial display-prefix))
         (values (current-directory) expanded ""))))
 
-  (let loop ((input "") (match-idx 0) (search-pat #f)
+  (let loop ((input initial-input) (match-idx 0) (search-pat #f)
              (hist-idx -1) (saved-input ""))
     ;; Compute matches for display
     (let-values (((dir partial display-prefix) (parse-input (or search-pat input))))

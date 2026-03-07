@@ -851,9 +851,14 @@
          (fr (app-state-frame app))
          (row (- (frame-height fr) 1))
          (width (frame-width fr))
-         ;; Directory-aware fuzzy completion with ~ expansion
+         (buf (current-buffer-from-app app))
+         (fp (and buf (buffer-file-path buf)))
+         (default-dir (if fp
+                       (path-directory fp)
+                       (current-directory)))
+         ;; Directory-aware fuzzy completion with ~ expansion, default path pre-filled
          (filename (echo-read-file-with-completion echo "Find file: "
-                      row width)))
+                      row width default-dir)))
     (when filename
       (when (> (string-length filename) 0)
         (let ((filename (expand-filename filename)))
