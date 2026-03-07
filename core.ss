@@ -937,6 +937,12 @@
   (keymap-bind! *help-map* "i" 'info)
   (keymap-bind! *help-map* "l" 'view-lossage)
 
+  ;; Windmove (Shift+arrow — standard Emacs windmove-default-keybindings)
+  (keymap-bind! *global-keymap* "S-<left>"  'windmove-left)
+  (keymap-bind! *global-keymap* "S-<right>" 'windmove-right)
+  (keymap-bind! *global-keymap* "S-<up>"    'windmove-up)
+  (keymap-bind! *global-keymap* "S-<down>"  'windmove-down)
+
   ;; Project commands (C-x p prefix — Emacs 28+ standard)
   (keymap-bind! *ctrl-x-map* "p" *ctrl-x-p-map*)
   (keymap-bind! *ctrl-x-p-map* "f" 'project-find-file)
