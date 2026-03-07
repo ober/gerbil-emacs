@@ -580,8 +580,8 @@
 | Dabbrev (dynamic abbrev) | :white_check_mark: | `M-/` word completion from buffer |
 | Hippie-expand | :yellow_circle: | Registered |
 | Complete at point | :white_check_mark: | `C-M-i` |
-| Company mode | :yellow_circle: | QCompleter popup — not company but equivalent |
-| Corfu mode | :yellow_circle: | Echo-area + QCompleter popup |
+| Company mode | :large_blue_circle: | Scintilla autocomplete popup with buffer words + LSP merged |
+| Corfu mode | :large_blue_circle: | Scintilla autocomplete popup (500ms idle trigger) |
 | Cape (completion extensions) | :white_check_mark: | `cape-dabbrev`, `cape-file`, `cape-history`, `cape-keyword` |
 | File path completion | :white_check_mark: | In minibuffer |
 | Symbol completion | :white_check_mark: | Buffer words + LSP merged on Tab |
@@ -975,9 +975,7 @@
 
 ### Tier 1 — Dealbreakers for Daily Use
 
-| Gap | Impact | Effort |
-|-----|--------|--------|
-| **Completion popup (Company/Corfu)** | No inline completion UI for code | Medium |
+No remaining Tier 1 gaps. All core editing, completion, and navigation features are functional.
 
 ### Tier 2 — Expected by Power Users
 

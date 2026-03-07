@@ -1724,26 +1724,37 @@ If on blank line: insert comment and indent."
 (def *user-variables*
   (hash
     ("fill-column" (cons (lambda () *fill-column*)
-                         (lambda (v) (set! *fill-column* (string->number v)))))
+                         (lambda (v) (set! *fill-column* (or (string->number v) 80)))))
     ("tab-width" (cons (lambda () *tab-width*)
-                       (lambda (v) (set! *tab-width* (string->number v)))))
-    ("auto-save-interval" (cons (lambda () *auto-save-interval*)
-                                (lambda (v) (set! *auto-save-interval* (string->number v)))))))
+                       (lambda (v) (set! *tab-width* (or (string->number v) 4)))))
+    ("indent-tabs-mode" (cons (lambda () *indent-tabs-mode*)
+                              (lambda (v) (set! *indent-tabs-mode*
+                                            (member v '("t" "true" "yes" "1" "on"))))))
+    ("undo-history-max" (cons (lambda () *undo-history-max*)
+                              (lambda (v) (set! *undo-history-max* (or (string->number v) 50)))))
+    ("hl-todo-keywords" (cons (lambda () *hl-todo-keywords*)
+                              (lambda (v) (set! *hl-todo-keywords*
+                                            (string-tokenize v (char-set-complement (char-set #\,)))))))
+    ("so-long-threshold" (cons (lambda () *so-long-threshold*)
+                               (lambda (v) (set! *so-long-threshold* (or (string->number v) 10000)))))))
 
 (def (cmd-set-variable app)
-  "Set a variable to a value interactively."
+  "Set a variable to a value interactively with narrowing selection."
   (let* ((echo (app-state-echo app))
-         (varname (qt-echo-read-string echo "Set variable: "))
-         (entry (hash-get *user-variables* varname)))
+         (var-names (sort (let ((acc [])) (hash-for-each (lambda (k v) (set! acc (cons k acc))) *user-variables*) acc) string<?))
+         (varname (qt-echo-read-with-narrowing app "Set variable:" var-names))
+         (entry (and varname (hash-get *user-variables* varname))))
     (if entry
       (let* ((cur ((car entry)))
              (val (qt-echo-read-string echo
                     (string-append varname " (current: "
                                    (if cur (object->string cur) "nil")
                                    "): "))))
-        ((cdr entry) val)
-        (echo-message! echo (string-append varname " set to " val)))
-      (echo-error! echo (string-append "Unknown variable: " varname)))))
+        (when (and val (> (string-length val) 0))
+          ((cdr entry) val)
+          (echo-message! echo (string-append varname " = " val))))
+      (when varname
+        (echo-error! echo (string-append "Unknown variable: " varname))))))
 
 (def (cmd-customize-variable app)
   "Show current value of a variable and optionally change it."
