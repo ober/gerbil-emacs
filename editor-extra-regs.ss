@@ -67,7 +67,8 @@
                  org-capture-start org-capture-finalize org-capture-abort
                  *org-capture-templates*)
         (only-in :gemacs/org-parse
-                 org-heading-line? org-heading-stars-of-line)
+                 org-heading-line? org-heading-stars-of-line
+                 org-current-timestamp-string)
         :gemacs/editor-core
         :gemacs/editor-text
         :gemacs/editor-ui
@@ -1410,8 +1411,76 @@
 
 ;;; --- Org archive subtree ---
 (def (cmd-org-archive-subtree app)
-  "Archive the current org subtree."
-  (echo-message! (app-state-echo app) "Archive subtree: not yet implemented"))
+  "Archive the current org subtree to the _archive sibling file.
+   Adds ARCHIVE_TIME property, appends to archive file, removes from buffer."
+  (let* ((fr (app-state-frame app))
+         (ed (edit-window-editor (current-window fr)))
+         (echo (app-state-echo app))
+         (buf (current-buffer-from-app app))
+         (fp (buffer-file-path buf))
+         (text (editor-get-text ed))
+         (pos (send-message ed SCI_GETCURRENTPOS 0 0))
+         (lines (string-split text #\newline))
+         (total (length lines))
+         (cur-line (let loop ((i 0) (chars 0))
+                     (if (>= i total) (- total 1)
+                       (let ((line-len (+ (string-length (list-ref lines i)) 1)))
+                         (if (< pos (+ chars line-len)) i
+                           (loop (+ i 1) (+ chars line-len)))))))
+         (heading-line (let loop ((l cur-line))
+                         (cond
+                           ((< l 0) #f)
+                           ((and (< l total)
+                                 (org-heading-line? (list-ref lines l))) l)
+                           (else (loop (- l 1)))))))
+    (if (not heading-line)
+      (echo-error! echo "Not on an org heading")
+      (let* ((heading-text (list-ref lines heading-line))
+             (level (org-heading-stars-of-line heading-text))
+             (subtree-end (let loop ((i (+ heading-line 1)))
+                            (cond
+                              ((>= i total) total)
+                              ((let ((l (list-ref lines i)))
+                                 (and (org-heading-line? l)
+                                      (<= (org-heading-stars-of-line l) level))) i)
+                              (else (loop (+ i 1))))))
+             (subtree-lines (let loop ((i heading-line) (acc '()))
+                              (if (>= i subtree-end)
+                                (reverse acc)
+                                (loop (+ i 1) (cons (list-ref lines i) acc)))))
+             (timestamp (org-current-timestamp-string #f))
+             (archive-entry (string-append
+                              (string-join subtree-lines "\n")
+                              "\n  :PROPERTIES:\n"
+                              "  :ARCHIVE_TIME: " timestamp "\n"
+                              (if fp
+                                (string-append "  :ARCHIVE_FILE: " fp "\n")
+                                "")
+                              "  :END:\n\n"))
+             (archive-file (if fp (string-append fp "_archive") #f)))
+        (if (not archive-file)
+          (echo-error! echo "Buffer has no file path — cannot archive")
+          (begin
+            (with-catch
+              (lambda (e)
+                (echo-error! echo (string-append "Error writing archive: " (error-message e))))
+              (lambda ()
+                (call-with-output-file [path: archive-file append: #t]
+                  (lambda (port)
+                    (display archive-entry port)))))
+            (let* ((before (let loop ((i 0) (acc '()))
+                             (if (>= i heading-line) (reverse acc)
+                               (loop (+ i 1) (cons (list-ref lines i) acc)))))
+                   (after (let loop ((i subtree-end) (acc '()))
+                            (if (>= i total) (reverse acc)
+                              (loop (+ i 1) (cons (list-ref lines i) acc)))))
+                   (new-text (string-join (append before after) "\n")))
+              (editor-set-text ed new-text)
+              (let ((new-pos (let loop ((i 0) (chars 0))
+                               (if (>= i heading-line) chars
+                                 (loop (+ i 1) (+ chars (string-length (list-ref lines i)) 1))))))
+                (send-message ed SCI_GOTOPOS (min new-pos (string-length new-text)) 0))
+              (echo-message! echo (string-append "Subtree archived to " archive-file)))))))))
 
 ;;; --- Org toggle heading ---
 (def (cmd-org-toggle-heading app)

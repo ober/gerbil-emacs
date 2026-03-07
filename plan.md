@@ -44,7 +44,7 @@ Implemented popup UX matching Ruby Scintilla editors — inline autocomplete dro
 - ~~**Proper narrow-to-defun**~~ — DONE: multi-language defun detection (Scheme/Lisp paren-based, Python/Ruby/C/Go/Rust/etc indentation-based)
 
 ### Medium Impact
-- **Org-mode archive/refile** — complete org workflow
+- ~~**Org-mode archive/refile**~~ — DONE: archive-subtree writes to `<file>_archive` with ARCHIVE_TIME/ARCHIVE_FILE properties, refile already implemented
 - **Better which-key delay display** — show descriptions alongside key names
 - **Occur mode improvements** — read-only, better navigation
 - **Dired improvements** — more operations, better display

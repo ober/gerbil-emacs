@@ -24,7 +24,8 @@
                  org-capture-start org-capture-finalize org-capture-abort
                  *org-capture-templates*)
         (only-in :gemacs/org-parse
-                 org-heading-line? org-heading-stars-of-line)
+                 org-heading-line? org-heading-stars-of-line
+                 org-current-timestamp-string)
         :gemacs/qt/buffer
         :gemacs/qt/window
         :gemacs/qt/echo
@@ -883,10 +884,90 @@
       (string-append "Key Bindings\n\n" (string-join lines "\n") "\n"))
     (qt-plain-text-edit-set-cursor-position! ed 0)))
 
-;;; --- Org archive subtree (stub) ---
+;;; --- Org archive subtree ---
 (def (cmd-org-archive-subtree app)
-  "Archive the current org subtree."
-  (echo-message! (app-state-echo app) "Archive subtree: not yet implemented"))
+  "Archive the current org subtree to the _archive sibling file.
+   Adds ARCHIVE_TIME property, appends to archive file, removes from buffer."
+  (let* ((ed (current-qt-editor app))
+         (echo (app-state-echo app))
+         (buf (current-qt-buffer app))
+         (fp (buffer-file-path buf))
+         (text (qt-plain-text-edit-text ed))
+         (pos (qt-plain-text-edit-cursor-position ed))
+         (lines (string-split text #\newline))
+         (total (length lines))
+         ;; Find current line number from position
+         (cur-line (let loop ((i 0) (chars 0))
+                     (if (>= i total) (- total 1)
+                       (let ((line-len (+ (string-length (list-ref lines i)) 1)))
+                         (if (< pos (+ chars line-len)) i
+                           (loop (+ i 1) (+ chars line-len)))))))
+         ;; Walk backwards to find the heading at or before point
+         (heading-line (let loop ((l cur-line))
+                         (cond
+                           ((< l 0) #f)
+                           ((and (< l total)
+                                 (org-heading-line? (list-ref lines l))) l)
+                           (else (loop (- l 1)))))))
+    (if (not heading-line)
+      (echo-error! echo "Not on an org heading")
+      (let* ((heading-text (list-ref lines heading-line))
+             (level (org-heading-stars-of-line heading-text))
+             ;; Find subtree end
+             (subtree-end (let loop ((i (+ heading-line 1)))
+                            (cond
+                              ((>= i total) total)
+                              ((let ((l (list-ref lines i)))
+                                 (and (org-heading-line? l)
+                                      (<= (org-heading-stars-of-line l) level))) i)
+                              (else (loop (+ i 1))))))
+             ;; Extract subtree lines
+             (subtree-lines (let loop ((i heading-line) (acc '()))
+                              (if (>= i subtree-end)
+                                (reverse acc)
+                                (loop (+ i 1) (cons (list-ref lines i) acc)))))
+             ;; Build archive entry with ARCHIVE_TIME property
+             (timestamp (org-current-timestamp-string #f))
+             (archive-entry (string-append
+                              (string-join subtree-lines "\n")
+                              "\n  :PROPERTIES:\n"
+                              "  :ARCHIVE_TIME: " timestamp "\n"
+                              (if fp
+                                (string-append "  :ARCHIVE_FILE: " fp "\n")
+                                "")
+                              "  :END:\n\n"))
+             ;; Archive file path
+             (archive-file (if fp
+                             (string-append fp "_archive")
+                             #f)))
+        ;; Write to archive file
+        (if (not archive-file)
+          (echo-error! echo "Buffer has no file path — cannot archive")
+          (begin
+            (with-catch
+              (lambda (e)
+                (echo-error! echo (string-append "Error writing archive: " (error-message e))))
+              (lambda ()
+                (call-with-output-file [path: archive-file append: #t]
+                  (lambda (port)
+                    (display archive-entry port)))))
+            ;; Remove subtree from buffer
+            (let* ((before (let loop ((i 0) (acc '()))
+                             (if (>= i heading-line)
+                               (reverse acc)
+                               (loop (+ i 1) (cons (list-ref lines i) acc)))))
+                   (after (let loop ((i subtree-end) (acc '()))
+                            (if (>= i total)
+                              (reverse acc)
+                              (loop (+ i 1) (cons (list-ref lines i) acc)))))
+                   (new-text (string-join (append before after) "\n")))
+              (qt-plain-text-edit-set-text! ed new-text)
+              ;; Position cursor at where the heading was
+              (let ((new-pos (let loop ((i 0) (chars 0))
+                               (if (>= i heading-line) chars
+                                 (loop (+ i 1) (+ chars (string-length (list-ref lines i)) 1))))))
+                (qt-plain-text-edit-set-cursor-position! ed (min new-pos (string-length new-text))))
+              (echo-message! echo (string-append "Subtree archived to " archive-file)))))))))
 
 ;;; --- Org toggle heading ---
 (def (cmd-org-toggle-heading app)

@@ -1113,6 +1113,38 @@
         ;; Priority removed
         (check (not (string-contains (editor-get-text ed) "[#")) => #t)))
 
+    (test-case "org: org-archive-subtree is registered"
+      (setup-default-bindings!)
+      (register-all-commands!)
+      (check (procedure? (find-command 'org-archive-subtree)) => #t))
+
+    (test-case "org: org-archive-subtree removes heading from buffer"
+      (setup-default-bindings!)
+      (register-all-commands!)
+      (let* ((tmp (string-append "/tmp/gemacs-archive-test-" (number->string (current-second)) ".org"))
+             (tmp-archive (string-append tmp "_archive")))
+        (dynamic-wind
+          (lambda () #f)
+          (lambda ()
+            (let-values (((ed app) (make-test-app-with-file tmp)))
+              (editor-set-text ed "* Heading 1\nBody 1\n* Heading 2\nBody 2")
+              (editor-goto-pos ed 0) ; on "* Heading 1"
+              (execute-command! app 'org-archive-subtree)
+              (let ((text (editor-get-text ed)))
+                ;; Heading 1 and its body should be removed
+                (check (not (string-contains text "Heading 1")) => #t)
+                ;; Heading 2 should remain
+                (check (not (not (string-contains text "Heading 2"))) => #t))
+              ;; Archive file should exist with the archived subtree
+              (check (file-exists? tmp-archive) => #t)
+              (let ((archive-content (call-with-input-file tmp-archive
+                                       (lambda (p) (read-line p #f)))))
+                (check (not (not (string-contains archive-content "Heading 1"))) => #t)
+                (check (not (not (string-contains archive-content "ARCHIVE_TIME"))) => #t))))
+          (lambda ()
+            (when (file-exists? tmp) (delete-file tmp))
+            (when (file-exists? tmp-archive) (delete-file tmp-archive))))))
+
     ;;;==========================================================================
     ;;; Group 11 (extended): Additional text transforms
     ;;;==========================================================================
