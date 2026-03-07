@@ -931,7 +931,10 @@
               (lsp-diagnostic-at-cursor! app)
               (lsp-document-highlight! app)
               (lsp-inlay-hint-at-cursor! app))
-            (eldoc-display! app))))
+            (begin
+              (eldoc-display! app)
+              ;; Auto-highlight symbol under cursor (non-LSP buffers)
+              (qt-idle-highlight-symbol! app)))))
 
       ;; LSP auto-completion (500ms)
       (schedule-periodic! 'lsp-auto-complete 500

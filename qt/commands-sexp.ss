@@ -854,20 +854,71 @@
           (loop (+ i wlen) (+ count 1))
           (loop (+ i 1) count))))))
 
+(def *highlight-indicator* 20)
+(def *highlight-current-word* #f)
+
+(def (qt-clear-symbol-highlights! ed)
+  "Clear all symbol highlight indicators."
+  (let ((len (sci-send ed SCI_GETLENGTH)))
+    (sci-send ed SCI_SETINDICATORCURRENT *highlight-indicator*)
+    (sci-send ed SCI_INDICATORCLEARRANGE 0 len)))
+
+(def (qt-highlight-all-occurrences! ed word)
+  "Highlight all occurrences of WORD using Scintilla indicator."
+  (let ((text (qt-plain-text-edit-text ed))
+        (wlen (string-length word))
+        (tlen (sci-send ed SCI_GETLENGTH)))
+    ;; Setup indicator style: box highlight with semi-transparent fill
+    (sci-send ed SCI_INDICSETSTYLE *highlight-indicator* 7)  ; INDIC_ROUNDBOX
+    (sci-send ed SCI_INDICSETFORE *highlight-indicator* #x00FFFF)  ; yellow
+    (sci-send ed 2523 *highlight-indicator* 60)  ; SCI_INDICSETALPHA = 2523
+    (sci-send ed SCI_SETINDICATORCURRENT *highlight-indicator*)
+    ;; Clear previous highlights
+    (sci-send ed SCI_INDICATORCLEARRANGE 0 tlen)
+    ;; Highlight all occurrences
+    (let loop ((i 0) (count 0))
+      (if (> (+ i wlen) (string-length text))
+        count
+        (if (string=? (substring text i (+ i wlen)) word)
+          (begin
+            ;; Check word boundaries
+            (let ((before-ok (or (= i 0)
+                                 (let ((c (string-ref text (- i 1))))
+                                   (not (or (char-alphabetic? c)
+                                            (char-numeric? c)
+                                            (char=? c #\-)
+                                            (char=? c #\_))))))
+                  (after-ok (or (>= (+ i wlen) (string-length text))
+                                (let ((c (string-ref text (+ i wlen))))
+                                  (not (or (char-alphabetic? c)
+                                           (char-numeric? c)
+                                           (char=? c #\-)
+                                           (char=? c #\_)))))))
+              (when (and before-ok after-ok)
+                (sci-send ed SCI_INDICATORFILLRANGE i wlen)))
+            (loop (+ i wlen) (+ count 1)))
+          (loop (+ i 1) count))))))
+
 (def (cmd-highlight-symbol app)
-  "Toggle highlight of the word at point. Shows occurrence count."
+  "Toggle highlight of the word at point. Shows occurrence count with visual indicators."
   (let ((ed (current-qt-editor app)))
     (let-values (((word start end) (word-at-point ed)))
       (if (not word)
-        (echo-error! (app-state-echo app) "No word at point")
+        (begin
+          (qt-clear-symbol-highlights! ed)
+          (set! *highlight-current-word* #f)
+          (set! (app-state-last-search app) #f)
+          (echo-error! (app-state-echo app) "No word at point"))
         ;; Toggle: if already highlighting this word, clear it
         (if (and (app-state-last-search app)
                  (string=? (app-state-last-search app) word))
           (begin
+            (qt-clear-symbol-highlights! ed)
+            (set! *highlight-current-word* #f)
             (set! (app-state-last-search app) #f)
             (echo-message! (app-state-echo app) "Highlights cleared"))
-          (let* ((text (qt-plain-text-edit-text ed))
-                 (count (count-occurrences text word)))
+          (let ((count (qt-highlight-all-occurrences! ed word)))
+            (set! *highlight-current-word* word)
             (set! (app-state-last-search app) word)
             (echo-message! (app-state-echo app)
               (string-append "Highlighting: " word
@@ -944,9 +995,61 @@
               (echo-message! (app-state-echo app) "No more occurrences"))))))))
 
 (def (cmd-clear-highlight app)
-  "Clear the current search highlight."
+  "Clear the current search highlight and visual indicators."
+  (qt-clear-symbol-highlights! (current-qt-editor app))
+  (set! *highlight-current-word* #f)
   (set! (app-state-last-search app) #f)
   (echo-message! (app-state-echo app) "Highlights cleared"))
+
+(def *auto-highlight-symbol-mode* #t)
+(def *auto-highlight-last-word* #f)
+
+(def (cmd-toggle-auto-highlight app)
+  "Toggle automatic highlighting of symbol under cursor on idle."
+  (set! *auto-highlight-symbol-mode* (not *auto-highlight-symbol-mode*))
+  (when (not *auto-highlight-symbol-mode*)
+    (qt-clear-symbol-highlights! (current-qt-editor app))
+    (set! *auto-highlight-last-word* #f))
+  (echo-message! (app-state-echo app)
+    (if *auto-highlight-symbol-mode*
+      "Auto highlight symbol ON"
+      "Auto highlight symbol OFF")))
+
+(def (qt-idle-highlight-symbol! app)
+  "Auto-highlight symbol under cursor on idle (called by timer).
+   Only highlights when cursor is on a word and it differs from last highlight."
+  (when *auto-highlight-symbol-mode*
+    (with-catch
+      (lambda (e) (void))  ; Don't let errors in timer crash the app
+      (lambda ()
+        (let* ((fr (app-state-frame app))
+               (ed (qt-current-editor fr))
+               (buf (qt-current-buffer fr)))
+          (when (and ed buf
+                     ;; Skip special buffers
+                     (not (let ((n (buffer-name buf)))
+                            (and (> (string-length n) 0)
+                                 (char=? (string-ref n 0) #\*)))))
+            (let-values (((word start end) (word-at-point ed)))
+              (cond
+                ;; No word at point — clear highlights
+                ((not word)
+                 (when *auto-highlight-last-word*
+                   (qt-clear-symbol-highlights! ed)
+                   (set! *auto-highlight-last-word* #f)))
+                ;; Same word — do nothing
+                ((and *auto-highlight-last-word*
+                      (string=? *auto-highlight-last-word* word))
+                 (void))
+                ;; Word too short (single char) — skip
+                ((< (string-length word) 2)
+                 (when *auto-highlight-last-word*
+                   (qt-clear-symbol-highlights! ed)
+                   (set! *auto-highlight-last-word* #f)))
+                ;; New word — highlight all occurrences
+                (else
+                 (qt-highlight-all-occurrences! ed word)
+                 (set! *auto-highlight-last-word* word))))))))))
 
 ;;;============================================================================
 ;;; Repeat complex command

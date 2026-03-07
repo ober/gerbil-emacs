@@ -74,6 +74,8 @@
         qt-pulse-line!
         qt-pulse-tick!
         qt-pulse-check-jump!
+        ;; Auto-highlight
+        qt-idle-highlight-symbol!
         ;; Diff-hl
         *diff-hl-active*
         ;; Describe-key interception

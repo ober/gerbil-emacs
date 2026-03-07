@@ -1029,6 +1029,8 @@
   (register-command! 'sh-mode cmd-shell-script-mode)
   (register-command! 'markdown-preview-mode cmd-markdown-mode)
   (register-command! 'highlight-symbol-at-point cmd-highlight-symbol)
+  (register-command! 'auto-highlight-symbol-mode cmd-toggle-auto-highlight)
+  (register-command! 'toggle-auto-highlight cmd-toggle-auto-highlight)
   (register-command! 'ediff-regions-linewise cmd-ediff-buffers)
   ;; Batch 5: file/dired/ibuffer aliases + new commands
   (register-command! 'rename-file cmd-rename-file-and-buffer)

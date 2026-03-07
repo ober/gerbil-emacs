@@ -2895,6 +2895,27 @@
     (pass! "consult-imenu registered")
     (fail! "consult-imenu" #f "registered"))
 
+  ;; Test: auto-highlight-symbol-mode registered
+  (if (find-command 'auto-highlight-symbol-mode)
+    (pass! "auto-highlight-symbol-mode registered")
+    (fail! "auto-highlight-symbol-mode" #f "registered"))
+
+  ;; Test: highlight-symbol dispatches with visual indicators
+  (let-values (((ed _w app) (make-qt-test-app "highlight-test")))
+    (qt-plain-text-edit-set-text! ed "foo bar foo baz foo")
+    (qt-plain-text-edit-set-cursor-position! ed 0)
+    (with-catch
+      (lambda (e)
+        (fail! "highlight-symbol with indicators"
+               (with-output-to-string "" (lambda () (display-exception e)))
+               "no error"))
+      (lambda ()
+        (execute-command! app 'highlight-symbol)
+        (let ((msg (echo-state-message (app-state-echo app))))
+          (if (and msg (string-contains msg "3 occurrences"))
+            (pass! "highlight-symbol shows 3 occurrences with visual indicators")
+            (fail! "highlight-symbol count" msg "contains '3 occurrences'"))))))
+
   (displayln "Group 19 complete"))
 
 ;;;============================================================================
