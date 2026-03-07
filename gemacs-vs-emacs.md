@@ -315,7 +315,7 @@
 | Other window (`C-x o`) | :white_check_mark: | |
 | Balance windows (`C-x +`) | :white_check_mark: | |
 | Resize windows (`C-x ^`, `C-x {`, `C-x }`) | :white_check_mark: | |
-| Windmove (directional) | :white_check_mark: | Arrow key navigation between windows |
+| Windmove (directional) | :white_check_mark: | `S-left/right/up/down` arrow key navigation between windows |
 | Winner mode (undo/redo) | :white_check_mark: | `winner-undo`, `winner-redo` |
 | Ace-window (jump by label) | :large_blue_circle: | |
 | Swap buffers between windows | :white_check_mark: | |
@@ -721,10 +721,10 @@
 | Project-aware buffer list | :large_blue_circle: | |
 | Per-project settings | :large_blue_circle: | `.gemacs-config` directory-local settings (applied on file open) |
 | Project-specific keymaps | :white_check_mark: | Load `.gemacs-keys` from project root |
-| Projectile integration | :yellow_circle: | Basic command registration |
-| project.el features | :yellow_circle: | Basic |
+| Projectile integration | :large_blue_circle: | Narrowing find-file, grep, switch-buffer, switch-project |
+| project.el features | :large_blue_circle: | `C-x p` prefix map: f/g/c/b/d/e/s/p/k/t |
 
-**Summary:** Project management works well. Per-project settings via `.gemacs-config` dir-locals. Missing project-specific keymaps.
+**Summary:** Project management works well. `C-x p` keybindings, narrowing popups for all project commands. Per-project settings via `.gemacs-config` dir-locals.
 
 ---
 

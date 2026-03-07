@@ -62,6 +62,9 @@ Implemented popup UX matching Ruby Scintilla editors — inline autocomplete dro
 - ~~**Describe variable (C-h v)**~~ — DONE: narrowing selection, shows value and docs in `*Help*` buffer
 - ~~**Eshell I/O & expansion**~~ — DONE: output redirect (`>`, `>>`), input redirect (`<`), glob expansion, `$VAR` expansion, `$(cmd)` substitution
 - ~~**Set-variable improvements**~~ — DONE: narrowing selection, 6 settable vars (fill-column, tab-width, indent-tabs-mode, etc.)
+- ~~**Magit worktree management**~~ — DONE: list/add/remove worktrees, `w` key in magit buffer
+- ~~**Project keybindings (C-x p)**~~ — DONE: Emacs 28+ standard prefix map, narrowing for find-file/switch-buffer/switch-project
+- ~~**Windmove keybindings**~~ — DONE: Shift+arrow keys for directional window navigation
 
 ### Aspirational
 - LSP in TUI
