@@ -269,20 +269,38 @@
 ;;; Toggle commands (additional)
 ;;;============================================================================
 
-(def *hl-line-mode* #f)
+(def *hl-line-mode* #t)  ; enabled by default (matches Scintilla default)
 (def (cmd-toggle-hl-line app)
-  "Toggle current line highlighting."
+  "Toggle current line highlighting (Scintilla caret line visibility)."
   (set! *hl-line-mode* (not *hl-line-mode*))
+  (let ((fr (app-state-frame app)))
+    (for-each
+      (lambda (win)
+        (let ((ed (qt-edit-window-editor win)))
+          (sci-send ed SCI_SETCARETLINEVISIBLE (if *hl-line-mode* 1 0))))
+      (qt-frame-windows fr)))
   (echo-message! (app-state-echo app)
     (if *hl-line-mode* "Line highlight ON" "Line highlight OFF")))
 
+(def *show-tabs* #f)
 (def (cmd-toggle-show-tabs app)
-  "Toggle tab character visibility."
-  (echo-message! (app-state-echo app) "Tab visibility toggled"))
+  "Toggle tab character visibility (Scintilla whitespace view)."
+  (set! *show-tabs* (not *show-tabs*))
+  (let ((ed (current-qt-editor app)))
+    ;; SCI_SETVIEWWS = 2021: 0=invisible, 1=always, 2=visible after indent
+    (sci-send ed 2021 (if *show-tabs* 1 0) 0))
+  (echo-message! (app-state-echo app)
+    (if *show-tabs* "Tab characters visible" "Tab characters hidden")))
 
+(def *show-eol* #f)
 (def (cmd-toggle-show-eol app)
   "Toggle end-of-line marker visibility."
-  (echo-message! (app-state-echo app) "EOL markers toggled"))
+  (set! *show-eol* (not *show-eol*))
+  (let ((ed (current-qt-editor app)))
+    ;; SCI_SETVIEWEOL = 2356: 0=hidden, 1=visible
+    (sci-send ed 2356 (if *show-eol* 1 0) 0))
+  (echo-message! (app-state-echo app)
+    (if *show-eol* "EOL markers visible" "EOL markers hidden")))
 
 (def *narrowing-indicator* #f)
 (def (cmd-toggle-narrowing-indicator app)
