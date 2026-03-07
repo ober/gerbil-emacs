@@ -449,8 +449,8 @@
     (if *eldoc-mode* "Eldoc mode enabled" "Eldoc mode disabled")))
 
 (def (cmd-recover-session app)
-  "Recover a previous session."
-  (echo-message! (app-state-echo app) "Session recovery not available"))
+  "Recover a previous session — delegates to session-restore."
+  (execute-command! app 'session-restore))
 
 (def (cmd-revert-buffer-with-coding app)
   "Revert buffer with different coding."

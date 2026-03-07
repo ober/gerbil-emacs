@@ -190,9 +190,17 @@
         (buffer-name buf)))))
 
 (def (cmd-what-face app)
-  "Show style info at point."
-  (echo-message! (app-state-echo app)
-    "Font style info not available in Qt plain text mode"))
+  "Show Scintilla style info at cursor position."
+  (let* ((ed (current-qt-editor app))
+         (pos (qt-plain-text-edit-cursor-position ed))
+         (style (sci-send ed SCI_GETSTYLEAT pos 0))
+         (fg (sci-send ed SCI_STYLEGETFORE style 0))
+         (bg (sci-send ed SCI_STYLEGETBACK style 0)))
+    (echo-message! (app-state-echo app)
+      (string-append "Style " (number->string style)
+                     " fg:#" (number->string fg 16)
+                     " bg:#" (number->string bg 16)
+                     " at pos " (number->string pos)))))
 
 ;;;============================================================================
 ;;; Insert helpers
