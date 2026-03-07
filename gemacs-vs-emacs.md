@@ -1,7 +1,7 @@
 # Gemacs vs GNU Emacs — Feature Comparison
 
-> **Last updated:** 2026-02-23
-> **Gemacs version:** master (339b5ba)
+> **Last updated:** 2026-03-06
+> **Gemacs version:** master (42f3aae)
 > **Compared against:** GNU Emacs 29.x / 30.x feature set
 
 ## Status Legend
@@ -419,10 +419,10 @@
 | Git status display | :large_blue_circle: | Interactive status with inline diffs per file |
 | Stage / unstage hunks | :large_blue_circle: | Hunk-level staging via `git apply --cached` |
 | Stage / unstage files | :white_check_mark: | `s` to stage, `u` to unstage in status buffer |
-| Commit with message | :yellow_circle: | Opens editor, basic flow |
+| Commit with message | :large_blue_circle: | Dedicated `*Magit: Commit*` buffer with diff preview, C-c C-c / C-c C-k |
 | Amend commit | :yellow_circle: | Basic |
 | Push / pull | :yellow_circle: | Shell passthrough |
-| Log viewing | :yellow_circle: | `git log --oneline` last 50 |
+| Log viewing | :large_blue_circle: | Interactive log with date/author, Enter shows commit diff |
 | Diff viewing | :large_blue_circle: | Shows staged + unstaged diffs for file at point |
 | Branch operations | :large_blue_circle: | Checkout/create/delete with narrowing selection |
 | Tag management | :yellow_circle: | Create tags |
@@ -438,11 +438,7 @@
 | Magit keymap | :white_check_mark: | 20 bindings: s/S/u/c/d/l/g/n/p/q/b/B/f/F/P/r/m/z/Z/k |
 | VC generic backend | :yellow_circle: | Basic git-only |
 
-**Summary:** Magit has been significantly enhanced. The status buffer now shows **inline diffs** per file. **Hunk-level staging/unstaging** works via `git apply --cached`. Branch operations (checkout, merge, rebase) use the **narrowing framework** for interactive selection. 20 single-key bindings in the magit keymap. Forge integration provides PR/issue listing and creation via `gh` CLI. Remaining gaps: commit composition buffer, interactive log with commit details.
-
-### Priority Improvements Needed:
-1. Commit composition buffer with diff preview
-2. Interactive log with commit details
+**Summary:** Magit has been significantly enhanced. The status buffer shows **inline diffs** per file. **Hunk-level staging/unstaging** works via `git apply --cached`. Branch operations (checkout, merge, rebase) use the **narrowing framework** for interactive selection. 20+ single-key bindings in the magit keymap. **Commit composition** uses a dedicated `*Magit: Commit*` buffer with diff preview and `C-c C-c`/`C-c C-k` keybindings. **Interactive log** shows date/author/subject with graph; pressing Enter shows the full commit diff with highlighting. Forge integration provides PR/issue listing and creation via `gh` CLI.
 
 ---
 
