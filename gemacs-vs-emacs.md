@@ -296,7 +296,7 @@
 | Scratch buffer | :white_check_mark: | |
 | Messages buffer | :white_check_mark: | `*Messages*` equivalent |
 | ibuffer (advanced list) | :yellow_circle: | Registered, limited functionality |
-| Uniquify buffer names | :yellow_circle: | Basic — no forward/reverse uniquify styles |
+| Uniquify buffer names | :white_check_mark: | Emacs-style `filename<dir>` — renames both old and new same-name buffers |
 | Indirect buffers | :yellow_circle: | `clone-indirect-buffer` registered |
 | Buffer-local variables | :yellow_circle: | Some support via app-state |
 
@@ -560,7 +560,7 @@
 | Theme system | :white_check_mark: | 8 built-in themes |
 | Custom face definitions | :white_check_mark: | Foreground, background, bold, italic |
 | Per-buffer lexer | :white_check_mark: | Based on file extension |
-| Font-lock (regex-based) | :yellow_circle: | `font-lock-mode` delegates to `toggle-highlighting`; Scintilla lexers instead |
+| Font-lock (regex-based) | :white_check_mark: | `font-lock-mode` toggles Scintilla lexer on/off; re-applies language highlighting |
 | Tree-sitter highlighting | :yellow_circle: | `tree-sitter-highlight-mode` toggle — uses Scintilla lexers as backend |
 | Rainbow delimiters | :green_circle: | Depth-based coloring via indicators (8 colors, both layers) |
 

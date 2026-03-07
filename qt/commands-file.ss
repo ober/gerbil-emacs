@@ -1710,9 +1710,24 @@
               (string-append "Fill column set to " (number->string n))))
           (echo-error! (app-state-echo app) "Invalid number"))))))
 
+(def *highlighting-disabled* #f)
 (def (cmd-toggle-highlighting app)
-  "Toggle syntax highlighting."
-  (echo-message! (app-state-echo app) "Syntax highlighting toggled"))
+  "Toggle syntax highlighting on/off."
+  (set! *highlighting-disabled* (not *highlighting-disabled*))
+  (let* ((ed (current-qt-editor app))
+         (fr (app-state-frame app))
+         (buf (qt-current-buffer fr)))
+    (if *highlighting-disabled*
+      (begin
+        ;; Disable lexer: set to SCLEX_NULL (0) and clear styles
+        (sci-send ed SCI_SETLEXER 0)
+        (sci-send ed SCI_STYLECLEARALL)
+        (echo-message! (app-state-echo app) "Syntax highlighting OFF"))
+      (begin
+        ;; Re-apply highlighting for current buffer
+        (when buf
+          (qt-setup-highlighting! app buf))
+        (echo-message! (app-state-echo app) "Syntax highlighting ON")))))
 
 (def (cmd-toggle-visual-line-mode app)
   "Toggle visual line mode."

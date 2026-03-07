@@ -438,8 +438,20 @@
   (cmd-term app))
 
 (def (cmd-diff-backup app)
-  "Diff current file with backup."
-  (echo-message! (app-state-echo app) "No backup file to diff"))
+  "Diff current file with its backup (~) file."
+  (let ((buf (qt-current-buffer (app-state-frame app))))
+    (if (not buf)
+      (echo-error! (app-state-echo app) "No current buffer")
+      (let ((path (buffer-file-path buf)))
+        (if (not path)
+          (echo-error! (app-state-echo app) "Buffer is not visiting a file")
+          (let ((backup-path (string-append path "~")))
+            (if (not (file-exists? backup-path))
+              (echo-message! (app-state-echo app) "No backup file found")
+              (compilation-run-command! app
+                (string-append "diff -u "
+                  (grep-shell-quote backup-path) " "
+                  (grep-shell-quote path))))))))))
 
 (def (cmd-eldoc app)
   "Toggle eldoc mode (automatic function signature display)."

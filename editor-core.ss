@@ -144,7 +144,9 @@
 ;;;============================================================================
 
 (def (uniquify-buffer-name path)
-  "Generate a unique buffer name for a file path by adding parent dir when needed."
+  "Generate a unique buffer name for a file path by adding parent dir when needed.
+   Also renames existing same-basename buffers to include their parent dir suffix
+   (Emacs-style: both old and new get disambiguated)."
   (let* ((basename (path-strip-directory path))
          (existing (filter (lambda (b)
                              (and (buffer-file-path b)
@@ -154,10 +156,21 @@
                            (buffer-list))))
     (if (null? existing)
       basename
-      (let ((parent (path-strip-directory
-                      (path-strip-trailing-directory-separator
-                        (path-directory path)))))
-        (string-append basename "<" parent ">")))))
+      (begin
+        ;; Rename existing same-name buffers to include parent dir
+        (for-each
+          (lambda (b)
+            (when (string=? (buffer-name b) basename)
+              (let ((parent (path-strip-directory
+                              (path-strip-trailing-directory-separator
+                                (path-directory (buffer-file-path b))))))
+                (set! (buffer-name b) (string-append basename "<" parent ">")))))
+          existing)
+        ;; Return uniquified name for the new buffer
+        (let ((parent (path-strip-directory
+                        (path-strip-trailing-directory-separator
+                          (path-directory path)))))
+          (string-append basename "<" parent ">"))))))
 
 ;;;============================================================================
 ;;; Line ending detection

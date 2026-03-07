@@ -55,7 +55,7 @@ Implemented popup UX matching Ruby Scintilla editors — inline autocomplete dro
 
 ### Maintenance
 - ~~**Split over-limit files**~~ — DONE: split `qt/commands-edit.ss` (2457→1155+1325) and `editor-extra-editing.ss` (2204→1097+1130). Remaining `editor-extra-media.ss` (2013) and `qt/commands-vcs.ss` (2003) are barely over limit
-- ~~**Test coverage**~~ — DONE: added Group 13 tests (dired, which-key, zoom, compile/search, bookmarks, M-x history). 181 total TUI functional tests, 312 Qt tests
+- ~~**Test coverage**~~ — DONE: added Group 13 tests (dired, which-key, zoom, compile/search, bookmarks, M-x history). 181 total TUI functional tests, 318 Qt tests
 
 ### Recently Completed
 - ~~**Vterm terminal fixes**~~ — DONE: PTY window size from editor dimensions, PS1 prompt cleanup, batched rendering for speed
@@ -89,6 +89,9 @@ Implemented popup UX matching Ruby Scintilla editors — inline autocomplete dro
 - ~~**Region-aware count-words (M-=)**~~ — DONE: shows region lines/words/chars when mark active, buffer stats otherwise
 - ~~**Qt recover-session + what-face upgrades**~~ — DONE: recover-session delegates to session-restore, what-face shows Scintilla style/colors
 - ~~**ANSI color rendering in compilation buffers**~~ — DONE: full SGR parser (colors 0-7, bright 90-97, bold, bg), Scintilla manual styling, `M-x ansi-color-apply`
+- ~~**Upgrade toggle stubs to real Scintilla**~~ — DONE: hl-line (SCI_SETCARETLINEVISIBLE), show-tabs (SCI_SETVIEWWS), show-eol (SCI_SETVIEWEOL), font-lock-mode (lexer on/off)
+- ~~**Emacs-style uniquify buffer names**~~ — DONE: both old and new same-name buffers get `<parent>` suffix, applied in qt-open-file! and cmd-find-file
+- ~~**diff-backup upgrade**~~ — DONE: real `diff -u` against `file~` backup, output in compilation buffer
 
 ### Aspirational
 - LSP in TUI

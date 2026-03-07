@@ -2830,6 +2830,61 @@
         (execute-command! app 'count-words)
         (pass! "count-words dispatches without error"))))
 
+  ;; Test: diff-backup registered
+  (if (find-command 'diff-backup)
+    (pass! "diff-backup registered")
+    (fail! "diff-backup" #f "registered"))
+
+  ;; Test: font-lock-mode registered
+  (if (find-command 'font-lock-mode)
+    (pass! "font-lock-mode registered")
+    (fail! "font-lock-mode" #f "registered"))
+
+  ;; Test: font-lock-mode dispatches (toggle highlighting)
+  (let-values (((ed _w app) (make-qt-test-app "hl-toggle-test")))
+    (qt-plain-text-edit-set-text! ed "(def foo 42)")
+    (with-catch
+      (lambda (e)
+        (fail! "font-lock-mode dispatch"
+               (with-output-to-string "" (lambda () (display-exception e)))
+               "no error"))
+      (lambda ()
+        (execute-command! app 'font-lock-mode)
+        (pass! "font-lock-mode dispatches without error"))))
+
+  ;; Test: toggle-hl-line dispatches and toggles
+  (let-values (((ed _w app) (make-qt-test-app "hl-line-test")))
+    (with-catch
+      (lambda (e)
+        (fail! "toggle-hl-line dispatch"
+               (with-output-to-string "" (lambda () (display-exception e)))
+               "no error"))
+      (lambda ()
+        (execute-command! app 'hl-line-mode)
+        (pass! "toggle-hl-line dispatches without error"))))
+
+  ;; Test: toggle-show-tabs dispatches
+  (let-values (((ed _w app) (make-qt-test-app "show-tabs-test")))
+    (with-catch
+      (lambda (e)
+        (fail! "toggle-show-tabs dispatch"
+               (with-output-to-string "" (lambda () (display-exception e)))
+               "no error"))
+      (lambda ()
+        (execute-command! app 'whitespace-mode)
+        (pass! "toggle-show-tabs dispatches without error"))))
+
+  ;; Test: toggle-show-eol dispatches
+  (let-values (((ed _w app) (make-qt-test-app "show-eol-test")))
+    (with-catch
+      (lambda (e)
+        (fail! "toggle-show-eol dispatch"
+               (with-output-to-string "" (lambda () (display-exception e)))
+               "no error"))
+      (lambda ()
+        (execute-command! app 'toggle-show-eol)
+        (pass! "toggle-show-eol dispatches without error"))))
+
   (displayln "Group 19 complete"))
 
 ;;;============================================================================

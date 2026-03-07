@@ -1090,7 +1090,7 @@
            (qt-pixmap-destroy! pixmap)
            (echo-error! (app-state-echo app)
              (string-append "Failed to load image: " filename)))
-         (let* ((name (path-strip-directory filename))
+         (let* ((name (uniquify-buffer-name! filename))
                 (fr (app-state-frame app))
                 (ed (qt-current-editor fr))
                 (buf (qt-buffer-create! name ed filename))
@@ -1104,7 +1104,7 @@
            (set! (qt-edit-window-buffer (qt-current-window fr)) buf)))))
     ;; Regular file -> text buffer
     (else
-     (let* ((name (path-strip-directory filename))
+     (let* ((name (uniquify-buffer-name! filename))
             (fr (app-state-frame app))
             (ed (qt-current-editor fr))
             (buf (qt-buffer-create! name ed filename)))
