@@ -472,6 +472,87 @@
 ;;; Input processing
 ;;;============================================================================
 
+(def (eshell-expand-env-vars str)
+  "Expand $VAR and ${VAR} in a string."
+  (let loop ((chars (string->list str)) (acc ""))
+    (cond
+      ((null? chars) acc)
+      ((and (char=? (car chars) #\$)
+            (pair? (cdr chars))
+            (char=? (cadr chars) #\{))
+       ;; ${VAR} form
+       (let brace-loop ((rest (cddr chars)) (name ""))
+         (cond
+           ((null? rest) (loop rest (string-append acc "${" name)))
+           ((char=? (car rest) #\})
+            (let ((val (getenv name "")))
+              (loop (cdr rest) (string-append acc val))))
+           (else (brace-loop (cdr rest) (string-append name (string (car rest))))))))
+      ((and (char=? (car chars) #\$)
+            (pair? (cdr chars))
+            (or (char-alphabetic? (cadr chars)) (char=? (cadr chars) #\_)))
+       ;; $VAR form
+       (let var-loop ((rest (cdr chars)) (name ""))
+         (if (and (pair? rest)
+                  (let ((c (car rest)))
+                    (or (char-alphabetic? c) (char-numeric? c) (char=? c #\_))))
+           (var-loop (cdr rest) (string-append name (string (car rest))))
+           (let ((val (getenv name "")))
+             (loop rest (string-append acc val))))))
+      (else (loop (cdr chars) (string-append acc (string (car chars))))))))
+
+(def (eshell-expand-glob token cwd)
+  "Expand a glob token. Returns list of matching filenames, or (list token) if no glob chars."
+  (if (or (string-contains token "*") (string-contains token "?"))
+    (let* ((rx-str (glob->regex token))
+           (rx (with-catch (lambda (e) #f) (lambda () (pregexp rx-str)))))
+      (if (not rx)
+        (list token)
+        (let* ((entries (with-catch (lambda (e) [])
+                          (lambda ()
+                            (directory-files (list path: cwd ignore-hidden: 'dot-and-dot-dot)))))
+               (matches (filter (lambda (name) (pregexp-match rx name)) entries)))
+          (if (null? matches) (list token)
+            (sort matches string<?)))))
+    (list token)))
+
+(def (eshell-expand-tokens tokens cwd)
+  "Expand environment variables and globs in tokens."
+  (let loop ((toks tokens) (acc []))
+    (if (null? toks) (reverse acc)
+      (let* ((expanded (eshell-expand-env-vars (car toks)))
+             (globbed (eshell-expand-glob expanded cwd)))
+        (loop (cdr toks) (append (reverse globbed) acc))))))
+
+(def (eshell-parse-redirection tokens)
+  "Parse output redirection from tokens.
+   Returns (values clean-tokens redirect-file append?)
+   redirect-file is #f if no redirection."
+  (let loop ((toks tokens) (acc []) (redir #f) (append? #f))
+    (cond
+      ((null? toks)
+       (values (reverse acc) redir append?))
+      ((string=? (car toks) ">>")
+       (if (pair? (cdr toks))
+         (loop (cddr toks) acc (cadr toks) #t)
+         (loop (cdr toks) acc redir append?)))
+      ((string=? (car toks) ">")
+       (if (pair? (cdr toks))
+         (loop (cddr toks) acc (cadr toks) #f)
+         (loop (cdr toks) acc redir append?)))
+      ;; Handle >file (no space)
+      ((and (> (string-length (car toks)) 1)
+            (char=? (string-ref (car toks) 0) #\>))
+       (let* ((tok (car toks))
+              (append? (and (> (string-length tok) 1) (char=? (string-ref tok 1) #\>)))
+              (file (substring tok (if append? 2 1) (string-length tok))))
+         (if (string=? file "")
+           (if (pair? (cdr toks))
+             (loop (cddr toks) acc (cadr toks) append?)
+             (loop (cdr toks) acc redir append?))
+           (loop (cdr toks) acc file append?))))
+      (else (loop (cdr toks) (cons (car toks) acc) redir append?)))))
+
 (def (eshell-process-input input cwd)
   "Process an eshell input line.
    Returns (values output new-cwd).
@@ -493,9 +574,9 @@
       ((string-contains trimmed "|")
        (eshell-process-pipeline trimmed cwd))
 
-      ;; Regular command
+      ;; Regular command (with env/glob expansion and redirection)
       (else
-       (eshell-execute-command trimmed cwd)))))
+       (eshell-execute-command-with-redirect trimmed cwd)))))
 
 (def (eshell-eval-expression expr cwd)
   "Evaluate a Gerbil expression and return the result."
@@ -534,11 +615,49 @@
        (loop (cdr chars) (string-append current (string (car chars)))
              tokens in-quote?)))))
 
-(def (eshell-execute-command line cwd)
-  "Execute a single command (builtin or external)."
+(def (eshell-execute-command-with-redirect line cwd)
+  "Execute a command with env/glob expansion and output redirection."
   (let* ((tokens (parse-command-line line))
-         (cmd (if (null? tokens) "" (car tokens)))
-         (args (if (null? tokens) [] (cdr tokens)))
+         (expanded (eshell-expand-tokens tokens cwd)))
+    (let-values (((clean-tokens redir-file append?) (eshell-parse-redirection expanded)))
+      (let* ((cmd (if (null? clean-tokens) "" (car clean-tokens)))
+             (args (if (null? clean-tokens) [] (cdr clean-tokens)))
+             (builtin (builtin? cmd)))
+        (let-values (((output new-cwd)
+                      (if builtin
+                        (with-catch
+                          (lambda (e)
+                            (values (string-append cmd ": "
+                                      (with-output-to-string (lambda () (display-exception e)))
+                                      "\n")
+                                    cwd))
+                          (lambda () (builtin args cwd)))
+                        (eshell-run-external cmd args cwd))))
+          (if (and redir-file (string? output))
+            ;; Write output to file
+            (let ((path (if (string-prefix? "/" redir-file) redir-file
+                          (string-append cwd "/" redir-file))))
+              (with-catch
+                (lambda (e)
+                  (values (string-append "redirect error: "
+                            (with-output-to-string (lambda () (display-exception e)))
+                            "\n")
+                          new-cwd))
+                (lambda ()
+                  (if append?
+                    (call-with-output-file (list path: path append: #t)
+                      (lambda (port) (display output port)))
+                    (call-with-output-file path
+                      (lambda (port) (display output port))))
+                  (values "" new-cwd))))
+            (values output new-cwd)))))))
+
+(def (eshell-execute-command line cwd)
+  "Execute a single command (builtin or external) with expansion."
+  (let* ((tokens (parse-command-line line))
+         (expanded (eshell-expand-tokens tokens cwd))
+         (cmd (if (null? expanded) "" (car expanded)))
+         (args (if (null? expanded) [] (cdr expanded)))
          (builtin (builtin? cmd)))
     (if builtin
       (with-catch
