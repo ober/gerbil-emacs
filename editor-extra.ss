@@ -253,6 +253,7 @@
   (register-command! 'magit-commit cmd-magit-commit)
   (register-command! 'magit-commit-finalize cmd-magit-commit-finalize)
   (register-command! 'magit-commit-abort cmd-magit-commit-abort)
+  (register-command! 'magit-amend cmd-magit-amend)
   (register-command! 'magit-stage-file cmd-magit-stage-file)
   (register-command! 'magit-unstage-file cmd-magit-unstage-file)
   (register-command! 'magit-branch cmd-magit-branch)

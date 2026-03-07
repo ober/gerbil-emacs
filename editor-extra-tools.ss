@@ -1083,7 +1083,11 @@
                           (lambda (e) (string-append "Error: "
                                         (with-output-to-string (lambda () (display-exception e)))))
                           (lambda ()
-                            (let ((p (open-process [path: "git" arguments: (list "commit" "-m" msg)
+                            (let* ((args (if *magit-amend-mode-tui*
+                                           (list "commit" "--amend" "-m" msg)
+                                           (list "commit" "-m" msg)))
+                                   (_ (set! *magit-amend-mode-tui* #f))
+                                   (p (open-process [path: "git" arguments: args
                                                     directory: dir stdin-redirection: #f
                                                     stdout-redirection: #t stderr-redirection: #t])))
                               (let ((out (read-line p #f))) (process-status p) (or out "Committed")))))))
@@ -1113,6 +1117,32 @@
                 (set! (edit-window-buffer (current-window kill-fr)) prev))
               (buffer-kill! kill-ed kill-buf))
       (echo-message! (app-state-echo app) "Commit aborted"))))
+
+(def *magit-amend-mode-tui* #f)
+
+(def (cmd-magit-amend app)
+  "Amend the last commit: open commit buffer pre-filled with previous message."
+  (let* ((fr (app-state-frame app))
+         (ed (edit-window-editor (current-window fr)))
+         (prev-msg (or (git-output '("log" "-1" "--format=%B")) ""))
+         (diff (or (git-output '("diff" "--cached")) (git-output '("diff" "HEAD~1")) ""))
+         (buf (or (buffer-by-name "*Magit: Commit*")
+                  (buffer-create! "*Magit: Commit*" ed #f)))
+         (text (string-append
+                 (string-trim prev-msg) "\n"
+                 "# Amending last commit.\n"
+                 "# M-x magit-commit-finalize to commit, M-x magit-commit-abort to abort.\n"
+                 "#\n"
+                 *magit-commit-separator* "\n\n"
+                 diff)))
+    (set! *magit-amend-mode-tui* #t)
+    (buffer-attach! ed buf)
+    (set! (edit-window-buffer (current-window fr)) buf)
+    (set! (buffer-file-path buf) (current-directory))
+    (editor-set-text ed text)
+    (editor-goto-pos ed 0)
+    (echo-message! (app-state-echo app)
+      "Amending. M-x magit-commit-finalize to commit")))
 
 (def (cmd-magit-stage-file app)
   "Stage current file."

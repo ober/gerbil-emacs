@@ -626,8 +626,12 @@
         (if (string=? msg "")
           (echo-error! (app-state-echo app) "Aborting commit due to empty message")
           (begin
+            (let ((git-args (if *magit-amend-mode*
+                               (list "commit" "--amend" "-m" msg)
+                               (list "commit" "-m" msg))))
+            (set! *magit-amend-mode* #f)
             (echo-message! (app-state-echo app) "Committing...")
-            (magit-run-git/async (list "commit" "-m" msg) dir
+            (magit-run-git/async git-args dir
               (lambda (output)
                 (ui-queue-push!
                   (lambda ()
@@ -640,12 +644,13 @@
                       (string-append "Committed: "
                         (if (> (string-length msg) 60)
                           (string-append (substring msg 0 57) "...")
-                          msg)))))))))))))
+                          msg))))))))))))))
 
 (def (cmd-magit-commit-abort app)
   "Abort the commit and kill the commit buffer."
   (let ((buf (current-qt-buffer app)))
     (when (string=? (buffer-name buf) "*Magit: Commit*")
+      (set! *magit-amend-mode* #f)
       (qt-buffer-kill! buf)
       ;; Go back to magit status if it exists
       (let ((magit-buf (buffer-by-name "*Magit*")))
@@ -655,6 +660,40 @@
             (qt-buffer-attach! ed magit-buf)
             (set! (qt-edit-window-buffer (qt-current-window fr)) magit-buf))))
       (echo-message! (app-state-echo app) "Commit aborted"))))
+
+(def *magit-amend-mode* #f)
+
+(def (cmd-magit-amend app)
+  "Amend the last commit: open commit buffer pre-filled with previous message."
+  (let ((dir (or *magit-dir* (current-directory))))
+    ;; Get the last commit message
+    (magit-run-git/async '("log" "-1" "--format=%B") dir
+      (lambda (prev-msg)
+        ;; Get staged diff (or HEAD diff if nothing staged)
+        (magit-run-git/async '("diff" "--cached" "--stat") dir
+          (lambda (stat-output)
+            (let ((use-head? (string=? (string-trim stat-output) "")))
+              (magit-run-git/async
+                (if use-head? '("diff" "HEAD~1") '("diff" "--cached"))
+                dir
+                (lambda (diff-output)
+                  (ui-queue-push!
+                    (lambda ()
+                      (set! *magit-amend-mode* #t)
+                      (magit-open-commit-buffer! app
+                        (if use-head?
+                          (or (magit-run-git '("diff" "HEAD~1" "--stat") dir) "")
+                          stat-output)
+                        diff-output dir)
+                      ;; Pre-fill with previous message
+                      (let* ((ed (current-qt-editor app))
+                             (text (qt-plain-text-edit-text ed))
+                             (prev (string-trim prev-msg)))
+                        (qt-plain-text-edit-set-text! ed
+                          (string-append prev "\n" (substring text 1 (string-length text))))
+                        (qt-plain-text-edit-set-cursor-position! ed 0))
+                      (echo-message! (app-state-echo app)
+                        "Amending. C-c C-c to commit, C-c C-k to abort"))))))))))))
 
 (def (cmd-magit-diff app)
   "Show diff for file at point or cursor context."

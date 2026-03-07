@@ -975,6 +975,7 @@
     (keymap-bind! magit-km "S" 'magit-stage-all)
     (keymap-bind! magit-km "u" 'magit-unstage)
     (keymap-bind! magit-km "c" 'magit-commit)
+    (keymap-bind! magit-km "a" 'magit-amend)
     (keymap-bind! magit-km "d" 'magit-diff)
     (keymap-bind! magit-km "l" 'magit-log)
     (keymap-bind! magit-km "b" 'magit-branch)
