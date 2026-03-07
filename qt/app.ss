@@ -85,24 +85,21 @@
 
 (def (which-key-format-bindings km prefix-str)
   "Format keymap bindings for which-key display.
-   Shows key→command pairs with abbreviated command names."
+   Shows key → Description pairs with human-readable command names."
   (let* ((entries (keymap-entries km))
-         ;; Abbreviate command names: remove common prefix, shorten long names
-         (abbreviate (lambda (cmd)
-                       (let ((s (if (symbol? cmd) (symbol->string cmd)
-                                  (if (hash-table? cmd) "+prefix" "?"))))
-                         ;; Shorten common prefixes
-                         (cond
-                           ((string-prefix? "cmd-" s) (substring s 4 (string-length s)))
-                           (else s)))))
+         (describe (lambda (cmd)
+                     (cond
+                       ((hash-table? cmd) "+prefix")
+                       ((symbol? cmd) (command-name->description cmd))
+                       (else "?"))))
          (strs (let loop ((es entries) (acc []))
                  (if (null? es) (reverse acc)
                    (let* ((e (car es))
                           (key (car e))
                           (val (cdr e))
-                          (cmd (abbreviate val)))
+                          (desc (describe val)))
                      (loop (cdr es)
-                           (cons (string-append key ":" cmd) acc)))))))
+                           (cons (string-append key " → " desc) acc)))))))
     (string-append prefix-str "- " (string-join strs "  "))))
 
 ;; Key-chord state — detect two rapid keystrokes as a chord

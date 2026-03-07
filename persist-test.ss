@@ -85,8 +85,8 @@
         (keymap-bind! km "f" 'find-file)
         (let ((summary (which-key-summary km)))
           ;; string-contains returns index or #f
-          (check (not (not (string-contains summary "s:save-buffer"))) => #t)
-          (check (not (not (string-contains summary "f:find-file"))) => #t))))
+          (check (not (not (string-contains summary "s → Save buffer"))) => #t)
+          (check (not (not (string-contains summary "f → Find file"))) => #t))))
 
     (test-case "which-key-summary: shows +prefix for nested keymaps"
       (let ((km (make-keymap))
@@ -94,8 +94,8 @@
         (keymap-bind! km "r" sub-km)
         (keymap-bind! km "b" 'switch-buffer)
         (let ((summary (which-key-summary km)))
-          (check (not (not (string-contains summary "r:+prefix"))) => #t)
-          (check (not (not (string-contains summary "b:switch-buffer"))) => #t))))
+          (check (not (not (string-contains summary "r → +prefix"))) => #t)
+          (check (not (not (string-contains summary "b → Switch buffer"))) => #t))))
 
     (test-case "scroll margin: default value"
       (check (number? *scroll-margin*) => #t)

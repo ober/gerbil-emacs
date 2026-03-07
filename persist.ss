@@ -479,7 +479,7 @@
 
 (def (which-key-summary keymap (max-entries 20))
   "Generate a summary string of available keys in a keymap.
-   Returns a string like 'C-s:save  C-f:find  b:switch  k:kill'."
+   Returns a string like 'C-s → Save buffer  C-f → Find file  b → Switch to buffer'."
   (let* ((entries (hash->list keymap))
          (sorted (sort entries (lambda (a b) (string<? (car a) (car b)))))
          (items
@@ -492,10 +492,10 @@
                         (val (cdar es))
                         (desc (cond
                                 ((hash-table? val) "+prefix")
-                                ((symbol? val) (symbol->string val))
+                                ((symbol? val) (command-name->description val))
                                 (else "?"))))
                    (loop (cdr es)
-                         (cons (string-append key ":" desc) acc)
+                         (cons (string-append key " → " desc) acc)
                          (+ n 1))))))))
     (string-join items "  ")))
 
