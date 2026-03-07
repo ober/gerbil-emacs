@@ -1,7 +1,7 @@
 # Gemacs vs GNU Emacs — Feature Comparison
 
 > **Last updated:** 2026-03-07
-> **Gemacs version:** master (283de82)
+> **Gemacs version:** master (10ac23e)
 > **Compared against:** GNU Emacs 29.x / 30.x feature set
 
 ## Status Legend
@@ -350,8 +350,9 @@
 | Goto-address-mode | :white_check_mark: | URL detection and highlighting with Scintilla indicators (TUI + Qt) |
 | Subword-mode | :white_check_mark: | CamelCase-aware word navigation: forward, backward, kill (TUI + Qt) |
 | Rainbow delimiters | :white_check_mark: | Color-coded parentheses/brackets via Scintilla indicators |
+| Pulse-on-jump | :white_check_mark: | Auto-flash landing line after >5-line jumps (INDIC_FULLBOX), toggleable |
 
-**Summary:** Single-frame Qt application. No multi-frame support. Display features work well including fill-column indicator, URL highlighting, and rainbow delimiters.
+**Summary:** Single-frame Qt application. No multi-frame support. Display features work well including fill-column indicator, URL highlighting, pulse-on-jump, and rainbow delimiters.
 
 ---
 
@@ -366,7 +367,7 @@
 | Save some buffers (`C-x s`) | :white_check_mark: | Prompts for each modified |
 | Revert buffer | :white_check_mark: | Reload from disk |
 | Auto-revert mode | :white_check_mark: | File watcher for external changes |
-| Auto-save mode | :large_blue_circle: | Periodic save |
+| Auto-save mode | :white_check_mark: | 30s timer writes to `#file#`, per-buffer toggle, recover-file |
 | Backup files | :yellow_circle: | Basic |
 | Recent files (`C-x C-r`) | :white_check_mark: | |
 | Find file at point | :white_check_mark: | |
@@ -608,7 +609,7 @@
 | Terminal (term/ansi-term) | :large_blue_circle: | PTY support, ANSI colors, signals |
 | Vterm | :yellow_circle: | `vterm` delegates to built-in `term`; `vterm-copy-mode` in Qt |
 | Shell mode | :large_blue_circle: | External shell buffer |
-| Compilation mode | :white_check_mark: | Error parsing, navigation |
+| Compilation mode | :white_check_mark: | Error parsing, navigation, ANSI color rendering |
 | Comint (process interaction) | :yellow_circle: | Basic subprocess I/O |
 | Process sentinels/filters | :white_check_mark: | `set-process-sentinel!`, `set-process-filter!` API |
 
