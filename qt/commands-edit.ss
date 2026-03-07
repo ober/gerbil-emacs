@@ -758,25 +758,29 @@
 
 (def (cmd-shell-send app)
   "Execute the current input line in the shell via gsh.
-   Builtins run synchronously, external commands run async via PTY."
+   Builtins run synchronously, external commands run async via PTY.
+   When PTY is busy (e.g. sudo password prompt), sends newline to PTY."
   (let* ((buf (current-qt-buffer app))
          (ss (hash-get *shell-state* buf)))
     (when ss
-      (let* ((ed (current-qt-editor app))
-             (all-text (qt-plain-text-edit-text ed))
-             (prompt-pos (shell-state-prompt-pos ss))
-             (end-pos (string-length all-text))
-             (input (if (> end-pos prompt-pos)
-                      (substring all-text prompt-pos end-pos)
-                      "")))
-        ;; Record in shell history
-        (let ((trimmed-input (safe-string-trim-both input)))
-          (when (> (string-length trimmed-input) 0)
-            (gsh-history-add! trimmed-input (current-directory))))
-        ;; Append newline after user input
-        (qt-plain-text-edit-move-cursor! ed QT_CURSOR_END)
-        (qt-plain-text-edit-insert-text! ed "\n")
-        (let-values (((mode output new-cwd) (shell-execute-async! input ss)))
+      ;; If PTY is busy, just send newline to the child process
+      (if (shell-pty-busy? ss)
+        (shell-send-input! ss "\n")
+        (let* ((ed (current-qt-editor app))
+               (all-text (qt-plain-text-edit-text ed))
+               (prompt-pos (shell-state-prompt-pos ss))
+               (end-pos (string-length all-text))
+               (input (if (> end-pos prompt-pos)
+                        (substring all-text prompt-pos end-pos)
+                        "")))
+          ;; Record in shell history
+          (let ((trimmed-input (safe-string-trim-both input)))
+            (when (> (string-length trimmed-input) 0)
+              (gsh-history-add! trimmed-input (current-directory))))
+          ;; Append newline after user input
+          (qt-plain-text-edit-move-cursor! ed QT_CURSOR_END)
+          (qt-plain-text-edit-insert-text! ed "\n")
+          (let-values (((mode output new-cwd) (shell-execute-async! input ss)))
           (case mode
             ((sync)
              (when (and (string? output) (> (string-length output) 0))
@@ -817,7 +821,7 @@
                     (set! (qt-edit-window-buffer (qt-current-window fr)) other))
                   (hash-remove! *shell-state* buf)
                   (qt-buffer-kill! buf)
-                  (echo-message! (app-state-echo app) "Shell exited")))))))))))
+                  (echo-message! (app-state-echo app) "Shell exited"))))))))))))
 ;;;============================================================================
 ;;; AI Chat commands (Claude CLI integration)
 ;;;============================================================================

@@ -196,9 +196,13 @@
                  ;; Feed data to VT100 screen buffer, then render
                  (begin
                    (vtscreen-feed! vt data)
-                   (let* ((pre (or (shell-state-pre-pty-text ss) ""))
-                          (rendered (vtscreen-render vt))
-                          (full (string-append pre rendered)))
+                   (let* ((rendered (vtscreen-render vt))
+                          ;; Full-screen programs (alt-screen): show only vtscreen
+                          ;; Simple commands: prepend pre-PTY text
+                          (full (if (vtscreen-alt-screen? vt)
+                                  rendered
+                                  (string-append (or (shell-state-pre-pty-text ss) "")
+                                                 rendered))))
                      (qt-plain-text-edit-set-text! ed full)
                      (qt-plain-text-edit-move-cursor! ed QT_CURSOR_END)
                      (qt-plain-text-edit-ensure-cursor-visible! ed)))
@@ -209,7 +213,10 @@
                    (qt-plain-text-edit-ensure-cursor-visible! ed))))
              (loop (cdr wins))))))
       ((eq? tag 'done)
-       (let ((pre-text (shell-state-pre-pty-text ss)))
+       ;; Capture final vtscreen state before cleanup destroys it
+       (let* ((alt-screen? (and vt (vtscreen-alt-screen? vt)))
+              (final-render (and vt (vtscreen-render vt)))
+              (pre-text (shell-state-pre-pty-text ss)))
          (shell-cleanup-pty! ss)
          (let loop ((wins (qt-frame-windows fr)))
            (when (pair? wins)
@@ -217,7 +224,16 @@
                (let ((ed (qt-edit-window-editor (car wins))))
                  (let ((prompt (shell-prompt ss)))
                    (when pre-text
-                     (qt-plain-text-edit-set-text! ed pre-text))
+                     (if alt-screen?
+                       ;; Full-screen program (top, vim): restore pre-PTY text
+                       (qt-plain-text-edit-set-text! ed pre-text)
+                       ;; Simple command (ls, ps): keep output
+                       (let* ((output (or final-render ""))
+                              (sep (if (and (> (string-length output) 0)
+                                           (not (char=? (string-ref output (- (string-length output) 1)) #\newline)))
+                                     "\n" ""))
+                              (full (string-append pre-text output sep)))
+                         (qt-plain-text-edit-set-text! ed full))))
                    (qt-plain-text-edit-move-cursor! ed QT_CURSOR_END)
                    (qt-plain-text-edit-insert-text! ed prompt)
                    (set! (shell-state-prompt-pos ss)
@@ -246,9 +262,13 @@
                  ;; Feed data to VT100 screen buffer, then render
                  (begin
                    (vtscreen-feed! vt data)
-                   (let* ((pre (or (terminal-state-pre-pty-text ts) ""))
-                          (rendered (vtscreen-render vt))
-                          (full (string-append pre rendered)))
+                   (let* ((rendered (vtscreen-render vt))
+                          ;; Full-screen programs (alt-screen): show only vtscreen
+                          ;; Simple commands: prepend pre-PTY text
+                          (full (if (vtscreen-alt-screen? vt)
+                                  rendered
+                                  (string-append (or (terminal-state-pre-pty-text ts) "")
+                                                 rendered))))
                      (qt-plain-text-edit-set-text! ed full)
                      (qt-plain-text-edit-move-cursor! ed QT_CURSOR_END)
                      (qt-plain-text-edit-ensure-cursor-visible! ed)))
@@ -259,18 +279,27 @@
                    (qt-plain-text-edit-ensure-cursor-visible! ed))))
              (loop (cdr wins))))))
       ((eq? tag 'done)
-       ;; Restore pre-PTY text (remove full-screen program output)
-       (let ((pre-text (terminal-state-pre-pty-text ts)))
+       ;; Capture final vtscreen state before cleanup destroys it
+       (let* ((alt-screen? (and vt (vtscreen-alt-screen? vt)))
+              (final-render (and vt (vtscreen-render vt)))
+              (pre-text (terminal-state-pre-pty-text ts)))
          (terminal-cleanup-pty! ts)
          (let loop ((wins (qt-frame-windows fr)))
            (when (pair? wins)
              (if (eq? (qt-edit-window-buffer (car wins)) buf)
                (let ((ed (qt-edit-window-editor (car wins))))
                  (let ((prompt (terminal-prompt ts)))
-                   ;; If we had a vtscreen, restore the pre-PTY text
-                   ;; plus any final output, then add prompt
                    (when pre-text
-                     (qt-plain-text-edit-set-text! ed pre-text))
+                     (if alt-screen?
+                       ;; Full-screen program (top, vim): restore pre-PTY text
+                       (qt-plain-text-edit-set-text! ed pre-text)
+                       ;; Simple command (ls, ps): keep output
+                       (let* ((output (or final-render ""))
+                              (sep (if (and (> (string-length output) 0)
+                                           (not (char=? (string-ref output (- (string-length output) 1)) #\newline)))
+                                     "\n" ""))
+                              (full (string-append pre-text output sep)))
+                         (qt-plain-text-edit-set-text! ed full))))
                    (qt-plain-text-edit-move-cursor! ed QT_CURSOR_END)
                    (qt-plain-text-edit-insert-text! ed prompt)
                    (set! (terminal-state-prompt-pos ts)
@@ -527,18 +556,30 @@
                                  (when (< i n)
                                    (qt-plain-text-edit-insert-text! ed (string ch))
                                    (loop (+ i 1)))))
-                              ;; Terminal: insert character into buffer (gsh line mode)
+                              ;; Terminal: if PTY busy, send to PTY (honors echo settings);
+                              ;; otherwise insert locally (gsh line mode)
                               ((terminal-buffer? buf)
-                               (let loop ((i 0))
-                                 (when (< i n)
-                                   (qt-plain-text-edit-insert-text! ed (string ch))
-                                   (loop (+ i 1)))))
-                              ;; Shell: insert char locally (sent as complete line on Enter)
+                               (let ((ts (hash-get *terminal-state* buf)))
+                                 (if (and ts (terminal-pty-busy? ts))
+                                   ;; PTY running — send keystroke to child process
+                                   ;; The PTY handles echo (hides password input, etc.)
+                                   (terminal-send-input! ts (string ch))
+                                   ;; No PTY — local line editing
+                                   (let loop ((i 0))
+                                     (when (< i n)
+                                       (qt-plain-text-edit-insert-text! ed (string ch))
+                                       (loop (+ i 1)))))))
+                              ;; Shell: if PTY busy, send to PTY; otherwise insert locally
                               ((shell-buffer? buf)
-                               (let loop ((i 0))
-                                 (when (< i n)
-                                   (qt-plain-text-edit-insert-text! ed (string ch))
-                                   (loop (+ i 1)))))
+                               (let ((ss (hash-get *shell-state* buf)))
+                                 (if (and ss (shell-pty-busy? ss))
+                                   ;; PTY running — send keystroke to child process
+                                   (shell-send-input! ss (string ch))
+                                   ;; No PTY — local line editing
+                                   (let loop ((i 0))
+                                     (when (< i n)
+                                       (qt-plain-text-edit-insert-text! ed (string ch))
+                                       (loop (+ i 1)))))))
                               (else
                                (cond
                                  ;; Auto-pair skip-over: typing closing delimiter when next char matches

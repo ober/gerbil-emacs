@@ -255,6 +255,29 @@
               (qt-plain-text-edit-insert-text! ed (string-append "\n" indent)))
             (qt-plain-text-edit-insert-text! ed "\n")))))))
 
+(def (qt-open-image-inline! app filename)
+  "Open an image file as an inline image buffer."
+  (let* ((pixmap (qt-pixmap-load filename)))
+    (if (qt-pixmap-null? pixmap)
+      (begin
+        (qt-pixmap-destroy! pixmap)
+        (echo-error! (app-state-echo app)
+          (string-append "Failed to load image: " filename)))
+      (let* ((name (path-strip-directory filename))
+             (fr (app-state-frame app))
+             (ed (current-qt-editor app))
+             (buf (qt-buffer-create! name ed filename))
+             (orig-w (qt-pixmap-width pixmap))
+             (orig-h (qt-pixmap-height pixmap)))
+        (set! (buffer-lexer-lang buf) 'image)
+        (hash-put! *image-buffer-state* buf
+          (list pixmap (box 1.0) orig-w orig-h))
+        (buffer-touch! buf)
+        (qt-buffer-attach! ed buf)
+        (set! (qt-edit-window-buffer (qt-current-window fr)) buf)
+        (echo-message! (app-state-echo app)
+          (string-append "Image: " name " (" (number->string orig-w) "x" (number->string orig-h) ")"))))))
+
 (def (cmd-find-file-at-point app)
   "Open file at point, or prompt with path at point as default."
   (let* ((ed (current-qt-editor app))
@@ -272,9 +295,13 @@
     (when (and filename (> (string-length filename) 0))
       (let ((filename (expand-filename filename)))
       (recent-files-add! filename)
-      (if (and (file-exists? filename)
-               (eq? 'directory (file-info-type (file-info filename))))
-        (dired-open-directory! app filename)
+      (cond
+        ((and (file-exists? filename)
+              (eq? 'directory (file-info-type (file-info filename))))
+         (dired-open-directory! app filename))
+        ((image-file? filename)
+         (qt-open-image-inline! app filename))
+        (else
         (let* ((name (uniquify-buffer-name! filename))
                (fr (app-state-frame app))
                (ed2 (current-qt-editor app))
@@ -306,7 +333,7 @@
           (qt-setup-highlighting! app buf)
           (apply-dir-locals! app filename)
           (qt-apply-editorconfig! app filename)
-          (echo-message! echo (string-append "Opened: " filename))))))))
+          (echo-message! echo (string-append "Opened: " filename)))))))))
 
 (def (qt-list-directory-files dir)
   "List files in a directory for completion. Returns sorted list of basenames."
@@ -344,12 +371,16 @@
           (begin
         ;; Track in recent files
         (recent-files-add! filename)
-        ;; Check if it's a directory
-        (if (and (file-exists? filename)
-                 (eq? 'directory (file-info-type (file-info filename))))
-          ;; Open as dired
-          (dired-open-directory! app filename)
-          ;; Open as regular file
+        (cond
+          ;; Directory -> dired
+          ((and (file-exists? filename)
+                (eq? 'directory (file-info-type (file-info filename))))
+           (dired-open-directory! app filename))
+          ;; Image file -> open as image buffer
+          ((image-file? filename)
+           (qt-open-image-inline! app filename))
+          ;; Regular text file
+          (else
           (let* ((name (uniquify-buffer-name! filename))
                  (fr (app-state-frame app))
                  (ed (current-qt-editor app))
@@ -378,7 +409,8 @@
             ;; Apply directory-locals and editorconfig settings
             (apply-dir-locals! app filename)
             (qt-apply-editorconfig! app filename)
-            (echo-message! echo (string-append "Opened: " filename)))))))))))
+            (echo-message! echo (string-append "Opened: " filename))))))))))))
+
 
 (def (cmd-save-buffer app)
   (let* ((ed (current-qt-editor app))

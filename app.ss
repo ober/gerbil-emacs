@@ -12,6 +12,7 @@
         :gemacs/repl
         :gemacs/shell
         :gemacs/terminal
+        :gemacs/vtscreen
         :gemacs/chat
         :gemacs/keymap
         :gemacs/buffer
@@ -120,12 +121,27 @@
 
     app))
 
+(def (binary-file? path)
+  "Check if a file has a known binary extension (images, archives, etc.)."
+  (let ((ext (string-downcase (path-extension path))))
+    (member ext '(".png" ".jpg" ".jpeg" ".gif" ".bmp" ".ico" ".svg" ".webp"
+                  ".tiff" ".tif" ".psd" ".raw" ".heic" ".avif"
+                  ".zip" ".gz" ".bz2" ".xz" ".tar" ".7z" ".rar"
+                  ".pdf" ".doc" ".docx" ".xls" ".xlsx"
+                  ".so" ".o" ".a" ".dylib" ".exe" ".dll"
+                  ".mp3" ".mp4" ".avi" ".mkv" ".wav" ".flac" ".ogg"))))
+
 (def (open-file-in-app! app filename)
   "Open a file or directory in a new buffer."
   ;; Directory -> dired
   (if (and (file-exists? filename)
            (eq? 'directory (file-info-type (file-info filename))))
     (dired-open-directory! app filename)
+  ;; Binary file -> refuse
+  (if (binary-file? filename)
+    (echo-message! (app-state-echo app)
+      (string-append "Binary file: " (path-strip-directory filename)
+                     " (not opening in TUI)"))
   (let* ((name (uniquify-buffer-name filename))
          (ed (current-editor app))
          (buf (buffer-create! name ed filename))
@@ -164,7 +180,7 @@
       (when mode
         (buffer-local-set! buf 'major-mode mode)
         (let ((mode-cmd (find-command mode)))
-          (when mode-cmd (mode-cmd app))))))))
+          (when mode-cmd (mode-cmd app)))))))))
 
 ;;;============================================================================
 ;;; IPC polling (files opened via gemacs-client)
@@ -215,54 +231,116 @@
 ;;;============================================================================
 
 (def (poll-shell-pty-msg! app buf ss msg)
-  "Handle one PTY message for a shell buffer."
+  "Handle one PTY message for a shell buffer.
+   Uses VT100 screen buffer for cursor-addressing programs."
   (let ((tag (car msg))
-        (data (cdr msg)))
+        (data (cdr msg))
+        (vt (shell-state-vtscreen ss)))
     (cond
       ((eq? tag 'data)
        (let ((win (find-window-for-buffer (app-state-frame app) buf)))
          (when win
            (let ((ed (edit-window-editor win)))
-             (editor-append-text ed (strip-ansi-codes data))
-             (editor-goto-pos ed (editor-get-text-length ed))
-             (editor-scroll-caret ed)))))
+             ;; Save pre-PTY text on first data chunk
+             (when (and vt (not (shell-state-pre-pty-text ss)))
+               (set! (shell-state-pre-pty-text ss) (editor-get-text ed)))
+             (if vt
+               (begin
+                 (vtscreen-feed! vt data)
+                 (let* ((rendered (vtscreen-render vt))
+                        (full (if (vtscreen-alt-screen? vt)
+                                rendered
+                                (string-append (or (shell-state-pre-pty-text ss) "")
+                                               rendered))))
+                   (editor-set-text ed full)
+                   (editor-goto-pos ed (editor-get-text-length ed))
+                   (editor-scroll-caret ed)))
+               (begin
+                 (editor-append-text ed (strip-ansi-codes data))
+                 (editor-goto-pos ed (editor-get-text-length ed))
+                 (editor-scroll-caret ed)))))))
       ((eq? tag 'done)
-       (shell-cleanup-pty! ss)
-       (let ((win (find-window-for-buffer (app-state-frame app) buf)))
-         (when win
-           (let ((ed (edit-window-editor win)))
-             (let ((prompt (shell-prompt ss)))
-               (editor-append-text ed prompt)
-               (set! (shell-state-prompt-pos ss) (editor-get-text-length ed))
-               (editor-goto-pos ed (editor-get-text-length ed))
-               (editor-scroll-caret ed)))))))))
+       (let* ((alt-screen? (and vt (vtscreen-alt-screen? vt)))
+              (final-render (and vt (vtscreen-render vt)))
+              (pre-text (shell-state-pre-pty-text ss)))
+         (shell-cleanup-pty! ss)
+         (let ((win (find-window-for-buffer (app-state-frame app) buf)))
+           (when win
+             (let ((ed (edit-window-editor win)))
+               (when pre-text
+                 (if alt-screen?
+                   (editor-set-text ed pre-text)
+                   (let* ((output (or final-render ""))
+                          (sep (if (and (> (string-length output) 0)
+                                       (not (char=? (string-ref output (- (string-length output) 1)) #\newline)))
+                                 "\n" ""))
+                          (full (string-append pre-text output sep)))
+                     (editor-set-text ed full))))
+               (let ((prompt (shell-prompt ss)))
+                 (editor-append-text ed prompt)
+                 (set! (shell-state-prompt-pos ss) (editor-get-text-length ed))
+                 (editor-goto-pos ed (editor-get-text-length ed))
+                 (editor-scroll-caret ed))))))))))
 
 (def (poll-terminal-pty-msg! app buf ts msg)
-  "Handle one PTY message for a terminal buffer."
+  "Handle one PTY message for a terminal buffer.
+   Uses VT100 screen buffer for cursor-addressing programs (top, vim, etc.)."
   (let ((tag (car msg))
-        (data (cdr msg)))
+        (data (cdr msg))
+        (vt (terminal-state-vtscreen ts)))
     (cond
       ((eq? tag 'data)
        (let ((win (find-window-for-buffer (app-state-frame app) buf)))
          (when win
-           (let* ((ed (edit-window-editor win))
-                  (segments (parse-ansi-segments data))
-                  (start-pos (editor-get-text-length ed)))
-             (terminal-insert-styled! ed segments start-pos)
-             (editor-goto-pos ed (editor-get-text-length ed))
-             (editor-scroll-caret ed)))))
+           (let ((ed (edit-window-editor win)))
+             ;; Save pre-PTY text on first data chunk
+             (when (and vt (not (terminal-state-pre-pty-text ts)))
+               (set! (terminal-state-pre-pty-text ts)
+                 (editor-get-text ed)))
+             (if vt
+               ;; Feed data to VT100 screen buffer, then render
+               (begin
+                 (vtscreen-feed! vt data)
+                 (let* ((rendered (vtscreen-render vt))
+                        (full (if (vtscreen-alt-screen? vt)
+                                rendered
+                                (string-append (or (terminal-state-pre-pty-text ts) "")
+                                               rendered))))
+                   (editor-set-text ed full)
+                   (editor-goto-pos ed (editor-get-text-length ed))
+                   (editor-scroll-caret ed)))
+               ;; Fallback: strip ANSI and append (no vtscreen)
+               (let* ((segments (parse-ansi-segments data))
+                      (start-pos (editor-get-text-length ed)))
+                 (terminal-insert-styled! ed segments start-pos)
+                 (editor-goto-pos ed (editor-get-text-length ed))
+                 (editor-scroll-caret ed)))))))
       ((eq? tag 'done)
-       (terminal-cleanup-pty! ts)
-       (let ((win (find-window-for-buffer (app-state-frame app) buf)))
-         (when win
-           (let* ((ed (edit-window-editor win))
-                  (raw-prompt (terminal-prompt-raw ts))
-                  (segments (parse-ansi-segments raw-prompt))
-                  (start-pos (editor-get-text-length ed)))
-             (terminal-insert-styled! ed segments start-pos)
-             (set! (terminal-state-prompt-pos ts) (editor-get-text-length ed))
-             (editor-goto-pos ed (editor-get-text-length ed))
-             (editor-scroll-caret ed))))))))
+       (let* ((alt-screen? (and vt (vtscreen-alt-screen? vt)))
+              (final-render (and vt (vtscreen-render vt)))
+              (pre-text (terminal-state-pre-pty-text ts)))
+         (terminal-cleanup-pty! ts)
+         (let ((win (find-window-for-buffer (app-state-frame app) buf)))
+           (when win
+             (let ((ed (edit-window-editor win)))
+               ;; For full-screen programs: restore pre-PTY text
+               ;; For simple commands: keep output
+               (when pre-text
+                 (if alt-screen?
+                   (editor-set-text ed pre-text)
+                   (let* ((output (or final-render ""))
+                          (sep (if (and (> (string-length output) 0)
+                                       (not (char=? (string-ref output (- (string-length output) 1)) #\newline)))
+                                 "\n" ""))
+                          (full (string-append pre-text output sep)))
+                     (editor-set-text ed full))))
+               (let* ((raw-prompt (terminal-prompt-raw ts))
+                      (segments (parse-ansi-segments raw-prompt))
+                      (start-pos (editor-get-text-length ed)))
+                 (terminal-insert-styled! ed segments start-pos)
+                 (set! (terminal-state-prompt-pos ts) (editor-get-text-length ed))
+                 (editor-goto-pos ed (editor-get-text-length ed))
+                 (editor-scroll-caret ed))))))))))
 
 (def (poll-pty-output! app)
   "Check all shell and terminal buffers for async PTY output."

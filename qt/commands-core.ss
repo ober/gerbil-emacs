@@ -24,7 +24,10 @@
         :gemacs/qt/echo
         :gemacs/qt/highlight
         :gemacs/qt/modeline
-        (only-in :gemacs/editor-core paredit-delimiter? auto-pair-char))
+        (only-in :gemacs/editor-core paredit-delimiter? auto-pair-char)
+        (only-in :gemacs/gsh-eshell
+                 gsh-eshell-buffer? gsh-eshell-prompt
+                 eshell-history-prev eshell-history-next))
 
 ;;; ========================================================================
 ;;; Winner mode — undo/redo window configuration changes
@@ -413,23 +416,83 @@ Returns #t if changed, #f if not or if no record exists."
         (loop (+ i 1))))
     (update-mark-region! app ed)))
 
+(def (eshell-on-input-line? ed)
+  "Check if cursor is on the last line in an eshell buffer.
+   Uses Scintilla line APIs to avoid byte/char offset mismatch."
+  (let* ((cur-line (sci-send ed SCI_LINEFROMPOSITION
+                             (sci-send ed SCI_GETCURRENTPOS)))
+         (total-lines (sci-send ed SCI_GETLINECOUNT)))
+    ;; On last line if current line is the last one
+    (>= cur-line (- total-lines 1))))
+
+(def (eshell-current-input ed)
+  "Get the text after the last prompt on the current line.
+   Uses string operations on the Scheme string (char-based), not byte positions."
+  (let* ((text (qt-plain-text-edit-text ed))
+         (prompt gsh-eshell-prompt)
+         (plen (string-length prompt))
+         (tlen (string-length text))
+         ;; Find the last prompt by scanning backwards in the string
+         (prompt-pos (let loop ((pos (- tlen plen)))
+                       (cond
+                         ((< pos 0) #f)
+                         ((string=? (substring text pos (+ pos plen)) prompt) pos)
+                         (else (loop (- pos 1)))))))
+    (if prompt-pos
+      (substring text (+ prompt-pos plen) tlen)
+      "")))
+
+(def (eshell-replace-input! ed new-input)
+  "Replace the current input (text after the last prompt) with new-input.
+   Uses string operations on the Scheme string (char-based), not byte positions."
+  (let* ((text (qt-plain-text-edit-text ed))
+         (prompt gsh-eshell-prompt)
+         (plen (string-length prompt))
+         (tlen (string-length text))
+         (prompt-pos (let loop ((pos (- tlen plen)))
+                       (cond
+                         ((< pos 0) #f)
+                         ((string=? (substring text pos (+ pos plen)) prompt) pos)
+                         (else (loop (- pos 1)))))))
+    (when prompt-pos
+      (let ((before (substring text 0 (+ prompt-pos plen))))
+        (qt-plain-text-edit-set-text! ed (string-append before new-input))
+        (qt-plain-text-edit-move-cursor! ed QT_CURSOR_END)))))
+
 (def (cmd-next-line app)
-  (let ((n (get-prefix-arg app)) (ed (current-qt-editor app)))
-    (collapse-selection-to-caret! ed)
-    (let loop ((i 0))
-      (when (< i (abs n))
-        (qt-plain-text-edit-move-cursor! ed (if (>= n 0) QT_CURSOR_DOWN QT_CURSOR_UP))
-        (loop (+ i 1))))
-    (update-mark-region! app ed)))
+  (let* ((buf (current-qt-buffer app))
+         (ed (current-qt-editor app)))
+    (if (and (gsh-eshell-buffer? buf) (eshell-on-input-line? ed))
+      ;; Eshell: navigate to newer history entry
+      (let ((cmd (eshell-history-next buf)))
+        (when cmd
+          (eshell-replace-input! ed cmd)))
+      ;; Normal: move cursor down
+      (let ((n (get-prefix-arg app)))
+        (collapse-selection-to-caret! ed)
+        (let loop ((i 0))
+          (when (< i (abs n))
+            (qt-plain-text-edit-move-cursor! ed (if (>= n 0) QT_CURSOR_DOWN QT_CURSOR_UP))
+            (loop (+ i 1))))
+        (update-mark-region! app ed)))))
 
 (def (cmd-previous-line app)
-  (let ((n (get-prefix-arg app)) (ed (current-qt-editor app)))
-    (collapse-selection-to-caret! ed)
-    (let loop ((i 0))
-      (when (< i (abs n))
-        (qt-plain-text-edit-move-cursor! ed (if (>= n 0) QT_CURSOR_UP QT_CURSOR_DOWN))
-        (loop (+ i 1))))
-    (update-mark-region! app ed)))
+  (let* ((buf (current-qt-buffer app))
+         (ed (current-qt-editor app)))
+    (if (and (gsh-eshell-buffer? buf) (eshell-on-input-line? ed))
+      ;; Eshell: navigate to older history entry
+      (let* ((input (eshell-current-input ed))
+             (cmd (eshell-history-prev buf input)))
+        (when cmd
+          (eshell-replace-input! ed cmd)))
+      ;; Normal: move cursor up
+      (let ((n (get-prefix-arg app)))
+        (collapse-selection-to-caret! ed)
+        (let loop ((i 0))
+          (when (< i (abs n))
+            (qt-plain-text-edit-move-cursor! ed (if (>= n 0) QT_CURSOR_UP QT_CURSOR_DOWN))
+            (loop (+ i 1))))
+        (update-mark-region! app ed)))))
 
 (def (cmd-beginning-of-line app)
   "Smart beginning of line: toggle between first non-whitespace and column 0."

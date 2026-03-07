@@ -9,7 +9,12 @@
         gsh-eshell-prompt
         gsh-eshell-get-prompt
         gsh-eshell-init-buffer!
-        gsh-eshell-process-input)
+        gsh-eshell-process-input
+        gsh-eshell-strip-ansi
+        interactive-command?
+        eshell-history-prev
+        eshell-history-next
+        eshell-history-reset!)
 
 (import :std/sugar
         :std/format
@@ -18,7 +23,8 @@
         :gsh/environment
         :gsh/startup
         (only-in :gsh/prompt expand-prompt)
-        :gemacs/core)
+        :gemacs/core
+        :gemacs/shell-history)
 
 ;;;============================================================================
 ;;; State management
@@ -70,7 +76,7 @@
       (set! gsh-eshell-prompt
         (with-catch
           (lambda (e) "gsh> ")
-          (lambda () (strip-ansi-codes
+          (lambda () (gsh-eshell-strip-ansi
                        (expand-prompt ps1 env-getter
                                       0  ; job-count
                                       (shell-environment-cmd-number env)
@@ -88,7 +94,7 @@
         (with-catch
           (lambda (e) "gsh> ")
           (lambda ()
-            (strip-ansi-codes
+            (gsh-eshell-strip-ansi
               (expand-prompt ps1 env-getter
                              0  ; job-count
                              (shell-environment-cmd-number env)
@@ -96,7 +102,7 @@
                              cmd-exec)))))
       "gsh> ")))
 
-(def (strip-ansi-codes str)
+(def (gsh-eshell-strip-ansi str)
   "Remove ANSI escape sequences from a string."
   (let* ((len (string-length str))
          (esc (integer->char 27))
@@ -135,6 +141,74 @@
               (loop (+ i 1) (cons ch acc)))))))))
 
 ;;;============================================================================
+;;; History navigation (up/down arrow in eshell)
+;;;============================================================================
+
+;; Per-buffer history navigation index (-1 = not navigating)
+(def *eshell-history-index* (make-hash-table-eq))
+;; Per-buffer saved input (what user typed before starting history navigation)
+(def *eshell-saved-input* (make-hash-table-eq))
+
+(def (eshell-history-prev buf current-input)
+  "Navigate to the previous (older) history entry.
+   Returns the history command string, or #f if no more history.
+   On first call, saves current-input so it can be restored."
+  (let* ((idx (or (hash-get *eshell-history-index* buf) -1))
+         (history *gsh-history*)
+         (hlen (length history))
+         (new-idx (+ idx 1)))
+    (if (>= new-idx hlen)
+      #f  ; no more history
+      (begin
+        ;; Save the original input on first navigation
+        (when (= idx -1)
+          (hash-put! *eshell-saved-input* buf current-input))
+        (hash-put! *eshell-history-index* buf new-idx)
+        (caddr (list-ref history new-idx))))))
+
+(def (eshell-history-next buf)
+  "Navigate to the next (newer) history entry.
+   Returns the history command string, the saved input, or #f if already at newest."
+  (let* ((idx (or (hash-get *eshell-history-index* buf) -1)))
+    (cond
+      ;; Not navigating
+      ((< idx 0) #f)
+      ;; At newest entry — restore saved input
+      ((= idx 0)
+       (hash-put! *eshell-history-index* buf -1)
+       (let ((saved (or (hash-get *eshell-saved-input* buf) "")))
+         (hash-remove! *eshell-saved-input* buf)
+         saved))
+      ;; Move to newer entry
+      (else
+       (let ((new-idx (- idx 1)))
+         (hash-put! *eshell-history-index* buf new-idx)
+         (caddr (list-ref *gsh-history* new-idx)))))))
+
+(def (eshell-history-reset! buf)
+  "Reset history navigation state (called when input is submitted)."
+  (hash-remove! *eshell-history-index* buf)
+  (hash-remove! *eshell-saved-input* buf))
+
+;;;============================================================================
+;;; Interactive command detection (eshell-visual-commands equivalent)
+;;;============================================================================
+
+(def *interactive-commands*
+  '("top" "htop" "btop" "vim" "vi" "nvim" "nano" "emacs" "less" "more"
+    "man" "screen" "tmux" "ssh" "telnet" "ftp" "sftp" "python" "python3"
+    "ipython" "node" "irb" "ghci" "gdb" "lldb" "mysql" "psql" "sqlite3"
+    "mongosh" "redis-cli" "nmon" "atop" "iotop" "nethogs" "watch"
+    "tail -f" "journalctl -f" "dmesg -w"))
+
+(def (interactive-command? input)
+  "Check if input starts with a known interactive/full-screen program."
+  (let ((first-word (let* ((s (string-trim input))
+                           (sp (string-index s #\space)))
+                      (if sp (substring s 0 sp) s))))
+    (member first-word *interactive-commands*)))
+
+;;;============================================================================
 ;;; Input processing
 ;;;============================================================================
 
@@ -145,6 +219,8 @@
      - a string to display
      - 'clear to clear the buffer
      - 'exit to close the eshell"
+  ;; Reset history navigation on input submission
+  (eshell-history-reset! buf)
   (let ((env (hash-get *gsh-eshell-state* buf))
         (trimmed (safe-string-trim-both input)))
     (cond
@@ -164,6 +240,11 @@
       ;; Exit command
       ((string=? trimmed "exit")
        (values 'exit (or (env-get env "PWD") (current-directory))))
+
+      ;; Block interactive/full-screen programs that would hang eshell
+      ((interactive-command? trimmed)
+       (values (string-append trimmed ": use M-x vterm for interactive programs\n")
+               (or (env-get env "PWD") (current-directory))))
 
       ;; Everything else goes through gsh
       (else
@@ -189,6 +270,7 @@
                                          (> (string-length stdout) 0))
                                   (string-append stdout "\n")
                                   "")))
-            (values (string-append display-output
-                                  (if (> (string-length stderr) 0) stderr ""))
+            (values (gsh-eshell-strip-ansi
+                      (string-append display-output
+                                     (if (> (string-length stderr) 0) stderr "")))
                     (or (env-get env "PWD") (current-directory)))))))))

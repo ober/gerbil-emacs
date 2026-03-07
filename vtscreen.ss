@@ -36,7 +36,8 @@
         vtscreen-rows
         vtscreen-cols
         vtscreen-cursor-row
-        vtscreen-cursor-col)
+        vtscreen-cursor-col
+        vtscreen-alt-screen?)
 
 (import :std/sugar)
 
@@ -55,8 +56,10 @@
    scroll-top    ; int — top of scroll region (0-based)
    scroll-bottom ; int — bottom of scroll region (0-based, inclusive)
    wrap-pending  ; bool — deferred wrap at right margin (VT100 autowrap)
+   alt-screen?   ; bool — full-screen program detected (alt screen or clear+home)
+   last-char     ; char — last graphic char written (for REP/CSI b)
    ;; Parsing state for escape sequences
-   parse-state   ; 'normal | 'esc | 'csi | 'osc
+   parse-state   ; 'normal | 'esc | 'csi | 'osc | 'charset-skip | 'dcs | 'ss-skip
    csi-params    ; string accumulator for CSI parameter bytes
    osc-buf)      ; string accumulator for OSC
   transparent: #t)
@@ -68,7 +71,7 @@
       (when (< r rows)
         (vector-set! grid r (make-vector cols #\space))
         (loop (+ r 1))))
-    (make-vtscreen rows cols grid 0 0 0 0 0 (- rows 1) #f 'normal "" "")))
+    (make-vtscreen rows cols grid 0 0 0 0 0 (- rows 1) #f #f #\space 'normal "" "")))
 
 (def (vtscreen-resize! vt new-rows new-cols)
   "Resize the virtual screen. Preserves content where possible."
@@ -164,52 +167,74 @@
         (let ((ch (string-ref data i)))
           (case (vtscreen-parse-state vt)
             ((normal)
-             (cond
-               ;; ESC — start escape sequence
-               ((char=? ch (integer->char 27))
-                (set! (vtscreen-parse-state vt) 'esc))
-               ;; BEL — bell (ignore)
-               ((char=? ch (integer->char 7))
-                (void))
-               ;; BS — backspace
-               ((char=? ch (integer->char 8))
-                (when (> (vtscreen-cursor-col vt) 0)
-                  (set! (vtscreen-cursor-col vt)
-                    (- (vtscreen-cursor-col vt) 1))))
-               ;; TAB
-               ((char=? ch #\tab)
-                (let ((col (vtscreen-cursor-col vt)))
-                  (set! (vtscreen-cursor-col vt)
-                    (min (- (vtscreen-cols vt) 1)
-                         (* (+ (quotient col 8) 1) 8)))))
-               ;; LF — line feed
-               ((char=? ch #\newline)
-                (set! (vtscreen-wrap-pending vt) #f)
-                (vt-linefeed! vt))
-               ;; CR — carriage return
-               ((char=? ch #\return)
-                (set! (vtscreen-wrap-pending vt) #f)
-                (set! (vtscreen-cursor-col vt) 0))
-               ;; Printable character
-               (else
-                ;; If wrap is pending from previous char at right margin,
-                ;; execute it now before writing the new character
-                (when (vtscreen-wrap-pending vt)
+             (let ((code (char->integer ch)))
+               (cond
+                 ;; ESC — start escape sequence
+                 ((= code 27)
+                  (set! (vtscreen-parse-state vt) 'esc))
+                 ;; 8-bit C1: CSI (0x9B)
+                 ((= code #x9B)
+                  (set! (vtscreen-parse-state vt) 'csi)
+                  (set! (vtscreen-csi-params vt) ""))
+                 ;; 8-bit C1: OSC (0x9D)
+                 ((= code #x9D)
+                  (set! (vtscreen-parse-state vt) 'osc)
+                  (set! (vtscreen-osc-buf vt) ""))
+                 ;; 8-bit C1: DCS (0x90)
+                 ((= code #x90)
+                  (set! (vtscreen-parse-state vt) 'dcs))
+                 ;; 8-bit C1: ST (0x9C) — string terminator (ignore if not in string)
+                 ((= code #x9C) (void))
+                 ;; Other 8-bit C1 controls (0x80-0x9F) — ignore
+                 ((and (>= code #x80) (<= code #x9F)) (void))
+                 ;; BEL — bell (ignore)
+                 ((= code 7) (void))
+                 ;; BS — backspace
+                 ((= code 8)
+                  (when (> (vtscreen-cursor-col vt) 0)
+                    (set! (vtscreen-cursor-col vt)
+                      (- (vtscreen-cursor-col vt) 1))))
+                 ;; TAB
+                 ((= code 9)
+                  (let ((col (vtscreen-cursor-col vt)))
+                    (set! (vtscreen-cursor-col vt)
+                      (min (- (vtscreen-cols vt) 1)
+                           (* (+ (quotient col 8) 1) 8)))))
+                 ;; LF, VT, FF — line feed (with implicit CR, as in newline mode)
+                 ((or (= code 10) (= code 11) (= code 12))
                   (set! (vtscreen-wrap-pending vt) #f)
                   (set! (vtscreen-cursor-col vt) 0)
                   (vt-linefeed! vt))
-                (let ((row (vtscreen-cursor-row vt))
-                      (col (vtscreen-cursor-col vt))
-                      (cols (vtscreen-cols vt)))
-                  ;; Write character at cursor position
-                  (when (and (>= row 0) (< row (vtscreen-rows vt))
-                             (>= col 0) (< col cols))
-                    (vector-set! (vector-ref (vtscreen-grid vt) row) col ch))
-                  ;; Advance cursor
-                  (if (< col (- cols 1))
-                    (set! (vtscreen-cursor-col vt) (+ col 1))
-                    ;; At right edge — set pending wrap (deferred)
-                    (set! (vtscreen-wrap-pending vt) #t))))))
+                 ;; CR — carriage return
+                 ((= code 13)
+                  (set! (vtscreen-wrap-pending vt) #f)
+                  (set! (vtscreen-cursor-col vt) 0))
+                 ;; SO/SI — shift out/in (charset switching, ignore)
+                 ((or (= code 14) (= code 15)) (void))
+                 ;; Other C0 controls — ignore
+                 ((< code 32) (void))
+                 ;; Printable character (>= 0x20)
+                 (else
+                  ;; If wrap is pending from previous char at right margin,
+                  ;; execute it now before writing the new character
+                  (when (vtscreen-wrap-pending vt)
+                    (set! (vtscreen-wrap-pending vt) #f)
+                    (set! (vtscreen-cursor-col vt) 0)
+                    (vt-linefeed! vt))
+                  (let ((row (vtscreen-cursor-row vt))
+                        (col (vtscreen-cursor-col vt))
+                        (cols (vtscreen-cols vt)))
+                    ;; Write character at cursor position
+                    (when (and (>= row 0) (< row (vtscreen-rows vt))
+                               (>= col 0) (< col cols))
+                      (vector-set! (vector-ref (vtscreen-grid vt) row) col ch))
+                    ;; Record for REP (CSI b)
+                    (set! (vtscreen-last-char vt) ch)
+                    ;; Advance cursor
+                    (if (< col (- cols 1))
+                      (set! (vtscreen-cursor-col vt) (+ col 1))
+                      ;; At right edge — set pending wrap (deferred)
+                      (set! (vtscreen-wrap-pending vt) #t)))))))
 
             ((esc)
              (cond
@@ -235,12 +260,39 @@
                ((char=? ch #\M)
                 (vt-reverse-index! vt)
                 (set! (vtscreen-parse-state vt) 'normal))
-               ;; Character set designation: ESC ( X, ESC ) X (skip next char)
-               ((memv ch '(#\( #\) #\* #\+))
-                ;; Need to skip one more char — set state to eat it
-                ;; For simplicity, just go back to normal; the charset char
-                ;; will be treated as a normal char (harmless)
+               ;; DCS: ESC P — Device Control String (VT220)
+               ((char=? ch #\P)
+                (set! (vtscreen-parse-state vt) 'dcs))
+               ;; SS2: ESC N — Single Shift G2 (VT220, skip next char)
+               ((char=? ch #\N)
+                (set! (vtscreen-parse-state vt) 'ss-skip))
+               ;; SS3: ESC O — Single Shift G3 (VT220, skip next char)
+               ((char=? ch #\O)
+                (set! (vtscreen-parse-state vt) 'ss-skip))
+               ;; ESC D — Index (move cursor down, scroll if needed)
+               ((char=? ch #\D)
+                (vt-linefeed! vt)
                 (set! (vtscreen-parse-state vt) 'normal))
+               ;; ESC E — Next Line (CR + LF)
+               ((char=? ch #\E)
+                (set! (vtscreen-cursor-col vt) 0)
+                (vt-linefeed! vt)
+                (set! (vtscreen-parse-state vt) 'normal))
+               ;; ESC c — Full Reset (RIS)
+               ((char=? ch #\c)
+                (let ((rows (vtscreen-rows vt))
+                      (cols (vtscreen-cols vt)))
+                  (grid-clear-region! (vtscreen-grid vt) 0 (- rows 1) cols)
+                  (set! (vtscreen-cursor-row vt) 0)
+                  (set! (vtscreen-cursor-col vt) 0)
+                  (set! (vtscreen-scroll-top vt) 0)
+                  (set! (vtscreen-scroll-bottom vt) (- rows 1))
+                  (set! (vtscreen-wrap-pending vt) #f)
+                  (set! (vtscreen-alt-screen? vt) #f)
+                  (set! (vtscreen-parse-state vt) 'normal)))
+               ;; Character set designation: ESC ( X, ESC ) X — skip next char
+               ((memv ch '(#\( #\) #\* #\+))
+                (set! (vtscreen-parse-state vt) 'charset-skip))
                ;; Anything else: ignore and return to normal
                (else
                 (set! (vtscreen-parse-state vt) 'normal))))
@@ -270,6 +322,30 @@
                 (set! (vtscreen-parse-state vt) 'normal))
                ;; Accumulate (but don't use)
                (else (void))))
+
+            ((charset-skip)
+             ;; Eat one character (the charset designator) and return to normal
+             (set! (vtscreen-parse-state vt) 'normal))
+
+            ((dcs)
+             ;; Device Control String (VT220): consume until ST
+             ;; ST = ESC \ or 8-bit ST (0x9C)
+             (cond
+               ((char=? ch (integer->char #x9C))
+                (set! (vtscreen-parse-state vt) 'normal))
+               ((char=? ch (integer->char 27))
+                ;; ESC starts the ST sequence; next char should be \
+                (set! (vtscreen-parse-state vt) 'dcs-esc))
+               ;; Accumulate silently
+               (else (void))))
+
+            ((dcs-esc)
+             ;; After ESC within DCS — expect \ for ST
+             (set! (vtscreen-parse-state vt) 'normal))
+
+            ((ss-skip)
+             ;; Single Shift (SS2/SS3): skip one character and return to normal
+             (set! (vtscreen-parse-state vt) 'normal))
 
             (else
              (set! (vtscreen-parse-state vt) 'normal))))
@@ -386,6 +462,22 @@
          (set! (vtscreen-cursor-col vt)
            (max 0 (- (vtscreen-cursor-col vt) n)))))
 
+      ;; E — Cursor Next Line (move down N, go to column 0)
+      ((#\E)
+       (let ((n (csi-param params 0 1)))
+         (set! (vtscreen-cursor-col vt) 0)
+         (set! (vtscreen-cursor-row vt)
+           (min (vtscreen-scroll-bottom vt)
+                (+ (vtscreen-cursor-row vt) n)))))
+
+      ;; F — Cursor Previous Line (move up N, go to column 0)
+      ((#\F)
+       (let ((n (csi-param params 0 1)))
+         (set! (vtscreen-cursor-col vt) 0)
+         (set! (vtscreen-cursor-row vt)
+           (max (vtscreen-scroll-top vt)
+                (- (vtscreen-cursor-row vt) n)))))
+
       ;; G — Cursor horizontal absolute
       ((#\G)
        (let ((col (- (csi-param params 0 1) 1)))
@@ -412,8 +504,9 @@
            ((= mode 1)
             (grid-clear-region! grid 0 (- crow 1) cols)
             (grid-clear-row-left! grid crow ccol))
-           ;; 2 or 3: Clear entire screen
+           ;; 2 or 3: Clear entire screen — indicates full-screen program
            ((or (= mode 2) (= mode 3))
+            (set! (vtscreen-alt-screen? vt) #t)
             (grid-clear-region! grid 0 (- rows 1) cols)))))
 
       ;; K — Erase in line
@@ -528,11 +621,39 @@
       ;; m — SGR (Select Graphic Rendition) — ignore for grid rendering
       ((#\m) (void))
 
-      ;; h/l — Set/Reset mode (DEC private modes) — ignore
-      ((#\h #\l) (void))
+      ;; h/l — Set/Reset mode (DEC private modes)
+      ((#\h #\l)
+       ;; Track alternate screen buffer activation
+       (when (is-private-mode? param-str)
+         (let ((ps (parse-csi-params param-str)))
+           (for-each (lambda (p)
+                       (when (or (= p 1049) (= p 1047))
+                         (set! (vtscreen-alt-screen? vt) (char=? final #\h))))
+                     ps))))
+
+      ;; b — REP: Repeat previous graphic character (VT220)
+      ((#\b)
+       (let ((n (csi-param params 0 1))
+             (ch (vtscreen-last-char vt)))
+         (let rep ((j 0))
+           (when (< j n)
+             (let ((row (vtscreen-cursor-row vt))
+                   (col (vtscreen-cursor-col vt)))
+               (when (and (>= row 0) (< row rows)
+                          (>= col 0) (< col cols))
+                 (vector-set! (vector-ref grid row) col ch))
+               (if (< col (- cols 1))
+                 (set! (vtscreen-cursor-col vt) (+ col 1))
+                 (begin
+                   (set! (vtscreen-cursor-col vt) 0)
+                   (vt-linefeed! vt))))
+             (rep (+ j 1))))))
 
       ;; n — Device status report — ignore
       ((#\n) (void))
+
+      ;; c — Device attributes report — ignore
+      ((#\c) (void))
 
       ;; Anything else: ignore
       (else (void)))))

@@ -609,20 +609,24 @@
 
 (def (cmd-terminal-send app)
   "Execute the current input line in the terminal via gsh.
-   Builtins run synchronously, external commands run async via PTY."
+   Builtins run synchronously, external commands run async via PTY.
+   When PTY is busy (e.g. sudo password prompt), sends newline to PTY."
   (let* ((buf (current-qt-buffer app))
          (ts (hash-get *terminal-state* buf)))
     (when ts
-      (let* ((ed (current-qt-editor app))
-             (text (qt-plain-text-edit-text ed))
-             (prompt-pos (terminal-state-prompt-pos ts))
-             (input (if (< prompt-pos (string-length text))
-                      (substring text prompt-pos (string-length text))
-                      "")))
-        ;; Append newline after user input
-        (qt-plain-text-edit-move-cursor! ed QT_CURSOR_END)
-        (qt-plain-text-edit-insert-text! ed "\n")
-        (let-values (((mode output new-cwd) (terminal-execute-async! input ts)))
+      ;; If PTY is busy, just send newline to the child process
+      (if (terminal-pty-busy? ts)
+        (terminal-send-input! ts "\n")
+        (let* ((ed (current-qt-editor app))
+               (text (qt-plain-text-edit-text ed))
+               (prompt-pos (terminal-state-prompt-pos ts))
+               (input (if (< prompt-pos (string-length text))
+                        (substring text prompt-pos (string-length text))
+                        "")))
+          ;; Append newline after user input
+          (qt-plain-text-edit-move-cursor! ed QT_CURSOR_END)
+          (qt-plain-text-edit-insert-text! ed "\n")
+          (let-values (((mode output new-cwd) (terminal-execute-async! input ts)))
           (case mode
             ((sync)
              (when (and (string? output) (> (string-length output) 0))
@@ -663,7 +667,7 @@
                     (set! (qt-edit-window-buffer (qt-current-window fr)) other))
                   (hash-remove! *terminal-state* buf)
                   (qt-buffer-kill! buf)
-                  (echo-message! (app-state-echo app) "Terminal exited")))))))))))
+                  (echo-message! (app-state-echo app) "Terminal exited"))))))))))))
 
 (def (cmd-term-interrupt app)
   "Send SIGINT to running PTY process, or cancel current input."
