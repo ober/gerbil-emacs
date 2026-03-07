@@ -328,6 +328,7 @@
   (register-command! 'diff-apply-hunk cmd-diff-apply-hunk)
   (register-command! 'diff-revert-hunk cmd-diff-revert-hunk)
   (register-command! 'imenu cmd-imenu)
+  (register-command! 'consult-imenu cmd-imenu)
   (register-command! 'show-word-count cmd-show-word-count)
   (register-command! 'show-char-count cmd-show-char-count)
   (register-command! 'insert-path-separator cmd-insert-path-separator)

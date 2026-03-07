@@ -2885,6 +2885,16 @@
         (execute-command! app 'toggle-show-eol)
         (pass! "toggle-show-eol dispatches without error"))))
 
+  ;; Test: consult-line registered
+  (if (find-command 'consult-line)
+    (pass! "consult-line registered")
+    (fail! "consult-line" #f "registered"))
+
+  ;; Test: consult-imenu registered
+  (if (find-command 'consult-imenu)
+    (pass! "consult-imenu registered")
+    (fail! "consult-imenu" #f "registered"))
+
   (displayln "Group 19 complete"))
 
 ;;;============================================================================

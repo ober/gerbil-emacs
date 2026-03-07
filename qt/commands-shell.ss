@@ -1568,29 +1568,28 @@ S=sort by name, z=sort by size, q=quit."
 ;;; Consult commands
 
 (def (cmd-consult-line app)
-  "Search buffer lines interactively (consult-style)."
-  (let ((pattern (qt-echo-read-string app "Search line: ")))
-    (when (and pattern (> (string-length pattern) 0))
-      (let* ((ed (current-qt-editor app))
-             (text (qt-plain-text-edit-text ed))
-             (lines (string-split text #\newline))
-             (matches (let loop ((ls lines) (n 1) (acc []))
-                        (if (null? ls) (reverse acc)
-                          (loop (cdr ls) (+ n 1)
-                                (if (string-contains (car ls) pattern)
-                                  (cons (string-append (number->string n) ": " (car ls)) acc)
-                                  acc))))))
-        (if (null? matches)
-          (echo-message! (app-state-echo app) "No matching lines")
-          (let* ((fr (app-state-frame app))
-                 (result-text (string-join matches "\n"))
-                 (buf (or (buffer-by-name "*Consult*")
-                          (qt-buffer-create! "*Consult*" ed #f))))
-            (qt-buffer-attach! ed buf)
-            (set! (qt-edit-window-buffer (qt-current-window fr)) buf)
-            (qt-plain-text-edit-set-text! ed result-text)
-            (qt-text-document-set-modified! (buffer-doc-pointer buf) #f)
-            (qt-plain-text-edit-set-cursor-position! ed 0)))))))
+  "Search buffer lines interactively with narrowing popup (swiper-style).
+   Shows numbered lines, select one to jump to that line."
+  (let* ((ed (current-qt-editor app))
+         (text (qt-plain-text-edit-text ed))
+         (lines (string-split text #\newline))
+         (numbered-lines
+           (let loop ((ls lines) (n 1) (acc []))
+             (if (null? ls) (reverse acc)
+               (let ((line (car ls)))
+                 (loop (cdr ls) (+ n 1)
+                       (if (string=? line "")
+                         acc  ; skip empty lines
+                         (cons (string-append (number->string n) ": " line) acc)))))))
+         (choice (qt-echo-read-with-narrowing app "Goto line: " numbered-lines)))
+    (when (and choice (> (string-length choice) 0))
+      (let ((colon-pos (string-contains choice ":")))
+        (when colon-pos
+          (let ((line-num (string->number (substring choice 0 colon-pos))))
+            (when (and line-num (> line-num 0))
+              (let ((pos (sci-send ed SCI_POSITIONFROMLINE (- line-num 1) 0)))
+                (qt-plain-text-edit-set-cursor-position! ed pos)
+                (qt-plain-text-edit-ensure-cursor-visible! ed)))))))))
 
 (def (cmd-consult-grep app)
   "Grep with consult — delegates to grep command."
