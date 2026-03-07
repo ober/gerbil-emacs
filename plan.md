@@ -25,14 +25,12 @@ Implemented popup UX matching Ruby Scintilla editors — inline autocomplete dro
 ### File Size Status
 | File | Lines | Status |
 |------|-------|--------|
-| `editor-extra-editing.ss` | ~2075 | Over limit (pre-existing) |
-| `qt/commands-edit.ss` | ~2063 | Over limit |
-| `editor-extra-media.ss` | ~2013 | Over limit (pre-existing) |
-| `qt/commands-vcs.ss` | ~2010 | Over limit |
-| `qt/commands-file.ss` | ~2008 | At limit |
-| `qt/commands-sexp.ss` | ~2000 | At limit |
-| `editor-advanced.ss` | ~2000 | At limit |
-| `editor-extra.ss` | ~1982 | Near limit |
+| `qt/commands-edit.ss` | ~1155 | OK (split into edit + edit2) |
+| `qt/commands-edit2.ss` | ~1325 | OK |
+| `editor-extra-editing.ss` | ~1097 | OK (split into editing + editing2) |
+| `editor-extra-editing2.ss` | ~1130 | OK |
+| `editor-extra-media.ss` | ~2013 | Slightly over limit |
+| `qt/commands-vcs.ss` | ~2003 | Slightly over limit |
 
 ---
 
@@ -50,7 +48,7 @@ Implemented popup UX matching Ruby Scintilla editors — inline autocomplete dro
 - ~~**Dired improvements**~~ — DONE: human-readable file sizes (K/M/G), read-only dired buffer, rename/copy at point (Qt), shared dired-format-listing
 
 ### Maintenance
-- **Split over-limit files** — `editor-extra-media.ss`, `editor-extra-editing.ss`, `qt/commands-edit.ss`, `qt/commands-vcs.ss`
+- ~~**Split over-limit files**~~ — DONE: split `qt/commands-edit.ss` (2457→1155+1325) and `editor-extra-editing.ss` (2204→1097+1130). Remaining `editor-extra-media.ss` (2013) and `qt/commands-vcs.ss` (2003) are barely over limit
 - **Test coverage** — add functional tests for untested command groups
 
 ### Aspirational

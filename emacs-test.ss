@@ -163,9 +163,10 @@
                  *global-fsharp-mode* *global-dart-mode*
                  *global-julia-mode*)
         (only-in :gemacs/editor-extra-editing
-                 occur-parse-source-name
                  text-find-matching-close text-sexp-end
-                 parse-grep-line-text find-number-at-pos
+                 parse-grep-line-text find-number-at-pos)
+        (only-in :gemacs/editor-extra-editing2
+                 occur-parse-source-name
                  *dired-marks*
                  *auto-fill-comments* *electric-indent-mode*
                  *truncate-partial-width* *inhibit-startup-screen*

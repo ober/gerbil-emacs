@@ -257,6 +257,7 @@
     "editor-extra-web"
     "editor-extra-vcs"
     "editor-extra-editing"
+    "editor-extra-editing2"
     "editor-extra-tools"
     "editor-extra-tools2"
     "editor-extra-media"
@@ -315,6 +316,7 @@
           (gxc: "qt/image"    "-cc-options" ,qt-cc-opts "-ld-options" ,qt-ld-opts)
           (gxc: "qt/commands-core"   "-cc-options" ,qt-cc-opts "-ld-options" ,qt-ld-opts)
           (gxc: "qt/commands-edit"   "-cc-options" ,qt-cc-opts "-ld-options" ,qt-ld-opts)
+          (gxc: "qt/commands-edit2"  "-cc-options" ,qt-cc-opts "-ld-options" ,qt-ld-opts)
           (gxc: "qt/commands-search" "-cc-options" ,qt-cc-opts "-ld-options" ,qt-ld-opts)
           (gxc: "qt/commands-file"   "-cc-options" ,qt-cc-opts "-ld-options" ,qt-ld-opts)
           (gxc: "qt/commands-sexp"   "-cc-options" ,qt-cc-opts "-ld-options" ,qt-ld-opts)

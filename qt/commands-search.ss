@@ -24,7 +24,8 @@
         :gemacs/qt/highlight
         :gemacs/qt/modeline
         :gemacs/qt/commands-core
-        :gemacs/qt/commands-edit)
+        :gemacs/qt/commands-edit
+        :gemacs/qt/commands-edit2)
 
 ;;;============================================================================
 ;;; Mark word

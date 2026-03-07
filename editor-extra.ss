@@ -31,6 +31,7 @@
         :gemacs/editor-extra-web
         :gemacs/editor-extra-vcs
         :gemacs/editor-extra-editing
+        :gemacs/editor-extra-editing2
         :gemacs/editor-extra-tools
         :gemacs/editor-extra-tools2
         :gemacs/editor-extra-media

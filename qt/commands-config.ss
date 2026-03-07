@@ -29,6 +29,7 @@
         :gemacs/qt/modeline
         :gemacs/qt/commands-core
         :gemacs/qt/commands-edit
+        :gemacs/qt/commands-edit2
         :gemacs/qt/commands-search
         :gemacs/qt/commands-file
         :gemacs/qt/commands-sexp

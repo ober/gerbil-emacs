@@ -20,7 +20,7 @@
         :gemacs/echo
         :gemacs/editor-extra-helpers
         :gemacs/editor-extra-web
-        (only-in :gemacs/editor-extra-editing
+        (only-in :gemacs/editor-extra-editing2
                  *dired-marks* cmd-dired-refresh))
 
 ;; --- Task #48: EWW, EMMS, PDF tools, Calc, ace-jump, expand-region, etc. ---
