@@ -238,43 +238,45 @@
                    (qt-plain-text-edit-ensure-cursor-visible! ed)))
                (loop (cdr wins))))))))))
 
+(def (qt-poll-terminal-pty-batch! fr buf ts data)
+  "Handle batched PTY data for a terminal buffer.
+   Processes all accumulated data at once, rendering only once."
+  (let ((vt (terminal-state-vtscreen ts)))
+    (let loop ((wins (qt-frame-windows fr)))
+      (when (pair? wins)
+        (if (eq? (qt-edit-window-buffer (car wins)) buf)
+          (let ((ed (qt-edit-window-editor (car wins))))
+            ;; Save pre-PTY text on first data chunk
+            (when (and vt (not (terminal-state-pre-pty-text ts)))
+              (set! (terminal-state-pre-pty-text ts)
+                (qt-plain-text-edit-text ed)))
+            (if vt
+              (begin
+                (vtscreen-feed! vt data)
+                (let* ((rendered (vtscreen-render vt))
+                       (full (if (vtscreen-alt-screen? vt)
+                               rendered
+                               (string-append (or (terminal-state-pre-pty-text ts) "")
+                                              rendered))))
+                  (qt-plain-text-edit-set-text! ed full)
+                  (qt-plain-text-edit-move-cursor! ed QT_CURSOR_END)
+                  (qt-plain-text-edit-ensure-cursor-visible! ed)))
+              (begin
+                (qt-plain-text-edit-move-cursor! ed QT_CURSOR_END)
+                (qt-plain-text-edit-insert-text! ed (strip-ansi-codes data))
+                (qt-plain-text-edit-ensure-cursor-visible! ed))))
+          (loop (cdr wins)))))))
+
 (def (qt-poll-terminal-pty-msg! fr buf ts msg)
   "Handle one PTY message for a terminal buffer in Qt.
-   Uses VT100 screen buffer to properly handle cursor-addressing programs
-   (top, htop, vim, etc.) that redraw in place instead of appending."
+   Data messages are handled via qt-poll-terminal-pty-batch! for efficiency."
   (let ((tag (car msg))
         (data (cdr msg))
         (vt (terminal-state-vtscreen ts)))
     (cond
       ((eq? tag 'data)
-       (let loop ((wins (qt-frame-windows fr)))
-         (when (pair? wins)
-           (if (eq? (qt-edit-window-buffer (car wins)) buf)
-             (let ((ed (qt-edit-window-editor (car wins))))
-               ;; Save pre-PTY text on first data chunk
-               (when (and vt (not (terminal-state-pre-pty-text ts)))
-                 (set! (terminal-state-pre-pty-text ts)
-                   (qt-plain-text-edit-text ed)))
-               (if vt
-                 ;; Feed data to VT100 screen buffer, then render
-                 (begin
-                   (vtscreen-feed! vt data)
-                   (let* ((rendered (vtscreen-render vt))
-                          ;; Full-screen programs (alt-screen): show only vtscreen
-                          ;; Simple commands: prepend pre-PTY text
-                          (full (if (vtscreen-alt-screen? vt)
-                                  rendered
-                                  (string-append (or (terminal-state-pre-pty-text ts) "")
-                                                 rendered))))
-                     (qt-plain-text-edit-set-text! ed full)
-                     (qt-plain-text-edit-move-cursor! ed QT_CURSOR_END)
-                     (qt-plain-text-edit-ensure-cursor-visible! ed)))
-                 ;; Fallback: strip and append (no vtscreen)
-                 (begin
-                   (qt-plain-text-edit-move-cursor! ed QT_CURSOR_END)
-                   (qt-plain-text-edit-insert-text! ed (strip-ansi-codes data))
-                   (qt-plain-text-edit-ensure-cursor-visible! ed))))
-             (loop (cdr wins))))))
+       ;; Single data message fallback
+       (qt-poll-terminal-pty-batch! fr buf ts data))
       ((eq? tag 'done)
        ;; Capture final vtscreen state before cleanup destroys it
        (let* ((alt-screen? (and vt (vtscreen-alt-screen? vt)))
@@ -738,12 +740,25 @@
               (when (terminal-buffer? buf)
                 (let ((ts (hash-get *terminal-state* buf)))
                   (when (and ts (terminal-pty-busy? ts))
-                    (let drain ()
+                    ;; Batch all pending data chunks, then render once
+                    (let drain ((chunks []) (done-msg #f))
                       (let ((msg (terminal-poll-output ts)))
-                        (when msg
-                          (qt-poll-terminal-pty-msg! fr buf ts msg)
-                          (when (eq? (car msg) 'data)
-                            (drain)))))))))
+                        (cond
+                          ((not msg)
+                           ;; No more messages — render accumulated data
+                           (when (pair? chunks)
+                             (qt-poll-terminal-pty-batch! fr buf ts
+                               (apply string-append (reverse chunks))))
+                           (when done-msg
+                             (qt-poll-terminal-pty-msg! fr buf ts done-msg)))
+                          ((eq? (car msg) 'data)
+                           (drain (cons (cdr msg) chunks) done-msg))
+                          (else
+                           ;; 'done message — render data first, then handle done
+                           (when (pair? chunks)
+                             (qt-poll-terminal-pty-batch! fr buf ts
+                               (apply string-append (reverse chunks))))
+                           (qt-poll-terminal-pty-msg! fr buf ts msg)))))))))
             (buffer-list))
           ;; Poll chat buffers (Claude CLI)
           (for-each

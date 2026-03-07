@@ -283,13 +283,14 @@
    Sources ~/.gshrc for PS1, aliases, etc."
   (let ((env (gsh-init! #t)))  ; interactive? = #t for alias expansion
     (env-set! env "SHELL" "gsh")
-    ;; Clear inherited bash PS1 before sourcing .gshrc
-    (env-set! env "PS1" "\\u@\\h:\\w\\$ ")
     (with-catch
       (lambda (e)
         (gemacs-log! "terminal: startup file error: "
           (with-output-to-string "" (lambda () (display-exception e (current-output-port))))))
       (lambda () (load-startup-files! env #f #t)))
+    ;; Set PS1 AFTER sourcing startup files so it can't be overridden
+    ;; by .bashrc/.profile with bash-specific syntax (\[, \], etc.)
+    (env-set! env "PS1" "\\u@\\h:\\w\\$ ")
     (make-terminal-state env 0 -1 #f #f #f #f #f #f #f)))
 
 (def (make-cmd-exec-fn env)
@@ -498,7 +499,7 @@
       (channel-put ch (cons 'done -1)))
     (lambda ()
       (let loop ()
-        (thread-sleep! 0.05)
+        (thread-sleep! 0.01)
         (let ((data (pty-read mfd)))
           (cond
             ((string? data)
@@ -523,9 +524,10 @@
                       (let ((status (pty-waitpid-status pid #t)))
                         (channel-put ch (cons 'done status)))))))))))))))
 
-(def (terminal-execute-async! input ts)
+(def (terminal-execute-async! input ts (pty-rows 24) (pty-cols 80))
   "Execute command: builtins go through gsh-capture (sync),
    external commands go through PTY subprocess (async).
+   pty-rows/pty-cols: terminal dimensions for the PTY (default 24x80).
    Returns:
    - (values 'sync output cwd) for sync builtins
    - (values 'async #f #f) when command dispatched to PTY
@@ -550,7 +552,7 @@
            ;; External/compound: spawn PTY subprocess (async)
            (let* ((env (terminal-state-env ts))
                   (env-alist (env-exported-alist env))
-                  (rows 24) (cols 80))
+                  (rows pty-rows) (cols pty-cols))
              (let-values (((mfd pid) (with-catch
                                        (lambda (e)
                                          (gemacs-log! "PTY-SPAWN-ERROR: "

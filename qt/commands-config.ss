@@ -623,11 +623,15 @@
                (prompt-pos (terminal-state-prompt-pos ts))
                (input (if (< prompt-pos (string-length text))
                         (substring text prompt-pos (string-length text))
-                        "")))
+                        ""))
+               ;; Compute actual terminal dimensions from editor widget
+               (rows (max 2 (sci-send ed 2370 0))) ; SCI_LINESONSCREEN
+               (char-w (max 1 (sci-send/string ed 2162 "M" 0))) ; SCI_TEXTWIDTH
+               (cols (max 20 (quotient (qt-widget-width ed) char-w))))
           ;; Append newline after user input
           (qt-plain-text-edit-move-cursor! ed QT_CURSOR_END)
           (qt-plain-text-edit-insert-text! ed "\n")
-          (let-values (((mode output new-cwd) (terminal-execute-async! input ts)))
+          (let-values (((mode output new-cwd) (terminal-execute-async! input ts rows cols)))
           (case mode
             ((sync)
              (when (and (string? output) (> (string-length output) 0))
