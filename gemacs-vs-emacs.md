@@ -600,7 +600,7 @@
 | Shell command (`M-!`) | :white_check_mark: | Run command, show output |
 | Shell command on region (`M-\|`) | :white_check_mark: | Pipe region to command |
 | Async shell command (`M-&`) | :white_check_mark: | |
-| Eshell | :yellow_circle: | Built-in commands (cd, ls, cat, echo), Scheme eval; no I/O redirect, no globbing |
+| Eshell | :large_blue_circle: | Built-in commands (cd, ls, cat, echo, grep, find, wc, head, tail), pipelines, output redirect (`>`, `>>`), glob expansion (`*.txt`), env var expansion (`$HOME`), Scheme eval |
 | Terminal (term/ansi-term) | :large_blue_circle: | PTY support, ANSI colors, signals |
 | Vterm | :yellow_circle: | `vterm` delegates to built-in `term`; `vterm-copy-mode` in Qt |
 | Shell mode | :large_blue_circle: | External shell buffer |
