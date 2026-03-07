@@ -456,8 +456,9 @@
              (names (map buffer-name bufs)))
         (if (null? names)
           (echo-message! (app-state-echo app) "No project buffers")
-          (let ((name (qt-echo-read-string app
-                        (string-append "Project buffer [" root "]: "))))
+          (let ((name (qt-echo-read-with-narrowing app
+                        (string-append "Project buffer [" (path-strip-directory root) "]: ")
+                        names)))
             (when (and name (not (string-empty? name)))
               (let ((target (find (lambda (b)
                               (string=? (buffer-name b) name))

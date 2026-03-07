@@ -1922,7 +1922,7 @@ Returns list of (name . line-number) pairs."
                                   (substring f prefix-len (string-length f))
                                   f))
                               files))
-         (input (qt-echo-read-string-with-completion app
+         (input (qt-echo-read-with-narrowing app
                   (string-append "Find file in " (path-strip-directory root) ": ")
                   relative-files)))
     (when (and input (> (string-length input) 0))

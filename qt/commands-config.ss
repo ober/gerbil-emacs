@@ -1969,7 +1969,20 @@ If on blank line: insert comment and indent."
 (def (cmd-project-switch-project app)
   "Switch to a different project directory."
   (let* ((echo (app-state-echo app))
-         (dir (qt-echo-read-string app "Switch to project: ")))
+         ;; Collect known projects from open buffers + explicit list
+         (buf-roots (let loop ((bs *buffer-list*) (acc []))
+                      (if (null? bs) acc
+                        (let* ((b (car bs))
+                               (fp (buffer-file-path b))
+                               (root (and fp (detect-project-root (path-directory fp)))))
+                          (loop (cdr bs) (if (and root (not (member root acc)))
+                                           (cons root acc) acc))))))
+         (all-projects (let loop ((ks (hash-keys *known-projects*)) (acc buf-roots))
+                         (if (null? ks) (sort acc string<?)
+                           (loop (cdr ks) (if (member (car ks) acc) acc (cons (car ks) acc))))))
+         (dir (if (null? all-projects)
+                (qt-echo-read-string app "Switch to project: ")
+                (qt-echo-read-with-narrowing app "Switch to project: " all-projects))))
     (when (and dir (> (string-length dir) 0))
       (let ((expanded (path-expand dir)))
         (if (file-exists? expanded)
