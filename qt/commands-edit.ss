@@ -973,6 +973,62 @@
                                       (string-append "Opened: "
                                                      full-path))))))))))))))
 
+(def (cmd-dired-rename-at-point app)
+  "Rename the file under cursor in dired."
+  (let* ((buf (current-qt-buffer app))
+         (ed (current-qt-editor app))
+         (echo (app-state-echo app))
+         (line (qt-plain-text-edit-cursor-line ed))
+         (entries (hash-get *dired-entries* buf))
+         (dir (buffer-file-path buf)))
+    (if (not entries)
+      (echo-error! echo "Not in a dired buffer")
+      (let ((idx (- line 3)))
+        (if (or (< idx 0) (>= idx (vector-length entries)))
+          (echo-error! echo "Not on a file line")
+          (let* ((full-path (vector-ref entries idx))
+                 (fname (path-strip-directory full-path))
+                 (new-name (qt-echo-read-string app
+                             (string-append "Rename " fname " to: "))))
+            (when (and new-name (> (string-length new-name) 0))
+              (with-catch
+                (lambda (e)
+                  (echo-error! echo (string-append "Error: "
+                    (with-output-to-string (lambda () (display-exception e))))))
+                (lambda ()
+                  (rename-file full-path (path-expand new-name dir))
+                  (dired-open-directory! app dir)
+                  (echo-message! echo
+                    (string-append "Renamed: " fname " → " new-name)))))))))))
+
+(def (cmd-dired-copy-at-point app)
+  "Copy the file under cursor in dired."
+  (let* ((buf (current-qt-buffer app))
+         (ed (current-qt-editor app))
+         (echo (app-state-echo app))
+         (line (qt-plain-text-edit-cursor-line ed))
+         (entries (hash-get *dired-entries* buf))
+         (dir (buffer-file-path buf)))
+    (if (not entries)
+      (echo-error! echo "Not in a dired buffer")
+      (let ((idx (- line 3)))
+        (if (or (< idx 0) (>= idx (vector-length entries)))
+          (echo-error! echo "Not on a file line")
+          (let* ((full-path (vector-ref entries idx))
+                 (fname (path-strip-directory full-path))
+                 (dest (qt-echo-read-string app
+                         (string-append "Copy " fname " to: "))))
+            (when (and dest (> (string-length dest) 0))
+              (with-catch
+                (lambda (e)
+                  (echo-error! echo (string-append "Error: "
+                    (with-output-to-string (lambda () (display-exception e))))))
+                (lambda ()
+                  (copy-file full-path (path-expand dest dir))
+                  (dired-open-directory! app dir)
+                  (echo-message! echo
+                    (string-append "Copied: " fname " → " dest)))))))))))
+
 ;;;============================================================================
 ;;; REPL commands
 ;;;============================================================================

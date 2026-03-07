@@ -1575,31 +1575,11 @@
       (with-catch
         (lambda (e) (echo-error! (app-state-echo app) "Cannot read directory"))
         (lambda ()
-          (let* ((entries (directory-files dir))
-                 (sorted (sort entries string<?))
-                 (lines (map (lambda (f)
-                               (let* ((full (path-expand f dir))
-                                      (is-dir (with-catch (lambda (e) #f)
-                                                (lambda () (eq? (file-info-type (file-info full)) 'directory))))
-                                      (size (with-catch
-                                              (lambda (e) 0)
-                                              (lambda ()
-                                                (if is-dir 0
-                                                  (file-info-size (file-info full))))))
-                                      (suffix (if is-dir "/" "")))
-                                 (string-append
-                                   (if is-dir "d " "  ")
-                                   (let ((s (number->string size)))
-                                     (string-append
-                                       (make-string (max 0 (- 10 (string-length s))) #\space)
-                                       s))
-                                   "  " f suffix)))
-                             sorted))
-                 (text (string-append
-                         "  Directory: " dir "\n\n"
-                         (string-join lines "\n") "\n")))
+          (let-values (((text _entries) (dired-format-listing dir)))
+            (editor-set-read-only ed #f)
             (editor-set-text ed text)
-            (editor-goto-pos ed 0)))))))
+            (editor-goto-pos ed 0)
+            (editor-set-read-only ed #t)))))))
 
 
 ;;;============================================================================

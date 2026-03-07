@@ -47,7 +47,7 @@ Implemented popup UX matching Ruby Scintilla editors — inline autocomplete dro
 - ~~**Org-mode archive/refile**~~ — DONE: archive-subtree writes to `<file>_archive` with ARCHIVE_TIME/ARCHIVE_FILE properties, refile already implemented
 - ~~**Better which-key delay display**~~ — DONE: shows human-readable descriptions (e.g. "s → Save buffer") instead of raw symbol names
 - ~~**Occur mode improvements**~~ — DONE: read-only *Occur* buffer, occur-next/occur-prev navigation commands
-- **Dired improvements** — more operations, better display
+- ~~**Dired improvements**~~ — DONE: human-readable file sizes (K/M/G), read-only dired buffer, rename/copy at point (Qt), shared dired-format-listing
 
 ### Maintenance
 - **Split over-limit files** — `editor-extra-media.ss`, `editor-extra-editing.ss`, `qt/commands-edit.ss`, `qt/commands-vcs.ss`

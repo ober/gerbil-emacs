@@ -1451,8 +1451,19 @@
       (if (not (zero? (bitwise-and p #o001))) #\x #\-))))
 
 (def (format-size size)
-  "Right-align size in 8-char field."
-  (let ((s (number->string size)))
+  "Format size as human-readable, right-aligned in 8-char field."
+  (let ((s (cond
+             ((< size 1024) (number->string size))
+             ((< size (* 1024 1024))
+              (string-append (number->string (quotient size 1024)) "K"))
+             ((< size (* 1024 1024 1024))
+              (let ((mb (/ (exact->inexact size) (* 1024.0 1024.0))))
+                (if (< mb 10.0)
+                  (string-append (number->string (/ (round (* mb 10.0)) 10.0)) "M")
+                  (string-append (number->string (inexact->exact (round mb))) "M"))))
+             (else
+              (let ((gb (/ (exact->inexact size) (* 1024.0 1024.0 1024.0))))
+                (string-append (number->string (/ (round (* gb 10.0)) 10.0)) "G"))))))
     (string-append (make-string (max 0 (- 8 (string-length s))) #\space) s)))
 
 (def (dired-format-entry dir name)

@@ -1376,6 +1376,8 @@
   (register-command! 'backward-sentence cmd-backward-sentence)
   ;; Dired
   (register-command! 'dired cmd-dired)
+  (register-command! 'dired-rename-at-point cmd-dired-rename-at-point)
+  (register-command! 'dired-copy-at-point cmd-dired-copy-at-point)
   ;; Unfill paragraph
   (register-command! 'unfill-paragraph cmd-unfill-paragraph)
   ;; Whitespace cleanup
