@@ -1009,22 +1009,110 @@
           (editor-goto-pos ed 0)
           (editor-set-read-only ed #t))))))
 
+(def *magit-commit-separator*
+  "# --- Do not modify below this line ---")
+
 (def (cmd-magit-commit app)
-  "Create git commit with message from echo area."
-  (let ((msg (app-read-string app "Commit message: ")))
-    (when (and msg (not (string-empty? msg)))
-      (let ((result (with-exception-catcher
-                      (lambda (e) (string-append "Error: " (with-output-to-string (lambda () (display-exception e)))))
+  "Open commit message buffer with staged diff preview."
+  (let* ((fr (app-state-frame app))
+         (ed (edit-window-editor (current-window fr)))
+         (dir (let ((buf (current-buffer-from-app app)))
+                (if (buffer-file-path buf)
+                  (path-directory (buffer-file-path buf))
+                  (current-directory)))))
+    ;; Check for staged changes
+    (let ((stat (with-exception-catcher (lambda (e) "")
+                  (lambda ()
+                    (let ((p (open-process [path: "git" arguments: '("diff" "--cached" "--stat")
+                                            directory: dir stdout-redirection: #t stderr-redirection: #t])))
+                      (let ((out (read-line p #f))) (close-port p) (or out "")))))))
+      (if (string=? (string-trim stat) "")
+        (echo-message! (app-state-echo app) "Nothing staged to commit")
+        (let ((diff (with-exception-catcher (lambda (e) "")
                       (lambda ()
-                        (let ((p (open-process
-                                   (list path: "git"
-                                         arguments: (list "commit" "-m" msg)
-                                         stdin-redirection: #f stdout-redirection: #t
-                                         stderr-redirection: #t))))
-                          (let ((out (read-line p #f)))
-                            (process-status p)
-                            (or out "Committed")))))))
-        (echo-message! (app-state-echo app) result)))))
+                        (let ((p (open-process [path: "git" arguments: '("diff" "--cached")
+                                                directory: dir stdout-redirection: #t stderr-redirection: #t])))
+                          (let ((out (read-line p #f))) (close-port p) (or out "")))))))
+          (let* ((buf (or (buffer-by-name "*Magit: Commit*")
+                          (buffer-create! "*Magit: Commit*" ed #f)))
+                 (text (string-append
+                         "\n"
+                         "# Write your commit message above the separator line.\n"
+                         "# Lines starting with '#' will be ignored.\n"
+                         "# M-x magit-commit-finalize to commit, M-x magit-commit-abort to abort.\n"
+                         "#\n"
+                         *magit-commit-separator* "\n\n"
+                         diff)))
+            (buffer-attach! ed buf)
+            (set! (edit-window-buffer (current-window fr)) buf)
+            (editor-set-text ed text)
+            (editor-goto-pos ed 0)
+            ;; Store dir for later commit
+            (set! (buffer-file-path buf) dir)
+            (echo-message! (app-state-echo app)
+              "M-x magit-commit-finalize to commit, M-x magit-commit-abort to abort")))))))
+
+(def (cmd-magit-commit-finalize app)
+  "Finalize the commit from the *Magit: Commit* buffer."
+  (let* ((fr (app-state-frame app))
+         (buf (current-buffer-from-app app)))
+    (when (string=? (buffer-name buf) "*Magit: Commit*")
+      (let* ((ed (edit-window-editor (current-window fr)))
+             (text (editor-get-text ed))
+             (dir (or (buffer-file-path buf) (current-directory)))
+             (sep-pos (string-contains text *magit-commit-separator*))
+             (msg-text (if sep-pos (substring text 0 sep-pos) text))
+             ;; Extract non-comment lines
+             (msg (string-trim
+                    (with-output-to-string
+                      (lambda ()
+                        (let loop ((i 0))
+                          (when (< i (string-length msg-text))
+                            (let ((nl (let scan ((j i))
+                                        (cond ((>= j (string-length msg-text)) j)
+                                              ((char=? (string-ref msg-text j) #\newline) j)
+                                              (else (scan (+ j 1)))))))
+                              (let ((line (substring msg-text i nl)))
+                                (unless (string-prefix? "#" (string-trim line))
+                                  (display line)
+                                  (newline)))
+                              (loop (+ nl 1))))))))))
+        (if (string=? msg "")
+          (echo-message! (app-state-echo app) "Aborting commit due to empty message")
+          (let ((result (with-exception-catcher
+                          (lambda (e) (string-append "Error: "
+                                        (with-output-to-string (lambda () (display-exception e)))))
+                          (lambda ()
+                            (let ((p (open-process [path: "git" arguments: (list "commit" "-m" msg)
+                                                    directory: dir stdin-redirection: #f
+                                                    stdout-redirection: #t stderr-redirection: #t])))
+                              (let ((out (read-line p #f))) (process-status p) (or out "Committed")))))))
+            (let* ((kill-fr (app-state-frame app))
+                   (kill-ed (edit-window-editor (current-window kill-fr)))
+                   (kill-buf (current-buffer-from-app app))
+                   (prev (or (buffer-by-name "*Magit*")
+                             (and (pair? *buffer-list*) (car *buffer-list*)))))
+              (when prev
+                (buffer-attach! kill-ed prev)
+                (set! (edit-window-buffer (current-window kill-fr)) prev))
+              (buffer-kill! kill-ed kill-buf))
+            (echo-message! (app-state-echo app) result)))))))
+
+(def (cmd-magit-commit-abort app)
+  "Abort the commit and kill the commit buffer."
+  (let* ((fr (app-state-frame app))
+         (buf (current-buffer-from-app app)))
+    (when (string=? (buffer-name buf) "*Magit: Commit*")
+      (let* ((kill-fr (app-state-frame app))
+                   (kill-ed (edit-window-editor (current-window kill-fr)))
+                   (kill-buf (current-buffer-from-app app))
+                   (prev (or (buffer-by-name "*Magit*")
+                             (and (pair? *buffer-list*) (car *buffer-list*)))))
+              (when prev
+                (buffer-attach! kill-ed prev)
+                (set! (edit-window-buffer (current-window kill-fr)) prev))
+              (buffer-kill! kill-ed kill-buf))
+      (echo-message! (app-state-echo app) "Commit aborted"))))
 
 (def (cmd-magit-stage-file app)
   "Stage current file."

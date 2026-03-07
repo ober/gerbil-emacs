@@ -540,16 +540,121 @@
                    (echo-error! (app-state-echo app)
                      "No file or hunk at point")))))))))))
 
+(def *magit-commit-separator*
+  "# --- Do not modify below this line ---")
+
 (def (cmd-magit-commit app)
-  "Commit staged changes."
-  (let ((msg (qt-echo-read-string app "Commit message: ")))
-    (when (and msg (> (string-length msg) 0))
-      (echo-message! (app-state-echo app) "Committing...")
-      (magit-run-git/async (list "commit" "-m" msg) *magit-dir*
-        (lambda (output)
-          (cmd-magit-status app)
-          (echo-message! (app-state-echo app)
-            (string-append "Committed: " msg)))))))
+  "Open commit message buffer with staged diff preview."
+  (let ((dir (or *magit-dir* (current-directory))))
+    ;; Check for staged changes first
+    (magit-run-git/async '("diff" "--cached" "--stat") dir
+      (lambda (stat-output)
+        (if (string=? (string-trim stat-output) "")
+          (echo-error! (app-state-echo app) "Nothing staged to commit")
+          ;; Get full staged diff for preview
+          (magit-run-git/async '("diff" "--cached") dir
+            (lambda (diff-output)
+              (ui-queue-push!
+                (lambda ()
+                  (magit-open-commit-buffer! app stat-output diff-output dir))))))))))
+
+(def (magit-open-commit-buffer! app stat-output diff-output dir)
+  "Create the *Magit: Commit* buffer with message area and diff preview."
+  (let* ((ed (current-qt-editor app))
+         (fr (app-state-frame app))
+         (buf (or (buffer-by-name "*Magit: Commit*")
+                  (qt-buffer-create! "*Magit: Commit*" ed #f)))
+         (stat-commented
+           (with-output-to-string
+             (lambda ()
+               (let loop ((i 0))
+                 (when (< i (string-length stat-output))
+                   (let ((nl (let scan ((j i))
+                               (cond ((>= j (string-length stat-output)) j)
+                                     ((char=? (string-ref stat-output j) #\newline) j)
+                                     (else (scan (+ j 1)))))))
+                     (when (> nl i)
+                       (display "#   ")
+                       (display (substring stat-output i nl))
+                       (newline))
+                     (loop (+ nl 1))))))))
+         (header (string-append
+                   "# Write your commit message above the separator line.\n"
+                   "# Lines starting with '#' will be ignored.\n"
+                   "# C-c C-c to commit, C-c C-k to abort.\n"
+                   "#\n"
+                   "# Changes to be committed:\n"
+                   stat-commented
+                   "#\n"))
+         (text (string-append "\n" header *magit-commit-separator* "\n\n"
+                              diff-output)))
+    (qt-buffer-attach! ed buf)
+    (set! (qt-edit-window-buffer (qt-current-window fr)) buf)
+    (qt-plain-text-edit-set-text! ed text)
+    (qt-text-document-set-modified! (buffer-doc-pointer buf) #f)
+    ;; Position cursor at line 1 (before the header comments)
+    (qt-plain-text-edit-set-cursor-position! ed 0)
+    ;; Store the dir for the commit
+    (set! (buffer-file-path buf) dir)
+    (echo-message! (app-state-echo app)
+      "C-c C-c to commit, C-c C-k to abort")))
+
+(def (cmd-magit-commit-finalize app)
+  "Finalize the commit: extract message and run git commit."
+  (let ((buf (current-qt-buffer app)))
+    (when (string=? (buffer-name buf) "*Magit: Commit*")
+      (let* ((ed (current-qt-editor app))
+             (text (qt-plain-text-edit-text ed))
+             (dir (or (buffer-file-path buf) *magit-dir* (current-directory)))
+             ;; Extract message: everything before separator, ignoring # lines
+             (sep-pos (string-contains text *magit-commit-separator*))
+             (msg-text (if sep-pos (substring text 0 sep-pos) text))
+             (msg (string-trim
+                    (with-output-to-string
+                      (lambda ()
+                        (let loop ((i 0))
+                          (when (< i (string-length msg-text))
+                            (let ((nl (let scan ((j i))
+                                        (cond ((>= j (string-length msg-text)) j)
+                                              ((char=? (string-ref msg-text j) #\newline) j)
+                                              (else (scan (+ j 1)))))))
+                              (let ((line (substring msg-text i nl)))
+                                (unless (string-prefix? "#" (string-trim line))
+                                  (display line)
+                                  (newline)))
+                              (loop (+ nl 1))))))))))
+        (if (string=? msg "")
+          (echo-error! (app-state-echo app) "Aborting commit due to empty message")
+          (begin
+            (echo-message! (app-state-echo app) "Committing...")
+            (magit-run-git/async (list "commit" "-m" msg) dir
+              (lambda (output)
+                (ui-queue-push!
+                  (lambda ()
+                    ;; Kill the commit buffer and refresh status
+                    (let ((commit-buf (buffer-by-name "*Magit: Commit*")))
+                      (when commit-buf
+                        (qt-buffer-kill! commit-buf)))
+                    (cmd-magit-status app)
+                    (echo-message! (app-state-echo app)
+                      (string-append "Committed: "
+                        (if (> (string-length msg) 60)
+                          (string-append (substring msg 0 57) "...")
+                          msg)))))))))))))
+
+(def (cmd-magit-commit-abort app)
+  "Abort the commit and kill the commit buffer."
+  (let ((buf (current-qt-buffer app)))
+    (when (string=? (buffer-name buf) "*Magit: Commit*")
+      (qt-buffer-kill! buf)
+      ;; Go back to magit status if it exists
+      (let ((magit-buf (buffer-by-name "*Magit*")))
+        (when magit-buf
+          (let ((ed (current-qt-editor app))
+                (fr (app-state-frame app)))
+            (qt-buffer-attach! ed magit-buf)
+            (set! (qt-edit-window-buffer (qt-current-window fr)) magit-buf))))
+      (echo-message! (app-state-echo app) "Commit aborted"))))
 
 (def (cmd-magit-diff app)
   "Show diff for file at point or cursor context."

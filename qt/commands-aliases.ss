@@ -553,6 +553,8 @@
   (register-command! 'magit-stage cmd-magit-stage)
   (register-command! 'magit-unstage cmd-magit-unstage)
   (register-command! 'magit-commit cmd-magit-commit)
+  (register-command! 'magit-commit-finalize cmd-magit-commit-finalize)
+  (register-command! 'magit-commit-abort cmd-magit-commit-abort)
   (register-command! 'magit-diff cmd-magit-diff)
   (register-command! 'magit-stage-all cmd-magit-stage-all)
   (register-command! 'magit-log cmd-magit-log)

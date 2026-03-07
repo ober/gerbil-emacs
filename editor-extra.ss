@@ -251,6 +251,8 @@
   (register-command! 'magit-log cmd-magit-log)
   (register-command! 'magit-diff cmd-magit-diff)
   (register-command! 'magit-commit cmd-magit-commit)
+  (register-command! 'magit-commit-finalize cmd-magit-commit-finalize)
+  (register-command! 'magit-commit-abort cmd-magit-commit-abort)
   (register-command! 'magit-stage-file cmd-magit-stage-file)
   (register-command! 'magit-unstage-file cmd-magit-unstage-file)
   (register-command! 'magit-branch cmd-magit-branch)

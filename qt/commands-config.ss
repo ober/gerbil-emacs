@@ -895,6 +895,7 @@
                      ((string=? name "*calendar*") (hash-get *mode-keymaps* 'calendar))
                      ((string=? name "*eww*") (hash-get *mode-keymaps* 'eww))
                      ((string=? name "*Magit*") (hash-get *mode-keymaps* 'magit))
+                     ((string=? name "*Magit: Commit*") (hash-get *mode-keymaps* 'magit-commit))
                      ((string=? name "*Org Capture*") (hash-get *mode-keymaps* 'org-capture))
                      (else #f))))))
     (and km (keymap-lookup km key-str))))
@@ -989,6 +990,12 @@
     (keymap-bind! magit-km "p" 'previous-line)
     (keymap-bind! magit-km "q" 'kill-buffer-cmd)
     (hash-put! *mode-keymaps* 'magit magit-km))
+
+  ;; Magit commit mode: C-c C-c to commit, C-c C-k to abort
+  (let ((commit-km (make-keymap)))
+    (keymap-bind! commit-km "C-c C-c" 'magit-commit-finalize)
+    (keymap-bind! commit-km "C-c C-k" 'magit-commit-abort)
+    (hash-put! *mode-keymaps* 'magit-commit commit-km))
 
   ;; Image mode: zoom controls
   (let ((img-km (make-keymap)))
