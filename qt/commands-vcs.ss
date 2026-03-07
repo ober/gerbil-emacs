@@ -917,9 +917,56 @@
             (echo-message! (app-state-echo app) (string-append "Help for " name)))
           (echo-error! (app-state-echo app) (string-append name " is not a command")))))))
 
+(def *gemacs-variables*
+  ;; List of (name . thunk) pairs for describable variables
+  '())
+
+(def (gemacs-var-entry name thunk description)
+  (list name thunk description))
+
+(def (gemacs-describe-variables)
+  "Build list of describable editor variables with current values."
+  (list
+    (gemacs-var-entry "debug-on-error" (lambda () *debug-on-error*) "Enter debugger on error")
+    (gemacs-var-entry "hl-line-mode" (lambda () *hl-line-mode*) "Highlight current line")
+    (gemacs-var-entry "hl-todo-mode" (lambda () *hl-todo-mode*) "Highlight TODO keywords")
+    (gemacs-var-entry "hl-todo-keywords" (lambda () *hl-todo-keywords*) "Keywords highlighted by hl-todo-mode")
+    (gemacs-var-entry "wgrep-mode" (lambda () *wgrep-mode*) "Writable grep buffer active")
+    (gemacs-var-entry "magit-dir" (lambda () *magit-dir*) "Current magit working directory")
+    (gemacs-var-entry "magit-amend-mode" (lambda () *magit-amend-mode*) "Amend mode for magit commit")
+    (gemacs-var-entry "current-workspace" (lambda () *current-workspace*) "Active workspace name")
+    (gemacs-var-entry "tab-width" (lambda () *tab-width*) "Width of tab stops")
+    (gemacs-var-entry "indent-tabs-mode" (lambda () *indent-tabs-mode*) "Use tabs for indentation")
+    (gemacs-var-entry "word-wrap" (lambda () *word-wrap-on*) "Word wrap mode")
+    (gemacs-var-entry "undo-history-max" (lambda () *undo-history-max*) "Max undo snapshots per buffer")
+    (gemacs-var-entry "recenter-position" (lambda () *recenter-position-qt*) "Recentering position (center/top/bottom)")))
+
 (def (cmd-describe-variable app)
-  "Describe a variable."
-  (echo-message! (app-state-echo app) "Use C-h f for command help"))
+  "Describe a variable — show its current value and documentation."
+  (let* ((vars (gemacs-describe-variables))
+         (names (map car vars))
+         (selection (qt-echo-read-with-narrowing app "Describe variable:" names)))
+    (when (and selection (> (string-length selection) 0))
+      (let ((entry (assoc selection vars)))
+        (if entry
+          (let* ((name (car entry))
+                 (thunk (cadr entry))
+                 (desc (caddr entry))
+                 (val (with-catch (lambda (e) "<error>") thunk))
+                 (val-str (with-output-to-string (lambda () (write val)))))
+            (let* ((ed (current-qt-editor app))
+                   (fr (app-state-frame app))
+                   (help-buf (or (buffer-by-name "*Help*")
+                                 (qt-buffer-create! "*Help*" ed #f))))
+              (qt-buffer-attach! ed help-buf)
+              (set! (qt-edit-window-buffer (qt-current-window fr)) help-buf)
+              (qt-plain-text-edit-set-text! ed
+                (string-append name "\n\n"
+                  "Value: " val-str "\n\n"
+                  "Documentation:\n  " desc "\n"))
+              (qt-text-document-set-modified! (buffer-doc-pointer help-buf) #f)
+              (qt-plain-text-edit-set-cursor-position! ed 0)))
+          (echo-error! (app-state-echo app) (string-append "Unknown variable: " selection)))))))
 
 (def (cmd-describe-syntax app)
   "Describe syntax and style at point."

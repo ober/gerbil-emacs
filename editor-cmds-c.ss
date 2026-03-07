@@ -72,11 +72,31 @@
                        (string-append name ": not found")))))))
 
 (def (cmd-describe-variable app)
-  "Describe a variable by name."
+  "Describe a variable by name — shows current value."
   (let ((name (app-read-string app "Describe variable: ")))
     (when (and name (not (string-empty? name)))
-      (echo-message! (app-state-echo app)
-                     (string-append name ": (use C-h f for commands)")))))
+      (let* ((vars (list
+                     (cons "auto-pair-mode" (lambda () *auto-pair-mode*))
+                     (cons "auto-save-enabled" (lambda () *auto-save-enabled*))
+                     (cons "auto-revert-mode" (lambda () *auto-revert-mode*))
+                     (cons "auto-fill-mode" (lambda () *auto-fill-mode*))
+                     (cons "case-fold-search" (lambda () *case-fold-search*))
+                     (cons "fill-column" (lambda () *fill-column*))
+                     (cons "fill-column-indicator" (lambda () *fill-column-indicator*))
+                     (cons "overwrite-mode" (lambda () *overwrite-mode*))
+                     (cons "visual-line-mode" (lambda () *visual-line-mode*))
+                     (cons "debug-on-error" (lambda () *debug-on-error*))
+                     (cons "flyspell-mode" (lambda () *flyspell-mode*))
+                     (cons "hl-line-mode" (lambda () *global-hl-line*))
+                     (cons "show-tabs" (lambda () *show-tabs*))
+                     (cons "show-eol" (lambda () *show-eol*))))
+             (entry (assoc name vars)))
+        (if entry
+          (let ((val (with-exception-catcher (lambda (e) "<error>") (cdr entry))))
+            (echo-message! (app-state-echo app)
+              (string-append name " = " (with-output-to-string (lambda () (write val))))))
+          (echo-message! (app-state-echo app)
+            (string-append name ": unknown variable")))))))
 
 (def (cmd-describe-key-briefly app)
   "Describe what a key is bound to."
