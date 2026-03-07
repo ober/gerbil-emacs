@@ -2798,6 +2798,33 @@
         (execute-command! app 'describe-syntax)
         (pass! "describe-syntax dispatch executes without error"))))
 
+  ;; Test: pulse-line-mode registered
+  (if (find-command 'pulse-line-mode)
+    (pass! "pulse-line-mode registered")
+    (fail! "pulse-line-mode" #f "registered"))
+
+  ;; Test: toggle-pulse-line registered
+  (if (find-command 'toggle-pulse-line)
+    (pass! "toggle-pulse-line registered")
+    (fail! "toggle-pulse-line" #f "registered"))
+
+  ;; Test: auto-save-mode registered
+  (if (find-command 'auto-save-mode)
+    (pass! "auto-save-mode registered")
+    (fail! "auto-save-mode" #f "registered"))
+
+  ;; Test: count-words dispatches without error
+  (let-values (((ed _w app) (make-qt-test-app "count-words-test")))
+    (qt-plain-text-edit-set-text! ed "hello world\nfoo bar baz\n")
+    (with-catch
+      (lambda (e)
+        (fail! "count-words dispatch"
+               (with-output-to-string "" (lambda () (display-exception e)))
+               "no error"))
+      (lambda ()
+        (execute-command! app 'count-words)
+        (pass! "count-words dispatches without error"))))
+
   (displayln "Group 19 complete"))
 
 ;;;============================================================================

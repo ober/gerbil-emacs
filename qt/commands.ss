@@ -53,6 +53,7 @@
         save-place-load!
         save-place-save!
         auto-fill-check!
+        *auto-save-disabled-buffers*
         *delete-trailing-whitespace-on-save*
         *require-final-newline*
         *save-place-enabled*
@@ -69,6 +70,10 @@
         *current-workspace*
         workspace-add-buffer!
         workspace-remove-buffer!
+        ;; Pulse-line
+        qt-pulse-line!
+        qt-pulse-tick!
+        qt-pulse-check-jump!
         ;; Diff-hl
         *diff-hl-active*
         ;; Describe-key interception

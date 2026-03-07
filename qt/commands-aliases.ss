@@ -957,6 +957,8 @@
   (register-command! 'comment-line cmd-toggle-comment)
   ;; indent-for-tab-command → registered in facade (cross-cutting)
   (register-command! 'linum-mode cmd-toggle-line-numbers)
+  (register-command! 'pulse-line-mode cmd-toggle-pulse-line)
+  (register-command! 'toggle-pulse-line cmd-toggle-pulse-line)
   (register-command! 'sort-numeric-fields cmd-sort-numeric-fields)
   (register-command! 'find-dired cmd-find-dired)
   (register-command! 'find-name-dired cmd-find-name-dired)

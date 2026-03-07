@@ -283,21 +283,52 @@
 ;;; Count words
 ;;;============================================================================
 
+(def (count-words-in text)
+  "Count words in a string using whitespace word boundaries."
+  (let ((len (string-length text)))
+    (let loop ((i 0) (in-word #f) (count 0))
+      (if (>= i len) count
+        (let ((ch (string-ref text i)))
+          (if (char-whitespace? ch)
+            (loop (+ i 1) #f count)
+            (loop (+ i 1) #t (if in-word count (+ count 1)))))))))
+
+(def (count-lines-in text)
+  "Count lines in a string."
+  (let ((len (string-length text)))
+    (if (= len 0) 0
+      (let loop ((i 0) (count 1))
+        (if (>= i len) count
+          (loop (+ i 1) (if (char=? (string-ref text i) #\newline) (+ count 1) count)))))))
+
 (def (cmd-count-words app)
+  "Count words, lines, and characters. Shows region stats if active, buffer stats otherwise."
   (let* ((ed (current-qt-editor app))
-         (text (qt-plain-text-edit-text ed))
-         (len (string-length text))
-         (num-lines (qt-plain-text-edit-line-count ed))
-         (words (let loop ((i 0) (in-word #f) (count 0))
-                  (if (>= i len) count
-                    (let ((ch (string-ref text i)))
-                      (if (char-whitespace? ch)
-                        (loop (+ i 1) #f count)
-                        (loop (+ i 1) #t (if in-word count (+ count 1)))))))))
-    (echo-message! (app-state-echo app)
-      (string-append "Buffer has " (number->string num-lines) " lines, "
-                     (number->string words) " words, "
-                     (number->string len) " characters"))))
+         (buf (current-qt-buffer app))
+         (mark (buffer-mark buf)))
+    (if mark
+      ;; Region active — show region stats
+      (let* ((pos (qt-plain-text-edit-cursor-position ed))
+             (start (min mark pos))
+             (end (max mark pos))
+             (text (qt-plain-text-edit-text ed))
+             (region (substring text start end))
+             (words (count-words-in region))
+             (lines (count-lines-in region))
+             (chars (string-length region)))
+        (echo-message! (app-state-echo app)
+          (string-append "Region has " (number->string lines) " lines, "
+                         (number->string words) " words, "
+                         (number->string chars) " characters")))
+      ;; No region — show buffer stats
+      (let* ((text (qt-plain-text-edit-text ed))
+             (len (string-length text))
+             (num-lines (qt-plain-text-edit-line-count ed))
+             (words (count-words-in text)))
+        (echo-message! (app-state-echo app)
+          (string-append "Buffer has " (number->string num-lines) " lines, "
+                         (number->string words) " words, "
+                         (number->string len) " characters"))))))
 
 ;;;============================================================================
 ;;; What cursor position

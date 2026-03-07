@@ -1153,3 +1153,67 @@
   (echo-message! (app-state-echo app)
     (if *line-numbers-visible* "Line numbers ON" "Line numbers OFF")))
 
+;;;============================================================================
+;;; Pulse-line: briefly highlight a line after jumps (goto-line, search, etc.)
+;;;============================================================================
+
+(def *qt-pulse-indicator* 19)  ; Scintilla indicator number (avoid conflicts)
+(def *qt-pulse-editor* #f)     ; editor with active pulse
+(def *qt-pulse-countdown* 0)   ; ticks remaining
+(def *qt-pulse-last-line* -1)  ; last known cursor line (for jump detection)
+(def *qt-pulse-mode* #t)       ; enable/disable pulse-on-jump
+
+(def (qt-pulse-clear! ed)
+  "Clear any active pulse indicator."
+  (let ((len (sci-send ed SCI_GETLENGTH 0 0)))
+    (sci-send ed SCI_SETINDICATORCURRENT *qt-pulse-indicator* 0)
+    (sci-send ed SCI_INDICATORCLEARRANGE 0 len))
+  (set! *qt-pulse-editor* #f)
+  (set! *qt-pulse-countdown* 0))
+
+(def (qt-pulse-line! ed line-num)
+  "Flash-highlight the given line number temporarily (~500ms).
+Uses Scintilla INDIC_FULLBOX indicator with golden/orange color."
+  (let* ((start (sci-send ed SCI_POSITIONFROMLINE line-num 0))
+         (end   (sci-send ed SCI_GETLINEENDPOSITION line-num 0))
+         (len   (- end start)))
+    (when (> len 0)
+      ;; Clear any previous pulse
+      (when *qt-pulse-editor*
+        (qt-pulse-clear! *qt-pulse-editor*))
+      ;; Set up indicator style: INDIC_FULLBOX with golden/orange color
+      (sci-send ed SCI_INDICSETSTYLE *qt-pulse-indicator* 16)  ; 16 = INDIC_FULLBOX
+      (sci-send ed SCI_INDICSETFORE *qt-pulse-indicator* #x00A5FF) ; golden/orange (BGR)
+      (sci-send ed 2523 *qt-pulse-indicator* 80)  ; SCI_INDICSETALPHA = 2523
+      (sci-send ed SCI_SETINDICATORCURRENT *qt-pulse-indicator* 0)
+      (sci-send ed SCI_INDICATORFILLRANGE start len)
+      (set! *qt-pulse-editor* ed)
+      (set! *qt-pulse-countdown* 10))))  ; 10 * 50ms = 500ms
+
+(def (qt-pulse-tick!)
+  "Called each master timer tick. Decrements pulse countdown and clears when done."
+  (when (and *qt-pulse-editor* (> *qt-pulse-countdown* 0))
+    (set! *qt-pulse-countdown* (- *qt-pulse-countdown* 1))
+    (when (<= *qt-pulse-countdown* 0)
+      (qt-pulse-clear! *qt-pulse-editor*))))
+
+(def (qt-pulse-check-jump! app)
+  "Auto-detect large cursor jumps and pulse the landing line.
+Called periodically from the master timer. Pulses when cursor
+moves more than 5 lines from the last known position."
+  (when *qt-pulse-mode*
+    (let* ((fr (app-state-frame app))
+           (ed (qt-current-editor fr))
+           (pos (qt-plain-text-edit-cursor-position ed))
+           (cur-line (sci-send ed SCI_LINEFROMPOSITION pos 0))
+           (delta (abs (- cur-line *qt-pulse-last-line*))))
+      (when (and (> delta 5) (>= *qt-pulse-last-line* 0))
+        (qt-pulse-line! ed cur-line))
+      (set! *qt-pulse-last-line* cur-line))))
+
+(def (cmd-toggle-pulse-line app)
+  "Toggle pulse-on-jump mode."
+  (set! *qt-pulse-mode* (not *qt-pulse-mode*))
+  (echo-message! (app-state-echo app)
+    (if *qt-pulse-mode* "Pulse-on-jump enabled" "Pulse-on-jump disabled")))
+

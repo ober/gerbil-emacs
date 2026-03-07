@@ -891,6 +891,37 @@
                                     (loop (cdr wins)))))))))))))
               (buffer-list)))))
 
+      ;; Periodic auto-save (30 seconds)
+      ;; Writes modified buffers to #filename# auto-save files (Emacs convention)
+      (schedule-periodic! 'auto-save 30000
+        (lambda ()
+          (for-each
+            (lambda (buf)
+              (let ((path (buffer-file-path buf))
+                    (doc  (buffer-doc-pointer buf)))
+                (when (and path doc
+                           (qt-text-document-modified? doc)
+                           (not (hash-get *auto-save-disabled-buffers* buf)))
+                  (let ((auto-path (make-auto-save-path path)))
+                    (with-catch
+                      (lambda (e) (void))  ; silently ignore write errors
+                      (lambda ()
+                        ;; Find editor widget for this buffer to get text
+                        (let loop ((wins (qt-frame-windows fr)))
+                          (when (pair? wins)
+                            (if (eq? (qt-edit-window-buffer (car wins)) buf)
+                              (let ((text (qt-plain-text-edit-text
+                                            (qt-edit-window-editor (car wins)))))
+                                (write-string-to-file auto-path text))
+                              (loop (cdr wins)))))))))))
+            (buffer-list))))
+
+      ;; Pulse-line: tick countdown + auto-detect large jumps
+      (schedule-periodic! 'pulse 50
+        (lambda ()
+          (qt-pulse-tick!)
+          (qt-pulse-check-jump! app)))
+
       ;; Eldoc / LSP cursor-idle (300ms)
       (schedule-periodic! 'eldoc 300
         (lambda ()
