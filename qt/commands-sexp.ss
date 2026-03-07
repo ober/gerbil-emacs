@@ -1090,41 +1090,21 @@
 ;;;============================================================================
 
 (def (cmd-narrow-to-defun app)
-  "Narrow buffer to the current function/defun."
+  "Narrow buffer to the current function/defun.
+   Supports Scheme/Lisp (paren-based) and common languages (indentation-based)."
   (let* ((ed (current-qt-editor app))
          (text (qt-plain-text-edit-text ed))
          (pos (qt-plain-text-edit-cursor-position ed))
-         (len (string-length text)))
-    ;; Find start of current top-level form (search backward for unindented open paren)
-    (let ((defun-start
-            (let loop ((i pos))
-              (cond
-                ((< i 0) 0)
-                ((and (char=? (string-ref text i) #\()
-                      (or (= i 0) (char=? (string-ref text (- i 1)) #\newline)))
-                 i)
-                (else (loop (- i 1)))))))
-      ;; Find end of defun using matching paren
-      (let ((defun-end
-              (let loop ((i defun-start) (depth 0))
-                (cond
-                  ((>= i len) len)
-                  ((char=? (string-ref text i) #\()
-                   (loop (+ i 1) (+ depth 1)))
-                  ((char=? (string-ref text i) #\))
-                   (if (= depth 1) (+ i 1)
-                     (loop (+ i 1) (- depth 1))))
-                  (else (loop (+ i 1) depth))))))
-        ;; Include trailing newline
-        (let ((end (if (and (< defun-end len) (char=? (string-ref text defun-end) #\newline))
-                     (+ defun-end 1) defun-end)))
-          (let* ((buf (current-qt-buffer app))
-                 (region (substring text defun-start end)))
-            ;; Use the existing narrowing infrastructure
-            (hash-put! *narrow-state* buf (list text defun-start end))
-            (qt-plain-text-edit-set-text! ed region)
-            (qt-plain-text-edit-set-cursor-position! ed (- pos defun-start))
-            (echo-message! (app-state-echo app) "Narrowed to defun")))))))
+         (buf (current-qt-buffer app))
+         (lang (buffer-lexer-lang buf)))
+    (let-values (((start end) (find-defun-boundaries text pos lang)))
+      (if (and start end (< start end))
+        (let ((region (substring text start end)))
+          (hash-put! *narrow-state* buf (list text start end))
+          (qt-plain-text-edit-set-text! ed region)
+          (qt-plain-text-edit-set-cursor-position! ed (max 0 (- pos start)))
+          (echo-message! (app-state-echo app) "Narrowed to defun"))
+        (echo-error! (app-state-echo app) "No defun found at point")))))
 
 ;;;============================================================================
 ;;; Expand region - smart selection expansion

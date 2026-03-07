@@ -8505,6 +8505,33 @@
       (check *lsp-initialized*  => #f)
       (check *lsp-initializing* => #f))
 
+    ;; ===================================================================
+    ;; find-defun-boundaries (multi-language defun detection)
+    ;; ===================================================================
+
+    (test-case "find-defun-boundaries: Scheme defun"
+      (let ((text "(import :std/sugar)\n\n(def (foo x)\n  (+ x 1))\n\n(def (bar y)\n  (* y 2))\n"))
+        ;; Cursor inside foo
+        (let-values (((start end) (find-defun-boundaries text 25 'scheme)))
+          (check (not (not start)) => #t)
+          (check (substring text start end) => "(def (foo x)\n  (+ x 1))\n"))
+        ;; Cursor inside bar
+        (let-values (((start end) (find-defun-boundaries text 55 'scheme)))
+          (check (not (not start)) => #t)
+          (check (substring text start end) => "(def (bar y)\n  (* y 2))\n"))))
+
+    (test-case "find-defun-boundaries: Python defun"
+      (let ((text "import os\n\ndef greet(name):\n    print(name)\n\ndef add(a, b):\n    return a + b\n"))
+        ;; Cursor inside greet
+        (let-values (((start end) (find-defun-boundaries text 20 'python)))
+          (check (not (not start)) => #t)
+          (check (string-prefix? "def greet" (substring text start end)) => #t))))
+
+    (test-case "find-defun-boundaries: no lang returns #f"
+      (let-values (((start end) (find-defun-boundaries "some text" 4 #f)))
+        (check start => #f)
+        (check end => #f)))
+
     ))
 
 ;; Run tests when executed directly

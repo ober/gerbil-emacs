@@ -125,6 +125,7 @@
   *editor-window-map*
   *image-buffer-state*
   image-buffer?
+  find-defun-boundaries
 
   ;; Face system (from :gemacs/face)
   (struct-out face)
@@ -1816,3 +1817,140 @@
 (def (image-buffer? buf)
   "Check if this buffer is an image buffer."
   (eq? (buffer-lexer-lang buf) 'image))
+
+;;;============================================================================
+;;; Defun boundary detection (multi-language)
+;;;============================================================================
+
+(def *defun-patterns*
+  ;; Each entry: (lang-symbol . list-of-regex-strings)
+  ;; Patterns match the start of a function/class definition at column 0
+  '((scheme   "^\\(def[a-z]*[ \t]" "^\\(define[a-z-]*[ \t]")
+    (gerbil   "^\\(def[a-z]*[ \t]" "^\\(define[a-z-]*[ \t]")
+    (lisp     "^\\(def[a-z]*[ \t]" "^\\(cl:def[a-z]*[ \t]")
+    (python   "^def " "^class " "^async def ")
+    (ruby     "^def " "^class " "^module ")
+    (javascript "^function " "^class " "^const [a-zA-Z_]+ = \\(" "^export ")
+    (typescript "^function " "^class " "^const [a-zA-Z_]+ = \\(" "^export ")
+    (c        "^[a-zA-Z_][a-zA-Z0-9_ *]+[a-zA-Z_][a-zA-Z0-9_]*(" "^struct " "^enum " "^typedef ")
+    (cpp      "^[a-zA-Z_][a-zA-Z0-9_ *:]+[a-zA-Z_][a-zA-Z0-9_]*(" "^class " "^struct " "^namespace ")
+    (java     "^[ \t]*\\(public\\|private\\|protected\\|static\\)" "^class " "^interface ")
+    (go       "^func " "^type ")
+    (rust     "^fn " "^pub fn " "^struct " "^enum " "^impl " "^trait ")
+    (lua      "^function " "^local function ")
+    (shell    "^[a-zA-Z_][a-zA-Z0-9_]*[ \t]*(" "^function ")))
+
+(def (find-defun-boundaries text pos lang)
+  "Find the start and end of the function definition containing pos.
+   Returns (values start end) or (values #f #f) if not found.
+   lang is a symbol like 'scheme, 'python, 'c, etc."
+  (let ((len (string-length text)))
+    (if (or (= len 0) (not lang))
+      (values #f #f)
+      (let ((lisp? (memq lang '(scheme gerbil lisp elisp clojure))))
+        (if lisp?
+          ;; Lisp/Scheme: find unindented open paren, match to close
+          (let ((defun-start
+                  (let loop ((i (min pos (- len 1))))
+                    (cond
+                      ((< i 0) #f)
+                      ((and (char=? (string-ref text i) #\()
+                            (or (= i 0) (char=? (string-ref text (- i 1)) #\newline)))
+                       i)
+                      (else (loop (- i 1)))))))
+            (if (not defun-start)
+              (values #f #f)
+              ;; Find matching close paren
+              (let ((defun-end
+                      (let loop ((i defun-start) (depth 0) (in-string? #f) (in-comment? #f))
+                        (cond
+                          ((>= i len) len)
+                          ;; Skip string contents
+                          ((and in-string? (char=? (string-ref text i) #\\) (< (+ i 1) len))
+                           (loop (+ i 2) depth #t #f))
+                          ((and in-string? (char=? (string-ref text i) #\"))
+                           (loop (+ i 1) depth #f #f))
+                          (in-string? (loop (+ i 1) depth #t #f))
+                          ;; Skip line comments
+                          ((and (not in-comment?) (char=? (string-ref text i) #\;))
+                           (loop (+ i 1) depth #f #t))
+                          ((and in-comment? (char=? (string-ref text i) #\newline))
+                           (loop (+ i 1) depth #f #f))
+                          (in-comment? (loop (+ i 1) depth #f #t))
+                          ;; Track parens
+                          ((char=? (string-ref text i) #\")
+                           (loop (+ i 1) depth #t #f))
+                          ((char=? (string-ref text i) #\()
+                           (loop (+ i 1) (+ depth 1) #f #f))
+                          ((char=? (string-ref text i) #\))
+                           (if (= depth 1) (+ i 1)
+                             (loop (+ i 1) (- depth 1) #f #f)))
+                          (else (loop (+ i 1) depth #f #f))))))
+                ;; Include trailing newline
+                (let ((end (if (and (< defun-end len) (char=? (string-ref text defun-end) #\newline))
+                             (+ defun-end 1) defun-end)))
+                  (values defun-start end)))))
+          ;; Non-Lisp: find line at column 0 matching defun pattern
+          ;; Strategy: search backward for a non-indented line that looks like a function def
+          (let* ((line-start (let loop ((i (min pos (- len 1))))
+                               (cond ((< i 0) 0)
+                                     ((and (> i 0) (char=? (string-ref text (- i 1)) #\newline)) i)
+                                     ((= i 0) 0)
+                                     (else (loop (- i 1))))))
+                 ;; Search backward for defun-like line (non-indented, non-blank)
+                 (defun-start
+                   (let loop ((i line-start))
+                     (if (< i 0) #f
+                       (let* ((ls (if (= i 0) 0
+                                    (let scan ((j (- i 1)))
+                                      (cond ((< j 0) 0)
+                                            ((char=? (string-ref text j) #\newline) (+ j 1))
+                                            (else (scan (- j 1)))))))
+                              (ch (if (< ls len) (string-ref text ls) #\space)))
+                         ;; Check: non-blank, non-indented, not a comment/brace-only line
+                         (if (and (< ls len)
+                                  (not (char=? ch #\space))
+                                  (not (char=? ch #\tab))
+                                  (not (char=? ch #\newline))
+                                  (not (char=? ch #\#))
+                                  (not (char=? ch #\/))
+                                  (not (char=? ch #\}))
+                                  (not (char=? ch #\)))
+                                  (char-alphabetic? ch))
+                           ls
+                           (if (> ls 0)
+                             (loop (- ls 1))
+                             #f)))))))
+            (if (not defun-start)
+              (values #f #f)
+              ;; Find end: next non-indented definition or end of file
+              (let ((defun-end
+                      (let loop ((i (+ defun-start 1)) (past-first-line? #f))
+                        (cond
+                          ((>= i len) len)
+                          ((char=? (string-ref text i) #\newline)
+                           (if (>= (+ i 1) len) len
+                             (let ((next-ch (string-ref text (+ i 1))))
+                               (cond
+                                 ;; Blank line after content might end defun for Python/etc
+                                 ;; But keep going for C-like languages
+                                 ;; Next non-indented function-like line = end
+                                 ((and past-first-line?
+                                       (char-alphabetic? next-ch)
+                                       ;; For brace-based languages, also check we're not in a block
+                                       (not (memq lang '(c cpp java javascript typescript go rust))))
+                                  (+ i 1))
+                                 ((and past-first-line?
+                                       (memq lang '(c cpp java javascript typescript go rust))
+                                       (char=? next-ch #\})
+                                       ;; Closing brace at column 0 might be end of function
+                                       (< (+ i 2) len))
+                                  ;; Include the closing brace line
+                                  (let scan ((j (+ i 2)))
+                                    (cond ((>= j len) len)
+                                          ((char=? (string-ref text j) #\newline) (+ j 1))
+                                          (else (scan (+ j 1))))))
+                                 (else (loop (+ i 1) #t))))))
+                          (else (loop (+ i 1) past-first-line?))))))
+                (values defun-start defun-end)))))))))
+

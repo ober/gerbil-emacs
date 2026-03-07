@@ -1041,8 +1041,21 @@
 
 (def (cmd-narrow-to-defun app)
   "Narrow the view to the current function definition."
-  ;; Simplified: find nearest defun boundaries
-  (echo-message! (app-state-echo app) "Narrow to defun (use M-x narrow-to-region)"))
+  (let* ((fr (app-state-frame app))
+         (ed (edit-window-editor (current-window fr)))
+         (echo (app-state-echo app))
+         (buf (current-buffer-from-app app))
+         (text (editor-get-text ed))
+         (pos (send-message ed SCI_GETCURRENTPOS 0 0))
+         (lang (buffer-lexer-lang buf)))
+    (let-values (((start end) (find-defun-boundaries text pos lang)))
+      (if (and start end (< start end))
+        (begin
+          (hash-put! *tui-narrow-state* buf (list text start end))
+          (editor-set-text ed (substring text start end))
+          (editor-goto-pos ed (max 0 (- pos start)))
+          (echo-message! echo "Narrowed to defun"))
+        (echo-error! echo "No defun found at point")))))
 
 (def (cmd-widen-all app)
   "Widen all narrowed buffers."

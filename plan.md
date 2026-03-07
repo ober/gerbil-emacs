@@ -41,7 +41,7 @@ Implemented popup UX matching Ruby Scintilla editors — inline autocomplete dro
 ### High Impact
 - ~~**Helm-style C-x C-f find-file**~~ — DONE: popup file selector with default path pre-filled, incremental narrowing, directory descent on Enter
 - ~~**Persistent M-x command history**~~ — DONE: frequency-based sorting, persisted to ~/.gemacs-mx-history, auto-load/save
-- **Proper narrow-to-defun** — detect function boundaries for Scheme/Lisp and common languages
+- ~~**Proper narrow-to-defun**~~ — DONE: multi-language defun detection (Scheme/Lisp paren-based, Python/Ruby/C/Go/Rust/etc indentation-based)
 
 ### Medium Impact
 - **Org-mode archive/refile** — complete org workflow
