@@ -827,7 +827,7 @@
 
 | Feature | Status | Notes |
 |---------|--------|-------|
-| Calendar display | :orange_circle: | Monthly grid, navigation |
+| Calendar display | :large_blue_circle: | 3-month grid, p/n navigation, holidays, diary integration, org entries |
 | Today highlighting | :white_check_mark: | |
 | Navigate months/years | :white_check_mark: | |
 | Diary integration | :white_check_mark: | `diary-insert-entry` adds to `~/.gemacs-diary`, `diary-view-entries` shows entries |

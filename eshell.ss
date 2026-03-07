@@ -525,21 +525,25 @@
         (loop (cdr toks) (append (reverse globbed) acc))))))
 
 (def (eshell-parse-redirection tokens)
-  "Parse output redirection from tokens.
-   Returns (values clean-tokens redirect-file append?)
-   redirect-file is #f if no redirection."
-  (let loop ((toks tokens) (acc []) (redir #f) (append? #f))
+  "Parse I/O redirection from tokens.
+   Returns (values clean-tokens redirect-file append? input-file)
+   redirect-file and input-file are #f if no redirection."
+  (let loop ((toks tokens) (acc []) (redir #f) (append? #f) (input #f))
     (cond
       ((null? toks)
-       (values (reverse acc) redir append?))
+       (values (reverse acc) redir append? input))
       ((string=? (car toks) ">>")
        (if (pair? (cdr toks))
-         (loop (cddr toks) acc (cadr toks) #t)
-         (loop (cdr toks) acc redir append?)))
+         (loop (cddr toks) acc (cadr toks) #t input)
+         (loop (cdr toks) acc redir append? input)))
       ((string=? (car toks) ">")
        (if (pair? (cdr toks))
-         (loop (cddr toks) acc (cadr toks) #f)
-         (loop (cdr toks) acc redir append?)))
+         (loop (cddr toks) acc (cadr toks) #f input)
+         (loop (cdr toks) acc redir append? input)))
+      ((string=? (car toks) "<")
+       (if (pair? (cdr toks))
+         (loop (cddr toks) acc redir append? (cadr toks))
+         (loop (cdr toks) acc redir append? input)))
       ;; Handle >file (no space)
       ((and (> (string-length (car toks)) 1)
             (char=? (string-ref (car toks) 0) #\>))
@@ -548,10 +552,43 @@
               (file (substring tok (if append? 2 1) (string-length tok))))
          (if (string=? file "")
            (if (pair? (cdr toks))
-             (loop (cddr toks) acc (cadr toks) append?)
-             (loop (cdr toks) acc redir append?))
-           (loop (cdr toks) acc file append?))))
-      (else (loop (cdr toks) (cons (car toks) acc) redir append?)))))
+             (loop (cddr toks) acc (cadr toks) append? input)
+             (loop (cdr toks) acc redir append? input))
+           (loop (cdr toks) acc file append? input))))
+      ;; Handle <file (no space)
+      ((and (> (string-length (car toks)) 1)
+            (char=? (string-ref (car toks) 0) #\<))
+       (let ((file (substring (car toks) 1 (string-length (car toks)))))
+         (loop (cdr toks) acc redir append? file)))
+      (else (loop (cdr toks) (cons (car toks) acc) redir append? input)))))
+
+(def (eshell-expand-command-substitution line cwd)
+  "Expand $(cmd) in a command line by executing cmd and inserting output."
+  (let loop ((chars (string->list line)) (acc ""))
+    (cond
+      ((null? chars) acc)
+      ((and (char=? (car chars) #\$)
+            (pair? (cdr chars))
+            (char=? (cadr chars) #\())
+       ;; Find matching closing paren
+       (let paren-loop ((rest (cddr chars)) (depth 1) (cmd ""))
+         (cond
+           ((null? rest) (string-append acc "$(" cmd))
+           ((char=? (car rest) #\()
+            (paren-loop (cdr rest) (+ depth 1) (string-append cmd "(")))
+           ((and (char=? (car rest) #\)) (= depth 1))
+            ;; Execute the command and get output
+            (let-values (((output _) (eshell-execute-command cmd cwd)))
+              (let ((trimmed-output (if (and (string? output)
+                                             (> (string-length output) 0)
+                                             (char=? (string-ref output (- (string-length output) 1)) #\newline))
+                                     (substring output 0 (- (string-length output) 1))
+                                     (if (string? output) output ""))))
+                (loop (cdr rest) (string-append acc trimmed-output)))))
+           ((char=? (car rest) #\))
+            (paren-loop (cdr rest) (- depth 1) (string-append cmd ")")))
+           (else (paren-loop (cdr rest) depth (string-append cmd (string (car rest))))))))
+      (else (loop (cdr chars) (string-append acc (string (car chars))))))))
 
 (def (eshell-process-input input cwd)
   "Process an eshell input line.
@@ -573,6 +610,11 @@
       ;; Pipeline (contains |)
       ((string-contains trimmed "|")
        (eshell-process-pipeline trimmed cwd))
+
+      ;; Command substitution $(...)
+      ((string-contains trimmed "$(")
+       (eshell-execute-command-with-redirect
+         (eshell-expand-command-substitution trimmed cwd) cwd))
 
       ;; Regular command (with env/glob expansion and redirection)
       (else
@@ -616,13 +658,24 @@
              tokens in-quote?)))))
 
 (def (eshell-execute-command-with-redirect line cwd)
-  "Execute a command with env/glob expansion and output redirection."
+  "Execute a command with env/glob expansion, input and output redirection."
   (let* ((tokens (parse-command-line line))
          (expanded (eshell-expand-tokens tokens cwd)))
-    (let-values (((clean-tokens redir-file append?) (eshell-parse-redirection expanded)))
+    (let-values (((clean-tokens redir-file append? input-file) (eshell-parse-redirection expanded)))
       (let* ((cmd (if (null? clean-tokens) "" (car clean-tokens)))
              (args (if (null? clean-tokens) [] (cdr clean-tokens)))
-             (builtin (builtin? cmd)))
+             (builtin (builtin? cmd))
+             ;; If input redirection, read the file and prepend to args for builtins
+             ;; or pipe to stdin for external commands
+             (stdin-text (and input-file
+                           (let ((path (if (string-prefix? "/" input-file) input-file
+                                         (string-append cwd "/" input-file))))
+                             (if (file-exists? path)
+                               (call-with-input-file path
+                                 (lambda (port) (read-line port #f)))
+                               #f)))))
+        (when (and input-file (not stdin-text))
+          (values (string-append "No such file: " input-file "\n") cwd))
         (let-values (((output new-cwd)
                       (if builtin
                         (with-catch
@@ -632,7 +685,10 @@
                                       "\n")
                                     cwd))
                           (lambda () (builtin args cwd)))
-                        (eshell-run-external cmd args cwd))))
+                        ;; External command — pass stdin if input redirection
+                        (if stdin-text
+                          (eshell-run-external-with-stdin cmd args cwd stdin-text)
+                          (eshell-run-external cmd args cwd)))))
           (if (and redir-file (string? output))
             ;; Write output to file
             (let ((path (if (string-prefix? "/" redir-file) redir-file
@@ -669,6 +725,29 @@
         (lambda () (builtin args cwd)))
       ;; External command
       (eshell-run-external cmd args cwd))))
+
+(def (eshell-run-external-with-stdin cmd args cwd stdin-text)
+  "Run an external command with stdin input."
+  (with-catch
+    (lambda (e)
+      (values (string-append cmd ": "
+                (with-output-to-string (lambda () (display-exception e)))
+                "\n")
+              cwd))
+    (lambda ()
+      (let* ((proc (open-process
+                     (list path: cmd
+                           arguments: args
+                           directory: cwd
+                           stdin-redirection: #t
+                           stdout-redirection: #t
+                           stderr-redirection: #t)))
+             (_ (begin (display stdin-text proc)
+                       (force-output proc)
+                       (close-output-port proc)))
+             (output (read-line proc #f)))
+        (close-port proc)
+        (values (or output "") cwd)))))
 
 (def (eshell-run-external cmd args cwd)
   "Run an external command."
