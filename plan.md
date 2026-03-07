@@ -55,4 +55,4 @@ Implemented popup UX matching Ruby Scintilla editors — inline autocomplete dro
 - LSP in TUI
 - DAP/debugger integration
 - Multi-frame support
-- Spell checking integration
+- ~~Spell checking integration~~ — DONE: flyspell-mode, ispell-word, ispell-buffer, ispell-region, dictionary switching (both TUI and Qt)
