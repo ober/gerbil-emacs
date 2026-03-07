@@ -1143,8 +1143,9 @@ Returns (path . line) or #f. Handles file:line format."
 (def *mx-command-history* [])
 (def *mx-history-max* 50)
 
-(def (mx-history-add! name)
-  "Add a command name to M-x history (most recent first, no duplicates)."
+(def (qt-mx-history-add! name)
+  "Add a command name to M-x recency list (most recent first, no duplicates).
+   Also records in shared frequency-based history."
   (set! *mx-command-history*
     (cons name
       (let loop ((h *mx-command-history*) (acc []))
@@ -1157,7 +1158,9 @@ Returns (path . line) or #f. Handles file:line format."
       (let loop ((h *mx-command-history*) (n 0) (acc []))
         (if (or (null? h) (>= n *mx-history-max*))
           (reverse acc)
-          (loop (cdr h) (+ n 1) (cons (car h) acc)))))))
+          (loop (cdr h) (+ n 1) (cons (car h) acc))))))
+  ;; Also record in shared frequency-based history
+  (mx-history-add! name))
 
 (def (cmd-execute-extended-command app)
   (let* ((all-names (sort (map symbol->string (hash-keys *all-commands*)) string<?))
@@ -1170,7 +1173,7 @@ Returns (path . line) or #f. Handles file:line format."
          (ordered (append *mx-command-history* non-recent))
          (input (qt-echo-read-with-narrowing app "M-x" ordered)))
     (when (and input (> (string-length input) 0))
-      (mx-history-add! input)
+      (qt-mx-history-add! input)
       (execute-command! app (string->symbol input)))))
 
 (def (cmd-helm-buffers-list app)

@@ -17,6 +17,14 @@
   savehist-save!
   savehist-load!
 
+  ;; M-x command history (frequency-sorted)
+  *mx-history*
+  *mx-history-file*
+  mx-history-add!
+  mx-history-save!
+  mx-history-load!
+  mx-history-ordered-candidates
+
   ;; Desktop (session persistence)
   desktop-save!
   desktop-load
@@ -198,6 +206,69 @@
                       (loop (cons line acc))
                       (loop acc)))))))
           [])))))
+
+;;;============================================================================
+;;; M-x command history (frequency + recency sorted, persisted)
+;;;============================================================================
+
+;; Hash table: command-name-string -> count (number of times used)
+(def *mx-history* (make-hash-table))
+(def *mx-history-file*
+  (string-append (getenv "HOME" "/tmp") "/.gemacs-mx-history"))
+
+(def (mx-history-add! name)
+  "Record a command usage. Increments frequency count."
+  (when (and (string? name) (> (string-length name) 0))
+    (let ((count (hash-ref *mx-history* name 0)))
+      (hash-put! *mx-history* name (+ count 1)))))
+
+(def (mx-history-save!)
+  "Save M-x command history (name\\tcount per line)."
+  (with-catch
+    (lambda (e) #f)
+    (lambda ()
+      (when (> (hash-length *mx-history*) 0)
+        (call-with-output-file *mx-history-file*
+          (lambda (port)
+            (hash-for-each
+              (lambda (name count)
+                (display name port)
+                (display "\t" port)
+                (display count port)
+                (newline port))
+              *mx-history*)))))))
+
+(def (mx-history-load!)
+  "Load M-x command history from disk."
+  (with-catch
+    (lambda (e) #f)
+    (lambda ()
+      (when (file-exists? *mx-history-file*)
+        (call-with-input-file *mx-history-file*
+          (lambda (port)
+            (let loop ()
+              (let ((line (read-line port)))
+                (unless (eof-object? line)
+                  (let ((tab-pos (string-index line #\tab)))
+                    (when tab-pos
+                      (let* ((name (substring line 0 tab-pos))
+                             (count-str (substring line (+ tab-pos 1) (string-length line)))
+                             (count (with-catch (lambda (e) 1)
+                                      (lambda () (string->number count-str)))))
+                        (when (and (> (string-length name) 0) count)
+                          (hash-put! *mx-history* name count)))))
+                  (loop))))))))))
+
+(def (mx-history-ordered-candidates all-names)
+  "Return all-names sorted: frequently used first (by count desc), then alphabetically."
+  (let* ((with-count (map (lambda (n) (cons n (hash-ref *mx-history* n 0))) all-names))
+         (frequent (filter (lambda (p) (> (cdr p) 0)) with-count))
+         (rest (filter (lambda (p) (= (cdr p) 0)) with-count))
+         ;; Sort frequent by count descending
+         (sorted-freq (sort frequent (lambda (a b) (> (cdr a) (cdr b)))))
+         ;; Rest already alphabetical (all-names is sorted)
+         )
+    (append (map car sorted-freq) (map car rest))))
 
 ;;;============================================================================
 ;;; Desktop (session persistence)

@@ -49,9 +49,10 @@
   ;; Load init file (applies settings like scroll-margin)
   (init-file-load!)
 
-  ;; Load persistent state: recent files, minibuffer history, save-place, shell history
+  ;; Load persistent state: recent files, minibuffer history, M-x history, save-place, shell history
   (recent-files-load!)
   (set! *minibuffer-history* (savehist-load!))
+  (mx-history-load!)
   (save-place-load!)
   (gsh-history-load!)
 
@@ -734,6 +735,7 @@
           ;; Save persistent state before exit
           (recent-files-save!)
           (savehist-save! *minibuffer-history*)
+          (mx-history-save!)
           (save-place-save!)
           (gsh-history-save!)
           ;; Save scratch buffer content

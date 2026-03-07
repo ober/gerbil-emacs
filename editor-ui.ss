@@ -28,6 +28,7 @@
         :gemacs/echo
         :gemacs/highlight
         :gemacs/editor-core
+        (only-in :gemacs/persist mx-history-add! mx-history-ordered-candidates)
         (only-in :gemacs/org-table
                  org-table-on-table-line? org-table-next-cell))
 
@@ -61,12 +62,12 @@
          (fr (app-state-frame app))
          (row (- (frame-height fr) 1))
          (width (frame-width fr))
-         (cmd-names (sort (map symbol->string (hash-keys *all-commands*))
-                          string<?))
-         (input (echo-read-string-with-completion echo "M-x " cmd-names row width)))
+         (all-names (sort (map symbol->string (hash-keys *all-commands*)) string<?))
+         (ordered (mx-history-ordered-candidates all-names))
+         (input (echo-read-string-with-completion echo "M-x " ordered row width)))
     (when (and input (> (string-length input) 0))
-      (let ((cmd-name (string->symbol input)))
-        (execute-command! app cmd-name)))))
+      (mx-history-add! input)
+      (execute-command! app (string->symbol input)))))
 
 ;;;============================================================================
 ;;; Help commands

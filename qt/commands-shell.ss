@@ -10,7 +10,8 @@
         :std/text/base64
         :gemacs/qt/sci-shim
         :gemacs/core
-        (only-in :gemacs/persist theme-settings-save! theme-settings-load!)
+        (only-in :gemacs/persist theme-settings-save! theme-settings-load!
+                 mx-history-save! mx-history-load!)
         :gemacs/editor
         :gemacs/repl
         :gemacs/eshell
@@ -444,7 +445,7 @@ S=sort by name, z=sort by size, q=quit."
   (string-append (getenv "HOME" "/tmp") "/.gemacs-history"))
 
 (def (savehist-save!)
-  "Save command history to file."
+  "Save command history to file (recency list + shared frequency history)."
   (with-catch
     (lambda (e) #f)
     (lambda ()
@@ -456,10 +457,12 @@ S=sort by name, z=sort by size, q=quit."
                 (display cmd port)
                 (newline port))
               (take *mx-command-history*
-                    (min 500 (length *mx-command-history*))))))))))
+                    (min 500 (length *mx-command-history*)))))))
+      ;; Also save shared frequency-based history
+      (mx-history-save!))))
 
 (def (savehist-load!)
-  "Load command history from file."
+  "Load command history from file (recency list + shared frequency history)."
   (with-catch
     (lambda (e) #f)
     (lambda ()
@@ -471,7 +474,9 @@ S=sort by name, z=sort by size, q=quit."
                              (if (eof-object? line)
                                (reverse acc)
                                (loop (cons line acc)))))))))
-          (set! *mx-command-history* lines))))))
+          (set! *mx-command-history* lines)))
+      ;; Also load shared frequency-based history
+      (mx-history-load!))))
 
 ;;; ========================================================================
 ;;; WDired — editable directory mode

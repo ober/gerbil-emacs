@@ -161,4 +161,50 @@
       (check (boolean? *require-final-newline*) => #t)
       (check (boolean? *centered-cursor-mode*) => #t))
 
+    (test-case "mx-history: add increments count"
+      (let ((saved *mx-history*))
+        (set! *mx-history* (make-hash-table))
+        (mx-history-add! "find-file")
+        (mx-history-add! "find-file")
+        (mx-history-add! "save-buffer")
+        (check (hash-ref *mx-history* "find-file" 0) => 2)
+        (check (hash-ref *mx-history* "save-buffer" 0) => 1)
+        (set! *mx-history* saved)))
+
+    (test-case "mx-history: ordered-candidates sorts by frequency"
+      (let ((saved *mx-history*))
+        (set! *mx-history* (make-hash-table))
+        (mx-history-add! "save-buffer")
+        (mx-history-add! "find-file")
+        (mx-history-add! "find-file")
+        (mx-history-add! "find-file")
+        (let ((ordered (mx-history-ordered-candidates
+                         '("find-file" "goto-line" "save-buffer"))))
+          ;; find-file (3) should come before save-buffer (1)
+          (check (car ordered) => "find-file")
+          (check (cadr ordered) => "save-buffer")
+          ;; goto-line (0) should be last
+          (check (caddr ordered) => "goto-line"))
+        (set! *mx-history* saved)))
+
+    (test-case "mx-history: save and load round-trip"
+      (let ((saved *mx-history*)
+            (saved-file *mx-history-file*))
+        (set! *mx-history* (make-hash-table))
+        (set! *mx-history-file*
+          (string-append (getenv "HOME" "/tmp") "/.gemacs-mx-history-test"))
+        (mx-history-add! "find-file")
+        (mx-history-add! "find-file")
+        (mx-history-add! "save-buffer")
+        (mx-history-save!)
+        ;; Clear and reload
+        (set! *mx-history* (make-hash-table))
+        (mx-history-load!)
+        (check (hash-ref *mx-history* "find-file" 0) => 2)
+        (check (hash-ref *mx-history* "save-buffer" 0) => 1)
+        ;; Clean up test file
+        (delete-file (string-append (getenv "HOME" "/tmp") "/.gemacs-mx-history-test"))
+        (set! *mx-history-file* saved-file)
+        (set! *mx-history* saved)))
+
     ))
