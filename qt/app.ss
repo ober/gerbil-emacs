@@ -500,6 +500,11 @@
                        (when (and *which-key-timer* (not (eq? action 'prefix)))
                          (qt-timer-stop! *which-key-timer*)
                          (set! *which-key-pending-keymap* #f))
+                       ;; Describe-key interception: if pending, show what the key does
+                       ;; instead of executing it (except for prefix keys which continue building)
+                       (if (and *qt-describe-key-pending* (not (eq? action 'prefix)))
+                         (let ((ks (qt-key-event->string code mods text)))
+                           (qt-describe-key-result! app ks action data))
                        (case action
                          ((command)
                           ;; Record for keyboard macro
@@ -625,7 +630,7 @@
                          ((undefined)
                           (echo-error! (app-state-echo app)
                                        (string-append data " is undefined")))
-                         ((ignore) (void)))  ;; bare modifier keys — do nothing
+                         ((ignore) (void))))  ;; bare modifier keys — do nothing (extra paren closes describe-key if)
                        ;; Update visual decorations (current-line + brace match)
                        (qt-update-visual-decorations!
                          (qt-current-editor (app-state-frame app)))

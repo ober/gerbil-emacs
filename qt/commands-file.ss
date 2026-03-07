@@ -1171,10 +1171,40 @@
         "Key:  (not bound)\n")
       "\n" doc "\n")))
 
+(def *qt-describe-key-pending* #f)
+
 (def (cmd-describe-key app)
-  "Show what command a key sequence runs."
-  (echo-message! (app-state-echo app)
-    "Press a key... (use C-h b for all bindings)"))
+  "Show what command a key sequence runs. Sets a flag so the next key press
+   is intercepted and described instead of executed."
+  (set! *qt-describe-key-pending* #t)
+  (echo-message! (app-state-echo app) "Describe key: "))
+
+(def (qt-describe-key-result! app key-str action data)
+  "Display the result of a describe-key interception in *Help* buffer."
+  (set! *qt-describe-key-pending* #f)
+  (let* ((ed (current-qt-editor app))
+         (fr (app-state-frame app))
+         (echo (app-state-echo app)))
+    (case action
+      ((command)
+       (let* ((text (string-append
+                      key-str " runs the command " (symbol->string data) "\n\n"
+                      (qt-format-command-help data)))
+              (buf (or (buffer-by-name "*Help*")
+                       (qt-buffer-create! "*Help*" ed #f))))
+         (qt-buffer-attach! ed buf)
+         (set! (qt-edit-window-buffer (qt-current-window fr)) buf)
+         (qt-plain-text-edit-set-text! ed text)
+         (qt-text-document-set-modified! (buffer-doc-pointer buf) #f)
+         (qt-plain-text-edit-set-cursor-position! ed 0)
+         (qt-modeline-update! app)
+         (echo-message! echo (string-append key-str " runs " (symbol->string data)))))
+      ((self-insert)
+       (echo-message! echo (string-append key-str " is bound to self-insert-command")))
+      ((prefix)
+       (echo-message! echo (string-append key-str " is a prefix key")))
+      (else
+       (echo-message! echo (string-append key-str " is not bound"))))))
 
 (def (cmd-describe-command app)
   "Describe a command, showing help in *Help* buffer."

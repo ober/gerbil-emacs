@@ -81,6 +81,8 @@ Implemented popup UX matching Ruby Scintilla editors — inline autocomplete dro
 - ~~**File split: commands-parity**~~ — DONE: split 2111→1030+1118, both under 2000 limit
 - ~~**Qt profiler (profiler-start/stop)**~~ — DONE: upgraded from stub to real `##process-statistics` profiling (wall/CPU/GC/allocation)
 - ~~**Qt info reader (M-x info)**~~ — DONE: upgraded from stub to real GNU Info reader via subprocess, topic prompting, ANSI stripping
+- ~~**Qt complete-at-point popup**~~ — DONE: upgraded from echo-area display to Scintilla native autocomplete popup (SCI_AUTOCSHOW)
+- ~~**Qt describe-key (C-h k)**~~ — DONE: upgraded from stub to real key interception — captures next keypress, shows binding and help in *Help* buffer
 
 ### Aspirational
 - LSP in TUI

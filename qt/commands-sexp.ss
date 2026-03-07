@@ -1846,39 +1846,30 @@
                         (scan k))
                       (word-end (+ k 1))))
                   (skip (+ j 1))))))
-          ;; Show results in echo area (Qt doesn't have Scintilla autocomplete API)
+          ;; Show Scintilla native autocomplete popup
           (let ((words (sort (hash-keys candidates) string<?)))
             (if (null? words)
               (echo-message! echo (string-append "No completions for \"" prefix "\""))
               (if (= (length words) 1)
-                ;; Single match: insert it
+                ;; Single match: insert it directly
                 (begin
                   (qt-plain-text-edit-set-selection! ed prefix-start pos)
                   (qt-plain-text-edit-remove-selected-text! ed)
                   (qt-plain-text-edit-insert-text! ed (car words))
                   (echo-message! echo (string-append "Completed: " (car words))))
-                ;; Multiple: find common prefix and insert that
-                (let* ((common
-                         (let loop ((p (car words)) (rest (cdr words)))
-                           (if (null? rest) p
-                             (let* ((a p) (b (car rest))
-                                    (end (min (string-length a) (string-length b)))
-                                    (cp (let lp ((i 0))
-                                          (if (and (< i end) (char=? (string-ref a i) (string-ref b i)))
-                                            (lp (+ i 1)) i))))
-                               (loop (substring a 0 cp) (cdr rest)))))))
-                  (when (> (string-length common) plen)
-                    (qt-plain-text-edit-set-selection! ed prefix-start pos)
-                    (qt-plain-text-edit-remove-selected-text! ed)
-                    (qt-plain-text-edit-insert-text! ed common))
+                ;; Multiple: show Scintilla autocomplete popup
+                (begin
+                  (sci-send ed SCI_AUTOCSETSEPARATOR
+                            (char->integer #\newline) 0)
+                  (sci-send ed SCI_AUTOCSETIGNORECASE 0 0)
+                  (sci-send ed SCI_AUTOCSETMAXHEIGHT 10 0)
+                  (sci-send ed SCI_AUTOCSETDROPRESTOFWORD 1 0)
+                  (sci-send ed SCI_AUTOCSETORDER 1 0)
+                  (sci-send/string ed SCI_AUTOCSHOW
+                    (string-join words "\n") plen)
                   (echo-message! echo
-                    (let ((shown (let loop ((ws words) (n 0) (acc []))
-                                    (if (or (null? ws) (>= n 5))
-                                      (reverse acc)
-                                      (loop (cdr ws) (+ n 1) (cons (car ws) acc))))))
-                      (string-append (number->string (length words)) " completions: "
-                                     (string-join shown ", ")
-                                     (if (> (length words) 5) " ..." "")))))))))))))
+                    (string-append (number->string (length words))
+                                   " completions")))))))))))
 
 ;;;============================================================================
 ;;; Org-mode parity: agenda, export, priority

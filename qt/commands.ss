@@ -70,7 +70,10 @@
         workspace-add-buffer!
         workspace-remove-buffer!
         ;; Diff-hl
-        *diff-hl-active*)
+        *diff-hl-active*
+        ;; Describe-key interception
+        *qt-describe-key-pending*
+        qt-describe-key-result!)
 
 (import :std/sugar
         :std/sort
