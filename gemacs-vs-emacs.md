@@ -421,17 +421,17 @@
 | Stage / unstage files | :white_check_mark: | `s` to stage, `u` to unstage in status buffer |
 | Commit with message | :large_blue_circle: | Dedicated `*Magit: Commit*` buffer with diff preview, C-c C-c / C-c C-k |
 | Amend commit | :large_blue_circle: | `a` in magit opens commit buffer pre-filled with previous message |
-| Push / pull | :yellow_circle: | Shell passthrough |
+| Push / pull | :large_blue_circle: | Upstream detection, auto-set with `-u`, remote selection via narrowing |
 | Log viewing | :large_blue_circle: | Interactive log with date/author, Enter shows commit diff |
 | Diff viewing | :large_blue_circle: | Shows staged + unstaged diffs for file at point |
 | Branch operations | :large_blue_circle: | Checkout/create/delete with narrowing selection |
 | Tag management | :yellow_circle: | Create tags |
-| Stash | :large_blue_circle: | Stash create + list + pop |
+| Stash | :large_blue_circle: | Stash create + list + pop + show diff |
 | Blame | :yellow_circle: | `git blame` output display |
-| Interactive rebase | :yellow_circle: | Rebase with narrowing branch selection |
-| Merge UI | :yellow_circle: | Merge with narrowing branch selection |
-| Cherry-pick | :yellow_circle: | Basic |
-| Revert commit | :yellow_circle: | Basic |
+| Interactive rebase | :large_blue_circle: | Rebase with narrowing branch selection |
+| Merge UI | :large_blue_circle: | Merge with narrowing branch selection |
+| Cherry-pick | :large_blue_circle: | Interactive commit selection with narrowing |
+| Revert commit | :large_blue_circle: | Interactive commit selection, `--no-edit` |
 | Forge (PR/issue management) | :large_blue_circle: | List/view PRs and issues, create PRs via `gh` CLI |
 | Diff-hl (gutter marks) | :large_blue_circle: | Git diff gutter indicators |
 | Wgrep on grep results | :white_check_mark: | Edit and save back |
@@ -734,7 +734,7 @@
 |---------|--------|-------|
 | Describe key (`C-h k`) | :white_check_mark: | Shows command bound to key |
 | Describe command (`C-h f`) | :white_check_mark: | |
-| Describe variable (`C-h v`) | :yellow_circle: | Registered |
+| Describe variable (`C-h v`) | :large_blue_circle: | Narrowing selection, shows value and docs in `*Help*` |
 | List all bindings (`C-h b`) | :white_check_mark: | |
 | Where is (`C-h w`) | :white_check_mark: | Find key for command |
 | Apropos (`C-h a`) | :white_check_mark: | Search commands by keyword |

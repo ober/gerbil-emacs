@@ -57,6 +57,9 @@ Implemented popup UX matching Ruby Scintilla editors — inline autocomplete dro
 - ~~**Magit commit composition buffer**~~ — DONE: `*Magit: Commit*` buffer with diff preview, C-c C-c / C-c C-k, comment stripping
 - ~~**Interactive magit log**~~ — DONE: date/author/subject format, Enter shows commit diff with highlighting, mode keymaps
 - ~~**Magit amend**~~ — DONE: `a` in magit opens commit buffer pre-filled with previous message, `--amend` flag
+- ~~**Magit stash-show**~~ — DONE: Enter on stash shows diff in `*Magit Stash Diff*` with highlighting
+- ~~**Interactive magit push/pull/fetch**~~ — DONE: upstream detection, auto-set `-u`, remote selection, cherry-pick/revert with narrowing
+- ~~**Describe variable (C-h v)**~~ — DONE: narrowing selection, shows value and docs in `*Help*` buffer
 
 ### Aspirational
 - LSP in TUI
