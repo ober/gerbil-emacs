@@ -1127,3 +1127,4 @@
                 (echo-message! (app-state-echo app)
                   (string-append (number->string (length lines)) " matches"))))))))))
 
+

@@ -1480,3 +1480,61 @@
               (when choice
                 (echo-message! (app-state-echo app) "Could not parse result")))))))))
 
+;;;============================================================================
+;;; Consult-bookmark — interactive bookmark jump with narrowing
+;;;============================================================================
+
+(def (cmd-consult-bookmark app)
+  "Jump to a bookmark using narrowing selection with file info."
+  (let* ((bmarks (app-state-bookmarks app))
+         (names (sort (hash-keys bmarks) string<?)))
+    (if (null? names)
+      (echo-message! (app-state-echo app) "No bookmarks set")
+      (let* ((display-items
+               (map (lambda (name)
+                      (let* ((entry (hash-get bmarks name))
+                             (file (and entry (list? entry) (>= (length entry) 3)
+                                        (cadr entry)))
+                             (pos (and entry (list? entry) (>= (length entry) 3)
+                                       (caddr entry))))
+                        (if file
+                          (string-append name " → " (path-strip-directory file)
+                                         ":" (number->string (or pos 0)))
+                          name)))
+                    names))
+             (choice (qt-echo-read-with-narrowing app "Bookmark: " display-items)))
+        (when choice
+          ;; Extract bookmark name (before " → ")
+          (let* ((arrow (string-contains choice " → "))
+                 (name (if arrow (substring choice 0 arrow) choice))
+                 (entry (hash-get bmarks name)))
+            (when entry
+              (let* ((buf-name (car entry))
+                     (file (cadr entry))
+                     (pos (caddr entry)))
+                ;; Jump to the bookmark location
+                (when (and file (file-exists? file))
+                  (let* ((ed (current-qt-editor app))
+                         (fr (app-state-frame app))
+                         (existing (let loop ((bs *buffer-list*))
+                                     (if (null? bs) #f
+                                       (if (and (buffer-file-path (car bs))
+                                                (string=? (buffer-file-path (car bs)) file))
+                                         (car bs) (loop (cdr bs))))))
+                         (target (or existing
+                                     (qt-buffer-create! (path-strip-directory file) ed file))))
+                    (qt-buffer-attach! ed target)
+                    (set! (qt-edit-window-buffer (qt-current-window fr)) target)
+                    (when (not existing)
+                      (let ((text (read-file-as-string file)))
+                        (when text
+                          (qt-plain-text-edit-set-text! ed text)
+                          (qt-text-document-set-modified! (buffer-doc-pointer target) #f)))
+                      (qt-setup-highlighting! app target))
+                    (qt-plain-text-edit-set-cursor-position! ed pos)
+                    (qt-plain-text-edit-ensure-cursor-visible! ed)
+                    (echo-message! (app-state-echo app)
+                      (string-append "Bookmark: " name))))))))))))
+
+
+

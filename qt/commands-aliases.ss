@@ -211,6 +211,7 @@
   (register-command! 'grep cmd-grep)
   (register-command! 'rgrep cmd-rgrep)
   (register-command! 'consult-ripgrep cmd-consult-ripgrep)
+  (register-command! 'consult-bookmark cmd-consult-bookmark)
   (register-command! 'grep-goto cmd-grep-goto)
   (register-command! 'next-grep-result cmd-next-grep-result)
   (register-command! 'previous-grep-result cmd-previous-grep-result)
