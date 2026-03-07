@@ -897,9 +897,11 @@
                             (buffer-create! "*Occur*" ed #f))))
               (buffer-attach! ed buf)
               (set! (edit-window-buffer (current-window fr)) buf)
+              (editor-set-read-only ed #f)
               (editor-set-text ed result-text)
               (editor-set-save-point ed)
               (editor-goto-pos ed 0)
+              (editor-set-read-only ed #t)
               (echo-message! echo
                 (string-append (number->string (length matches))
                                " matches")))))))))

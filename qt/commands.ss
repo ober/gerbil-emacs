@@ -1214,6 +1214,8 @@
   ;; Occur
   (register-command! 'occur cmd-occur)
   (register-command! 'occur-goto cmd-occur-goto)
+  (register-command! 'occur-next cmd-occur-next)
+  (register-command! 'occur-prev cmd-occur-prev)
   ;; Keyboard macros
   (register-command! 'start-kbd-macro cmd-start-kbd-macro)
   (register-command! 'end-kbd-macro cmd-end-kbd-macro)

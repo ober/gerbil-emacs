@@ -1818,9 +1818,12 @@
                         (qt-buffer-create! "*Occur*" ed #f))))
           (qt-buffer-attach! ed buf)
           (set! (qt-edit-window-buffer (qt-current-window fr)) buf)
+          (sci-send ed SCI_SETREADONLY 0 0)
           (qt-plain-text-edit-set-text! ed result)
           (qt-text-document-set-modified! (buffer-doc-pointer buf) #f)
-          (qt-plain-text-edit-set-cursor-position! ed 0))))))
+          (qt-plain-text-edit-set-cursor-position! ed 0)
+          (sci-send ed SCI_SETREADONLY 1 0))))))
+
 
 (def (cmd-occur-goto app)
   "Jump from *Occur* buffer to the source line under cursor."
@@ -1868,6 +1871,68 @@
                             (echo-message! echo
                               (string-append "Line " (number->string line-num)))))))))))))))))
 
+
+(def (cmd-occur-next app)
+  "Move to the next match line in *Occur* buffer."
+  (let ((buf (current-qt-buffer app)))
+    (when (string=? (buffer-name buf) "*Occur*")
+      (let* ((ed (current-qt-editor app))
+             (text (qt-plain-text-edit-text ed))
+             (pos (qt-plain-text-edit-cursor-position ed))
+             (lines (string-split text #\newline))
+             ;; Find current line number from position
+             (cur-line (let loop ((i 0) (chars 0))
+                         (if (or (null? (list-tail lines i))
+                                 (>= i (length lines)))
+                           i
+                           (let ((line-len (+ (string-length (list-ref lines i)) 1)))
+                             (if (> (+ chars line-len) pos)
+                               i
+                               (loop (+ i 1) (+ chars line-len))))))))
+        ;; Find next line starting with a digit and containing ':'
+        (let loop ((l (+ cur-line 1)) (char-pos 0))
+          ;; Calculate char-pos for line l
+          (when (< l (length lines))
+            (let* ((target-pos (let lp ((i 0) (p 0))
+                                 (if (>= i l) p
+                                   (lp (+ i 1) (+ p (string-length (list-ref lines i)) 1)))))
+                   (line-text (list-ref lines l)))
+              (if (and (> (string-length line-text) 0)
+                       (char-numeric? (string-ref line-text 0))
+                       (string-index line-text #\:))
+                (begin
+                  (qt-plain-text-edit-set-cursor-position! ed target-pos)
+                  (qt-plain-text-edit-ensure-cursor-visible! ed))
+                (loop (+ l 1) 0)))))))))
+
+(def (cmd-occur-prev app)
+  "Move to the previous match line in *Occur* buffer."
+  (let ((buf (current-qt-buffer app)))
+    (when (string=? (buffer-name buf) "*Occur*")
+      (let* ((ed (current-qt-editor app))
+             (text (qt-plain-text-edit-text ed))
+             (pos (qt-plain-text-edit-cursor-position ed))
+             (lines (string-split text #\newline))
+             (cur-line (let loop ((i 0) (chars 0))
+                         (if (>= i (length lines))
+                           i
+                           (let ((line-len (+ (string-length (list-ref lines i)) 1)))
+                             (if (> (+ chars line-len) pos)
+                               i
+                               (loop (+ i 1) (+ chars line-len))))))))
+        (let loop ((l (- cur-line 1)))
+          (when (>= l 0)
+            (let* ((target-pos (let lp ((i 0) (p 0))
+                                 (if (>= i l) p
+                                   (lp (+ i 1) (+ p (string-length (list-ref lines i)) 1)))))
+                   (line-text (list-ref lines l)))
+              (if (and (> (string-length line-text) 0)
+                       (char-numeric? (string-ref line-text 0))
+                       (string-index line-text #\:))
+                (begin
+                  (qt-plain-text-edit-set-cursor-position! ed target-pos)
+                  (qt-plain-text-edit-ensure-cursor-visible! ed))
+                (loop (- l 1))))))))))
 
 ;;;============================================================================
 ;;; Keyboard macros

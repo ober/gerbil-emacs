@@ -745,8 +745,10 @@
   ;; Grep/compilation navigation
   (register-command! 'grep-goto cmd-grep-goto)
   (register-command! 'next-error cmd-next-error)
-  ;; Occur goto
+  ;; Occur navigation
   (register-command! 'occur-goto cmd-occur-goto)
+  (register-command! 'occur-next cmd-occur-next)
+  (register-command! 'occur-prev cmd-occur-prev)
   ;; Markdown mode
   (register-command! 'markdown-bold cmd-markdown-bold)
   (register-command! 'markdown-italic cmd-markdown-italic)

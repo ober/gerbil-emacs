@@ -1233,6 +1233,45 @@
                                            (number->string
                                              target-line))))))))))))))))
 
+(def (cmd-occur-next app)
+  "Move to the next match line in *Occur* buffer."
+  (let* ((buf (current-buffer-from-app app))
+         (echo (app-state-echo app)))
+    (when (string=? (buffer-name buf) "*Occur*")
+      (let* ((ed (current-editor app))
+             (pos (editor-get-current-pos ed))
+             (total-lines (send-message ed SCI_GETLINECOUNT 0 0))
+             (cur-line (editor-line-from-position ed pos)))
+        (let loop ((l (+ cur-line 1)))
+          (when (< l total-lines)
+            (let ((text (editor-get-line ed l)))
+              (if (and (> (string-length text) 0)
+                       (char-numeric? (string-ref text 0))
+                       (string-index text #\:))
+                (begin
+                  (editor-goto-line ed l)
+                  (editor-scroll-caret ed))
+                (loop (+ l 1))))))))))
+
+(def (cmd-occur-prev app)
+  "Move to the previous match line in *Occur* buffer."
+  (let* ((buf (current-buffer-from-app app))
+         (echo (app-state-echo app)))
+    (when (string=? (buffer-name buf) "*Occur*")
+      (let* ((ed (current-editor app))
+             (pos (editor-get-current-pos ed))
+             (cur-line (editor-line-from-position ed pos)))
+        (let loop ((l (- cur-line 1)))
+          (when (>= l 0)
+            (let ((text (editor-get-line ed l)))
+              (if (and (> (string-length text) 0)
+                       (char-numeric? (string-ref text 0))
+                       (string-index text #\:))
+                (begin
+                  (editor-goto-line ed l)
+                  (editor-scroll-caret ed))
+                (loop (- l 1))))))))))
+
 ;;;============================================================================
 ;;; Markdown mode commands
 ;;;============================================================================

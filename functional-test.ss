@@ -1145,6 +1145,12 @@
             (when (file-exists? tmp) (delete-file tmp))
             (when (file-exists? tmp-archive) (delete-file tmp-archive))))))
 
+    (test-case "occur: occur-next and occur-prev are registered"
+      (setup-default-bindings!)
+      (register-all-commands!)
+      (check (procedure? (find-command 'occur-next)) => #t)
+      (check (procedure? (find-command 'occur-prev)) => #t))
+
     ;;;==========================================================================
     ;;; Group 11 (extended): Additional text transforms
     ;;;==========================================================================

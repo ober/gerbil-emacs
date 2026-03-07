@@ -46,7 +46,7 @@ Implemented popup UX matching Ruby Scintilla editors — inline autocomplete dro
 ### Medium Impact
 - ~~**Org-mode archive/refile**~~ — DONE: archive-subtree writes to `<file>_archive` with ARCHIVE_TIME/ARCHIVE_FILE properties, refile already implemented
 - ~~**Better which-key delay display**~~ — DONE: shows human-readable descriptions (e.g. "s → Save buffer") instead of raw symbol names
-- **Occur mode improvements** — read-only, better navigation
+- ~~**Occur mode improvements**~~ — DONE: read-only *Occur* buffer, occur-next/occur-prev navigation commands
 - **Dired improvements** — more operations, better display
 
 ### Maintenance
