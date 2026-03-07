@@ -33,6 +33,8 @@ Implemented popup UX matching Ruby Scintilla editors — inline autocomplete dro
 | `qt/commands-config2.ss` | ~1359 | OK |
 | `qt/commands-ide.ss` | ~1165 | OK (split into ide + ide2) |
 | `qt/commands-ide2.ss` | ~1540 | OK |
+| `qt/commands-parity.ss` | ~1030 | OK (split into parity + parity2) |
+| `qt/commands-parity2.ss` | ~1118 | OK |
 | `editor-extra-media.ss` | ~2013 | Slightly over limit |
 | `qt/commands-vcs.ss` | ~2003 | Slightly over limit |
 
@@ -72,6 +74,13 @@ Implemented popup UX matching Ruby Scintilla editors — inline autocomplete dro
 - ~~**File splits: commands-config + commands-ide**~~ — DONE: split 2415→1087+1359 and 2513→1165+1540, all under 2000 limit
 - ~~**Consult-ripgrep (M-s r)**~~ — DONE: interactive `rg` search with narrowing popup, auto-detect project root, jump to result
 - ~~**Consult-bookmark**~~ — DONE: bookmark jump with file:position info in narrowing popup
+- ~~**Fill-column indicator**~~ — DONE: visual vertical line using Scintilla edge mode (SCI_SETEDGEMODE), both TUI and Qt
+- ~~**Goto-address-mode**~~ — DONE: real URL detection and highlighting with Scintilla indicators, both TUI and Qt
+- ~~**Subword-mode navigation**~~ — DONE: CamelCase-aware word movement (subword-forward/backward/kill), both TUI and Qt
+
+- ~~**File split: commands-parity**~~ — DONE: split 2111→1030+1118, both under 2000 limit
+- ~~**Qt profiler (profiler-start/stop)**~~ — DONE: upgraded from stub to real `##process-statistics` profiling (wall/CPU/GC/allocation)
+- ~~**Qt info reader (M-x info)**~~ — DONE: upgraded from stub to real GNU Info reader via subprocess, topic prompting, ANSI stripping
 
 ### Aspirational
 - LSP in TUI

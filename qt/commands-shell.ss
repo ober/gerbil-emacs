@@ -1166,16 +1166,51 @@ S=sort by name, z=sort by size, q=quit."
                (string-join shown " ")))))))))
 
 ;; --- Info/Help ---
+(def (info-read-topic! app topic)
+  "Run the `info` command for TOPIC and display output in *info* buffer."
+  (let* ((echo (app-state-echo app))
+         (ed (current-qt-editor app))
+         (fr (app-state-frame app))
+         (args (if (and topic (not (string=? topic "")))
+                 ["info" "--subnodes" "-o" "-" topic]
+                 ["info" "--subnodes" "-o" "-" "dir"]))
+         (text (with-catch
+                 (lambda (e) #f)
+                 (lambda ()
+                   (let* ((port (open-process
+                                  (list path: (car args)
+                                        arguments: (cdr args)
+                                        stdout-redirection: #t
+                                        stderr-redirection: #f)))
+                          (output (read-line port #f))
+                          (_ (close-port port)))
+                     output)))))
+    (if (not text)
+      (echo-message! echo (string-append "Info: topic '" (or topic "dir") "' not found"))
+      (let* ((clean (strip-ansi-codes text))
+             (buf (or (buffer-by-name "*info*")
+                      (qt-buffer-create! "*info*" ed #f))))
+        (qt-buffer-attach! ed buf)
+        (set! (qt-edit-window-buffer (qt-current-window fr)) buf)
+        (qt-plain-text-edit-set-text! ed clean)
+        (qt-text-document-set-modified! (buffer-doc-pointer buf) #f)
+        (qt-plain-text-edit-set-cursor-position! ed 0)
+        (qt-modeline-update! app)
+        (echo-message! echo (string-append "Info: " (or topic "dir")))))))
+
 (def (cmd-info app)
-  "Show info."
-  (echo-message! (app-state-echo app) "Info not available"))
+  "Read GNU Info documentation. Prompts for a topic name."
+  (let* ((echo (app-state-echo app))
+         (topic (qt-echo-read-string app "Info topic (empty for directory): ")))
+    (when topic
+      (info-read-topic! app topic))))
 
 (def (cmd-info-emacs-manual app)
-  "Show Emacs manual."
-  (echo-message! (app-state-echo app) "Use M-x list-bindings for keybinding help"))
+  "Show Emacs manual via Info."
+  (info-read-topic! app "emacs"))
 
 (def (cmd-info-elisp-manual app)
-  "Show Elisp manual."
+  "Show Gerbil documentation."
   (echo-message! (app-state-echo app) "Gerbil Scheme documentation at https://cons.io"))
 
 (def (cmd-report-bug app)

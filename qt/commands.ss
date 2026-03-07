@@ -121,6 +121,7 @@
         :gemacs/qt/commands-config
         :gemacs/qt/commands-config2
         :gemacs/qt/commands-parity
+        :gemacs/qt/commands-parity2
         :gemacs/qt/commands-aliases
         :gemacs/qt/helm-commands)
 

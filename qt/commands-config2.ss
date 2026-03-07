@@ -816,7 +816,7 @@
 ;;; Profiler report
 ;;;============================================================================
 
-(def *profiler-data* (hash))
+
 
 (def (cmd-profiler-report app)
   "Display profiler data in a buffer."

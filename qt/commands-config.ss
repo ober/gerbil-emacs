@@ -493,13 +493,51 @@
   (cmd-widen app))
 
 
+(def *qt-profiler-running* #f)
+(def *qt-profiler-start-stats* #f)
+(def *profiler-data* (hash))
+
 (def (cmd-profiler-start app)
-  "Start profiler."
-  (echo-message! (app-state-echo app) "Profiler not available"))
+  "Start profiling (records start time and GC stats)."
+  (set! *qt-profiler-running* #t)
+  (set! *qt-profiler-start-stats* (##process-statistics))
+  (echo-message! (app-state-echo app) "Profiler started"))
 
 (def (cmd-profiler-stop app)
-  "Stop profiler."
-  (echo-message! (app-state-echo app) "Profiler not available"))
+  "Stop profiler and show timing report."
+  (if *qt-profiler-running*
+    (let* ((end-stats (##process-statistics))
+           (start *qt-profiler-start-stats*)
+           (wall (- (f64vector-ref end-stats 2) (f64vector-ref start 2)))
+           (user (- (f64vector-ref end-stats 0) (f64vector-ref start 0)))
+           (sys  (- (f64vector-ref end-stats 1) (f64vector-ref start 1)))
+           (gc   (- (f64vector-ref end-stats 5) (f64vector-ref start 5)))
+           (alloc (inexact->exact (- (f64vector-ref end-stats 4)
+                                     (f64vector-ref start 4))))
+           (fmt (lambda (v) (number->string (/ (round (* v 1000)) 1000.0))))
+           (report (string-append
+                     "=== Profiler Report ===\n\n"
+                     "Wall time:   " (fmt wall) "s\n"
+                     "User CPU:    " (fmt user) "s\n"
+                     "System CPU:  " (fmt sys) "s\n"
+                     "GC time:     " (fmt gc) "s\n"
+                     "Allocated:   " (number->string alloc) " bytes\n")))
+      (set! *qt-profiler-running* #f)
+      ;; Store data for profiler-report too
+      (hash-put! *profiler-data* "wall-time" wall)
+      (hash-put! *profiler-data* "user-cpu" user)
+      (hash-put! *profiler-data* "system-cpu" sys)
+      (hash-put! *profiler-data* "gc-time" gc)
+      ;; Show in buffer
+      (let* ((ed (current-qt-editor app))
+             (fr (app-state-frame app))
+             (buf (or (buffer-by-name "*Profiler Report*")
+                      (qt-buffer-create! "*Profiler Report*" ed))))
+        (qt-buffer-attach! ed buf)
+        (set! (qt-edit-window-buffer (qt-current-window fr)) buf)
+        (qt-plain-text-edit-set-text! ed report)
+        (qt-modeline-update! app)))
+    (echo-message! (app-state-echo app) "Profiler not running")))
 
 (def (cmd-show-tab-count app)
   "Show tab count in buffer."
