@@ -898,6 +898,8 @@
                      ((string=? name "*Magit: Commit*") (hash-get *mode-keymaps* 'magit-commit))
                      ((string=? name "*Magit Log*") (hash-get *mode-keymaps* 'magit-log))
                      ((string=? name "*Magit Commit*") (hash-get *mode-keymaps* 'magit-commit-view))
+                     ((string=? name "*Magit Stash*") (hash-get *mode-keymaps* 'magit-stash))
+                     ((string=? name "*Magit Stash Diff*") (hash-get *mode-keymaps* 'magit-stash-diff))
                      ((string=? name "*Org Capture*") (hash-get *mode-keymaps* 'org-capture))
                      (else #f))))))
     (and km (keymap-lookup km key-str))))
@@ -1008,12 +1010,21 @@
     (keymap-bind! log-km "q" 'kill-buffer-cmd)
     (hash-put! *mode-keymaps* 'magit-log log-km))
 
-  ;; Magit commit view: q to close
+  ;; Magit commit/diff view: q to close, n/p to navigate
   (let ((cv-km (make-keymap)))
     (keymap-bind! cv-km "n" 'next-line)
     (keymap-bind! cv-km "p" 'previous-line)
     (keymap-bind! cv-km "q" 'kill-buffer-cmd)
-    (hash-put! *mode-keymaps* 'magit-commit-view cv-km))
+    (hash-put! *mode-keymaps* 'magit-commit-view cv-km)
+    (hash-put! *mode-keymaps* 'magit-stash-diff cv-km))
+
+  ;; Magit stash list: Enter to show, n/p to navigate, q to quit
+  (let ((stash-km (make-keymap)))
+    (keymap-bind! stash-km "RET" 'magit-stash-show)
+    (keymap-bind! stash-km "n" 'next-line)
+    (keymap-bind! stash-km "p" 'previous-line)
+    (keymap-bind! stash-km "q" 'kill-buffer-cmd)
+    (hash-put! *mode-keymaps* 'magit-stash stash-km))
 
   ;; Image mode: zoom controls
   (let ((img-km (make-keymap)))

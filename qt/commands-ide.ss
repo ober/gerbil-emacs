@@ -923,6 +923,48 @@
           (echo-message! (app-state-echo app)
             (if (string=? output "") "Stashed" (string-trim output))))))))
 
+(def (cmd-magit-stash-show app)
+  "Show the diff of the stash at point."
+  (let ((buf (current-qt-buffer app)))
+    (when (string=? (buffer-name buf) "*Magit Stash*")
+      (let* ((ed (current-qt-editor app))
+             (text (qt-plain-text-edit-text ed))
+             (pos (qt-plain-text-edit-cursor-position ed))
+             ;; Find current line and extract stash ref (stash@{N})
+             (line-start (let loop ((i (min pos (- (string-length text) 1))))
+                           (cond ((< i 0) 0)
+                                 ((char=? (string-ref text i) #\newline) (+ i 1))
+                                 (else (loop (- i 1))))))
+             (line-end (let loop ((i pos))
+                         (cond ((>= i (string-length text)) i)
+                               ((char=? (string-ref text i) #\newline) i)
+                               (else (loop (+ i 1))))))
+             (line (substring text line-start line-end))
+             ;; Extract stash@{N} from line like "stash@{0}: WIP on master: abc123 msg"
+             (stash-ref (let ((colon-pos (string-contains line ":")))
+                          (and colon-pos (> colon-pos 0)
+                               (substring line 0 colon-pos)))))
+        (if (not stash-ref)
+          (echo-error! (app-state-echo app) "No stash at point")
+          (begin
+            (echo-message! (app-state-echo app)
+              (string-append "Loading " stash-ref "..."))
+            (magit-run-git/async (list "stash" "show" "-p" stash-ref) *magit-dir*
+              (lambda (output)
+                (ui-queue-push!
+                  (lambda ()
+                    (let* ((ed (current-qt-editor app))
+                           (fr (app-state-frame app))
+                           (diff-buf (or (buffer-by-name "*Magit Stash Diff*")
+                                         (qt-buffer-create! "*Magit Stash Diff*" ed #f))))
+                      (qt-buffer-attach! ed diff-buf)
+                      (set! (qt-edit-window-buffer (qt-current-window fr)) diff-buf)
+                      (qt-plain-text-edit-set-text! ed (or output ""))
+                      (qt-text-document-set-modified! (buffer-doc-pointer diff-buf) #f)
+                      (qt-plain-text-edit-set-cursor-position! ed 0)
+                      (qt-highlight-diff! ed)
+                      (echo-message! (app-state-echo app) stash-ref))))))))))))
+
 (def (cmd-magit-stash-pop app)
   "Pop the most recent stash."
   (when *magit-dir*
