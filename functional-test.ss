@@ -21,6 +21,8 @@
         :gemacs/editor-core
         (only-in :gemacs/editor-ui cmd-indent-or-complete org-buffer?)
         (only-in :gemacs/editor register-all-commands!)
+        (only-in :gemacs/persist which-key-summary
+                 *mx-history* mx-history-add! mx-history-ordered-candidates)
         (only-in :gemacs/helm-commands register-helm-commands!)
         :gemacs/helm)
 
@@ -2143,6 +2145,74 @@
               (if (>= i cand-count) acc
                 (gen (+ i 1) (cons i acc)))))
           (check (= (length (helm-session-marked session)) cand-count) => #t))))
+
+    ;;;==========================================================================
+    ;;; Group 13: Command registration coverage
+    ;;;==========================================================================
+
+    (test-case "registration: dired commands registered"
+      (setup-default-bindings!)
+      (register-all-commands!)
+      (check (procedure? (find-command 'dired)) => #t)
+      (check (procedure? (find-command 'dired-find-file)) => #t)
+      (check (procedure? (find-command 'dired-do-rename)) => #t)
+      (check (procedure? (find-command 'dired-do-copy)) => #t)
+      (check (procedure? (find-command 'dired-do-delete)) => #t)
+      (check (procedure? (find-command 'dired-create-directory)) => #t)
+      (check (procedure? (find-command 'dired-jump)) => #t))
+
+    (test-case "registration: which-key and help commands"
+      (setup-default-bindings!)
+      (register-all-commands!)
+      (check (procedure? (find-command 'which-key)) => #t)
+      (check (procedure? (find-command 'describe-key)) => #t)
+      (check (procedure? (find-command 'describe-function)) => #t)
+      (check (procedure? (find-command 'describe-variable)) => #t))
+
+    (test-case "registration: zoom commands"
+      (setup-default-bindings!)
+      (register-all-commands!)
+      (check (procedure? (find-command 'zoom-in)) => #t)
+      (check (procedure? (find-command 'zoom-out)) => #t)
+      (check (procedure? (find-command 'text-scale-increase)) => #t)
+      (check (procedure? (find-command 'text-scale-decrease)) => #t))
+
+    (test-case "registration: compilation and search commands"
+      (setup-default-bindings!)
+      (register-all-commands!)
+      (check (procedure? (find-command 'compile)) => #t)
+      (check (procedure? (find-command 'next-error)) => #t)
+      (check (procedure? (find-command 'previous-error)) => #t)
+      (check (procedure? (find-command 'grep)) => #t))
+
+    (test-case "registration: bookmark commands"
+      (setup-default-bindings!)
+      (register-all-commands!)
+      (check (procedure? (find-command 'bookmark-set)) => #t)
+      (check (procedure? (find-command 'bookmark-jump)) => #t)
+      (check (procedure? (find-command 'bookmark-list)) => #t))
+
+    (test-case "which-key: summary shows human-readable descriptions"
+      (let ((km (make-keymap)))
+        (keymap-bind! km "s" 'save-buffer)
+        (keymap-bind! km "f" 'find-file)
+        (let ((summary (which-key-summary km)))
+          (check (not (not (string-contains summary "→"))) => #t)
+          (check (not (not (string-contains summary "Save buffer"))) => #t)
+          (check (not (not (string-contains summary "Find file"))) => #t))))
+
+    (test-case "mx-history: frequency tracking and ordering"
+      (let ((old-hist *mx-history*))
+        (set! *mx-history* (make-hash-table))
+        (mx-history-add! "find-file")
+        (mx-history-add! "find-file")
+        (mx-history-add! "save-buffer")
+        (let ((ordered (mx-history-ordered-candidates
+                         '("save-buffer" "find-file" "other"))))
+          ;; find-file has 2, save-buffer has 1, other has 0
+          (check (equal? (car ordered) "find-file") => #t)
+          (check (equal? (cadr ordered) "save-buffer") => #t))
+        (set! *mx-history* old-hist)))
 
 ))
 
