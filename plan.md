@@ -60,6 +60,8 @@ Implemented popup UX matching Ruby Scintilla editors — inline autocomplete dro
 - ~~**Magit stash-show**~~ — DONE: Enter on stash shows diff in `*Magit Stash Diff*` with highlighting
 - ~~**Interactive magit push/pull/fetch**~~ — DONE: upstream detection, auto-set `-u`, remote selection, cherry-pick/revert with narrowing
 - ~~**Describe variable (C-h v)**~~ — DONE: narrowing selection, shows value and docs in `*Help*` buffer
+- ~~**Eshell I/O & expansion**~~ — DONE: output redirect (`>`, `>>`), input redirect (`<`), glob expansion, `$VAR` expansion, `$(cmd)` substitution
+- ~~**Set-variable improvements**~~ — DONE: narrowing selection, 6 settable vars (fill-column, tab-width, indent-tabs-mode, etc.)
 
 ### Aspirational
 - LSP in TUI

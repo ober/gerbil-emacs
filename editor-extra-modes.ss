@@ -1824,6 +1824,36 @@
       (echo-message! (app-state-echo app) (string-append "Reverting " hash "..."))
       (run-git-command app (list "revert" "--no-edit" hash) #f))))
 
+(def (cmd-magit-worktree app)
+  "Manage git worktrees: list, add, or remove."
+  (let* ((dir (tui-git-dir app))
+         (output (tui-git-run-in-dir '("worktree" "list") dir))
+         (action (app-read-string app "Worktree action (list/add/remove): ")))
+    (when (and action (not (string-empty? action)))
+      (cond
+        ((string=? action "list")
+         (open-output-buffer app "*Worktrees*"
+           (if (string=? output "") "No worktrees\n" output)))
+        ((string=? action "add")
+         (let* ((branch (app-read-string app "Worktree branch: "))
+                (path (and branch (not (string-empty? branch))
+                           (app-read-string app
+                             (string-append "Worktree path for " branch ": ")))))
+           (when (and path (not (string-empty? path)))
+             (let ((result (tui-git-run-in-dir (list "worktree" "add" path branch) dir)))
+               (echo-message! (app-state-echo app)
+                 (if (string=? result "")
+                   (string-append "Added worktree: " path " [" branch "]")
+                   (string-trim result)))))))
+        ((string=? action "remove")
+         (let ((path (app-read-string app "Worktree path to remove: ")))
+           (when (and path (not (string-empty? path)))
+             (let ((result (tui-git-run-in-dir (list "worktree" "remove" path) dir)))
+               (echo-message! (app-state-echo app)
+                 (if (string=? result "")
+                   (string-append "Removed worktree: " path)
+                   (string-trim result)))))))))))
+
 ;;; ---- batch 57: environment and project configuration toggles ----
 
 (def *global-envrc* #f)

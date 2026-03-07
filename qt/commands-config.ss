@@ -991,6 +991,7 @@
     (keymap-bind! magit-km "Z" 'magit-stash-pop)
     (keymap-bind! magit-km "x" 'magit-cherry-pick)
     (keymap-bind! magit-km "X" 'magit-revert-commit)
+    (keymap-bind! magit-km "w" 'magit-worktree)
     (keymap-bind! magit-km "k" 'magit-checkout)
     (keymap-bind! magit-km "g" 'magit-status) ;; refresh
     (keymap-bind! magit-km "n" 'next-line)

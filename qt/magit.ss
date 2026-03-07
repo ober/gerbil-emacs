@@ -153,7 +153,7 @@
         (display "\nNothing to commit, working tree clean.\n" out))
       (display "\nKeys: s=stage u=unstage S=stage-all c=commit a=amend d=diff l=log\n" out)
       (display "      b=branch k=checkout f=fetch F=pull P=push z=stash Z=pop\n" out)
-      (display "      x=cherry-pick X=revert g=refresh n/p=navigate q=quit\n" out)
+      (display "      x=cherry-pick X=revert w=worktree g=refresh n/p=nav q=quit\n" out)
       (display "      (s/u on diff hunk = stage/unstage hunk)\n" out)
       (get-output-string out))))
 

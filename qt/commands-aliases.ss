@@ -1136,7 +1136,7 @@
   (register-command! 'magit-revert-commit cmd-magit-revert-commit)
   (register-command! 'magit-bisect cmd-magit-log)
   (register-command! 'magit-submodule cmd-magit-status)
-  (register-command! 'magit-worktree cmd-magit-status)
+  (register-command! 'magit-worktree cmd-magit-worktree)
   (register-command! 'magit-blame-echo cmd-magit-blame)
   (register-command! 'magit-section-toggle cmd-magit-status)
   ;; Coding/encoding

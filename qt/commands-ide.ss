@@ -1103,6 +1103,66 @@
             (when (buffer-by-name "*Magit*")
               (cmd-magit-status app))))))))
 
+(def (cmd-magit-worktree app)
+  "Manage git worktrees: list, add, or remove."
+  (let* ((dir (or *magit-dir* (current-directory)))
+         (output (magit-run-git '("worktree" "list") dir))
+         (action (qt-echo-read-with-narrowing app "Worktree action:"
+                   '("list" "add" "remove"))))
+    (when action
+      (cond
+        ((string=? action "list")
+         (let* ((ed (current-qt-editor app))
+                (fr (app-state-frame app))
+                (wt-buf (or (buffer-by-name "*Worktrees*")
+                            (qt-buffer-create! "*Worktrees*" ed #f))))
+           (qt-buffer-attach! ed wt-buf)
+           (set! (qt-edit-window-buffer (qt-current-window fr)) wt-buf)
+           (qt-plain-text-edit-set-text! ed
+             (if (string=? output "") "No worktrees\n" output))
+           (qt-text-document-set-modified! (buffer-doc-pointer wt-buf) #f)
+           (qt-plain-text-edit-set-cursor-position! ed 0)))
+        ((string=? action "add")
+         (let* ((branches (magit-branch-names dir))
+                (branch (qt-echo-read-with-narrowing app "Worktree branch:" branches))
+                (path (and branch (> (string-length branch) 0)
+                           (qt-echo-read-string app
+                             (string-append "Worktree path for " branch ": ")))))
+           (when (and path (> (string-length path) 0))
+             (let ((result (magit-run-git (list "worktree" "add" path branch) dir)))
+               (echo-message! (app-state-echo app)
+                 (if (string=? result "")
+                   (string-append "Added worktree: " path " [" branch "]")
+                   (string-trim result)))))))
+        ((string=? action "remove")
+         (let* ((wt-lines (let ((lines []))
+                            (let scan ((i 0) (start 0))
+                              (cond
+                                ((>= i (string-length output))
+                                 (when (> i start)
+                                   (set! lines (cons (substring output start i) lines)))
+                                 (reverse lines))
+                                ((char=? (string-ref output i) #\newline)
+                                 (when (> i start)
+                                   (set! lines (cons (substring output start i) lines)))
+                                 (scan (+ i 1) (+ i 1)))
+                                (else (scan (+ i 1) start))))))
+                (selection (if (null? wt-lines)
+                             (qt-echo-read-string app "Worktree path to remove: ")
+                             (qt-echo-read-with-narrowing app "Remove worktree:" wt-lines))))
+           (when (and selection (> (string-length selection) 0))
+             ;; Extract path (first field before space)
+             (let* ((path (let ((sp (let loop ((i 0))
+                                      (cond ((>= i (string-length selection)) (string-length selection))
+                                            ((char=? (string-ref selection i) #\space) i)
+                                            (else (loop (+ i 1)))))))
+                            (substring selection 0 sp)))
+                    (result (magit-run-git (list "worktree" "remove" path) dir)))
+               (echo-message! (app-state-echo app)
+                 (if (string=? result "")
+                   (string-append "Removed worktree: " path)
+                   (string-trim result)))))))))))
+
 ;;;============================================================================
 ;;; Text manipulation
 ;;;============================================================================
