@@ -1536,5 +1536,171 @@
                     (echo-message! (app-state-echo app)
                       (string-append "Bookmark: " name))))))))))))
 
+;;;============================================================================
+;;; goto-address-mode — highlight and browse URLs in buffer
+;;;============================================================================
 
+(def *qt-goto-address-active* #f)
+(def *qt-goto-address-indicator* 12)
+
+(def (qt-goto-address-setup! ed)
+  "Setup indicator style for URL highlighting."
+  (sci-send ed SCI_INDICSETSTYLE *qt-goto-address-indicator* 6)  ;; INDIC_HIDDEN=0, INDIC_PLAIN=0, ..., 6=INDIC_BOX
+  ;; Use underline style (INDIC_PLAIN = 0) — looks like hyperlinks
+  (sci-send ed SCI_INDICSETSTYLE *qt-goto-address-indicator* 0)
+  (sci-send ed SCI_INDICSETFORE *qt-goto-address-indicator* #xFF0000))  ;; blue (BGR)
+
+(def (qt-goto-address-clear! ed)
+  "Clear all URL indicator highlights."
+  (let ((len (sci-send ed SCI_GETTEXTLENGTH)))
+    (sci-send ed SCI_SETINDICATORCURRENT *qt-goto-address-indicator*)
+    (sci-send ed SCI_INDICATORCLEARRANGE 0 len)))
+
+(def (qt-goto-address-scan! ed)
+  "Scan buffer text for URLs and highlight them with indicators."
+  (qt-goto-address-clear! ed)
+  (qt-goto-address-setup! ed)
+  (let* ((text (qt-plain-text-edit-text ed))
+         (len (string-length text)))
+    (sci-send ed SCI_SETINDICATORCURRENT *qt-goto-address-indicator*)
+    (let loop ((i 0))
+      (when (< i (- len 7))  ;; minimum "http://" length
+        (if (and (char=? (string-ref text i) #\h)
+                 (or (string-prefix? "http://" (substring text i (min len (+ i 8))))
+                     (string-prefix? "https://" (substring text i (min len (+ i 9))))))
+          ;; Found URL start — find end
+          (let url-end ((j (+ i 7)))
+            (if (or (>= j len)
+                    (char=? (string-ref text j) #\space)
+                    (char=? (string-ref text j) #\tab)
+                    (char=? (string-ref text j) #\newline)
+                    (char=? (string-ref text j) #\>)
+                    (char=? (string-ref text j) #\))
+                    (char=? (string-ref text j) #\])
+                    (char=? (string-ref text j) #\")
+                    (char=? (string-ref text j) #\'))
+              (begin
+                (sci-send ed SCI_INDICATORFILLRANGE i (- j i))
+                (loop j))
+              (url-end (+ j 1))))
+          (loop (+ i 1)))))))
+
+(def (cmd-goto-address-mode app)
+  "Toggle goto-address-mode — highlight URLs in the buffer.
+Use browse-url-at-point (C-c RET) to open highlighted URLs."
+  (let ((ed (current-qt-editor app)))
+    (set! *qt-goto-address-active* (not *qt-goto-address-active*))
+    (if *qt-goto-address-active*
+      (begin
+        (qt-goto-address-scan! ed)
+        (echo-message! (app-state-echo app) "Goto-address-mode ON"))
+      (begin
+        (qt-goto-address-clear! ed)
+        (echo-message! (app-state-echo app) "Goto-address-mode OFF")))))
+
+;;;============================================================================
+;;; subword-mode — CamelCase-aware word movement
+;;;============================================================================
+
+(def *qt-subword-mode* #f)
+
+(def (qt-subword-forward-pos text pos)
+  "Find the next subword boundary forward from pos in text."
+  (let ((len (string-length text)))
+    (if (>= pos len) pos
+      (let loop ((i (+ pos 1)))
+        (cond
+          ((>= i len) i)
+          ;; Transition: lowercase → uppercase (camelCase boundary)
+          ((and (> i 0)
+                (char-lower-case? (string-ref text (- i 1)))
+                (char-upper-case? (string-ref text i)))
+           i)
+          ;; Transition: uppercase → uppercase+lowercase (XMLParser → XML|Parser)
+          ((and (> i 1)
+                (char-upper-case? (string-ref text (- i 2)))
+                (char-upper-case? (string-ref text (- i 1)))
+                (char-lower-case? (string-ref text i)))
+           (- i 1))
+          ;; Transition: letter → non-letter or non-letter → letter
+          ((and (> i 0)
+                (not (eqv? (char-alphabetic? (string-ref text (- i 1)))
+                           (char-alphabetic? (string-ref text i)))))
+           ;; Skip whitespace
+           (if (char-whitespace? (string-ref text i))
+             (let skip-ws ((j i))
+               (if (or (>= j len) (not (char-whitespace? (string-ref text j))))
+                 j (skip-ws (+ j 1))))
+             i))
+          (else (loop (+ i 1))))))))
+
+(def (qt-subword-backward-pos text pos)
+  "Find the previous subword boundary backward from pos in text."
+  (if (<= pos 0) 0
+    (let loop ((i (- pos 1)))
+      (cond
+        ((<= i 0) 0)
+        ;; Skip whitespace backward
+        ((char-whitespace? (string-ref text i))
+         (loop (- i 1)))
+        ;; Transition: uppercase → lowercase (coming from right)
+        ((and (> i 0)
+              (char-lower-case? (string-ref text i))
+              (char-upper-case? (string-ref text (- i 1)))
+              ;; Don't stop at start of all-uppercase run
+              (or (= i 1) (not (char-upper-case? (string-ref text (- i 2))))))
+         (- i 1))
+        ;; Transition: uppercase sequence before lowercase (XMLParser → |XML)
+        ((and (> i 1)
+              (char-upper-case? (string-ref text i))
+              (char-upper-case? (string-ref text (- i 1)))
+              (not (char-upper-case? (string-ref text (- i 2)))))
+         (- i 1))
+        ;; Transition: non-letter → letter or letter → non-letter
+        ((and (> i 0)
+              (not (eqv? (char-alphabetic? (string-ref text i))
+                         (char-alphabetic? (string-ref text (- i 1))))))
+         (if (char-alphabetic? (string-ref text i)) i
+           (loop (- i 1))))
+        (else (loop (- i 1)))))))
+
+(def (cmd-subword-mode app)
+  "Toggle subword-mode — CamelCase-aware word movement.
+When enabled, forward-word and backward-word stop at subword boundaries
+(e.g., 'myVariableName' → 'my|Variable|Name')."
+  (set! *qt-subword-mode* (not *qt-subword-mode*))
+  (echo-message! (app-state-echo app)
+    (if *qt-subword-mode* "Subword-mode ON" "Subword-mode OFF")))
+
+(def (cmd-subword-forward app)
+  "Move forward one subword (CamelCase boundary)."
+  (let* ((ed (current-qt-editor app))
+         (text (qt-plain-text-edit-text ed))
+         (pos (qt-plain-text-edit-cursor-position ed))
+         (new-pos (qt-subword-forward-pos text pos)))
+    (qt-plain-text-edit-set-cursor-position! ed new-pos)
+    (qt-plain-text-edit-ensure-cursor-visible! ed)))
+
+(def (cmd-subword-backward app)
+  "Move backward one subword (CamelCase boundary)."
+  (let* ((ed (current-qt-editor app))
+         (text (qt-plain-text-edit-text ed))
+         (pos (qt-plain-text-edit-cursor-position ed))
+         (new-pos (qt-subword-backward-pos text pos)))
+    (qt-plain-text-edit-set-cursor-position! ed new-pos)
+    (qt-plain-text-edit-ensure-cursor-visible! ed)))
+
+(def (cmd-subword-kill app)
+  "Kill forward one subword."
+  (let* ((ed (current-qt-editor app))
+         (text (qt-plain-text-edit-text ed))
+         (pos (qt-plain-text-edit-cursor-position ed))
+         (end (qt-subword-forward-pos text pos)))
+    (when (> end pos)
+      (let ((killed (substring text pos end)))
+        (sci-send ed SCI_DELETERANGE pos (- end pos))
+        (echo-message! (app-state-echo app)
+          (string-append "Killed: " (if (> (string-length killed) 30)
+                                      (string-append (substring killed 0 30) "...")
+                                      killed)))))))
 

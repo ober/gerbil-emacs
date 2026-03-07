@@ -1127,4 +1127,153 @@
                 (echo-message! (app-state-echo app)
                   (string-append (number->string (length lines)) " matches"))))))))))
 
+;;;============================================================================
+;;; goto-address-mode — highlight URLs in buffer
+;;;============================================================================
+
+(def *tui-goto-address-active* #f)
+(def *tui-goto-address-indicator* 12)
+
+(def (tui-goto-address-setup! ed)
+  "Setup indicator style for URL highlighting."
+  (send-message ed SCI_INDICSETSTYLE *tui-goto-address-indicator* 0)  ;; INDIC_PLAIN (underline)
+  (send-message ed SCI_INDICSETFORE *tui-goto-address-indicator* #xFF0000))  ;; blue (BGR)
+
+(def (tui-goto-address-clear! ed)
+  "Clear all URL indicator highlights."
+  (let ((len (send-message ed SCI_GETTEXTLENGTH 0 0)))
+    (send-message ed SCI_SETINDICATORCURRENT *tui-goto-address-indicator* 0)
+    (send-message ed SCI_INDICATORCLEARRANGE 0 len)))
+
+(def (tui-goto-address-scan! ed)
+  "Scan buffer text for URLs and highlight them."
+  (tui-goto-address-clear! ed)
+  (tui-goto-address-setup! ed)
+  (let* ((text (editor-get-text ed))
+         (len (string-length text)))
+    (send-message ed SCI_SETINDICATORCURRENT *tui-goto-address-indicator* 0)
+    (let loop ((i 0))
+      (when (< i (- len 7))
+        (if (and (char=? (string-ref text i) #\h)
+                 (or (string-prefix? "http://" (substring text i (min len (+ i 8))))
+                     (string-prefix? "https://" (substring text i (min len (+ i 9))))))
+          (let url-end ((j (+ i 7)))
+            (if (or (>= j len)
+                    (char=? (string-ref text j) #\space)
+                    (char=? (string-ref text j) #\tab)
+                    (char=? (string-ref text j) #\newline)
+                    (char=? (string-ref text j) #\>)
+                    (char=? (string-ref text j) #\))
+                    (char=? (string-ref text j) #\])
+                    (char=? (string-ref text j) #\")
+                    (char=? (string-ref text j) #\'))
+              (begin
+                (send-message ed SCI_INDICATORFILLRANGE i (- j i))
+                (loop j))
+              (url-end (+ j 1))))
+          (loop (+ i 1)))))))
+
+(def (cmd-goto-address-mode app)
+  "Toggle goto-address-mode — highlight URLs in the buffer."
+  (let* ((fr (app-state-frame app))
+         (win (current-window fr))
+         (ed (edit-window-editor win)))
+    (set! *tui-goto-address-active* (not *tui-goto-address-active*))
+    (if *tui-goto-address-active*
+      (begin
+        (tui-goto-address-scan! ed)
+        (echo-message! (app-state-echo app) "Goto-address-mode ON"))
+      (begin
+        (tui-goto-address-clear! ed)
+        (echo-message! (app-state-echo app) "Goto-address-mode OFF")))))
+
+;;;============================================================================
+;;; subword-mode — CamelCase-aware word movement
+;;;============================================================================
+
+(def *tui-subword-mode* #f)
+
+(def (tui-subword-forward-pos text pos)
+  "Find the next subword boundary forward from pos."
+  (let ((len (string-length text)))
+    (if (>= pos len) pos
+      (let loop ((i (+ pos 1)))
+        (cond
+          ((>= i len) i)
+          ((and (> i 0)
+                (char-lower-case? (string-ref text (- i 1)))
+                (char-upper-case? (string-ref text i)))
+           i)
+          ((and (> i 1)
+                (char-upper-case? (string-ref text (- i 2)))
+                (char-upper-case? (string-ref text (- i 1)))
+                (char-lower-case? (string-ref text i)))
+           (- i 1))
+          ((and (> i 0)
+                (not (eqv? (char-alphabetic? (string-ref text (- i 1)))
+                           (char-alphabetic? (string-ref text i)))))
+           (if (char-whitespace? (string-ref text i))
+             (let skip-ws ((j i))
+               (if (or (>= j len) (not (char-whitespace? (string-ref text j))))
+                 j (skip-ws (+ j 1))))
+             i))
+          (else (loop (+ i 1))))))))
+
+(def (tui-subword-backward-pos text pos)
+  "Find the previous subword boundary backward from pos."
+  (if (<= pos 0) 0
+    (let loop ((i (- pos 1)))
+      (cond
+        ((<= i 0) 0)
+        ((char-whitespace? (string-ref text i))
+         (loop (- i 1)))
+        ((and (> i 0)
+              (char-lower-case? (string-ref text i))
+              (char-upper-case? (string-ref text (- i 1)))
+              (or (= i 1) (not (char-upper-case? (string-ref text (- i 2))))))
+         (- i 1))
+        ((and (> i 1)
+              (char-upper-case? (string-ref text i))
+              (char-upper-case? (string-ref text (- i 1)))
+              (not (char-upper-case? (string-ref text (- i 2)))))
+         (- i 1))
+        ((and (> i 0)
+              (not (eqv? (char-alphabetic? (string-ref text i))
+                         (char-alphabetic? (string-ref text (- i 1))))))
+         (if (char-alphabetic? (string-ref text i)) i
+           (loop (- i 1))))
+        (else (loop (- i 1)))))))
+
+;; cmd-subword-mode is already defined in editor-extra-tools2.ss
+
+(def (cmd-subword-forward app)
+  "Move forward one subword (CamelCase boundary)."
+  (let* ((fr (app-state-frame app))
+         (win (current-window fr))
+         (ed (edit-window-editor win))
+         (text (editor-get-text ed))
+         (pos (editor-get-current-pos ed))
+         (new-pos (tui-subword-forward-pos text pos)))
+    (send-message ed SCI_GOTOPOS new-pos 0)))
+
+(def (cmd-subword-backward app)
+  "Move backward one subword (CamelCase boundary)."
+  (let* ((fr (app-state-frame app))
+         (win (current-window fr))
+         (ed (edit-window-editor win))
+         (text (editor-get-text ed))
+         (pos (editor-get-current-pos ed))
+         (new-pos (tui-subword-backward-pos text pos)))
+    (send-message ed SCI_GOTOPOS new-pos 0)))
+
+(def (cmd-subword-kill app)
+  "Kill forward one subword."
+  (let* ((fr (app-state-frame app))
+         (win (current-window fr))
+         (ed (edit-window-editor win))
+         (text (editor-get-text ed))
+         (pos (editor-get-current-pos ed))
+         (end (tui-subword-forward-pos text pos)))
+    (when (> end pos)
+      (send-message ed SCI_DELETERANGE pos (- end pos)))))
 

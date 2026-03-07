@@ -2097,8 +2097,12 @@
   (register-command! 'set-visited-file-name cmd-set-visited-file-name)
   (register-command! 'sort-columns cmd-sort-columns)
   (register-command! 'sort-regexp-fields cmd-sort-regexp-fields)
-  ;; Batch 14: address mode alias (editor-extra scope)
-  (register-command! 'goto-address-mode cmd-toggle-global-goto-address)
+  ;; Batch 14: goto-address-mode (real URL highlighting)
+  (register-command! 'goto-address-mode cmd-goto-address-mode)
+  ;; Subword navigation
+  (register-command! 'subword-forward cmd-subword-forward)
+  (register-command! 'subword-backward cmd-subword-backward)
+  (register-command! 'subword-kill cmd-subword-kill)
   ;; Batch 15: insert-tab
   (register-command! 'insert-tab cmd-insert-tab)
   ;; Batch 6: tutorial, header-line, project-keymaps, org-columns

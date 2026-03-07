@@ -417,6 +417,13 @@
   (register-command! 'tab-bar-new-tab cmd-tab-new)
   (register-command! 'tab-bar-close-tab cmd-tab-close)
   (register-command! 'tab-bar-switch-to-tab cmd-tab-next)
+  ;; Goto-address-mode (URL highlighting)
+  (register-command! 'goto-address-mode cmd-goto-address-mode)
+  ;; Subword navigation
+  (register-command! 'subword-mode cmd-subword-mode)
+  (register-command! 'subword-forward cmd-subword-forward)
+  (register-command! 'subword-backward cmd-subword-backward)
+  (register-command! 'subword-kill cmd-subword-kill)
   ;; Rainbow delimiters
   (register-command! 'rainbow-delimiters-mode cmd-rainbow-delimiters-mode)
   (register-command! 'toggle-rainbow-delimiters-global cmd-rainbow-delimiters-mode)

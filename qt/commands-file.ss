@@ -1657,6 +1657,7 @@
 
 (def *auto-fill-mode* #f)
 (def *fill-column* 80)
+(def *fill-column-indicator* #f)
 
 (def (cmd-toggle-auto-fill app)
   "Toggle auto-fill mode."
@@ -1688,9 +1689,18 @@
   (cmd-toggle-word-wrap app))
 
 (def (cmd-toggle-fill-column-indicator app)
-  "Toggle fill column indicator display."
-  (echo-message! (app-state-echo app)
-    (string-append "Fill column indicator at " (number->string *fill-column*))))
+  "Toggle fill column indicator — vertical line at fill-column."
+  (set! *fill-column-indicator* (not *fill-column-indicator*))
+  (let ((ed (current-qt-editor app)))
+    (if *fill-column-indicator*
+      (begin
+        (sci-send ed 2361 *fill-column* 0)  ;; SCI_SETEDGECOLUMN
+        (sci-send ed 2363 1 0))             ;; SCI_SETEDGEMODE EDGE_LINE
+      (sci-send ed 2363 0 0))               ;; SCI_SETEDGEMODE EDGE_NONE
+    (echo-message! (app-state-echo app)
+      (if *fill-column-indicator*
+        (string-append "Fill column indicator at " (number->string *fill-column*))
+        "Fill column indicator off"))))
 
 ;;;============================================================================
 ;;; Calculator
