@@ -24,6 +24,7 @@
   *lsp-server-command*
   *meta-s-map*
   *ctrl-x-4-map*
+  *ctrl-x-p-map*
   *all-commands*
   setup-default-bindings!
 
@@ -237,6 +238,7 @@
 (def *help-map*     (make-keymap))
 (def *meta-s-map*   (make-keymap))
 (def *ctrl-x-4-map* (make-keymap))
+(def *ctrl-x-p-map* (make-keymap))
 
 (def (make-initial-key-state)
   (make-key-state *global-keymap* []))
@@ -934,6 +936,22 @@
   (keymap-bind! *help-map* "v" 'describe-variable)
   (keymap-bind! *help-map* "i" 'info)
   (keymap-bind! *help-map* "l" 'view-lossage)
+
+  ;; Project commands (C-x p prefix — Emacs 28+ standard)
+  (keymap-bind! *ctrl-x-map* "p" *ctrl-x-p-map*)
+  (keymap-bind! *ctrl-x-p-map* "f" 'project-find-file)
+  (keymap-bind! *ctrl-x-p-map* "g" 'project-grep)
+  (keymap-bind! *ctrl-x-p-map* "c" 'project-compile)
+  (keymap-bind! *ctrl-x-p-map* "b" 'project-switch-to-buffer)
+  (keymap-bind! *ctrl-x-p-map* "d" 'project-dired)
+  (keymap-bind! *ctrl-x-p-map* "e" 'project-eshell)
+  (keymap-bind! *ctrl-x-p-map* "s" 'project-shell)
+  (keymap-bind! *ctrl-x-p-map* "p" 'project-switch-project)
+  (keymap-bind! *ctrl-x-p-map* "k" 'project-kill-buffers)
+  (keymap-bind! *ctrl-x-p-map* "t" 'project-tree)
+
+  ;; Magit (C-x g — standard Emacs magit binding)
+  (keymap-bind! *ctrl-x-map* "g" 'magit-status)
 
   ;; All other new commands accessible via M-x
   )
