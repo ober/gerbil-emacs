@@ -896,6 +896,8 @@
                      ((string=? name "*eww*") (hash-get *mode-keymaps* 'eww))
                      ((string=? name "*Magit*") (hash-get *mode-keymaps* 'magit))
                      ((string=? name "*Magit: Commit*") (hash-get *mode-keymaps* 'magit-commit))
+                     ((string=? name "*Magit Log*") (hash-get *mode-keymaps* 'magit-log))
+                     ((string=? name "*Magit Commit*") (hash-get *mode-keymaps* 'magit-commit-view))
                      ((string=? name "*Org Capture*") (hash-get *mode-keymaps* 'org-capture))
                      (else #f))))))
     (and km (keymap-lookup km key-str))))
@@ -996,6 +998,21 @@
     (keymap-bind! commit-km "C-c C-c" 'magit-commit-finalize)
     (keymap-bind! commit-km "C-c C-k" 'magit-commit-abort)
     (hash-put! *mode-keymaps* 'magit-commit commit-km))
+
+  ;; Magit log mode: Enter to show commit, n/p for navigation
+  (let ((log-km (make-keymap)))
+    (keymap-bind! log-km "RET" 'magit-log-show-commit)
+    (keymap-bind! log-km "n" 'next-line)
+    (keymap-bind! log-km "p" 'previous-line)
+    (keymap-bind! log-km "q" 'kill-buffer-cmd)
+    (hash-put! *mode-keymaps* 'magit-log log-km))
+
+  ;; Magit commit view: q to close
+  (let ((cv-km (make-keymap)))
+    (keymap-bind! cv-km "n" 'next-line)
+    (keymap-bind! cv-km "p" 'previous-line)
+    (keymap-bind! cv-km "q" 'kill-buffer-cmd)
+    (hash-put! *mode-keymaps* 'magit-commit-view cv-km))
 
   ;; Image mode: zoom controls
   (let ((img-km (make-keymap)))

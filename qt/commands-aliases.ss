@@ -558,6 +558,7 @@
   (register-command! 'magit-diff cmd-magit-diff)
   (register-command! 'magit-stage-all cmd-magit-stage-all)
   (register-command! 'magit-log cmd-magit-log)
+  (register-command! 'magit-log-show-commit cmd-magit-log-show-commit)
   (register-command! 'magit-refresh cmd-magit-refresh)
   (register-command! 'magit-blame cmd-magit-blame)
   (register-command! 'magit-fetch cmd-magit-fetch)

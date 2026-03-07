@@ -707,10 +707,12 @@
     (echo-message! (app-state-echo app) "All changes staged")))
 
 (def (cmd-magit-log app)
-  "Show git log."
+  "Show interactive git log with commit details on Enter."
   (when *magit-dir*
     (echo-message! (app-state-echo app) "Loading git log...")
-    (magit-run-git/async '("log" "--oneline" "--graph" "-30") *magit-dir*
+    (magit-run-git/async
+      '("log" "--format=%h %ad %an  %s" "--date=short" "--graph" "-50")
+      *magit-dir*
       (lambda (output)
         (let* ((ed (current-qt-editor app))
                (fr (app-state-frame app))
@@ -720,7 +722,70 @@
           (set! (qt-edit-window-buffer (qt-current-window fr)) log-buf)
           (qt-plain-text-edit-set-text! ed (or output ""))
           (qt-text-document-set-modified! (buffer-doc-pointer log-buf) #f)
-          (qt-plain-text-edit-set-cursor-position! ed 0))))))
+          (qt-plain-text-edit-set-cursor-position! ed 0)
+          (echo-message! (app-state-echo app)
+            "Enter=show commit, n/p=navigate, q=quit"))))))
+
+(def (magit-log-commit-at-point app)
+  "Extract the git commit hash from the current line in *Magit Log*."
+  (let* ((ed (current-qt-editor app))
+         (text (qt-plain-text-edit-text ed))
+         (pos (qt-plain-text-edit-cursor-position ed)))
+    ;; Find the current line
+    (let* ((line-start (let loop ((i (min pos (- (string-length text) 1))))
+                         (cond ((< i 0) 0)
+                               ((char=? (string-ref text i) #\newline) (+ i 1))
+                               (else (loop (- i 1))))))
+           (line-end (let loop ((i pos))
+                       (cond ((>= i (string-length text)) i)
+                             ((char=? (string-ref text i) #\newline) i)
+                             (else (loop (+ i 1))))))
+           (line (substring text line-start line-end)))
+      ;; Extract hash: skip graph chars (*/|\ space) then grab hex word
+      (let loop ((i 0))
+        (cond
+          ((>= i (string-length line)) #f)
+          ((let ((c (string-ref line i)))
+             (or (char=? c #\*) (char=? c #\|) (char=? c #\\)
+                 (char=? c #\/) (char=? c #\space))) (loop (+ i 1)))
+          (else
+            ;; Should be at the hash now
+            (let ((end (let scan ((j i))
+                         (cond ((>= j (string-length line)) j)
+                               ((char-alphabetic? (string-ref line j)) (scan (+ j 1)))
+                               ((char-numeric? (string-ref line j)) (scan (+ j 1)))
+                               (else j)))))
+              (if (>= (- end i) 7)
+                (substring line i end)
+                #f))))))))
+
+(def (cmd-magit-log-show-commit app)
+  "Show the diff for the commit at point in the log buffer."
+  (let ((buf (current-qt-buffer app)))
+    (when (string=? (buffer-name buf) "*Magit Log*")
+      (let ((hash (magit-log-commit-at-point app)))
+        (if (not hash)
+          (echo-error! (app-state-echo app) "No commit hash at point")
+          (begin
+            (echo-message! (app-state-echo app)
+              (string-append "Loading commit " hash "..."))
+            (magit-run-git/async (list "show" "--stat" "--patch" hash) *magit-dir*
+              (lambda (output)
+                (ui-queue-push!
+                  (lambda ()
+                    (let* ((ed (current-qt-editor app))
+                           (fr (app-state-frame app))
+                           (diff-buf (or (buffer-by-name "*Magit Commit*")
+                                         (qt-buffer-create! "*Magit Commit*" ed #f))))
+                      (qt-buffer-attach! ed diff-buf)
+                      (set! (qt-edit-window-buffer (qt-current-window fr)) diff-buf)
+                      (qt-plain-text-edit-set-text! ed (or output ""))
+                      (qt-text-document-set-modified! (buffer-doc-pointer diff-buf) #f)
+                      (qt-plain-text-edit-set-cursor-position! ed 0)
+                      (qt-highlight-diff! ed)
+                      (echo-message! (app-state-echo app)
+                        (string-append "Commit " hash)))))))))))))
+
 
 (def (cmd-magit-refresh app)
   "Refresh the magit status buffer."

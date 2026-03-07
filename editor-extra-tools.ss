@@ -956,9 +956,9 @@
       (editor-set-read-only ed #t))))
 
 (def (cmd-magit-log app)
-  "Show git log with graph."
+  "Show interactive git log with date and author."
   (let ((result (or (git-output
-                      '("log" "--oneline" "--graph" "--decorate" "-40"))
+                      '("log" "--format=%h %ad %an  %s" "--date=short" "--graph" "-50"))
                     "(not a git repository)")))
     (let* ((fr (app-state-frame app))
            (win (current-window fr))
@@ -966,7 +966,7 @@
            (buf (buffer-create! "*Magit Log*" ed)))
       (buffer-attach! ed buf)
       (set! (edit-window-buffer win) buf)
-      (editor-set-text ed (string-append "Git Log\n\n" result "\n"))
+      (editor-set-text ed result)
       (editor-goto-pos ed 0)
       (editor-set-read-only ed #t))))
 
