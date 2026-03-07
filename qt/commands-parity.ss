@@ -1,6 +1,6 @@
 ;;; -*- Gerbil -*-
 ;;; Qt parity commands — new feature implementations matching TUI layer.
-;;; Chain position: after commands-config, before facade.
+;;; Chain position: after commands-config2, before facade.
 
 (export #t)
 
@@ -42,7 +42,8 @@
         :gemacs/qt/commands-vcs
         :gemacs/qt/commands-shell
         :gemacs/qt/commands-modes
-        :gemacs/qt/commands-config)
+        :gemacs/qt/commands-config
+        :gemacs/qt/commands-config2)
 
 ;;;============================================================================
 ;;; Dired navigation

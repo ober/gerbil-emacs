@@ -329,6 +329,7 @@
           (gxc: "qt/commands-modes"  "-cc-options" ,qt-cc-opts "-ld-options" ,qt-ld-opts)
           (gxc: "qt/snippets"       "-cc-options" ,qt-cc-opts "-ld-options" ,qt-ld-opts)
           (gxc: "qt/commands-config" "-cc-options" ,qt-cc-opts "-ld-options" ,qt-ld-opts)
+          (gxc: "qt/commands-config2" "-cc-options" ,qt-cc-opts "-ld-options" ,qt-ld-opts)
           (gxc: "qt/commands-parity"  "-cc-options" ,qt-cc-opts "-ld-options" ,qt-ld-opts)
           (gxc: "qt/commands-aliases" "-cc-options" ,qt-cc-opts "-ld-options" ,qt-ld-opts)
           (gxc: "qt/helm-commands" "-cc-options" ,qt-cc-opts "-ld-options" ,qt-ld-opts)

@@ -34,6 +34,7 @@
         :gemacs/qt/commands-modes
         :gemacs/qt/snippets
         :gemacs/qt/commands-config
+        :gemacs/qt/commands-config2
         :gemacs/qt/commands-parity)
 
 ;;;============================================================================
