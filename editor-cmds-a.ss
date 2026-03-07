@@ -1457,6 +1457,7 @@
                            "Global hl-line ON"
                            "Global hl-line OFF"))))
 
+
 (def (cmd-insert-shebang app)
   "Insert #!/usr/bin/env shebang line."
   (let* ((fr (app-state-frame app))

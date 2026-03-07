@@ -660,6 +660,7 @@
   (register-command! 'overwrite-mode cmd-toggle-overwrite-mode)
   (register-command! 'hl-line-mode cmd-toggle-hl-line)
   (register-command! 'whitespace-cleanup-mode cmd-whitespace-cleanup)
+  (register-command! 'display-line-numbers-mode cmd-toggle-line-numbers)
   (register-command! 'delete-selection-mode cmd-toggle-transient-mark)
   (register-command! 'show-paren-mode cmd-toggle-highlighting)
   (register-command! 'global-auto-revert-mode cmd-toggle-auto-revert-global)

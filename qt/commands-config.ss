@@ -535,9 +535,6 @@
   "Widen all narrowed buffers."
   (cmd-widen app))
 
-(def (cmd-whitespace-mode app)
-  "Toggle whitespace visualization."
-  (cmd-toggle-whitespace app))
 
 (def (cmd-profiler-start app)
   "Start profiler."
@@ -1885,18 +1882,6 @@ If on blank line: insert comment and indent."
       (qt-plain-text-edit-set-text! ed text)
       (qt-modeline-update! app))))
 
-;;;============================================================================
-;;; Display-line-numbers-mode toggle
-;;;============================================================================
-
-(def (cmd-display-line-numbers-mode app)
-  "Toggle display of line numbers (state flag)."
-  (let ((echo (app-state-echo app)))
-    (set! *line-numbers-visible* (not *line-numbers-visible*))
-    (echo-message! echo
-      (if *line-numbers-visible*
-        "Line numbers enabled"
-        "Line numbers disabled"))))
 
 ;;;============================================================================
 ;;; Find file read-only (C-x C-r)

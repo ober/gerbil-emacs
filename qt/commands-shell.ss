@@ -767,6 +767,33 @@ S=sort by name, z=sort by size, q=quit."
           ;; +1 for the newline character
           (loop (+ i 1) (+ line-end-pos 1)))))))
 
+;;;============================================================================
+;;; Whitespace mode — show spaces, tabs, and EOL markers (Emacs-style)
+;;;============================================================================
+
+(def *whitespace-mode-qt* #f)
+
+(def (cmd-whitespace-mode app)
+  "Toggle whitespace-mode: show/hide spaces, tabs, and EOL markers."
+  (let ((ed (current-qt-editor app)))
+    (set! *whitespace-mode-qt* (not *whitespace-mode-qt*))
+    ;; SCI_SETVIEWWS = 2021: 0=invisible, 1=always visible
+    (sci-send ed 2021 (if *whitespace-mode-qt* 1 0) 0)
+    ;; SCI_SETVIEWEOL = 2356: 0=hidden, 1=visible
+    (sci-send ed 2356 (if *whitespace-mode-qt* 1 0) 0)
+    (echo-message! (app-state-echo app)
+      (if *whitespace-mode-qt*
+        "Whitespace mode enabled"
+        "Whitespace mode disabled"))))
+
+;;;============================================================================
+;;; Display line numbers mode — alias for cmd-toggle-line-numbers
+;;;============================================================================
+
+(def (cmd-display-line-numbers-mode app)
+  "Toggle display-line-numbers-mode: show/hide line number gutter."
+  (cmd-toggle-line-numbers app))
+
 (def (cmd-toggle-narrow-indicator app)
   "Toggle narrow indicator."
   (cmd-toggle-narrowing-indicator app))
