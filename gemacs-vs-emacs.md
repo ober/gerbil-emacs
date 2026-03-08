@@ -117,6 +117,7 @@
 | Forward/backward sexp       | :white_check_mark:  | `M-g f/b`                                    |
 | Back to indentation (`M-m`) | :white_check_mark:  |                                              |
 | Imenu symbol navigation     | :large_blue_circle: | Works for many languages, no sidebar         |
+| Which-function-mode         | :large_blue_circle: | Multi-language: Scheme, Python, C, Go, Rust, JS/TS |
 | Avy jump (char/line/word)   | :large_blue_circle: | `avy-goto-char`, `avy-goto-line`             |
 | Xref go-to-definition       | :large_blue_circle: | Works via grep fallback; LSP backend partial |
 | Xref find references        | :large_blue_circle: | Grep-based                                   |
@@ -625,7 +626,7 @@
 | Ispell region | :large_blue_circle: | Scan region for misspellings |
 | Ispell buffer | :large_blue_circle: | Whole-buffer check |
 | Suggestion menu | :white_check_mark: | Interactive selection from ispell output |
-| Flyspell (on-the-fly) | :white_check_mark: | `flyspell-mode` with aspell backend; TUI uses squiggle indicators, Qt highlights misspelled words; `toggle-flyspell` works in both layers |
+| Flyspell (on-the-fly) | :white_check_mark: | `flyspell-mode` with aspell backend; both TUI and Qt use red squiggly underline indicators (Scintilla INDIC_SQUIGGLE); `toggle-flyspell` works in both layers |
 | Personal dictionary | :large_blue_circle: | Supported via ispell |
 | Language selection | :white_check_mark: | `ispell-change-dictionary` with narrowing (Qt) or prompt (TUI) |
 | Aspell/Hunspell backend | :large_blue_circle: | Uses ispell subprocess |

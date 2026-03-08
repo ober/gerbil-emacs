@@ -743,34 +743,59 @@
               (find-end (+ j 1))))
           (loop (+ i 1) words))))))
 
+(def *flyspell-indicator* 28)
+
+(def (flyspell-clear-indicators! ed)
+  "Clear all flyspell squiggly underline indicators."
+  (let ((len (string-length (qt-plain-text-edit-text ed))))
+    (when (> len 0)
+      (sci-send ed SCI_SETINDICATORCURRENT *flyspell-indicator*)
+      (sci-send ed SCI_INDICATORCLEARRANGE 0 len))))
+
+(def (flyspell-apply-indicators! ed misspelled-entries)
+  "Apply squiggly red underline indicators for misspelled words."
+  ;; Setup indicator style: red squiggly underline
+  (sci-send ed SCI_INDICSETSTYLE *flyspell-indicator* 1) ;; INDIC_SQUIGGLE = 1
+  (sci-send ed SCI_INDICSETFORE *flyspell-indicator* (rgb->sci 255 0 0))
+  (sci-send ed SCI_SETINDICATORCURRENT *flyspell-indicator*)
+  ;; Apply to each misspelled word
+  (for-each
+    (lambda (entry)
+      (let ((start (cadr entry))
+            (end (caddr entry)))
+        (sci-send ed SCI_INDICATORFILLRANGE start (- end start))))
+    misspelled-entries))
+
 (def (cmd-flyspell-mode app)
-  "Toggle flyspell mode: check buffer for misspelled words."
+  "Toggle flyspell mode: check buffer for misspelled words with visual indicators."
   (let* ((ed (current-qt-editor app))
          (text (qt-plain-text-edit-text ed)))
     (if *qt-flyspell-active*
       (begin
         (set! *qt-flyspell-active* #f)
+        (flyspell-clear-indicators! ed)
         (echo-message! (app-state-echo app) "Flyspell mode OFF"))
       (begin
         (set! *qt-flyspell-active* #t)
+        (flyspell-clear-indicators! ed)
         (let* ((words (qt-flyspell-extract-words text))
-               (misspelled-words '()))
+               (misspelled-entries []))
           (for-each
             (lambda (entry)
               (let ((word (car entry)))
                 (when (> (string-length word) 1)
                   (let ((suggestions (qt-aspell-check-word word)))
                     (when suggestions
-                      (set! misspelled-words (cons word misspelled-words)))))))
+                      (set! misspelled-entries (cons entry misspelled-entries)))))))
             words)
-          (let ((count (length misspelled-words)))
+          (let ((count (length misspelled-entries)))
+            (when (> count 0)
+              (flyspell-apply-indicators! ed (reverse misspelled-entries)))
             (if (= count 0)
               (echo-message! (app-state-echo app)
                 (string-append "Flyspell: no misspelled words (" (number->string (length words)) " checked)"))
               (echo-message! (app-state-echo app)
-                (string-append "Flyspell: " (number->string count) " misspelled — "
-                               (string-join (take-n (reverse misspelled-words) 5) ", ")
-                               (if (> count 5) "..." ""))))))))))
+                (string-append "Flyspell: " (number->string count) " misspelled words highlighted")))))))))
 
 (def (take-n lst n)
   "Take first N elements of list."
