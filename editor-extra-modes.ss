@@ -264,6 +264,48 @@
   "Switch buffer with consult — delegates to switch-buffer."
   (execute-command! app 'switch-buffer))
 
+(def (cmd-consult-outline app)
+  "Jump to a heading/definition in the current buffer.
+   Detects headings by pattern and shows in a list."
+  (let* ((fr (app-state-frame app))
+         (win (current-window fr))
+         (ed (edit-window-editor win))
+         (buf (current-buffer-from-app app))
+         (text (editor-get-text ed))
+         (lang (and buf (buffer-lexer-lang buf)))
+         (lines (string-split text #\newline))
+         (headings
+           (let loop ((ls lines) (n 1) (acc '()))
+             (if (null? ls) (reverse acc)
+               (let* ((line (car ls))
+                      (trimmed (string-trim line))
+                      (is-heading
+                        (cond
+                          ((eq? lang 'org)
+                           (and (> (string-length trimmed) 0)
+                                (char=? (string-ref trimmed 0) #\*)))
+                          ((eq? lang 'markdown)
+                           (and (> (string-length trimmed) 0)
+                                (char=? (string-ref trimmed 0) #\#)))
+                          ((memq lang '(scheme lisp gerbil))
+                           (or (string-prefix? "(def " trimmed)
+                               (string-prefix? "(defstruct " trimmed)
+                               (string-prefix? "(defclass " trimmed)))
+                          ((memq lang '(c cpp python ruby javascript))
+                           (or (string-prefix? "def " trimmed)
+                               (string-prefix? "class " trimmed)
+                               (string-prefix? "function " trimmed)))
+                          (else
+                           (or (string-prefix? ";;;" trimmed)
+                               (string-prefix? "###" trimmed))))))
+                 (loop (cdr ls) (+ n 1)
+                       (if is-heading
+                         (cons (string-append (number->string n) ": " trimmed) acc)
+                         acc)))))))
+    (if (null? headings)
+      (echo-message! (app-state-echo app) "No headings found")
+      (open-output-buffer app "*Outline*" (string-join headings "\n")))))
+
 ;; Company completion — uses built-in completion
 (def (cmd-company-mode app)
   "Toggle company completion mode."

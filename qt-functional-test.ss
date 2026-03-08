@@ -2900,6 +2900,11 @@
     (pass! "auto-highlight-symbol-mode registered")
     (fail! "auto-highlight-symbol-mode" #f "registered"))
 
+  ;; Test: consult-outline registered
+  (if (find-command 'consult-outline)
+    (pass! "consult-outline registered")
+    (fail! "consult-outline" #f "registered"))
+
   ;; Test: highlight-symbol dispatches with visual indicators
   (let-values (((ed _w app) (make-qt-test-app "highlight-test")))
     (qt-plain-text-edit-set-text! ed "foo bar foo baz foo")

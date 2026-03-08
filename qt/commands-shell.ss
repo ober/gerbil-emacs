@@ -1599,6 +1599,87 @@ S=sort by name, z=sort by size, q=quit."
   "Switch buffer with consult — delegates to switch-buffer."
   (cmd-switch-buffer app))
 
+(def (cmd-consult-outline app)
+  "Jump to a heading/definition in the current buffer using narrowing popup.
+   Detects headings based on buffer language:
+   - Org: lines starting with *
+   - Markdown: lines starting with #
+   - Code: (def, defstruct, defclass, class, function, def, fn, etc."
+  (let* ((ed (current-qt-editor app))
+         (buf (current-qt-buffer app))
+         (text (qt-plain-text-edit-text ed))
+         (lang (and buf (buffer-lexer-lang buf)))
+         (lines (string-split text #\newline))
+         (headings
+           (let loop ((ls lines) (n 1) (acc []))
+             (if (null? ls) (reverse acc)
+               (let* ((line (car ls))
+                      (trimmed (string-trim line))
+                      (is-heading
+                        (cond
+                          ;; Org headings
+                          ((eq? lang 'org)
+                           (and (> (string-length trimmed) 0)
+                                (char=? (string-ref trimmed 0) #\*)))
+                          ;; Markdown headings
+                          ((eq? lang 'markdown)
+                           (and (> (string-length trimmed) 0)
+                                (char=? (string-ref trimmed 0) #\#)))
+                          ;; Lisp/Scheme definitions
+                          ((memq lang '(scheme lisp gerbil))
+                           (or (string-prefix? "(def " trimmed)
+                               (string-prefix? "(defstruct " trimmed)
+                               (string-prefix? "(defclass " trimmed)
+                               (string-prefix? "(defrule " trimmed)
+                               (string-prefix? "(defmethod " trimmed)))
+                          ;; C/C++/Java/Go/Rust
+                          ((memq lang '(c cpp java go rust))
+                           (or (string-prefix? "class " trimmed)
+                               (string-prefix? "struct " trimmed)
+                               (string-prefix? "func " trimmed)
+                               (string-prefix? "fn " trimmed)
+                               (string-prefix? "def " trimmed)
+                               (string-prefix? "type " trimmed)
+                               (string-prefix? "impl " trimmed)))
+                          ;; Python
+                          ((eq? lang 'python)
+                           (or (string-prefix? "def " trimmed)
+                               (string-prefix? "class " trimmed)
+                               (string-prefix? "async def " trimmed)))
+                          ;; Ruby
+                          ((eq? lang 'ruby)
+                           (or (string-prefix? "def " trimmed)
+                               (string-prefix? "class " trimmed)
+                               (string-prefix? "module " trimmed)))
+                          ;; JavaScript/TypeScript
+                          ((memq lang '(javascript typescript))
+                           (or (string-prefix? "function " trimmed)
+                               (string-prefix? "class " trimmed)
+                               (string-prefix? "export " trimmed)
+                               (string-prefix? "const " trimmed)
+                               (string-prefix? "async function " trimmed)))
+                          ;; Default: section comments
+                          (else
+                           (or (string-prefix? ";;;" trimmed)
+                               (string-prefix? "###" trimmed)
+                               (string-prefix? "///" trimmed))))))
+                 (loop (cdr ls) (+ n 1)
+                       (if is-heading
+                         (cons (string-append (number->string n) ": " trimmed) acc)
+                         acc))))))
+         (choice (and (pair? headings)
+                      (qt-echo-read-with-narrowing app "Outline: " headings))))
+    (if (not (pair? headings))
+      (echo-message! (app-state-echo app) "No headings found")
+      (when (and choice (> (string-length choice) 0))
+        (let ((colon-pos (string-contains choice ":")))
+          (when colon-pos
+            (let ((line-num (string->number (substring choice 0 colon-pos))))
+              (when (and line-num (> line-num 0))
+                (let ((pos (sci-send ed SCI_POSITIONFROMLINE (- line-num 1) 0)))
+                  (qt-plain-text-edit-set-cursor-position! ed pos)
+                  (qt-plain-text-edit-ensure-cursor-visible! ed))))))))))
+
 ;;;============================================================================
 ;;; Sudo save
 

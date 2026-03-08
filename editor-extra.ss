@@ -504,6 +504,7 @@
   (register-command! 'consult-line cmd-consult-line)
   (register-command! 'consult-grep cmd-consult-grep)
   (register-command! 'consult-buffer cmd-consult-buffer)
+  (register-command! 'consult-outline cmd-consult-outline)
   ;; Company
   (register-command! 'company-mode cmd-company-mode)
   (register-command! 'company-complete cmd-company-complete)
