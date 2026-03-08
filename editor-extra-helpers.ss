@@ -1367,7 +1367,7 @@
 ;; TRAMP/Remote editing
 
 (def (cmd-tramp-ssh-edit app)
-  "Edit file via SSH (TRAMP-style /ssh:host:path)."
+  "Edit file via SSH. Fetches remote file content."
   (let* ((echo (app-state-echo app))
          (path (app-read-string app "SSH path (/ssh:host:path): ")))
     (when (and path (> (string-length path) 0))
@@ -1377,12 +1377,40 @@
                 (colon (string-index rest #\:))
                 (host (if colon (substring rest 0 colon) rest))
                 (rpath (if colon (substring rest (+ colon 1) (string-length rest)) "~")))
-           (echo-message! echo (string-append "SSH: connecting to " host ":" rpath " ..."))))
+           (echo-message! echo (string-append "SSH: fetching " host ":" rpath " ..."))
+           (with-catch
+             (lambda (e)
+               (echo-message! echo (string-append "SSH failed: "
+                 (with-output-to-string (lambda () (display-exception e))))))
+             (lambda ()
+               (let* ((proc (open-process
+                              (list path: "ssh"
+                                    arguments: [host "cat" rpath]
+                                    stdin-redirection: #f
+                                    stdout-redirection: #t
+                                    stderr-redirection: #t)))
+                      (content (read-line proc #f)))
+                 (process-status proc)
+                 (close-port proc)
+                 (if (or (not content) (string=? content ""))
+                   (echo-message! echo (string-append "Could not read " host ":" rpath))
+                   (let* ((name (string-append "[ssh:" host "]"
+                                  (path-strip-directory rpath)))
+                          (fr (app-state-frame app))
+                          (win (current-window fr))
+                          (ed (edit-window-editor win))
+                          (buf (buffer-create! name ed #f)))
+                     (buffer-attach! ed buf)
+                     (set! (edit-window-buffer win) buf)
+                     (editor-set-text ed content)
+                     (editor-goto-pos ed 0)
+                     (echo-message! echo
+                       (string-append "Opened " host ":" rpath)))))))))
         (else
          (echo-message! echo "Use format: /ssh:hostname:/path/to/file"))))))
 
 (def (cmd-tramp-docker-edit app)
-  "Edit file in Docker container (TRAMP-style /docker:container:path)."
+  "Edit file in Docker container via docker exec cat."
   (let* ((echo (app-state-echo app))
          (path (app-read-string app "Docker path (/docker:name:path): ")))
     (when (and path (> (string-length path) 0))
@@ -1392,7 +1420,35 @@
                 (colon (string-index rest #\:))
                 (container (if colon (substring rest 0 colon) rest))
                 (rpath (if colon (substring rest (+ colon 1) (string-length rest)) "/")))
-           (echo-message! echo (string-append "Docker: connecting to " container ":" rpath " ..."))))
+           (echo-message! echo (string-append "Docker: fetching " container ":" rpath " ..."))
+           (with-catch
+             (lambda (e)
+               (echo-message! echo (string-append "Docker failed: "
+                 (with-output-to-string (lambda () (display-exception e))))))
+             (lambda ()
+               (let* ((proc (open-process
+                              (list path: "docker"
+                                    arguments: ["exec" container "cat" rpath]
+                                    stdin-redirection: #f
+                                    stdout-redirection: #t
+                                    stderr-redirection: #t)))
+                      (content (read-line proc #f)))
+                 (process-status proc)
+                 (close-port proc)
+                 (if (or (not content) (string=? content ""))
+                   (echo-message! echo (string-append "Could not read " container ":" rpath))
+                   (let* ((name (string-append "[docker:" container "]"
+                                  (path-strip-directory rpath)))
+                          (fr (app-state-frame app))
+                          (win (current-window fr))
+                          (ed (edit-window-editor win))
+                          (buf (buffer-create! name ed #f)))
+                     (buffer-attach! ed buf)
+                     (set! (edit-window-buffer win) buf)
+                     (editor-set-text ed content)
+                     (editor-goto-pos ed 0)
+                     (echo-message! echo
+                       (string-append "Opened " container ":" rpath)))))))))
         (else
          (echo-message! echo "Use format: /docker:container:/path/to/file"))))))
 
