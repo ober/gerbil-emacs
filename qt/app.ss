@@ -452,6 +452,9 @@
         (qt-plain-text-edit-set-cursor-position! ed 0)
         (scratch-update-text! text))
 
+      ;; Run after-init-hook (user code can add hooks in init file)
+      (run-hooks! 'after-init-hook app)
+
       ;; Key handler — define once, install on each editor
       ;; Uses consuming variant so QPlainTextEdit doesn't process keys itself.
       (let ((key-handler

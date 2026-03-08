@@ -770,13 +770,20 @@
 ;;;============================================================================
 
 (def (create-backup-file! path)
-  "Create a backup of a file (file~ naming convention)."
-  (when (file-exists? path)
-    (let ((backup-path (string-append path "~")))
-      (with-catch
-        (lambda (e) (void)) ;; Silently fail — backup is best-effort
-        (lambda ()
-          (run-process/batch ["cp" "-p" path backup-path]))))))
+  "Create a backup of a file. Respects *make-backup-files* and *version-control*."
+  (when (and *make-backup-files* (file-exists? path))
+    (with-catch
+      (lambda (e) (void)) ;; Silently fail — backup is best-effort
+      (lambda ()
+        (if *version-control*
+          ;; Numbered backups: file.~1~, file.~2~, etc.
+          (let loop ((n 1))
+            (let ((vpath (string-append path ".~" (number->string n) "~")))
+              (if (file-exists? vpath)
+                (loop (+ n 1))
+                (run-process/batch ["cp" "-p" path vpath]))))
+          ;; Simple backup: file~
+          (run-process/batch ["cp" "-p" path (string-append path "~")]))))))
 
 ;;;============================================================================
 ;;; Large file and binary file warnings
@@ -1645,6 +1652,7 @@
 (def *fast-but-imprecise-scrolling* #f)
 (def *mouse-avoidance-mode* #f)
 (def *make-backup-files* #t)
+(def *version-control* #f)  ;; When #t, make numbered backups (file.~1~, file.~2~)
 (def *lock-file-create* #t)
 (def *auto-encryption-mode* #t)
 
@@ -1711,6 +1719,12 @@
     (echo-message! echo (if *make-backup-files*
                           "Backup files ON"
                           "Backup files OFF"))))
+
+(def (cmd-toggle-version-control app)
+  "Toggle numbered backups (file.~1~, file.~2~ instead of file~)."
+  (set! *version-control* (not *version-control*))
+  (echo-message! (app-state-echo app)
+    (if *version-control* "Numbered backups ON" "Numbered backups OFF (simple file~)")))
 
 (def (cmd-toggle-lock-file-create app)
   "Toggle creation of lock files (.#filename) for editing."

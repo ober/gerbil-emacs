@@ -453,12 +453,20 @@
         (run-hooks! 'before-save-hook app buf)
         ;; Create backup file if original exists and hasn't been backed up yet
         (when (and *backup-files* (file-exists? path) (not (buffer-backup-done? buf)))
-          (let ((backup-path (string-append path "~")))
-            (with-catch
-              (lambda (e) #f)  ; Ignore backup errors
-              (lambda ()
-                (copy-file path backup-path)
-                (set! (buffer-backup-done? buf) #t)))))
+          (with-catch
+            (lambda (e) #f)  ; Ignore backup errors
+            (lambda ()
+              (if *version-control*
+                ;; Numbered backups: file.~1~, file.~2~, etc.
+                (let loop ((n 1))
+                  (let ((vpath (string-append path ".~" (number->string n) "~")))
+                    (if (file-exists? vpath)
+                      (loop (+ n 1))
+                      (begin (copy-file path vpath)
+                             (set! (buffer-backup-done? buf) #t)))))
+                ;; Simple backup: file~
+                (begin (copy-file path (string-append path "~"))
+                       (set! (buffer-backup-done? buf) #t))))))
         ;; Remember cursor position for save-place
         (when *save-place-enabled*
           (save-place-remember! path (qt-plain-text-edit-cursor-position ed)))
@@ -2471,8 +2479,18 @@
   (echo-message! (app-state-echo app) "Tool bar: not implemented (use M-x for commands)"))
 
 (def (cmd-scroll-bar-mode app)
-  "Toggle scroll bar (Qt)."
-  (echo-message! (app-state-echo app) "Scroll bar: managed by Scintilla widget"))
+  "Toggle scroll bars (vertical and horizontal)."
+  (let* ((ed (current-qt-editor app))
+         (v-visible (= (sci-send ed SCI_GETVSCROLLBAR 0 0) 1)))
+    (if v-visible
+      (begin
+        (sci-send ed SCI_SETVSCROLLBAR 0 0)
+        (sci-send ed SCI_SETHSCROLLBAR 0 0)
+        (echo-message! (app-state-echo app) "Scroll bars hidden"))
+      (begin
+        (sci-send ed SCI_SETVSCROLLBAR 1 0)
+        (sci-send ed SCI_SETHSCROLLBAR 1 0)
+        (echo-message! (app-state-echo app) "Scroll bars visible")))))
 
 (def (cmd-font-lock-mode app)
   "Toggle font-lock highlighting (Qt)."

@@ -237,6 +237,7 @@
 ;; --- Toggles ---
 (def *auto-indent* #t)
 (def *backup-files* #t)
+(def *version-control* #f)  ;; When #t, make numbered backups (file.~1~, file.~2~)
 (def *debug-mode* #f)
 (def *debug-on-quit* #f)
 (def *visible-bell* #f)
@@ -252,6 +253,12 @@
   "Toggle backup file creation."
   (set! *backup-files* (not *backup-files*))
   (echo-message! (app-state-echo app) (if *backup-files* "Backup files ON" "Backup files OFF")))
+
+(def (cmd-toggle-version-control app)
+  "Toggle numbered backups (file.~1~, file.~2~ instead of file~)."
+  (set! *version-control* (not *version-control*))
+  (echo-message! (app-state-echo app)
+    (if *version-control* "Numbered backups ON" "Numbered backups OFF (simple file~)")))
 
 (def (cmd-toggle-debug-mode app)
   "Toggle debug mode."

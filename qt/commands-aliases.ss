@@ -398,6 +398,7 @@
   ;; Toggles
   ;; show-dir-locals → registered in facade (cross-cutting)
   (register-command! 'toggle-auto-indent cmd-toggle-auto-indent)
+  (register-command! 'toggle-version-control cmd-toggle-version-control)
   (register-command! 'toggle-backup-files cmd-toggle-backup-files)
   (register-command! 'toggle-debug-mode cmd-toggle-debug-mode)
   (register-command! 'toggle-debug-on-quit cmd-toggle-debug-on-quit)

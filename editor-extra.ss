@@ -1027,6 +1027,7 @@
   (register-command! 'toggle-fast-but-imprecise-scrolling cmd-toggle-fast-but-imprecise-scrolling)
   (register-command! 'toggle-mouse-avoidance cmd-toggle-mouse-avoidance)
   (register-command! 'toggle-make-backup-files cmd-toggle-make-backup-files)
+  (register-command! 'toggle-version-control cmd-toggle-version-control)
   (register-command! 'toggle-lock-file-create cmd-toggle-lock-file-create)
   (register-command! 'toggle-auto-encryption cmd-toggle-auto-encryption)
   ;; Batch 39 - read-only dirs, uniquify, so-long, tooltips, etc.

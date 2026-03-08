@@ -48,9 +48,14 @@
     (set! (buffer-lexer-lang buf) #f)
     (sci-send ed SCI_SETLEXER 0)  ;; SCLEX_NULL — no highlighting
     (sci-send ed SCI_STYLECLEARALL)
+    (run-hooks! 'text-mode-hook app buf)
+    (run-hooks! 'after-change-major-mode-hook app buf)
     (echo-message! (app-state-echo app) "Text mode")))
 
 ;;; --- Major mode switching helper ---
+(def *prog-modes*
+  '(python c c++ javascript typescript go rust ruby scheme bash lua sql css html))
+
 (def (qt-set-major-mode! app lang-sym mode-name)
   "Set major mode by changing lexer language and re-highlighting."
   (let* ((ed (current-qt-editor app))
@@ -58,6 +63,16 @@
          (buf (qt-edit-window-buffer (qt-current-window fr))))
     (set! (buffer-lexer-lang buf) lang-sym)
     (qt-setup-highlighting! app buf)
+    ;; Run mode-specific hook (e.g. python-mode-hook)
+    (when lang-sym
+      (run-hooks! (string->symbol
+                    (string-append (symbol->string lang-sym) "-mode-hook"))
+                  app buf))
+    ;; Run prog-mode-hook for programming languages
+    (when (and lang-sym (memq lang-sym *prog-modes*))
+      (run-hooks! 'prog-mode-hook app buf))
+    ;; Run generic after-change-major-mode-hook
+    (run-hooks! 'after-change-major-mode-hook app buf)
     (echo-message! (app-state-echo app) mode-name)))
 
 ;;; --- Shell script mode ---
