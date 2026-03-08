@@ -72,7 +72,11 @@
                  qt-frame-current-idx
                  qt-current-window
                  qt-frame-init!
+                 qt-edit-window-buffer-set!
                  qt-apply-editor-theme!)
+        (only-in :gemacs/qt/buffer
+                 qt-buffer-create!
+                 qt-buffer-attach!)
         (only-in :gemacs/face
                  face-get
                  face-bg
@@ -4549,6 +4553,100 @@
   (displayln "Group 43 complete"))
 
 ;;;============================================================================
+;;; Group 44: Parity5 upgrades — help, calendar, templates, themes, window mgmt
+;;;============================================================================
+
+(def (run-group-44-parity5-upgrades)
+  (displayln "\n=== Group 44: Help, calendar, templates, themes, window mgmt ===")
+
+  ;; Test 1-6: Commands are registered
+  (for-each
+    (lambda (name)
+      (let ((label (string-append (symbol->string name) " registered")))
+        (if (procedure? (find-command name))
+          (pass! label)
+          (fail! label #f "procedure"))))
+    '(help-for-help calendar-goto-date auto-insert disable-theme
+      iconify-frame raise-frame))
+
+  ;; Test 7-12: Functional tests
+  (let-values (((ed w app) (make-qt-test-app "test44")))
+    ;; Test 7: help-for-help creates *Help* buffer content
+    (with-catch
+      (lambda (e) (fail! "help-for-help"
+                         (with-output-to-string "" (lambda () (display-exception e))) "no error"))
+      (lambda ()
+        (execute-command! app 'help-for-help)
+        (let ((text (qt-plain-text-edit-text ed)))
+          (if (and (string-contains text "Gemacs Help")
+                   (string-contains text "C-h k"))
+            (pass! "help-for-help shows help content")
+            (fail! "help-for-help" text "contains help content")))))
+
+    ;; Test 8: disable-theme doesn't crash
+    (with-catch
+      (lambda (e) (fail! "disable-theme"
+                         (with-output-to-string "" (lambda () (display-exception e))) "no error"))
+      (lambda ()
+        (execute-command! app 'disable-theme)
+        (pass! "disable-theme runs without error")))
+
+    ;; Test 9: auto-insert with .py extension
+    (with-catch
+      (lambda (e) (fail! "auto-insert"
+                         (with-output-to-string "" (lambda () (display-exception e))) "no error"))
+      (lambda ()
+        ;; Create a buffer with .py name to test auto-insert
+        (let* ((fr (app-state-frame app))
+               (win (qt-current-window fr))
+               (py-buf (qt-buffer-create! "test.py" ed #f)))
+          (qt-buffer-attach! ed py-buf)
+          (qt-edit-window-buffer-set! win py-buf)
+          (qt-plain-text-edit-set-text! ed "")
+          (execute-command! app 'auto-insert)
+          (let ((text (qt-plain-text-edit-text ed)))
+            (if (string-contains text "python")
+              (pass! "auto-insert .py template")
+              (fail! "auto-insert" text "contains python"))))))
+
+    ;; Test 10: auto-insert with .c extension
+    (with-catch
+      (lambda (e) (fail! "auto-insert-c"
+                         (with-output-to-string "" (lambda () (display-exception e))) "no error"))
+      (lambda ()
+        (let* ((fr (app-state-frame app))
+               (win (qt-current-window fr))
+               (c-buf (qt-buffer-create! "test.c" ed #f)))
+          (qt-buffer-attach! ed c-buf)
+          (qt-edit-window-buffer-set! win c-buf)
+          (qt-plain-text-edit-set-text! ed "")
+          (execute-command! app 'auto-insert)
+          (let ((text (qt-plain-text-edit-text ed)))
+            (if (string-contains text "#include")
+              (pass! "auto-insert .c template")
+              (fail! "auto-insert-c" text "contains #include"))))))
+
+    ;; Test 11: iconify-frame doesn't crash (headless)
+    (with-catch
+      (lambda (e) (fail! "iconify-frame"
+                         (with-output-to-string "" (lambda () (display-exception e))) "no error"))
+      (lambda ()
+        (execute-command! app 'iconify-frame)
+        (pass! "iconify-frame runs without error")))
+
+    ;; Test 12: raise-frame doesn't crash (headless)
+    (with-catch
+      (lambda (e) (fail! "raise-frame"
+                         (with-output-to-string "" (lambda () (display-exception e))) "no error"))
+      (lambda ()
+        (execute-command! app 'raise-frame)
+        (pass! "raise-frame runs without error")))
+
+    (destroy-qt-test-app! ed w))
+
+  (displayln "Group 44 complete"))
+
+;;;============================================================================
 ;;; Main
 ;;;============================================================================
 
@@ -4600,6 +4698,7 @@
     (run-group-41-format-embark)
     (run-group-42-stub-upgrades)
     (run-group-43-game-text-upgrades)
+    (run-group-44-parity5-upgrades)
 
     (displayln "---")
     (displayln "Results: " *passes* " passed, " *failures* " failed")

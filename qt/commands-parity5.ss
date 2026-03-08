@@ -195,27 +195,142 @@
 ;; auto-insert: insert template based on file extension
 (def (cmd-auto-insert app)
   (let* ((fr (app-state-frame app))
+         (ed (qt-edit-window-editor (qt-current-window fr)))
          (buf (qt-edit-window-buffer (qt-current-window fr)))
          (name (buffer-name buf))
          (ext (let ((dot (string-index name #\.)))
-                (if dot (substring name dot (string-length name)) ""))))
-    (echo-message! (app-state-echo app)
-      (string-append "Auto-insert for " ext " files (no template found)"))))
+                (if dot (substring name dot (string-length name)) "")))
+         (template-dir (string-append (getenv "HOME" "/tmp") "/.gemacs-templates"))
+         (template-file (string-append template-dir "/" ext)))
+    (cond
+      ((and (not (string=? ext ""))
+            (file-exists? template-file))
+       (let ((content (call-with-input-file template-file
+                        (lambda (p) (read-line p #f)))))
+         (when content
+           (qt-plain-text-edit-set-text! ed content)
+           (qt-plain-text-edit-set-cursor-position! ed 0))
+         (echo-message! (app-state-echo app)
+           (string-append "Inserted template for " ext))))
+      ((not (string=? ext ""))
+       ;; Try built-in templates
+       (let ((builtin
+               (cond
+                 ((string=? ext ".ss") "(export #t)\n\n(import :std/sugar)\n\n")
+                 ((string=? ext ".py") "#!/usr/bin/env python3\n\n\"\"\"\nModule description.\n\"\"\"\n\n")
+                 ((string=? ext ".sh") "#!/bin/bash\nset -euo pipefail\n\n")
+                 ((string=? ext ".c") "#include <stdio.h>\n#include <stdlib.h>\n\nint main(int argc, char *argv[]) {\n    return 0;\n}\n")
+                 ((string=? ext ".h") (let ((guard (string-upcase (string-append (path-strip-extension (path-strip-directory name)) "_H"))))
+                                        (string-append "#ifndef " guard "\n#define " guard "\n\n\n\n#endif /* " guard " */\n")))
+                 ((string=? ext ".html") "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n  <meta charset=\"UTF-8\">\n  <title></title>\n</head>\n<body>\n\n</body>\n</html>\n")
+                 ((string=? ext ".rs") "fn main() {\n    \n}\n")
+                 ((string=? ext ".go") "package main\n\nimport \"fmt\"\n\nfunc main() {\n\tfmt.Println(\"Hello\")\n}\n")
+                 ((string=? ext ".js") "\"use strict\";\n\n")
+                 ((string=? ext ".ts") "\n")
+                 ((string=? ext ".rb") "#!/usr/bin/env ruby\n# frozen_string_literal: true\n\n")
+                 ((string=? ext ".el") ";;; -*- lexical-binding: t; -*-\n\n")
+                 ((string=? ext ".md") "# \n\n")
+                 ((string=? ext ".yaml") "---\n")
+                 ((string=? ext ".json") "{}\n")
+                 ((string=? ext ".toml") "")
+                 ((string=? ext ".Makefile") ".PHONY: all clean\n\nall:\n\n")
+                 (else #f))))
+         (if builtin
+           (begin
+             (qt-plain-text-edit-set-text! ed builtin)
+             (qt-plain-text-edit-set-cursor-position! ed 0)
+             (echo-message! (app-state-echo app)
+               (string-append "Inserted built-in template for " ext)))
+           (echo-message! (app-state-echo app)
+             (string-append "No template for " ext " (create " template-dir "/" ext ")")))))
+      (else
+       (echo-message! (app-state-echo app) "Buffer has no file extension")))))
 
-;; calendar-goto-date: prompt for date and show
+;; calendar-goto-date: prompt for date and display calendar month
 (def (cmd-calendar-goto-date app)
   (let ((date (qt-echo-read-string app "Go to date (YYYY-MM-DD): ")))
     (when (and date (> (string-length date) 0))
-      (echo-message! (app-state-echo app)
-        (string-append "Calendar: " date)))))
+      (let* ((parts (string-split date #\-))
+             (year (if (>= (length parts) 1) (string->number (car parts)) #f))
+             (month (if (>= (length parts) 2) (string->number (cadr parts)) #f))
+             (day (if (>= (length parts) 3) (string->number (caddr parts)) #f)))
+        (if (and year month day (>= month 1) (<= month 12) (>= day 1) (<= day 31))
+          (let* ((month-names '#("" "January" "February" "March" "April" "May" "June"
+                                  "July" "August" "September" "October" "November" "December"))
+                 (day-names "Su Mo Tu We Th Fr Sa")
+                 ;; Zeller's congruence for day of week (0=Sunday)
+                 (m (if (< month 3) (+ month 12) month))
+                 (y (if (< month 3) (- year 1) year))
+                 (dow (modulo (+ day (quotient (* 13 (+ m 1)) 5) y
+                               (quotient y 4) (- (quotient y 100))
+                               (quotient y 400)) 7))
+                 ;; First day of month
+                 (m1 (if (< month 3) (+ month 12) month))
+                 (y1 (if (< month 3) (- year 1) year))
+                 (first-dow (modulo (+ 1 (quotient (* 13 (+ m1 1)) 5) y1
+                                     (quotient y1 4) (- (quotient y1 100))
+                                     (quotient y1 400)) 7))
+                 ;; Days in month
+                 (days-in-month
+                   (cond ((member month '(4 6 9 11)) 30)
+                         ((= month 2) (if (or (and (= 0 (modulo year 4)) (not (= 0 (modulo year 100))))
+                                              (= 0 (modulo year 400))) 29 28))
+                         (else 31)))
+                 (out (open-output-string)))
+            ;; Build calendar display
+            (display (string-append "    " (vector-ref month-names month) " " (number->string year) "\n") out)
+            (display (string-append day-names "\n") out)
+            ;; Leading spaces
+            (let loop ((i 0))
+              (when (< i first-dow)
+                (display "   " out)
+                (loop (+ i 1))))
+            ;; Days
+            (let dloop ((d 1) (col first-dow))
+              (when (<= d days-in-month)
+                (let ((s (number->string d)))
+                  (if (= d day)
+                    (display (string-append "[" (if (< d 10) " " "") s "]") out)
+                    (display (string-append (if (< d 10) " " "") s " ") out))
+                  (if (= (modulo (+ col 1) 7) 0)
+                    (begin (newline out) (dloop (+ d 1) (+ col 1)))
+                    (dloop (+ d 1) (+ col 1))))))
+            (newline out)
+            (let* ((cal-text (get-output-string out))
+                   (fr (app-state-frame app))
+                   (win (qt-current-window fr))
+                   (ed (qt-edit-window-editor win))
+                   (cal-buf (qt-buffer-create! "*Calendar*" ed #f)))
+              (qt-buffer-attach! ed cal-buf)
+              (set! (qt-edit-window-buffer win) cal-buf)
+              (qt-plain-text-edit-set-text! ed cal-text)
+              (sci-send ed SCI_SETREADONLY 1)
+              (qt-plain-text-edit-set-cursor-position! ed 0)
+              (echo-message! (app-state-echo app)
+                (string-append "Calendar: " (vector-ref month-names month) " "
+                               (number->string year)))))
+          (echo-error! (app-state-echo app) "Invalid date format. Use YYYY-MM-DD"))))))
 
 ;; company-complete: trigger completion
 (def (cmd-company-complete app)
   (execute-command! app 'complete-at-point))
 
-;; disable-theme: disable current theme
+;; disable-theme: reset to default color scheme
 (def (cmd-disable-theme app)
-  (echo-message! (app-state-echo app) "Theme disabled"))
+  (let* ((fr (app-state-frame app)))
+    ;; Reset all editors to default colors
+    (for-each
+      (lambda (win)
+        (let ((ed (qt-edit-window-editor win)))
+          ;; Reset to default white background, black foreground
+          (sci-send ed SCI_STYLESETBACK 32 #xFFFFFF)  ; STYLE_DEFAULT bg
+          (sci-send ed SCI_STYLESETFORE 32 #x000000)  ; STYLE_DEFAULT fg
+          (sci-send ed SCI_STYLECLEARALL 0)
+          ;; Reset caret line
+          (sci-send ed SCI_SETCARETLINEVISIBLE 1)
+          (sci-send ed SCI_SETCARETLINEBACK #xFFFFE0)))
+      (qt-frame-windows fr))
+    (echo-message! (app-state-echo app) "Theme reset to defaults")))
 
 ;; eww-browse-url: open URL in EWW
 (def (cmd-eww-browse-url app)
@@ -227,10 +342,68 @@
 (def (cmd-flyspell-correct-word app)
   (execute-command! app 'ispell-word))
 
-;; help-for-help: show help overview
+;; help-for-help: show interactive help overview in *Help* buffer
 (def (cmd-help-for-help app)
-  (echo-message! (app-state-echo app)
-    "Help: C-h k (describe-key) C-h f (describe-function) C-h v (describe-variable) C-h b (describe-bindings)"))
+  (let* ((fr (app-state-frame app))
+         (help-text (string-append
+"Gemacs Help System\n"
+"==================\n\n"
+"You have typed C-h, the help character. Type a Help option:\n\n"
+"Key Bindings:\n"
+"  C-h k    describe-key        - Show what a key does\n"
+"  C-h b    describe-bindings   - Show all key bindings\n"
+"  C-h f    describe-function   - Describe a function\n"
+"  C-h v    describe-variable   - Describe a variable\n"
+"  C-h m    describe-mode       - Describe current major mode\n"
+"  C-h a    apropos-command      - Search for commands by name\n"
+"  C-h w    where-is            - Show key binding for a command\n\n"
+"Navigation:\n"
+"  C-f/C-b  Forward/backward character\n"
+"  M-f/M-b  Forward/backward word\n"
+"  C-a/C-e  Beginning/end of line\n"
+"  M-</M->  Beginning/end of buffer\n"
+"  C-v/M-v  Scroll down/up\n"
+"  C-l      Recenter window\n\n"
+"Editing:\n"
+"  C-d      Delete character forward\n"
+"  M-d      Kill word forward\n"
+"  C-k      Kill to end of line\n"
+"  C-w      Kill region\n"
+"  M-w      Copy region\n"
+"  C-y      Yank (paste)\n"
+"  C-/      Undo\n"
+"  C-x u    Undo\n\n"
+"Files & Buffers:\n"
+"  C-x C-f  Find file (open)\n"
+"  C-x C-s  Save buffer\n"
+"  C-x C-w  Write file (save as)\n"
+"  C-x b    Switch buffer\n"
+"  C-x k    Kill buffer\n"
+"  C-x C-b  List buffers\n\n"
+"Windows:\n"
+"  C-x 2    Split horizontally\n"
+"  C-x 3    Split vertically\n"
+"  C-x 1    Delete other windows\n"
+"  C-x 0    Delete current window\n"
+"  C-x o    Other window\n\n"
+"Search:\n"
+"  C-s      Isearch forward\n"
+"  C-r      Isearch backward\n"
+"  M-%      Query replace\n"
+"  M-x occur  Show matching lines\n\n"
+"Other:\n"
+"  M-x      Execute command by name\n"
+"  C-g      Cancel current operation\n"
+"  C-x C-c  Quit Gemacs\n")))
+    (let* ((win (qt-current-window fr))
+           (ed (qt-edit-window-editor win))
+           (help-buf (qt-buffer-create! "*Help*" ed #f)))
+      (qt-buffer-attach! ed help-buf)
+      (set! (qt-edit-window-buffer win) help-buf)
+      (qt-plain-text-edit-set-text! ed help-text)
+      (sci-send ed SCI_SETREADONLY 1)
+      (qt-plain-text-edit-set-cursor-position! ed 0))
+    (echo-message! (app-state-echo app) "Type C-h key for help on a topic")))
 
 ;; help-quick: quick help reference
 (def (cmd-help-quick app)
@@ -238,7 +411,9 @@
 
 ;; iconify-frame: minimize window
 (def (cmd-iconify-frame app)
-  (echo-message! (app-state-echo app) "Frame iconified (minimize)"))
+  (let ((main-win (qt-frame-main-win (app-state-frame app))))
+    (qt-widget-show-minimized! main-win)
+    (echo-message! (app-state-echo app) "Frame minimized")))
 
 ;; occur-rename-buffer: rename occur buffer
 (def (cmd-occur-rename-buffer app)
@@ -282,7 +457,9 @@
 
 ;; raise-frame: bring window to front
 (def (cmd-raise-frame app)
-  (echo-message! (app-state-echo app) "Frame raised"))
+  (let ((main-win (qt-frame-main-win (app-state-frame app))))
+    (qt-widget-show-normal! main-win)
+    (echo-message! (app-state-echo app) "Frame raised")))
 
 ;; rotate-window: swap window contents
 (def (cmd-rotate-window app)
