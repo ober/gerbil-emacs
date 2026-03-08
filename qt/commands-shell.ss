@@ -127,12 +127,14 @@
     (qt-plain-text-edit-move-cursor! ed QT_CURSOR_END)))
 
 (def (cmd-scroll-left app)
-  "Scroll left (no-op in line-wrap mode)."
-  (echo-message! (app-state-echo app) "Scroll left (no horizontal scrolling)"))
+  "Scroll left by 10 columns."
+  (let ((ed (current-qt-editor app)))
+    (sci-send ed SCI_LINESCROLL -10 0)))
 
 (def (cmd-scroll-right app)
-  "Scroll right (no-op in line-wrap mode)."
-  (echo-message! (app-state-echo app) "Scroll right (no horizontal scrolling)"))
+  "Scroll right by 10 columns."
+  (let ((ed (current-qt-editor app)))
+    (sci-send ed SCI_LINESCROLL 10 0)))
 
 ;; --- Code insertion templates ---
 (def (cmd-insert-let app)
@@ -659,12 +661,12 @@ SPC = page down, DEL = page up, q = quit view-mode."
   (echo-message! (app-state-echo app) "EOL conversion toggled"))
 
 (def (cmd-toggle-flymake app)
-  "Toggle flymake mode."
-  (echo-message! (app-state-echo app) "Flymake not available"))
+  "Toggle flymake mode — delegates to flycheck."
+  (execute-command! app 'flycheck-mode))
 
 (def (cmd-toggle-flyspell app)
-  "Toggle flyspell mode."
-  (echo-message! (app-state-echo app) "Flyspell not available"))
+  "Toggle flyspell mode — delegates to flyspell-mode."
+  (execute-command! app 'flyspell-mode))
 
 (def (cmd-toggle-global-hl-line app)
   "Toggle global highlight line."

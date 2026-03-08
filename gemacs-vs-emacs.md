@@ -508,7 +508,7 @@
 | Xref (definitions) | :large_blue_circle: | Grep-based fallback |
 | Xref (references) | :large_blue_circle: | Grep-based |
 | Imenu (symbol index) | :large_blue_circle: | Works for structured languages |
-| Which-function mode | :yellow_circle: | Registered |
+| Which-function mode | :large_blue_circle: | Multi-language: Scheme, Python, C, Go, Rust, JS/TS |
 | Semantic analysis | :yellow_circle: | `semantic-mode` toggle in both layers |
 | Tree-sitter integration | :yellow_circle: | `tree-sitter-mode` toggle — grammar-based parsing scaffolded |
 | DAP (debug adapter) | :yellow_circle: | `dap-debug`, `dap-breakpoint-toggle`, step-over/in/out in both layers |

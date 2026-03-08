@@ -1934,7 +1934,7 @@
 (def (cmd-markdown-insert-italic app) "Insert italic." (cmd-markdown-italic app))
 (def (cmd-markdown-insert-image app) "Insert image." (cmd-markdown-image app))
 (def (cmd-markdown-insert-list-item app) "Insert list item." (cmd-markdown-list-item app))
-(def (cmd-markdown-mode app) "Markdown mode." (echo-message! (app-state-echo app) "Markdown mode active"))
+;; cmd-markdown-mode moved to commands-parity2.ss (real lexer switching)
 (def (cmd-markdown-preview-outline app) "Outline." (echo-message! (app-state-echo app) "Use M-x markdown-outline"))
 (def (cmd-markdown-image app)
   "Insert markdown image."

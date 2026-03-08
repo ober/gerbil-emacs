@@ -41,13 +41,114 @@
 
 ;;; --- Text mode ---
 (def (cmd-text-mode app)
-  "Switch to text mode."
-  (echo-message! (app-state-echo app) "Text mode active"))
+  "Switch to text mode — plain text, no syntax highlighting."
+  (let* ((ed (current-qt-editor app))
+         (fr (app-state-frame app))
+         (buf (qt-edit-window-buffer (qt-current-window fr))))
+    (set! (buffer-lexer-lang buf) #f)
+    (sci-send ed SCI_SETLEXER 0)  ;; SCLEX_NULL — no highlighting
+    (sci-send ed SCI_STYLECLEARALL)
+    (echo-message! (app-state-echo app) "Text mode")))
+
+;;; --- Major mode switching helper ---
+(def (qt-set-major-mode! app lang-sym mode-name)
+  "Set major mode by changing lexer language and re-highlighting."
+  (let* ((ed (current-qt-editor app))
+         (fr (app-state-frame app))
+         (buf (qt-edit-window-buffer (qt-current-window fr))))
+    (set! (buffer-lexer-lang buf) lang-sym)
+    (qt-setup-highlighting! app buf)
+    (echo-message! (app-state-echo app) mode-name)))
 
 ;;; --- Shell script mode ---
 (def (cmd-shell-script-mode app)
-  "Switch to shell script mode."
-  (echo-message! (app-state-echo app) "Shell script mode active"))
+  "Switch to shell script mode with bash syntax highlighting."
+  (qt-set-major-mode! app 'bash "Shell-script mode"))
+
+;;; --- Python mode ---
+(def (cmd-python-mode app)
+  "Switch to Python mode with syntax highlighting."
+  (qt-set-major-mode! app 'python "Python mode"))
+
+;;; --- C mode ---
+(def (cmd-c-mode app)
+  "Switch to C mode with syntax highlighting."
+  (qt-set-major-mode! app 'c "C mode"))
+
+;;; --- C++ mode ---
+(def (cmd-c++-mode app)
+  "Switch to C++ mode with syntax highlighting."
+  (qt-set-major-mode! app 'c "C++ mode"))
+
+;;; --- JavaScript mode ---
+(def (cmd-js-mode app)
+  "Switch to JavaScript mode with syntax highlighting."
+  (qt-set-major-mode! app 'javascript "JavaScript mode"))
+
+;;; --- TypeScript mode ---
+(def (cmd-typescript-mode app)
+  "Switch to TypeScript mode with syntax highlighting."
+  (qt-set-major-mode! app 'javascript "TypeScript mode"))
+
+;;; --- Go mode ---
+(def (cmd-go-mode app)
+  "Switch to Go mode with syntax highlighting."
+  (qt-set-major-mode! app 'go "Go mode"))
+
+;;; --- Rust mode ---
+(def (cmd-rust-mode app)
+  "Switch to Rust mode with syntax highlighting."
+  (qt-set-major-mode! app 'rust "Rust mode"))
+
+;;; --- Ruby mode ---
+(def (cmd-ruby-mode app)
+  "Switch to Ruby mode with syntax highlighting."
+  (qt-set-major-mode! app 'ruby "Ruby mode"))
+
+;;; --- Markdown mode ---
+(def (cmd-markdown-mode app)
+  "Switch to Markdown mode with syntax highlighting."
+  (qt-set-major-mode! app 'markdown "Markdown mode"))
+
+;;; --- Org mode ---
+(def (cmd-org-mode-switch app)
+  "Switch to Org mode with syntax highlighting."
+  (qt-set-major-mode! app 'org "Org mode"))
+
+;;; --- YAML mode ---
+(def (cmd-yaml-mode app)
+  "Switch to YAML mode with syntax highlighting."
+  (qt-set-major-mode! app 'yaml "YAML mode"))
+
+;;; --- JSON mode ---
+(def (cmd-json-mode app)
+  "Switch to JSON mode with syntax highlighting."
+  (qt-set-major-mode! app 'json "JSON mode"))
+
+;;; --- SQL mode ---
+(def (cmd-sql-mode app)
+  "Switch to SQL mode with syntax highlighting."
+  (qt-set-major-mode! app 'sql "SQL mode"))
+
+;;; --- Lua mode ---
+(def (cmd-lua-mode app)
+  "Switch to Lua mode with syntax highlighting."
+  (qt-set-major-mode! app 'lua "Lua mode"))
+
+;;; --- HTML mode ---
+(def (cmd-html-mode app)
+  "Switch to HTML mode with syntax highlighting."
+  (qt-set-major-mode! app 'html "HTML mode"))
+
+;;; --- CSS mode ---
+(def (cmd-css-mode app)
+  "Switch to CSS mode with syntax highlighting."
+  (qt-set-major-mode! app 'css "CSS mode"))
+
+;;; --- Scheme mode ---
+(def (cmd-scheme-mode app)
+  "Switch to Scheme/Gerbil mode with syntax highlighting."
+  (qt-set-major-mode! app 'scheme "Scheme mode"))
 
 ;;; --- Check parens ---
 (def (cmd-check-parens app)

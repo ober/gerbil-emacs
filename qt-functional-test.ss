@@ -3412,6 +3412,28 @@
   (displayln "Group 24 complete"))
 
 ;;;============================================================================
+;;; Group 25: Major mode switching
+;;;============================================================================
+
+(def (run-group-25-major-modes)
+  (displayln)
+  (displayln "=== Group 25: Major Mode Switching ===")
+  ;; Check mode commands are registered
+  (for-each
+    (lambda (pair)
+      (let ((name (car pair)))
+        (if (find-command name)
+          (pass! (string-append (symbol->string name) " registered"))
+          (fail! (symbol->string name) "not found" "registered"))))
+    '((python-mode) (c-mode) (c++-mode) (js-mode) (typescript-mode)
+      (go-mode) (rust-mode) (ruby-mode) (markdown-mode)
+      (yaml-mode) (json-mode) (sql-mode) (lua-mode)
+      (html-mode) (css-mode) (scheme-mode)
+      (text-mode) (shell-script-mode)
+      (scroll-left) (scroll-right)))
+  (displayln "Group 25 complete"))
+
+;;;============================================================================
 ;;; Main
 ;;;============================================================================
 
@@ -3444,6 +3466,7 @@
     (run-group-23-helm)
     (run-group-21-theme-split-lsp)
     (run-group-24-ibuffer)
+    (run-group-25-major-modes)
 
     (displayln "---")
     (displayln "Results: " *passes* " passed, " *failures* " failed")

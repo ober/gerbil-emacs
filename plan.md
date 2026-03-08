@@ -55,7 +55,7 @@ Implemented popup UX matching Ruby Scintilla editors — inline autocomplete dro
 
 ### Maintenance
 - ~~**Split over-limit files**~~ — DONE: split `qt/commands-edit.ss` (2457→1155+1325) and `editor-extra-editing.ss` (2204→1097+1130). Remaining `editor-extra-media.ss` (2013) and `qt/commands-vcs.ss` (2003) are barely over limit
-- ~~**Test coverage**~~ — DONE: added Group 13 tests (dired, which-key, zoom, compile/search, bookmarks, M-x history). 181 total TUI functional tests, 334 Qt tests
+- ~~**Test coverage**~~ — DONE: added Group 13 tests (dired, which-key, zoom, compile/search, bookmarks, M-x history). 181 total TUI functional tests, 354 Qt tests
 
 ### Recently Completed
 - ~~**Vterm terminal fixes**~~ — DONE: PTY window size from editor dimensions, PS1 prompt cleanup, batched rendering for speed
@@ -100,6 +100,9 @@ Implemented popup UX matching Ruby Scintilla editors — inline autocomplete dro
 - ~~**Multi-language flycheck**~~ — DONE: extended from Gerbil-only to 7 languages (Python, JS/TS/eslint, Go/go-vet, Shell/shellcheck, C/C++/gcc, Ruby). Auto-detects by file extension, runs on save
 - ~~**Flyspell visual indicators**~~ — DONE: red squiggly underlines using Scintilla INDIC_SQUIGGLE (indicator 28), cleared on toggle-off
 - ~~**Multi-language which-function**~~ — DONE: upgraded from Scheme-only to 6 language families (Scheme/Gerbil, Python, C/Go/Rust, JS/TS). Both TUI and Qt
+- ~~**Major mode switching**~~ — DONE: 18 language modes (Python, C, C++, JS, TS, Go, Rust, Ruby, Markdown, YAML, JSON, SQL, Lua, HTML, CSS, Scheme, Shell, Text) with real lexer switching via `M-x <lang>-mode`
+- ~~**Flymake/flyspell delegate stubs**~~ — DONE: `toggle-flymake` delegates to flycheck, `toggle-flyspell` delegates to flyspell-mode
+- ~~**Horizontal scroll**~~ — DONE: `scroll-left`/`scroll-right` via Scintilla SCI_LINESCROLL (10 columns per invocation)
 
 ### Aspirational
 - LSP in TUI
