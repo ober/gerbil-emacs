@@ -23,20 +23,18 @@ Implemented popup UX matching Ruby Scintilla editors — inline autocomplete dro
 2. **`qt/commands.ss`** (facade) — for forward-ref functions like `cmd-quit`
 
 ### File Size Status
-| File | Lines | Status |
-|------|-------|--------|
-| `qt/commands-edit.ss` | ~1155 | OK (split into edit + edit2) |
-| `qt/commands-edit2.ss` | ~1325 | OK |
-| `editor-extra-editing.ss` | ~1097 | OK (split into editing + editing2) |
-| `editor-extra-editing2.ss` | ~1130 | OK |
-| `qt/commands-config.ss` | ~1087 | OK (split into config + config2) |
-| `qt/commands-config2.ss` | ~1359 | OK |
-| `qt/commands-ide.ss` | ~1165 | OK (split into ide + ide2) |
-| `qt/commands-ide2.ss` | ~1540 | OK |
-| `qt/commands-parity.ss` | ~1030 | OK (split into parity + parity2) |
-| `qt/commands-parity2.ss` | ~1118 | OK |
+All Qt command files are under the 2000-line limit after comprehensive splits.
+26 command files total (13 pairs). Chain order:
+```
+core → core2 → edit → edit2 → search → search2 → file → file2 →
+sexp → sexp2 → ide → ide2 → vcs → vcs2 → lsp → shell → shell2 →
+modes → modes2 → config → config2 → parity → parity2 →
+aliases → aliases2 → facade
+```
+Largest files: modes (~1851), lsp (~1802), search (~1778)
+| TUI File | Lines | Status |
+|----------|-------|--------|
 | `editor-extra-media.ss` | ~2013 | Slightly over limit |
-| `qt/commands-vcs.ss` | ~2003 | Slightly over limit |
 
 ---
 
@@ -58,6 +56,15 @@ Implemented popup UX matching Ruby Scintilla editors — inline autocomplete dro
 - ~~**Test coverage**~~ — DONE: added Group 13 tests (dired, which-key, zoom, compile/search, bookmarks, M-x history). 181 total TUI functional tests, 398 Qt tests
 
 ### Recently Completed
+- ~~**Qt command file splits**~~ — DONE: split 8 oversized files (modes, search, shell, sexp, aliases, core, file, vcs) into paired *2.ss files. All 26 Qt command files now under 2000-line limit
+- ~~**Overwrite mode upgrade**~~ — DONE: real SCI_SETOVERTYPE toggle (was display-only flag), modeline shows "Ovwrt" indicator
+- ~~**Modeline indicators**~~ — DONE: overwrite mode and narrowing indicators wired via boxed callback providers
+- ~~**Hippie-expand upgrade**~~ — DONE: multi-strategy expansion (dabbrev → file name → cycle reset)
+- ~~**Quoted-insert (C-q)**~~ — DONE: real key interception in both Qt and TUI (was stub)
+- ~~**goto-last-change-reverse**~~ — DONE: navigate forward through edit positions (both layers)
+- ~~**rename-visited-file**~~ — DONE: rename file on disk + update buffer name (both layers)
+- ~~**Edit position tracking**~~ — DONE: qt-record-edit-position!/tui-record-edit-position! hooked into self-insert
+- ~~**Qt functional tests**~~ — 413 tests (Groups 31-32 added)
 - ~~**Stub upgrades batch 2**~~ — DONE: `cape-keyword` (narrowing insert), `helm-dash` (man page search), `erc`/`rcirc` (IRC via TCP), `gnus` (RSS feeds), `mu4e`/`notmuch` (mail integration), `native-compile-file` (gxc -S), `eww-submit-form` (form parsing)
 - ~~**Org-sort, Mail, Sorting, Native-compile upgrades**~~ — DONE: `org-sort` (alphabetical child heading sort), `compose-mail`/`message-send` (mail composition + msmtp/sendmail), `sort-columns`/`sort-regexp-fields`, `native-compile-async` (gxc compilation)
 - ~~**PDF/DocView upgrade**~~ — DONE: Qt PDF viewing with `pdftotext` page extraction, navigation (next/prev/goto), DocView conversion for PDF/PS
