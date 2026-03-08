@@ -891,6 +891,8 @@
   (register-command! 'dap-step-over cmd-dap-step-over)
   (register-command! 'dap-step-in cmd-dap-step-in)
   (register-command! 'dap-step-out cmd-dap-step-out)
+  (register-command! 'dap-continue cmd-dap-continue)
+  (register-command! 'dap-repl cmd-dap-repl)
   ;; Parity batch 7: bookmark menu, clone buffer, macro, text-scale, magit-unstage-file
   (register-command! 'bookmark-bmenu-list cmd-bookmark-bmenu-list)
   (register-command! 'clone-indirect-buffer cmd-clone-indirect-buffer)

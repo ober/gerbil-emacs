@@ -1097,6 +1097,15 @@
     (begin (dap-send! "stepOut") (echo-message! (app-state-echo app) "DAP: step out"))
     (echo-message! (app-state-echo app) "DAP: step out")))
 
+(def (cmd-dap-repl app)
+  "Send GDB/debugger command interactively."
+  (if (not *dap-process*)
+    (echo-message! (app-state-echo app) "No debug session")
+    (let ((cmd (app-read-string app "GDB> ")))
+      (when (and cmd (not (string-empty? cmd)))
+        (dap-send! cmd)
+        (echo-message! (app-state-echo app) (string-append "GDB: " cmd))))))
+
 ;; Snippet / template system (yasnippet-like)
 ;; Simple snippet system with $1, $2, etc. placeholders
 

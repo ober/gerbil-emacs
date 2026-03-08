@@ -379,6 +379,7 @@
   (register-command! 'dap-step-over cmd-dap-step-over)
   (register-command! 'dap-step-in cmd-dap-step-in)
   (register-command! 'dap-step-out cmd-dap-step-out)
+  (register-command! 'dap-repl cmd-dap-repl)
   ;; Snippets
   (register-command! 'yas-insert-snippet cmd-yas-insert-snippet)
   (register-command! 'yas-new-snippet cmd-yas-new-snippet)

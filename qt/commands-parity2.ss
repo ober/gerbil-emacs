@@ -401,34 +401,105 @@
       (echo-message! (app-state-echo app) "Buffer has no file"))))
 
 ;;;============================================================================
-;;; DAP debug commands
+;;; DAP/GDB debug commands — real GDB/MI interface
 ;;;============================================================================
 
 (def *qt-dap-breakpoints* (make-hash-table))
 (def *qt-dap-process* #f)
+(def *qt-dap-program* #f)
+(def *qt-dap-output* '())  ; accumulated GDB output lines
+
+(def (gdb-send! cmd)
+  "Send a GDB/MI command to the running GDB process."
+  (when *qt-dap-process*
+    (let ((port (##process-port *qt-dap-process*)))
+      (display cmd port)
+      (newline port)
+      (force-output port))))
+
+(def (gdb-read-until-prompt!)
+  "Read GDB output lines until (gdb) prompt."
+  (when *qt-dap-process*
+    (let ((port (##process-port *qt-dap-process*))
+          (lines []))
+      (let loop ()
+        (let ((line (with-exception-catcher
+                      (lambda (e) #f)
+                      (lambda () (read-line port)))))
+          (cond
+            ((not line) lines)
+            ((eof-object? line) lines)
+            ((string-prefix? "(gdb)" line) (reverse (cons line lines)))
+            (else
+              (set! lines (cons line lines))
+              (loop))))))))
+
+(def (gdb-show-output! app lines)
+  "Display GDB output in the *GDB* buffer."
+  (let* ((fr (app-state-frame app))
+         (win (qt-current-window fr))
+         (ed (qt-edit-window-editor win))
+         (text (string-join (or lines '("(no output)")) "\n"))
+         (gdb-buf (qt-buffer-create! "*GDB*" ed #f)))
+    (qt-buffer-attach! ed gdb-buf)
+    (set! (qt-edit-window-buffer win) gdb-buf)
+    ;; Append to accumulated output
+    (set! *qt-dap-output* (append *qt-dap-output* (or lines [])))
+    (qt-plain-text-edit-set-text! ed (string-join *qt-dap-output* "\n"))
+    (qt-plain-text-edit-set-cursor-position! ed
+      (string-length (qt-plain-text-edit-text ed)))))
 
 (def (cmd-dap-debug app)
-  "Start debug session."
+  "Start GDB debug session for a program."
   (let ((program (qt-echo-read-string app "Program to debug: ")))
-    (if (or (not program) (= (string-length program) 0))
+    (if (or (not program) (string=? program ""))
       (echo-error! (app-state-echo app) "No program specified")
       (begin
-        (set! *qt-dap-process* #f)
-        (echo-message! (app-state-echo app)
-          (string-append "DAP: debug session started for " program))))))
+        ;; Kill existing session
+        (when *qt-dap-process*
+          (with-exception-catcher (lambda (e) #f)
+            (lambda ()
+              (gdb-send! "quit")
+              (process-status *qt-dap-process*)))
+          (set! *qt-dap-process* #f))
+        ;; Start GDB with MI interface
+        (set! *qt-dap-program* program)
+        (with-exception-catcher
+          (lambda (e)
+            (echo-error! (app-state-echo app)
+              (string-append "Failed to start GDB: "
+                (with-output-to-string "" (lambda () (display-exception e))))))
+          (lambda ()
+            (set! *qt-dap-process*
+              (open-process
+                (list path: "gdb"
+                      arguments: (list "--quiet" "--interpreter=mi2" program)
+                      stdin-redirection: #t stdout-redirection: #t
+                      stderr-redirection: #t)))
+            (let ((output (gdb-read-until-prompt!)))
+              ;; Set pending breakpoints
+              (hash-for-each
+                (lambda (file lines)
+                  (for-each
+                    (lambda (line)
+                      (gdb-send! (string-append "-break-insert " file ":" (number->string line)))
+                      (gdb-read-until-prompt!))
+                    lines))
+                *qt-dap-breakpoints*)
+              ;; Run the program
+              (gdb-send! "-exec-run")
+              (let ((run-output (gdb-read-until-prompt!)))
+                (gdb-show-output! app (append (or output []) (or run-output [])))
+                (echo-message! (app-state-echo app)
+                  (string-append "GDB: debugging " program))))))))))
 
 (def (cmd-dap-breakpoint-toggle app)
   "Toggle breakpoint at current line."
   (let* ((ed (current-qt-editor app))
          (buf (current-qt-buffer app))
          (path (and buf (buffer-file-path buf)))
-         (text (qt-plain-text-edit-text ed))
-         (pos (qt-plain-text-edit-cursor-position ed))
-         (line (+ 1 (let loop ((i 0) (n 0))
-                      (if (>= i pos) n
-                        (loop (+ i 1)
-                              (if (char=? (string-ref text i) #\newline)
-                                (+ n 1) n)))))))
+         (pos (sci-send ed SCI_GETCURRENTPOS))
+         (line (+ 1 (sci-send ed SCI_LINEFROMPOSITION pos))))
     (if (not path)
       (echo-error! (app-state-echo app) "Buffer has no file")
       (let* ((existing (or (hash-get *qt-dap-breakpoints* path) '()))
@@ -437,26 +508,59 @@
           (begin
             (hash-put! *qt-dap-breakpoints* path
               (filter (lambda (l) (not (= l line))) existing))
+            ;; If GDB is running, remove breakpoint
+            (when *qt-dap-process*
+              (gdb-send! (string-append "-break-delete "
+                (path-strip-directory path) ":" (number->string line)))
+              (gdb-read-until-prompt!))
             (echo-message! (app-state-echo app)
               (string-append "Breakpoint removed at "
                 (path-strip-directory path) ":" (number->string line))))
           (begin
             (hash-put! *qt-dap-breakpoints* path (cons line existing))
+            ;; If GDB is running, set breakpoint
+            (when *qt-dap-process*
+              (gdb-send! (string-append "-break-insert " path ":" (number->string line)))
+              (gdb-read-until-prompt!))
             (echo-message! (app-state-echo app)
               (string-append "Breakpoint set at "
                 (path-strip-directory path) ":" (number->string line)))))))))
 
+(def (dap-step-command! app mi-cmd label)
+  "Execute a GDB step command and show output."
+  (if (not *qt-dap-process*)
+    (echo-error! (app-state-echo app) "No debug session (use M-x dap-debug first)")
+    (begin
+      (gdb-send! mi-cmd)
+      (let ((output (gdb-read-until-prompt!)))
+        (gdb-show-output! app output)
+        (echo-message! (app-state-echo app) (string-append "GDB: " label))))))
+
 (def (cmd-dap-step-over app)
-  "Step over in debug session."
-  (echo-message! (app-state-echo app) "DAP: step over"))
+  "Step over in debug session (GDB next)."
+  (dap-step-command! app "-exec-next" "step over"))
 
 (def (cmd-dap-step-in app)
-  "Step into in debug session."
-  (echo-message! (app-state-echo app) "DAP: step in"))
+  "Step into in debug session (GDB step)."
+  (dap-step-command! app "-exec-step" "step in"))
 
 (def (cmd-dap-step-out app)
-  "Step out in debug session."
-  (echo-message! (app-state-echo app) "DAP: step out"))
+  "Step out in debug session (GDB finish)."
+  (dap-step-command! app "-exec-finish" "step out"))
+
+(def (cmd-dap-continue app)
+  "Continue execution in debug session."
+  (dap-step-command! app "-exec-continue" "continue"))
+
+(def (cmd-dap-repl app)
+  "Send GDB command interactively."
+  (if (not *qt-dap-process*)
+    (echo-error! (app-state-echo app) "No debug session")
+    (let ((cmd (qt-echo-read-string app "GDB> ")))
+      (when (and cmd (> (string-length cmd) 0))
+        (gdb-send! cmd)
+        (let ((output (gdb-read-until-prompt!)))
+          (gdb-show-output! app output))))))
 
 ;;;============================================================================
 ;;; Smerge mode: Git conflict marker resolution (Qt)

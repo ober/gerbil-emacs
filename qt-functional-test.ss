@@ -4710,6 +4710,68 @@
   (displayln "Group 45 complete"))
 
 ;;;============================================================================
+;;; Group 46: GDB/MI debugger upgrades
+;;;============================================================================
+
+(def (run-group-46-gdb-debugger)
+  (displayln "\n=== Group 46: GDB/MI debugger commands ===")
+
+  ;; Test 1-7: All DAP commands are registered
+  (for-each
+    (lambda (name)
+      (let ((label (string-append (symbol->string name) " registered")))
+        (if (procedure? (find-command name))
+          (pass! label)
+          (fail! label #f "procedure"))))
+    '(dap-debug dap-breakpoint-toggle dap-step-over dap-step-in
+      dap-step-out dap-continue dap-repl))
+
+  ;; Test 8: step commands without session show error
+  (let-values (((ed w app) (make-qt-test-app "test46")))
+    (with-catch
+      (lambda (e) (fail! "dap-no-session"
+                         (with-output-to-string "" (lambda () (display-exception e))) "no error"))
+      (lambda ()
+        (execute-command! app 'dap-step-over)
+        (let ((msg (echo-state-message (app-state-echo app))))
+          (if (string-contains msg "No debug session")
+            (pass! "dap-step-over requires session")
+            (fail! "dap-no-session" msg "contains No debug session")))))
+
+    ;; Test 9: breakpoint toggle on buffer with file
+    (with-catch
+      (lambda (e) (fail! "dap-breakpoint"
+                         (with-output-to-string "" (lambda () (display-exception e))) "no error"))
+      (lambda ()
+        (let* ((fr (app-state-frame app))
+               (win (qt-current-window fr))
+               (test-buf (qt-buffer-create! "test.c" ed "/tmp/test.c")))
+          (qt-buffer-attach! ed test-buf)
+          (qt-edit-window-buffer-set! win test-buf)
+          (qt-plain-text-edit-set-text! ed "int main() {\n  return 0;\n}\n")
+          (sci-send ed SCI_GOTOPOS 15)  ; line 2
+          (execute-command! app 'dap-breakpoint-toggle)
+          (let ((msg (echo-state-message (app-state-echo app))))
+            (if (string-contains msg "Breakpoint set")
+              (pass! "dap-breakpoint-toggle sets breakpoint")
+              (fail! "dap-breakpoint" msg "contains Breakpoint set"))))))
+
+    ;; Test 10: toggle breakpoint again removes it
+    (with-catch
+      (lambda (e) (fail! "dap-bp-remove"
+                         (with-output-to-string "" (lambda () (display-exception e))) "no error"))
+      (lambda ()
+        (execute-command! app 'dap-breakpoint-toggle)
+        (let ((msg (echo-state-message (app-state-echo app))))
+          (if (string-contains msg "removed")
+            (pass! "dap-breakpoint-toggle removes breakpoint")
+            (fail! "dap-bp-remove" msg "contains removed")))))
+
+    (destroy-qt-test-app! ed w))
+
+  (displayln "Group 46 complete"))
+
+;;;============================================================================
 ;;; Main
 ;;;============================================================================
 
@@ -4763,6 +4825,7 @@
     (run-group-43-game-text-upgrades)
     (run-group-44-parity5-upgrades)
     (run-group-45-rest-sql-denote)
+    (run-group-46-gdb-debugger)
 
     (displayln "---")
     (displayln "Results: " *passes* " passed, " *failures* " failed")
