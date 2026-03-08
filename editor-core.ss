@@ -1165,6 +1165,31 @@
 (def (cmd-delete-other-windows app)
   (frame-delete-other-windows! (app-state-frame app)))
 
+(def (cmd-select-window-by-number app n)
+  "Select window by 1-based number."
+  (let* ((fr (app-state-frame app))
+         (wins (frame-windows fr))
+         (count (length wins))
+         (idx (- n 1)))
+    (if (< idx count)
+      (begin
+        (set! (frame-current-idx fr) idx)
+        (echo-message! (app-state-echo app)
+          (string-append "Window " (number->string n))))
+      (echo-error! (app-state-echo app)
+        (string-append "No window " (number->string n)
+                       " (have " (number->string count) ")")))))
+
+(def (cmd-select-window-1 app) (cmd-select-window-by-number app 1))
+(def (cmd-select-window-2 app) (cmd-select-window-by-number app 2))
+(def (cmd-select-window-3 app) (cmd-select-window-by-number app 3))
+(def (cmd-select-window-4 app) (cmd-select-window-by-number app 4))
+(def (cmd-select-window-5 app) (cmd-select-window-by-number app 5))
+(def (cmd-select-window-6 app) (cmd-select-window-by-number app 6))
+(def (cmd-select-window-7 app) (cmd-select-window-by-number app 7))
+(def (cmd-select-window-8 app) (cmd-select-window-by-number app 8))
+(def (cmd-select-window-9 app) (cmd-select-window-by-number app 9))
+
 ;;;============================================================================
 ;;; Search highlighting (highlight all matches)
 ;;;============================================================================

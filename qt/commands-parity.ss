@@ -812,15 +812,46 @@
   "Switch to next frame (stub — gemacs is single-frame)."
   (echo-message! (app-state-echo app) "Only one frame"))
 
-;;; --- Winum mode (stub) ---
-(def *qt-winum-mode* #f)
+;;; --- Winum mode (window numbering) ---
+(def *qt-winum-mode* #t)  ; enabled by default
 (def (cmd-winum-mode app)
-  "Toggle window-numbering mode."
+  "Toggle window-numbering mode. When enabled, M-1..M-9 select windows by index."
   (set! *qt-winum-mode* (not *qt-winum-mode*))
   (echo-message! (app-state-echo app)
     (if *qt-winum-mode*
-      "Winum mode enabled (use M-1..M-9)"
+      "Winum mode enabled (use M-1..M-9 to select windows)"
       "Winum mode disabled")))
+
+(def (cmd-select-window-by-number app n)
+  "Select window by 1-based number."
+  (let* ((fr (app-state-frame app))
+         (wins (qt-frame-windows fr))
+         (count (length wins))
+         (idx (- n 1)))  ; 0-based index
+    (if (< idx count)
+      (begin
+        (set! (qt-frame-current-idx fr) idx)
+        (let* ((win (list-ref wins idx))
+               (ed (qt-edit-window-editor win))
+               (buf (qt-edit-window-buffer win)))
+          (when buf
+            (qt-buffer-attach! ed buf))
+          (qt-modeline-update! app)
+          (echo-message! (app-state-echo app)
+            (string-append "Window " (number->string n)))))
+      (echo-error! (app-state-echo app)
+        (string-append "No window " (number->string n)
+                       " (have " (number->string count) ")")))))
+
+(def (cmd-select-window-1 app) (cmd-select-window-by-number app 1))
+(def (cmd-select-window-2 app) (cmd-select-window-by-number app 2))
+(def (cmd-select-window-3 app) (cmd-select-window-by-number app 3))
+(def (cmd-select-window-4 app) (cmd-select-window-by-number app 4))
+(def (cmd-select-window-5 app) (cmd-select-window-by-number app 5))
+(def (cmd-select-window-6 app) (cmd-select-window-by-number app 6))
+(def (cmd-select-window-7 app) (cmd-select-window-by-number app 7))
+(def (cmd-select-window-8 app) (cmd-select-window-by-number app 8))
+(def (cmd-select-window-9 app) (cmd-select-window-by-number app 9))
 
 ;;; --- Help with tutorial ---
 (def (cmd-help-with-tutorial app)

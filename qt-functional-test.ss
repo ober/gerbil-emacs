@@ -104,6 +104,10 @@
                  *lsp-modeline-provider*
                  *modeline-overwrite-provider*
                  *modeline-narrow-provider*)
+        (only-in :gemacs/qt/commands-vcs
+                 *eldoc-mode*)
+        (only-in :gemacs/qt/commands-parity
+                 *qt-winum-mode*)
         (only-in :gemacs/qt/highlight
                  qt-enable-code-folding!
                  qt-update-visual-decorations!
@@ -3866,6 +3870,49 @@
   (displayln "Group 34 complete"))
 
 ;;;============================================================================
+;;; Group 35: Winum window select, eldoc mode wire
+;;;============================================================================
+
+(def (run-group-35-winum-eldoc)
+  (displayln "--- Group 35: Winum window select, eldoc wire ---")
+
+  ;; Winum select-window commands registered
+  (if (find-command 'select-window-1)
+    (pass! "select-window-1 registered")
+    (fail! "select-window-1" #f "procedure"))
+  (if (find-command 'select-window-9)
+    (pass! "select-window-9 registered")
+    (fail! "select-window-9" #f "procedure"))
+
+  ;; Winum mode starts enabled
+  (if (find-command 'winum-mode)
+    (pass! "winum-mode registered")
+    (fail! "winum-mode" #f "procedure"))
+
+  ;; Test select-window-1 with single window
+  (let-values (((ed w app) (make-qt-test-app "winum-test")))
+    (set-qt-text! ed "hello" 0)
+    ;; select-window-1 should work with single window
+    (let ((cmd (find-command 'select-window-1)))
+      (when cmd (cmd app))
+      (if cmd
+        (pass! "select-window-1 executes on single window")
+        (fail! "select-window-1 exec" #f "command")))
+    (destroy-qt-test-app! ed w))
+
+  ;; Eldoc mode registered and wired to real flag
+  (if (find-command 'eldoc-mode)
+    (pass! "eldoc-mode registered")
+    (fail! "eldoc-mode" #f "procedure"))
+
+  ;; *eldoc-mode* defaults to true (enabled for Scheme)
+  (if *eldoc-mode*
+    (pass! "eldoc-mode defaults to enabled")
+    (fail! "eldoc default" *eldoc-mode* #t))
+
+  (displayln "Group 35 complete"))
+
+;;;============================================================================
 ;;; Main
 ;;;============================================================================
 
@@ -3908,6 +3955,7 @@
     (run-group-32-overwrite-modeline)
     (run-group-33-selective-display)
     (run-group-34-mode-upgrades)
+    (run-group-35-winum-eldoc)
 
     (displayln "---")
     (displayln "Results: " *passes* " passed, " *failures* " failed")

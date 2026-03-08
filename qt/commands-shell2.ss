@@ -373,15 +373,15 @@ When enabled, typing while region is active replaces the selected text."
       (echo-message! (app-state-echo app) "Xref: forward"))))
 
 ;;;============================================================================
-;;; Eldoc mode toggle
-
-(def *qt-eldoc-enabled* #f)
+;;; Eldoc mode toggle (wired to the real *eldoc-mode* flag in commands-vcs)
 
 (def (cmd-eldoc-mode app)
-  "Toggle eldoc mode — shows function signatures in echo area."
-  (set! *qt-eldoc-enabled* (not *qt-eldoc-enabled*))
+  "Toggle eldoc mode — shows function signatures in echo area on idle.
+When enabled, displays the signature of the enclosing function for
+Scheme/Gerbil/Lisp buffers. Also used by LSP for hover information."
+  (set! *eldoc-mode* (not *eldoc-mode*))
   (echo-message! (app-state-echo app)
-    (if *qt-eldoc-enabled* "Eldoc mode: on" "Eldoc mode: off")))
+    (if *eldoc-mode* "Eldoc mode enabled" "Eldoc mode disabled")))
 
 (def (cmd-toggle-global-eldoc app)
   "Toggle global eldoc mode."
