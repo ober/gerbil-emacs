@@ -1,7 +1,7 @@
 # Gemacs vs GNU Emacs — Feature Comparison
 
-> **Last updated:** 2026-03-07
-> **Gemacs version:** master (10ac23e)
+> **Last updated:** 2026-03-08
+> **Gemacs version:** master (84ec97f)
 > **Compared against:** GNU Emacs 29.x / 30.x feature set
 
 ## Status Legend
@@ -378,7 +378,7 @@
 | Sudo write | :white_check_mark: | Write as root |
 | File local variables | :large_blue_circle: | Dir-locals via `.gemacs-config` |
 | Find file literally | :large_blue_circle: | Opens file with syntax highlighting disabled (SCLEX_NULL) |
-| File encoding detection | :yellow_circle: | Basic — Scintilla handles internally |
+| File encoding detection | :large_blue_circle: | UTF-8 default; `set-buffer-file-coding-system` with 15 encodings, `revert-buffer-with-coding-system`, per-buffer encoding storage |
 | Line ending conversion | :white_check_mark: | Unix/DOS/Mac detection and conversion |
 
 **Summary:** File operations are comprehensive. Find, save, revert, auto-revert, recent files all work.

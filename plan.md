@@ -64,7 +64,13 @@ Largest files: modes (~1851), lsp (~1802), search (~1778)
 - ~~**goto-last-change-reverse**~~ — DONE: navigate forward through edit positions (both layers)
 - ~~**rename-visited-file**~~ — DONE: rename file on disk + update buffer name (both layers)
 - ~~**Edit position tracking**~~ — DONE: qt-record-edit-position!/tui-record-edit-position! hooked into self-insert
-- ~~**Qt functional tests**~~ — 413 tests (Groups 31-32 added)
+- ~~**Qt functional tests**~~ — 432 tests (Groups 31-35 added)
+- ~~**Selective display (C-x $)**~~ — DONE: hide lines by indentation level using SCI_HIDELINES/SCI_SHOWLINES
+- ~~**Show-paren-mode upgrade**~~ — DONE: real toggle of brace matching in qt-update-visual-decorations
+- ~~**Delete-selection-mode upgrade**~~ — DONE: typing deselects before insert when mode OFF
+- ~~**Encoding support**~~ — DONE: `set-buffer-file-coding-system` with 15 encodings, `revert-buffer-with-coding-system` with narrowing selection
+- ~~**Winum-mode upgrade**~~ — DONE: real select-window-1..9 commands in both TUI and Qt
+- ~~**Eldoc mode wire**~~ — DONE: cmd-eldoc-mode now toggles the real *eldoc-mode* flag
 - ~~**Stub upgrades batch 2**~~ — DONE: `cape-keyword` (narrowing insert), `helm-dash` (man page search), `erc`/`rcirc` (IRC via TCP), `gnus` (RSS feeds), `mu4e`/`notmuch` (mail integration), `native-compile-file` (gxc -S), `eww-submit-form` (form parsing)
 - ~~**Org-sort, Mail, Sorting, Native-compile upgrades**~~ — DONE: `org-sort` (alphabetical child heading sort), `compose-mail`/`message-send` (mail composition + msmtp/sendmail), `sort-columns`/`sort-regexp-fields`, `native-compile-async` (gxc compilation)
 - ~~**PDF/DocView upgrade**~~ — DONE: Qt PDF viewing with `pdftotext` page extraction, navigation (next/prev/goto), DocView conversion for PDF/PS
