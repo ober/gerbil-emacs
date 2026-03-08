@@ -1357,4 +1357,66 @@
           (string-append indent ";; " rest))))))
 
 ;;;============================================================================
+;;; Hook management (Qt)
+;;;============================================================================
+
+(def (cmd-add-hook app)
+  "Add a command to a hook (e.g. after-save-hook)."
+  (let ((hook-name (qt-echo-read-string app "Hook name: ")))
+    (when (and hook-name (> (string-length hook-name) 0))
+      (let ((func-name (qt-echo-read-string app "Command name: ")))
+        (when (and func-name (> (string-length func-name) 0))
+          (let ((cmd (find-command (string->symbol func-name))))
+            (if cmd
+              (begin
+                (add-hook! (string->symbol hook-name) cmd)
+                (echo-message! (app-state-echo app)
+                  (string-append "Added " func-name " to " hook-name)))
+              (echo-error! (app-state-echo app)
+                (string-append "Unknown command: " func-name)))))))))
+
+(def (cmd-remove-hook app)
+  "Remove a command from a hook."
+  (let ((hook-name (qt-echo-read-string app "Hook name: ")))
+    (when (and hook-name (> (string-length hook-name) 0))
+      (let ((func-name (qt-echo-read-string app "Command to remove: ")))
+        (when (and func-name (> (string-length func-name) 0))
+          (let ((cmd (find-command (string->symbol func-name))))
+            (if cmd
+              (begin
+                (remove-hook! (string->symbol hook-name) cmd)
+                (echo-message! (app-state-echo app)
+                  (string-append "Removed " func-name " from " hook-name)))
+              (echo-error! (app-state-echo app)
+                (string-append "Unknown command: " func-name)))))))))
+
+(def (cmd-list-hooks app)
+  "List all active hooks and their functions."
+  (let* ((fr (app-state-frame app))
+         (ed (current-qt-editor app))
+         (echo (app-state-echo app))
+         (entries (hash->list *hooks*))
+         (name "*Hooks*"))
+    (if (null? entries)
+      (echo-message! echo "No hooks defined")
+      (let* ((buf (or (buffer-by-name name)
+                      (qt-buffer-create! name ed #f)))
+             (text (string-join
+                     (map (lambda (entry)
+                            (let ((hook (symbol->string (car entry)))
+                                  (fns (cdr entry)))
+                              (string-append hook ":\n"
+                                (string-join
+                                  (map (lambda (f)
+                                         (string-append "  " (object->string f)))
+                                       fns)
+                                  "\n"))))
+                          entries)
+                     "\n\n")))
+        (qt-buffer-attach! ed buf)
+        (set! (qt-edit-window-buffer (qt-current-window fr)) buf)
+        (qt-plain-text-edit-set-text! ed text)
+        (qt-text-document-set-modified! (buffer-doc-pointer buf) #f)
+        (sci-send ed SCI_SETREADONLY 1 0)
+        (qt-plain-text-edit-set-cursor-position! ed 0)))))
 

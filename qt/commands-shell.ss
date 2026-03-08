@@ -603,16 +603,24 @@ SPC = page down, DEL = page up, q = quit view-mode."
       "Enter file number to open, or q to quit")))
 
 (def (cmd-toggle-frame-fullscreen app)
-  "Toggle fullscreen."
-  (let ((win (qt-frame-main-win (app-state-frame app))))
-    (qt-widget-show-fullscreen! win)
-    (echo-message! (app-state-echo app) "Fullscreen toggled")))
+  "Toggle fullscreen mode."
+  (let* ((win (qt-frame-main-win (app-state-frame app)))
+         (state (qt-widget-window-state win)))
+    (if (> (bitwise-and state QT_WINDOW_FULL_SCREEN) 0)
+      (begin (qt-widget-show-normal! win)
+             (echo-message! (app-state-echo app) "Exited fullscreen"))
+      (begin (qt-widget-show-fullscreen! win)
+             (echo-message! (app-state-echo app) "Entered fullscreen")))))
 
 (def (cmd-toggle-frame-maximized app)
-  "Toggle maximized."
-  (let ((win (qt-frame-main-win (app-state-frame app))))
-    (qt-widget-show-maximized! win)
-    (echo-message! (app-state-echo app) "Maximized")))
+  "Toggle maximized state."
+  (let* ((win (qt-frame-main-win (app-state-frame app)))
+         (state (qt-widget-window-state win)))
+    (if (> (bitwise-and state QT_WINDOW_MAXIMIZED) 0)
+      (begin (qt-widget-show-normal! win)
+             (echo-message! (app-state-echo app) "Restored from maximized"))
+      (begin (qt-widget-show-maximized! win)
+             (echo-message! (app-state-echo app) "Maximized")))))
 
 (def *menu-bar-visible* #t)
 

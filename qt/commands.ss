@@ -449,8 +449,10 @@
               (echo-error! echo "Failed to save remote file"))))
       ;; Save to existing local path
       (begin
+        ;; Run before-save-hook
+        (run-hooks! 'before-save-hook app buf)
         ;; Create backup file if original exists and hasn't been backed up yet
-        (when (and (file-exists? path) (not (buffer-backup-done? buf)))
+        (when (and *backup-files* (file-exists? path) (not (buffer-backup-done? buf)))
           (let ((backup-path (string-append path "~")))
             (with-catch
               (lambda (e) #f)  ; Ignore backup errors
@@ -479,6 +481,8 @@
               (delete-file auto-save-path)))
           (file-mtime-record! path)
           (echo-message! echo (string-append "Wrote " path))
+          ;; Run after-save-hook
+          (run-hooks! 'after-save-hook app buf)
           ;; Compile-on-save for Gerbil projects
           (compile-on-save-check! app path)
           ;; Flycheck: run syntax check on Gerbil files
@@ -530,6 +534,8 @@
                     (qt-buffer-attach! ed other)
                     (set! (qt-edit-window-buffer (qt-current-window fr))
                           other))))
+              ;; Run kill-buffer-hook before cleanup
+              (run-hooks! 'kill-buffer-hook app buf)
               ;; Clean up syntax highlighter if applicable
               (qt-remove-highlighting! buf)
               ;; Clean up dired entries and marks if applicable
@@ -594,8 +600,15 @@
       (echo-error! (app-state-echo app) "Buffer has no file"))))
 
 (def (cmd-find-file-literally app)
-  "Open a file without any processing (same as find-file)."
-  (cmd-find-file app))
+  "Open a file without syntax highlighting or mode hooks."
+  (cmd-find-file app)
+  ;; After opening, disable lexer/highlighting for literal viewing
+  (let* ((fr (app-state-frame app))
+         (buf (qt-edit-window-buffer (qt-current-window fr)))
+         (ed (current-qt-editor app)))
+    (set! (buffer-lexer-lang buf) #f)
+    (sci-send ed SCI_SETLEXER 0)
+    (echo-message! (app-state-echo app) "Opened literally (no highlighting)")))
 
 (def (qt-org-buffer? buf)
   "Check if a buffer is an org-mode file."

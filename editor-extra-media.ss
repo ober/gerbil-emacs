@@ -1136,30 +1136,51 @@
       (string-append "Recent files: removed " (number->string (- before (length cleaned)))
                      " non-existent entries"))))
 
-;; Save hooks
-(def *hooks* (make-hash-table))  ; hook-name -> list of symbols
-
+;; Interactive hook management — uses core.ss hook system
 (def (cmd-add-hook app)
-  "Add a hook function — registers a named hook."
+  "Add a command to a hook (e.g. after-save-hook)."
   (let ((hook-name (app-read-string app "Hook name: ")))
     (when (and hook-name (not (string-empty? hook-name)))
-      (let ((func-name (app-read-string app "Function name: ")))
+      (let ((func-name (app-read-string app "Command name: ")))
         (when (and func-name (not (string-empty? func-name)))
-          (let ((existing (or (hash-get *hooks* hook-name) '())))
-            (hash-put! *hooks* hook-name (cons func-name existing))
-            (echo-message! (app-state-echo app)
-              (string-append "Added " func-name " to " hook-name))))))))
+          (let ((cmd (find-command (string->symbol func-name))))
+            (if cmd
+              (begin
+                (add-hook! (string->symbol hook-name) cmd)
+                (echo-message! (app-state-echo app)
+                  (string-append "Added " func-name " to " hook-name)))
+              (echo-error! (app-state-echo app)
+                (string-append "Unknown command: " func-name)))))))))
 
 (def (cmd-remove-hook app)
-  "Remove a hook function."
+  "Remove a command from a hook."
   (let ((hook-name (app-read-string app "Hook name: ")))
     (when (and hook-name (not (string-empty? hook-name)))
-      (let ((func-name (app-read-string app "Function to remove: ")))
+      (let ((func-name (app-read-string app "Command to remove: ")))
         (when (and func-name (not (string-empty? func-name)))
-          (let ((existing (or (hash-get *hooks* hook-name) '())))
-            (hash-put! *hooks* hook-name (filter (lambda (f) (not (string=? f func-name))) existing))
-            (echo-message! (app-state-echo app)
-              (string-append "Removed " func-name " from " hook-name))))))))
+          (let ((cmd (find-command (string->symbol func-name))))
+            (if cmd
+              (begin
+                (remove-hook! (string->symbol hook-name) cmd)
+                (echo-message! (app-state-echo app)
+                  (string-append "Removed " func-name " from " hook-name)))
+              (echo-error! (app-state-echo app)
+                (string-append "Unknown command: " func-name)))))))))
+
+(def (cmd-list-hooks app)
+  "List all active hooks and their functions."
+  (let ((entries (hash->list *hooks*)))
+    (if (null? entries)
+      (echo-message! (app-state-echo app) "No hooks defined")
+      (let ((text (string-join
+                    (map (lambda (entry)
+                           (let ((hook (symbol->string (car entry)))
+                                 (fns (cdr entry)))
+                             (string-append hook ": "
+                               (number->string (length fns)) " function(s)")))
+                         entries)
+                    "; ")))
+        (echo-message! (app-state-echo app) text)))))
 
 ;; Elpa/Melpa package sources
 (def (cmd-package-archives app)

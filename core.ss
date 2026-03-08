@@ -71,6 +71,10 @@
 
   ;; Hooks
   *post-buffer-attach-hook*
+  *hooks*
+  add-hook!
+  remove-hook!
+  run-hooks!
 
   ;; File I/O helpers
   read-file-as-string
@@ -995,6 +999,34 @@
 ;; Called after buffer-attach! with (editor buffer) arguments.
 ;; Set by app-init! to restore syntax highlighting per buffer.
 (def *post-buffer-attach-hook* (lambda (editor buf) (void)))
+
+;; General-purpose hook system (Emacs-style)
+;; Each hook is a symbol key mapping to a list of thunks/procedures.
+(def *hooks* (make-hash-table))
+
+(def (add-hook! hook-name fn)
+  "Add a function to a hook. hook-name is a symbol (e.g. 'after-save-hook)."
+  (let ((fns (hash-get *hooks* hook-name)))
+    (if fns
+      (unless (memq fn fns)
+        (hash-put! *hooks* hook-name (append fns [fn])))
+      (hash-put! *hooks* hook-name [fn]))))
+
+(def (remove-hook! hook-name fn)
+  "Remove a function from a hook."
+  (let ((fns (hash-get *hooks* hook-name)))
+    (when fns
+      (hash-put! *hooks* hook-name (filter (lambda (f) (not (eq? f fn))) fns)))))
+
+(def (run-hooks! hook-name . args)
+  "Run all functions in a hook, passing args to each."
+  (let ((fns (hash-get *hooks* hook-name)))
+    (when fns
+      (for-each (lambda (fn)
+                  (with-catch
+                    (lambda (e) (void))  ; Don't let one hook failure stop others
+                    (lambda () (apply fn args))))
+                fns))))
 
 ;;;============================================================================
 ;;; Buffer structure and list

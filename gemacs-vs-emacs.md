@@ -336,7 +336,7 @@
 |---------|--------|-------|
 | Single frame (Qt window) | :white_check_mark: | |
 | Multiple frames | :yellow_circle: | Single-window design; `make-frame`/`other-frame` registered |
-| Fullscreen toggle | :yellow_circle: | Registered |
+| Fullscreen toggle | :large_blue_circle: | Real toggle via window-state detection (fullscreen ↔ normal) |
 | Font size (zoom) | :white_check_mark: | `C-=`, `C--`, `C-x C-0` |
 | Font family selection | :large_blue_circle: | Configurable |
 | Menu bar | :large_blue_circle: | Qt menu bar with File/Edit/View/etc |
@@ -369,7 +369,7 @@
 | Revert buffer | :white_check_mark: | Reload from disk |
 | Auto-revert mode | :white_check_mark: | File watcher for external changes |
 | Auto-save mode | :white_check_mark: | 30s timer writes to `#file#`, per-buffer toggle, recover-file |
-| Backup files | :yellow_circle: | Basic |
+| Backup files | :large_blue_circle: | Creates `file~` backup on first save, toggle with `M-x toggle-backup-files` |
 | Recent files (`C-x C-r`) | :white_check_mark: | |
 | Find file at point | :white_check_mark: | |
 | Find alternate file | :white_check_mark: | |
@@ -377,7 +377,7 @@
 | Copy/rename file | :white_check_mark: | |
 | Sudo write | :white_check_mark: | Write as root |
 | File local variables | :large_blue_circle: | Dir-locals via `.gemacs-config` |
-| Find file literally | :yellow_circle: | Registered |
+| Find file literally | :large_blue_circle: | Opens file with syntax highlighting disabled (SCLEX_NULL) |
 | File encoding detection | :yellow_circle: | Basic — Scintilla handles internally |
 | Line ending conversion | :white_check_mark: | Unix/DOS/Mac detection and conversion |
 
@@ -789,7 +789,7 @@
 | Plugin/package system | :white_check_mark: | `load-plugin`, `list-plugins`, `~/.gemacs-plugins/` directory |
 | User-defined commands | :large_blue_circle: | Via `~/.gemacs-init` Gerbil code |
 | Advice system | :white_check_mark: | `advice-add!`/`advice-remove!` with before/after, `describe-advice` |
-| Hook system | :yellow_circle: | Limited — some mode hooks |
+| Hook system | :large_blue_circle: | Real `add-hook!/remove-hook!/run-hooks!` — `before-save-hook`, `after-save-hook`, `find-file-hook`, `kill-buffer-hook`. Interactive `M-x add-hook/remove-hook/list-hooks` |
 | Autoload system | :white_check_mark: | `autoload!` to register, `list-autoloads` to view |
 | Dynamic module loading | :white_check_mark: | `load-module` / `list-modules` for runtime Gerbil module loading |
 

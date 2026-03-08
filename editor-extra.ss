@@ -443,6 +443,7 @@
   ;; Hooks
   (register-command! 'add-hook cmd-add-hook)
   (register-command! 'remove-hook cmd-remove-hook)
+  (register-command! 'list-hooks cmd-list-hooks)
   ;; Package archives
   (register-command! 'package-archives cmd-package-archives)
   ;; Auto-save

@@ -47,7 +47,8 @@
                  app-state-last-command
                  app-state-prefix-arg
                  write-string-to-file
-                 eval-expression-string)
+                 eval-expression-string
+                 *hooks* add-hook! remove-hook! run-hooks!)
         (only-in :gemacs/qt/window
                  make-qt-edit-window
                  make-qt-frame
@@ -3434,6 +3435,56 @@
   (displayln "Group 25 complete"))
 
 ;;;============================================================================
+;;; Group 26: Hook System & Upgrades
+;;;============================================================================
+
+(def (run-group-26-hooks-upgrades)
+  (displayln)
+  (displayln "=== Group 26: Hook System & Upgrades ===")
+
+  ;; Hook command registrations
+  (for-each
+    (lambda (pair)
+      (let ((name (car pair)))
+        (if (find-command name)
+          (pass! (string-append (symbol->string name) " registered"))
+          (fail! (symbol->string name) "not found" "registered"))))
+    '((add-hook) (remove-hook) (list-hooks)))
+
+  ;; Core hook system functions
+  (if (procedure? add-hook!)
+    (pass! "add-hook! is a procedure")
+    (fail! "add-hook!" "not procedure" "procedure"))
+  (if (procedure? remove-hook!)
+    (pass! "remove-hook! is a procedure")
+    (fail! "remove-hook!" "not procedure" "procedure"))
+  (if (procedure? run-hooks!)
+    (pass! "run-hooks! is a procedure")
+    (fail! "run-hooks!" "not procedure" "procedure"))
+
+  ;; Hook system works: add and run
+  (let ((called (box #f)))
+    (add-hook! 'test-hook (lambda args (set-box! called #t)))
+    (run-hooks! 'test-hook)
+    (if (unbox called)
+      (pass! "hook system: add and run works")
+      (fail! "hook run" "not called" "called"))
+    ;; Clean up
+    (hash-remove! *hooks* 'test-hook))
+
+  ;; Fullscreen/maximized registration
+  (for-each
+    (lambda (pair)
+      (let ((name (car pair)))
+        (if (find-command name)
+          (pass! (string-append (symbol->string name) " registered"))
+          (fail! (symbol->string name) "not found" "registered"))))
+    '((toggle-frame-fullscreen) (toggle-frame-maximized)
+      (find-file-literally)))
+
+  (displayln "Group 26 complete"))
+
+;;;============================================================================
 ;;; Main
 ;;;============================================================================
 
@@ -3467,6 +3518,7 @@
     (run-group-21-theme-split-lsp)
     (run-group-24-ibuffer)
     (run-group-25-major-modes)
+    (run-group-26-hooks-upgrades)
 
     (displayln "---")
     (displayln "Results: " *passes* " passed, " *failures* " failed")

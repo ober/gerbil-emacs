@@ -1134,6 +1134,7 @@
                      (when mode-cmd (mode-cmd app)))))
                (lsp-maybe-auto-start! app buf)
                (lsp-hook-did-open! app buf)
+               (run-hooks! 'find-file-hook app buf)
                (when on-loaded (on-loaded app buf)))))
          ;; New file — no content to read
          (begin
@@ -1144,4 +1145,5 @@
                (let ((mode-cmd (find-command mode)))
                  (when mode-cmd (mode-cmd app)))))
            (lsp-maybe-auto-start! app buf)
-           (lsp-hook-did-open! app buf)))))))
+           (lsp-hook-did-open! app buf)
+           (run-hooks! 'find-file-hook app buf)))))))

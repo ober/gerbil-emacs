@@ -390,6 +390,11 @@
   (register-command! 'insert-box-comment cmd-insert-box-comment)
   (register-command! 'insert-file-contents cmd-insert-file-contents)
   (register-command! 'insert-register-string cmd-insert-register-string)
+  ;; Hooks
+  (register-command! 'add-hook cmd-add-hook)
+  (register-command! 'remove-hook cmd-remove-hook)
+  (register-command! 'list-hooks cmd-list-hooks)
+
   ;; Toggles
   ;; show-dir-locals → registered in facade (cross-cutting)
   (register-command! 'toggle-auto-indent cmd-toggle-auto-indent)
