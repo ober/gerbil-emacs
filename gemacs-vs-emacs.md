@@ -431,7 +431,7 @@
 | Log viewing | :large_blue_circle: | Interactive log with date/author, Enter shows commit diff |
 | Diff viewing | :large_blue_circle: | Shows staged + unstaged diffs for file at point |
 | Branch operations | :large_blue_circle: | Checkout/create/delete with narrowing selection |
-| Tag management | :yellow_circle: | Create tags |
+| Tag management | :large_blue_circle: | Create/list/delete/push tags with completion |
 | Stash | :large_blue_circle: | Stash create + list + pop + show diff |
 | Blame | :large_blue_circle: | `magit-blame`, `show-git-blame`, `vc-annotate` — real `git blame` with async output |
 | Interactive rebase | :large_blue_circle: | Rebase with narrowing branch selection |

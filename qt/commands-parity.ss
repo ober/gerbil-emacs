@@ -32,6 +32,7 @@
         :gemacs/qt/highlight
         :gemacs/qt/modeline
         ;; Chain of all prior command modules
+        :gemacs/qt/magit
         :gemacs/qt/commands-core
         :gemacs/qt/commands-edit
         :gemacs/qt/commands-edit2
@@ -1018,15 +1019,68 @@
 
 ;;; --- Magit tag ---
 (def (cmd-magit-tag app)
-  "Create a git tag."
-  (let ((tag (qt-echo-read-string (app-state-echo app) "Tag name: ")))
-    (when (and tag (not (string=? tag "")))
-      (with-catch
-        (lambda (e) (echo-message! (app-state-echo app) "Tag failed"))
-        (lambda ()
-          (run-process ["git" "tag" tag] coprocess: void)
-          (echo-message! (app-state-echo app)
-            (string-append "Created tag: " tag)))))))
+  "Git tag management: create, list, delete, or push tags."
+  (let* ((echo (app-state-echo app))
+         (action (qt-echo-read-string-with-completion app "Tag action: "
+                   '("create" "list" "delete" "push"))))
+    (when (and action (not (string=? action "")))
+      (let ((dir (current-project-root app)))
+        (cond
+          ((string=? action "create")
+           (let ((tag (qt-echo-read-string echo "Tag name: ")))
+             (when (and tag (not (string=? tag "")))
+               (let ((msg (qt-echo-read-string echo "Message (empty for lightweight): ")))
+                 (let ((result (if (and msg (not (string=? msg "")))
+                                 (magit-run-git ["-C" dir "tag" "-a" tag "-m" msg] dir)
+                                 (magit-run-git ["-C" dir "tag" tag] dir))))
+                   (echo-message! echo (string-append "Created tag: " tag)))))))
+          ((string=? action "list")
+           (let* ((output (magit-run-git ["-C" dir "tag" "-l" "--sort=-creatordate"] dir))
+                  (tags (if (string=? output "")
+                          "No tags found."
+                          output)))
+             (let* ((fr (app-state-frame app))
+                    (ed (current-qt-editor app))
+                    (buf (or (buffer-by-name "*Git Tags*")
+                             (qt-buffer-create! "*Git Tags*" ed #f))))
+               (qt-buffer-attach! ed buf)
+               (set! (qt-edit-window-buffer (qt-current-window fr)) buf)
+               (qt-plain-text-edit-set-text! ed tags)
+               (qt-text-document-set-modified! (buffer-doc-pointer buf) #f)
+               (qt-plain-text-edit-set-cursor-position! ed 0)
+               (echo-message! echo "*Git Tags*"))))
+          ((string=? action "delete")
+           (let* ((output (magit-run-git ["-C" dir "tag" "-l"] dir))
+                  (tag-list (if (string=? output "")
+                              '()
+                              (filter (lambda (s) (not (string=? s "")))
+                                (string-split output #\newline)))))
+             (if (null? tag-list)
+               (echo-error! echo "No tags to delete")
+               (let ((tag (qt-echo-read-string-with-completion app "Delete tag: " tag-list)))
+                 (when (and tag (not (string=? tag "")))
+                   (magit-run-git ["-C" dir "tag" "-d" tag] dir)
+                   (echo-message! echo (string-append "Deleted tag: " tag)))))))
+          ((string=? action "push")
+           (let* ((output (magit-run-git ["-C" dir "tag" "-l"] dir))
+                  (tag-list (if (string=? output "")
+                              '()
+                              (cons "--all"
+                                (filter (lambda (s) (not (string=? s "")))
+                                  (string-split output #\newline))))))
+             (if (null? tag-list)
+               (echo-error! echo "No tags to push")
+               (let ((tag (qt-echo-read-string-with-completion app "Push tag (--all for all): " tag-list)))
+                 (when (and tag (not (string=? tag "")))
+                   (if (string=? tag "--all")
+                     (begin
+                       (magit-run-git ["-C" dir "push" "origin" "--tags"] dir)
+                       (echo-message! echo "Pushed all tags"))
+                     (begin
+                       (magit-run-git ["-C" dir "push" "origin" tag] dir)
+                       (echo-message! echo (string-append "Pushed tag: " tag)))))))))
+          (else (echo-error! echo (string-append "Unknown action: " action))))))))
+
 
 ;;;============================================================================
 ;;; Interactive IBBuffer — mark/execute/filter/sort

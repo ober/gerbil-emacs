@@ -1522,16 +1522,64 @@
           (string-append "Initialized git repo in " dir))))))
 
 ;;; --- Magit tag ---
+(def (magit-run-git-tui args)
+  "Run git command and return output string."
+  (with-catch
+    (lambda (e) "")
+    (lambda ()
+      (let* ((proc (open-process
+                     (list path: "git"
+                           arguments: args
+                           stdout-redirection: #t
+                           stderr-redirection: #t)))
+             (output (read-line proc #f)))
+        (close-port proc)
+        (or output "")))))
+
 (def (cmd-magit-tag app)
-  "Create a git tag."
-  (let ((tag (app-read-string app "Tag name: ")))
-    (when (and tag (not (string-empty? tag)))
-      (with-catch
-        (lambda (e) (echo-message! (app-state-echo app) "Tag failed"))
-        (lambda ()
-          (run-process ["git" "tag" tag] coprocess: void)
-          (echo-message! (app-state-echo app)
-            (string-append "Created tag: " tag)))))))
+  "Git tag management: create, list, delete, or push tags."
+  (let* ((echo (app-state-echo app))
+         (action (app-read-string app "Tag action (create/list/delete/push): ")))
+    (when (and action (not (string-empty? action)))
+      (cond
+        ((string=? action "create")
+         (let ((tag (app-read-string app "Tag name: ")))
+           (when (and tag (not (string-empty? tag)))
+             (let ((msg (app-read-string app "Message (empty for lightweight): ")))
+               (if (and msg (not (string-empty? msg)))
+                 (magit-run-git-tui ["tag" "-a" tag "-m" msg])
+                 (magit-run-git-tui ["tag" tag]))
+               (echo-message! echo (string-append "Created tag: " tag))))))
+        ((string=? action "list")
+         (let* ((output (magit-run-git-tui ["tag" "-l" "--sort=-creatordate"]))
+                (text (if (string=? output "")
+                        "No tags found."
+                        (string-append "Git Tags:\n\n" output))))
+           (let* ((fr (app-state-frame app))
+                  (win (current-window fr))
+                  (ed (edit-window-editor win))
+                  (buf (buffer-create! "*Git Tags*" ed #f)))
+             (buffer-attach! ed buf)
+             (set! (edit-window-buffer win) buf)
+             (editor-set-text ed text)
+             (editor-goto-pos ed 0)
+             (editor-set-read-only ed #t))))
+        ((string=? action "delete")
+         (let ((tag (app-read-string app "Delete tag: ")))
+           (when (and tag (not (string-empty? tag)))
+             (magit-run-git-tui ["tag" "-d" tag])
+             (echo-message! echo (string-append "Deleted tag: " tag)))))
+        ((string=? action "push")
+         (let ((tag (app-read-string app "Push tag (--all for all): ")))
+           (when (and tag (not (string-empty? tag)))
+             (if (string=? tag "--all")
+               (begin
+                 (magit-run-git-tui ["push" "origin" "--tags"])
+                 (echo-message! echo "Pushed all tags"))
+               (begin
+                 (magit-run-git-tui ["push" "origin" tag])
+                 (echo-message! echo (string-append "Pushed tag: " tag)))))))
+        (else (echo-message! echo (string-append "Unknown action: " action)))))))
 
 ;;;============================================================================
 ;;; Batch 4: check-parens, count-lines-page, how-many
