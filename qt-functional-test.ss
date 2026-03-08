@@ -3587,6 +3587,48 @@
 
   (displayln "Group 29 complete"))
 
+;;; Group 30: Org-sort, Mail, Sorting, Native-compile
+(def (run-group-30-sort-mail-compile)
+  (displayln "\n=== Group 30: Org-sort, Mail, Sorting, Native-compile ===")
+
+  ;; org-sort
+  (if (find-command 'org-sort)
+    (pass! "org-sort registered")
+    (fail! "org-sort" #f "procedure"))
+
+  ;; compose-mail — test dispatch creates *mail* buffer
+  (let ((cmd (find-command 'compose-mail)))
+    (if cmd
+      (pass! "compose-mail registered")
+      (fail! "compose-mail" #f "procedure")))
+
+  ;; mail-send (message-send alias)
+  (if (find-command 'message-send)
+    (pass! "message-send registered")
+    (fail! "message-send" #f "procedure"))
+
+  ;; sort-columns
+  (if (find-command 'sort-columns)
+    (pass! "sort-columns registered")
+    (fail! "sort-columns" #f "procedure"))
+
+  ;; sort-regexp-fields
+  (if (find-command 'sort-regexp-fields)
+    (pass! "sort-regexp-fields registered")
+    (fail! "sort-regexp-fields" #f "procedure"))
+
+  ;; native-compile-async
+  (if (find-command 'native-compile-async)
+    (pass! "native-compile-async registered")
+    (fail! "native-compile-async" #f "procedure"))
+
+  ;; make-frame (was duplicate, now in facade only)
+  (if (find-command 'make-frame)
+    (pass! "make-frame registered")
+    (fail! "make-frame" #f "procedure"))
+
+  (displayln "Group 30 complete"))
+
 ;;;============================================================================
 ;;; Main
 ;;;============================================================================
@@ -3625,6 +3667,7 @@
     (run-group-27-ctags)
     (run-group-28-tramp-sudo-crypt)
     (run-group-29-pdf-docview)
+    (run-group-30-sort-mail-compile)
 
     (displayln "---")
     (displayln "Results: " *passes* " passed, " *failures* " failed")

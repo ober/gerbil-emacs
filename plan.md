@@ -55,9 +55,10 @@ Implemented popup UX matching Ruby Scintilla editors — inline autocomplete dro
 
 ### Maintenance
 - ~~**Split over-limit files**~~ — DONE: split `qt/commands-edit.ss` (2457→1155+1325) and `editor-extra-editing.ss` (2204→1097+1130). Remaining `editor-extra-media.ss` (2013) and `qt/commands-vcs.ss` (2003) are barely over limit
-- ~~**Test coverage**~~ — DONE: added Group 13 tests (dired, which-key, zoom, compile/search, bookmarks, M-x history). 181 total TUI functional tests, 382 Qt tests
+- ~~**Test coverage**~~ — DONE: added Group 13 tests (dired, which-key, zoom, compile/search, bookmarks, M-x history). 181 total TUI functional tests, 389 Qt tests
 
 ### Recently Completed
+- ~~**Org-sort, Mail, Sorting, Native-compile upgrades**~~ — DONE: `org-sort` (alphabetical child heading sort), `compose-mail`/`message-send` (mail composition + msmtp/sendmail), `sort-columns`/`sort-regexp-fields`, `native-compile-async` (gxc compilation)
 - ~~**PDF/DocView upgrade**~~ — DONE: Qt PDF viewing with `pdftotext` page extraction, navigation (next/prev/goto), DocView conversion for PDF/PS
 - ~~**TRAMP upgrades**~~ — DONE: `tramp-remote-shell` (SSH session), `tramp-remote-compile` (remote compilation via SSH), `sudo-edit`/`find-file-sudo` (open file as root)
 - ~~**Org-crypt**~~ — DONE: GPG symmetric encrypt/decrypt of org entry bodies (`org-encrypt-entry`, `org-decrypt-entry`), both TUI and Qt

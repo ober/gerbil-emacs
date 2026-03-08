@@ -425,8 +425,92 @@
             (loop (- l 1))))))))
 
 (def (cmd-org-sort app)
-  "Sort org entries."
-  (echo-message! (app-state-echo app) "Org sort: use M-x sort-lines on region"))
+  "Sort org subheadings under current heading alphabetically."
+  (let* ((ed (current-qt-editor app))
+         (echo (app-state-echo app))
+         (text (qt-plain-text-edit-text ed))
+         (pos (qt-plain-text-edit-cursor-position ed))
+         (lines (string-split text #\newline)))
+    ;; Find current heading level
+    (let* ((cur-line-idx
+             (let loop ((i 0) (off 0))
+               (if (>= i (length lines)) (- (length lines) 1)
+                 (let ((next (+ off (string-length (list-ref lines i)) 1)))
+                   (if (> next pos) i (loop (+ i 1) next))))))
+           (cur-line (list-ref lines cur-line-idx))
+           (parent-level
+             (if (and (> (string-length cur-line) 0) (char=? (string-ref cur-line 0) #\*))
+               (let count ((j 0))
+                 (if (and (< j (string-length cur-line)) (char=? (string-ref cur-line j) #\*))
+                   (count (+ j 1)) j))
+               0)))
+      (if (= parent-level 0)
+        (echo-message! echo "Not on an org heading")
+        ;; Collect child entries (heading + body)
+        (let* ((child-level (+ parent-level 1))
+               (entries
+                 (let loop ((i (+ cur-line-idx 1)) (current-entry #f) (entries []))
+                   (if (>= i (length lines))
+                     (if current-entry (append entries (list (reverse current-entry))) entries)
+                     (let* ((line (list-ref lines i))
+                            (is-heading (and (> (string-length line) 0)
+                                            (char=? (string-ref line 0) #\*)))
+                            (heading-level
+                              (if is-heading
+                                (let count ((j 0))
+                                  (if (and (< j (string-length line))
+                                           (char=? (string-ref line j) #\*))
+                                    (count (+ j 1)) j))
+                                0)))
+                       (cond
+                         ;; Hit same or higher level heading — done
+                         ((and is-heading (<= heading-level parent-level))
+                          (if current-entry
+                            (append entries (list (reverse current-entry)))
+                            entries))
+                         ;; New child heading
+                         ((and is-heading (= heading-level child-level))
+                          (let ((new-entries (if current-entry
+                                              (append entries (list (reverse current-entry)))
+                                              entries)))
+                            (loop (+ i 1) (list line) new-entries)))
+                         ;; Body line of current entry
+                         (else
+                          (loop (+ i 1)
+                                (if current-entry (cons line current-entry) current-entry)
+                                entries))))))))
+          (if (< (length entries) 2)
+            (echo-message! echo "Nothing to sort (need 2+ child headings)")
+            ;; Sort entries alphabetically by heading text
+            (let* ((sorted (sort entries
+                     (lambda (a b)
+                       (string<? (string-downcase (car a)) (string-downcase (car b))))))
+                   (before-lines (take lines (+ cur-line-idx 1)))
+                   ;; Find where children end
+                   (after-start (let loop ((i (+ cur-line-idx 1)))
+                                  (if (>= i (length lines)) i
+                                    (let* ((line (list-ref lines i))
+                                           (is-heading (and (> (string-length line) 0)
+                                                           (char=? (string-ref line 0) #\*)))
+                                           (hl (if is-heading
+                                                 (let count ((j 0))
+                                                   (if (and (< j (string-length line))
+                                                            (char=? (string-ref line j) #\*))
+                                                     (count (+ j 1)) j))
+                                                 (+ parent-level 1))))
+                                      (if (and is-heading (<= hl parent-level)) i
+                                        (loop (+ i 1)))))))
+                   (after-lines (if (< after-start (length lines))
+                                  (list-tail lines after-start) []))
+                   (sorted-text (apply append (map (lambda (e) e) sorted)))
+                   (new-lines (append before-lines sorted-text after-lines))
+                   (new-text (string-join new-lines "\n")))
+              (qt-plain-text-edit-set-text! ed new-text)
+              (qt-plain-text-edit-set-cursor-position! ed pos)
+              (echo-message! echo
+                (string-append "Sorted " (number->string (length entries))
+                               " headings")))))))))
+
 
 ;;;============================================================================
 ;;; Project

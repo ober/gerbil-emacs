@@ -1738,6 +1738,8 @@
   (register-command! 'pdf-view-goto-page cmd-pdf-view-goto-page)
   (register-command! 'doc-view-mode cmd-doc-view-mode)
   (register-command! 'compose-mail cmd-compose-mail)
+  (register-command! 'mail-send cmd-mail-send)
+  (register-command! 'message-send cmd-mail-send)
   (register-command! 'gnus cmd-gnus)
   (register-command! 'mu4e cmd-mu4e)
   (register-command! 'notmuch cmd-notmuch)
@@ -2766,12 +2768,91 @@
 
 
 (def (cmd-compose-mail app)
-  "Compose email (Qt)."
+  "Compose email (Qt). C-c C-c sends via sendmail/msmtp, C-c C-k aborts."
   (let* ((echo (app-state-echo app))
-         (ed (current-qt-editor app)))
-    (let ((buf (qt-buffer-create! "*mail*" ed)))
+         (fr (app-state-frame app))
+         (ed (current-qt-editor app))
+         (to (or (qt-echo-read-string app "To: ") ""))
+         (subject (or (qt-echo-read-string app "Subject: ") "")))
+    (let ((buf (qt-buffer-create! "*mail*" ed #f)))
+      (set! (buffer-lexer-lang buf) 'mail)
       (qt-buffer-attach! ed buf)
-      (qt-plain-text-edit-set-text! ed "To: \nSubject: \n\n"))))
+      (set! (qt-edit-window-buffer (qt-current-window fr)) buf)
+      (qt-plain-text-edit-set-text! ed
+        (string-append "To: " to "\n"
+                       "Subject: " subject "\n"
+                       "Cc: \n"
+                       "--text follows this line--\n\n"))
+      ;; Position cursor at message body
+      (let ((body-start (string-length
+                          (string-append "To: " to "\nSubject: " subject "\nCc: \n--text follows this line--\n"))))
+        (qt-plain-text-edit-set-cursor-position! ed body-start))
+      (echo-message! echo "Compose mail. C-c C-c to send, C-c C-k to abort."))))
+
+(def (cmd-mail-send app)
+  "Send the current mail buffer via sendmail or msmtp."
+  (let* ((echo (app-state-echo app))
+         (ed (current-qt-editor app))
+         (text (qt-plain-text-edit-text ed)))
+    ;; Parse headers
+    (let* ((sep-pos (string-contains text "--text follows this line--"))
+           (header-text (if sep-pos (substring text 0 sep-pos) ""))
+           (body (if sep-pos
+                   (substring text (+ sep-pos (string-length "--text follows this line--\n"))
+                              (string-length text))
+                   text))
+           (headers (string-split header-text #\newline))
+           (get-header (lambda (name)
+                         (let ((found (find (lambda (h) (string-prefix? name h)) headers)))
+                           (if found
+                             (string-trim (substring found (string-length name) (string-length found)))
+                             ""))))
+           (to (get-header "To: "))
+           (subject (get-header "Subject: "))
+           (cc (get-header "Cc: ")))
+      (if (string=? to "")
+        (echo-error! echo "No recipient (To: header empty)")
+        ;; Try msmtp first, fallback to sendmail
+        (let ((send-cmd (if (file-exists? "/usr/bin/msmtp") "/usr/bin/msmtp"
+                          (if (file-exists? "/usr/sbin/sendmail") "/usr/sbin/sendmail"
+                            #f))))
+          (if (not send-cmd)
+            (echo-error! echo "No sendmail or msmtp found")
+            (with-catch
+              (lambda (e)
+                (echo-error! echo (string-append "Send failed: "
+                  (with-output-to-string (lambda () (display-exception e))))))
+              (lambda ()
+                (let* ((msg (string-append
+                              "To: " to "\n"
+                              "Subject: " subject "\n"
+                              (if (> (string-length cc) 0)
+                                (string-append "Cc: " cc "\n") "")
+                              "Content-Type: text/plain; charset=utf-8\n"
+                              "\n" body))
+                       (args (if (string-suffix? "msmtp" send-cmd)
+                               ["-t"]
+                               ["-t" "-oi"]))
+                       (proc (open-process
+                               (list path: send-cmd arguments: args
+                                     stdin-redirection: #t
+                                     stdout-redirection: #t
+                                     stderr-redirection: #t))))
+                  (display msg proc)
+                  (force-output proc)
+                  (close-output-port proc)
+                  (let ((err-output (read-line proc #f))
+                        (status (process-status proc)))
+                    (close-port proc)
+                    (if (= status 0)
+                      (begin
+                        (echo-message! echo (string-append "Mail sent to " to))
+                        ;; Kill the mail buffer
+                        (let ((buf (current-qt-buffer app)))
+                          (qt-text-document-set-modified! (buffer-doc-pointer buf) #f)))
+                      (echo-error! echo
+                        (string-append "Send failed (exit " (number->string status) "): "
+                          (or err-output ""))))))))))))))
 
 (def (cmd-gnus app)
   "Launch Gnus newsreader (Qt)."
@@ -2828,8 +2909,18 @@
   (echo-message! (app-state-echo app) "Native compile: Gerbil uses AOT compilation via gxc"))
 
 (def (cmd-native-compile-async app)
-  "Async native compile (Qt)."
-  (echo-message! (app-state-echo app) "Native compile: use M-x compile for build"))
+  "Async native compile current file via gxc (Qt)."
+  (let* ((echo (app-state-echo app))
+         (buf (current-qt-buffer app))
+         (file (and buf (buffer-file-path buf))))
+    (if (not file)
+      (echo-message! echo "Buffer has no file")
+      (if (not (string-suffix? ".ss" file))
+        (echo-message! echo "Not a Gerbil source file")
+        (begin
+          (echo-message! echo (string-append "Compiling " (path-strip-directory file) "..."))
+          (compilation-run-command! app
+            (string-append "gxc -S " file)))))))
 
 (def *qt-screen-reader* #f)
 (def (cmd-screen-reader-mode app)

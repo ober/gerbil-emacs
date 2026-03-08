@@ -11,6 +11,7 @@
         :std/srfi/13
         :std/misc/string
         (only-in :std/misc/ports read-all-as-string)
+        (only-in :gemacs/pregexp-compat pregexp pregexp-match)
         :gemacs/qt/sci-shim
         :gemacs/core
         :gemacs/editor
@@ -470,7 +471,7 @@
   (register-command! 'fit-window-to-buffer cmd-fit-window-to-buffer)
   (register-command! 'shrink-window-if-larger-than-buffer cmd-shrink-window-if-larger-than-buffer)
   (register-command! 'resize-window-width cmd-resize-window-width)
-  (register-command! 'make-frame cmd-make-frame)
+  ;; make-frame registered in facade (qt/commands.ss)
   (register-command! 'delete-frame cmd-delete-frame)
   (register-command! 'suspend-frame cmd-suspend-frame)
   ;; Editing
@@ -1521,12 +1522,65 @@
       (echo-message! (app-state-echo app) "Cancelled"))))
 
 (def (cmd-sort-columns app)
-  "Sort lines in region by a column range."
-  (echo-message! (app-state-echo app) "sort-columns: use M-x sort-fields for column sorting"))
+  "Sort lines in region by column range."
+  (let* ((echo (app-state-echo app))
+         (ed (current-qt-editor app))
+         (sel-start (sci-send ed SCI_GETSELECTIONSTART 0))
+         (sel-end (sci-send ed SCI_GETSELECTIONEND 0)))
+    (if (= sel-start sel-end)
+      (echo-message! echo "No region selected")
+      (let* ((input (qt-echo-read-string app "Column range (start-end, e.g. 10-20): "))
+             (parts (and input (string-split input #\-)))
+             (col-start (and parts (>= (length parts) 2)
+                            (string->number (string-trim (car parts)))))
+             (col-end (and parts (>= (length parts) 2)
+                          (string->number (string-trim (cadr parts))))))
+        (if (not (and col-start col-end (> col-end col-start)))
+          (echo-error! echo "Invalid column range (use start-end, e.g. 10-20)")
+          (let* ((text (qt-plain-text-edit-text ed))
+                 (region (substring text sel-start sel-end))
+                 (lines (string-split region #\newline))
+                 (key-fn (lambda (line)
+                           (let ((len (string-length line)))
+                             (if (>= len col-start)
+                               (substring line (- col-start 1) (min len (- col-end 1)))
+                               ""))))
+                 (sorted (sort lines (lambda (a b) (string<? (key-fn a) (key-fn b)))))
+                 (result (string-join sorted "\n")))
+            (sci-send ed SCI_SETSELECTIONSTART sel-start)
+            (sci-send ed SCI_SETSELECTIONEND sel-end)
+            (sci-send/string ed SCI_REPLACESEL result)
+            (echo-message! echo
+              (string-append "Sorted " (number->string (length lines)) " lines by columns "
+                (number->string col-start) "-" (number->string col-end)))))))))
 
 (def (cmd-sort-regexp-fields app)
   "Sort lines in region by regex match."
-  (echo-message! (app-state-echo app) "sort-regexp-fields: use M-x sort-lines for basic sorting"))
+  (let* ((echo (app-state-echo app))
+         (ed (current-qt-editor app))
+         (sel-start (sci-send ed SCI_GETSELECTIONSTART 0))
+         (sel-end (sci-send ed SCI_GETSELECTIONEND 0)))
+    (if (= sel-start sel-end)
+      (echo-message! echo "No region selected")
+      (let* ((pattern (qt-echo-read-string app "Sort by regexp: "))
+             (rx (and pattern (> (string-length pattern) 0)
+                     (with-catch (lambda (e) #f)
+                       (lambda () (pregexp pattern))))))
+        (if (not rx)
+          (echo-error! echo "Invalid regexp")
+          (let* ((text (qt-plain-text-edit-text ed))
+                 (region (substring text sel-start sel-end))
+                 (lines (string-split region #\newline))
+                 (key-fn (lambda (line)
+                           (let ((m (pregexp-match rx line)))
+                             (if m (car m) ""))))
+                 (sorted (sort lines (lambda (a b) (string<? (key-fn a) (key-fn b)))))
+                 (result (string-join sorted "\n")))
+            (sci-send ed SCI_SETSELECTIONSTART sel-start)
+            (sci-send ed SCI_SETSELECTIONEND sel-end)
+            (sci-send/string ed SCI_REPLACESEL result)
+            (echo-message! echo
+              (string-append "Sorted " (number->string (length lines)) " lines by regexp"))))))))
 
 ;;; Batch 15: insert-tab (Qt)
 (def (cmd-insert-tab app)

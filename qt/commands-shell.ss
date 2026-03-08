@@ -803,9 +803,7 @@ SPC = page down, DEL = page up, q = quit view-mode."
   "Resize window width."
   (echo-message! (app-state-echo app) "Width resize not supported in vertical split"))
 
-(def (cmd-make-frame app)
-  "Create a new frame (not applicable in single-window Qt)."
-  (echo-message! (app-state-echo app) "Only one frame in Qt backend"))
+;; cmd-make-frame defined in facade (qt/commands.ss)
 
 (def (cmd-delete-frame app)
   "Delete a frame."

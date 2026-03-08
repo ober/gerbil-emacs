@@ -480,6 +480,7 @@
 | Custom export backends | :white_check_mark: | Register via `org-export-register-backend!`, list with `org-export-list-backends` |
 | **Clock tracking** | :large_blue_circle: | Clock-in/out, goto |
 | Org-crypt | :large_blue_circle: | GPG symmetric encrypt/decrypt of org entry bodies (`org-encrypt-entry`, `org-decrypt-entry`) |
+| Org-sort | :white_check_mark: | Sort child headings alphabetically under current heading |
 | Heading promote/demote | :white_check_mark: | |
 | Move subtree up/down | :white_check_mark: | |
 | Template expansion (`<s TAB`) | :white_check_mark: | Source block templates |
@@ -645,6 +646,8 @@
 | Upcase/downcase region | :white_check_mark: | `C-x C-u`, `C-x C-l` |
 | Sort lines | :white_check_mark: | Alphabetic, numeric, reverse, case-fold |
 | Sort fields | :white_check_mark: | Sort by nth field |
+| Sort columns | :white_check_mark: | Sort region by column range |
+| Sort regexp fields | :white_check_mark: | Sort region by regexp match |
 | Align regexp | :white_check_mark: | Column alignment |
 | Fill paragraph | :white_check_mark: | Reflow to fill-column |
 | Unfill paragraph | :white_check_mark: | Join into single line |
@@ -853,9 +856,9 @@
 | Gnus | :yellow_circle: | `gnus` command with group buffer |
 | mu4e | :yellow_circle: | `mu4e` command registered |
 | notmuch | :yellow_circle: | `notmuch` command registered |
-| message-mode (compose) | :yellow_circle: | `compose-mail` / `message-mode` creates mail buffer |
+| message-mode (compose) | :large_blue_circle: | `compose-mail` prompts To/Subject, creates mail buffer with headers; `message-send` (C-c C-c) sends via msmtp/sendmail |
 
-**Summary:** No email client. This is common for modern Emacs alternatives to skip.
+**Summary:** Basic mail composition and sending via msmtp/sendmail. No full mail client (Gnus/mu4e).
 
 ---
 
