@@ -234,6 +234,47 @@
               (echo-message! (app-state-echo app)
                 (string-append tag " → " file ":" (number->string line-num))))))))))
 
+(def (cmd-tags-apropos app)
+  "Show all tags matching a regexp pattern."
+  ;; Auto-load tags
+  (when (and (not *tags-file*) (= (hash-length *tags-table*) 0))
+    (let ((tags-path (string-append (current-directory) "/tags")))
+      (when (file-exists? tags-path)
+        (set! *tags-file* tags-path)
+        (set! *tags-table* (parse-ctags-file tags-path)))))
+  (if (= (hash-length *tags-table*) 0)
+    (echo-message! (app-state-echo app) "No tags loaded — run M-x visit-tags-table first")
+    (let ((pattern (app-read-string app "Tags apropos (regexp): ")))
+      (when (and pattern (not (string-empty? pattern)))
+        (let* ((matches (filter (lambda (name) (string-contains name pattern))
+                  (hash-keys *tags-table*)))
+               (sorted (sort matches string<?))
+               (text (if (null? sorted)
+                       (string-append "No tags matching: " pattern)
+                       (string-append "Tags matching \"" pattern "\" ("
+                         (number->string (length sorted)) " matches):\n\n"
+                         (string-join
+                           (map (lambda (name)
+                                  (let ((entries (hash-get *tags-table* name)))
+                                    (string-append name "  "
+                                      (string-join
+                                        (map (lambda (e)
+                                               (string-append (car e) ":"
+                                                 (number->string (cdr e))))
+                                             entries)
+                                        ", "))))
+                                sorted)
+                           "\n")))))
+          (let* ((fr (app-state-frame app))
+                 (win (current-window fr))
+                 (ed (edit-window-editor win))
+                 (buf (buffer-create! "*Tags Apropos*" ed #f)))
+            (buffer-attach! ed buf)
+            (set! (edit-window-buffer win) buf)
+            (editor-set-text ed text)
+            (editor-goto-pos ed 0)
+            (editor-set-read-only ed #t)))))))
+
 
 ;; Whitespace extras
 (def (cmd-whitespace-toggle-options app)

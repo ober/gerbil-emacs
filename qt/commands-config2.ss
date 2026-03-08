@@ -1576,3 +1576,47 @@
               (echo-message! (app-state-echo app)
                 (string-append tag " → " file ":" (number->string line-num))))))))))
 
+(def (cmd-tags-apropos app)
+  "Show all tags matching a regexp pattern."
+  ;; Auto-load tags
+  (when (and (not *tags-file*) (= (hash-length *tags-table*) 0))
+    (let* ((root (current-project-root app))
+           (tags-path (string-append root "/tags")))
+      (when (file-exists? tags-path)
+        (set! *tags-file* tags-path)
+        (set! *tags-table* (parse-ctags-file tags-path)))))
+  (if (= (hash-length *tags-table*) 0)
+    (echo-error! (app-state-echo app) "No tags loaded — run M-x visit-tags-table first")
+    (let* ((pattern (qt-echo-read-string (app-state-echo app) "Tags apropos (regexp): ")))
+      (when (and pattern (> (string-length pattern) 0))
+        (let* ((matches (filter (lambda (name) (string-contains name pattern))
+                         (hash-keys *tags-table*)))
+               (sorted (sort matches string<?))
+               (text (if (null? sorted)
+                       (string-append "No tags matching: " pattern)
+                       (string-append "Tags matching \"" pattern "\" ("
+                         (number->string (length sorted)) " matches):\n\n"
+                         (string-join
+                           (map (lambda (name)
+                                  (let ((entries (hash-get *tags-table* name)))
+                                    (string-append name "  "
+                                      (string-join
+                                        (map (lambda (e)
+                                               (string-append (car e) ":"
+                                                 (number->string (cdr e))))
+                                             entries)
+                                        ", "))))
+                                sorted)
+                           "\n")))))
+          (let* ((fr (app-state-frame app))
+                 (ed (current-qt-editor app))
+                 (buf (or (buffer-by-name "*Tags Apropos*")
+                          (qt-buffer-create! "*Tags Apropos*" ed #f))))
+            (qt-buffer-attach! ed buf)
+            (set! (qt-edit-window-buffer (qt-current-window fr)) buf)
+            (qt-plain-text-edit-set-text! ed text)
+            (qt-text-document-set-modified! (buffer-doc-pointer buf) #f)
+            (qt-plain-text-edit-set-cursor-position! ed 0)
+            (echo-message! (app-state-echo app)
+              (string-append (number->string (length sorted)) " tags matching \"" pattern "\""))))))))
+

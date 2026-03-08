@@ -312,6 +312,8 @@
   (register-command! 'xref-find-references cmd-xref-find-references)
   (register-command! 'xref-find-apropos cmd-xref-find-apropos)
   (register-command! 'xref-go-back cmd-xref-go-back)
+  (register-command! 'xref-pop-marker-stack cmd-xref-go-back)
+  (register-command! 'pop-tag-mark cmd-xref-go-back)
   (register-command! 'xref-go-forward cmd-xref-go-forward)
   (register-command! 'number-to-register cmd-number-to-register)
   ;; Eldoc
@@ -398,6 +400,7 @@
   ;; Tags
   (register-command! 'visit-tags-table cmd-visit-tags-table)
   (register-command! 'find-tag cmd-find-tag)
+  (register-command! 'tags-apropos cmd-tags-apropos)
 
   ;; Toggles
   ;; show-dir-locals → registered in facade (cross-cutting)

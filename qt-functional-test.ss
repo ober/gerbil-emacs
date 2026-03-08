@@ -3499,6 +3499,18 @@
     (pass! "find-tag registered")
     (fail! "find-tag" #f "procedure"))
 
+  (if (find-command 'tags-apropos)
+    (pass! "tags-apropos registered")
+    (fail! "tags-apropos" #f "procedure"))
+
+  (if (find-command 'pop-tag-mark)
+    (pass! "pop-tag-mark registered")
+    (fail! "pop-tag-mark" #f "procedure"))
+
+  (if (find-command 'xref-pop-marker-stack)
+    (pass! "xref-pop-marker-stack registered")
+    (fail! "xref-pop-marker-stack" #f "procedure"))
+
   (displayln "Group 27 complete"))
 
 ;;;============================================================================

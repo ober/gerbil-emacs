@@ -217,7 +217,7 @@
 | Rectangle to register | :white_check_mark: | |
 | Number registers (increment) | :white_check_mark: | `C-x r +` |
 | Append/prepend to register | :white_check_mark: | |
-| File to register | :yellow_circle: | Listed but limited |
+| File to register | :large_blue_circle: | Save file path to register, jump back with `jump-to-register` |
 | List registers | :large_blue_circle: | |
 | Bookmark set / jump | :white_check_mark: | `C-x r m` / `C-x r b` |
 | Bookmark list | :white_check_mark: | |
@@ -507,7 +507,7 @@
 | Eldoc (function signatures) | :large_blue_circle: | Echo area display |
 | Xref (definitions) | :large_blue_circle: | Grep-based fallback |
 | Xref (references) | :large_blue_circle: | Grep-based |
-| Tags (ctags/etags) | :large_blue_circle: | `visit-tags-table` generates+loads tags, `find-tag` (M-.) jumps to definition with completion |
+| Tags (ctags/etags) | :white_check_mark: | `visit-tags-table`, `find-tag` (M-.), `tags-apropos`, `pop-tag-mark` (M-*) |
 | Imenu (symbol index) | :large_blue_circle: | Works for structured languages |
 | Which-function mode | :large_blue_circle: | Multi-language: Scheme, Python, C, Go, Rust, JS/TS |
 | Semantic analysis | :yellow_circle: | `semantic-mode` toggle in both layers |
@@ -612,7 +612,7 @@
 | Vterm | :yellow_circle: | `vterm` delegates to built-in `term`; `vterm-copy-mode` in Qt |
 | Shell mode | :large_blue_circle: | External shell buffer |
 | Compilation mode | :white_check_mark: | Error parsing, navigation, ANSI color rendering |
-| Comint (process interaction) | :yellow_circle: | Basic subprocess I/O |
+| Comint (process interaction) | :large_blue_circle: | Full PTY terminal with async/sync I/O, ANSI colors, signals |
 | Process sentinels/filters | :white_check_mark: | `set-process-sentinel!`, `set-process-filter!` API |
 
 **Summary:** Shell command execution works well. Terminal mode provides PTY with ANSI support. Eshell is basic. Missing vterm and full process management.
@@ -817,7 +817,7 @@
 | Feature | Status | Notes |
 |---------|--------|-------|
 | URL fetching (HTTP/HTTPS) | :white_check_mark: | |
-| HTML to text conversion | :yellow_circle: | Basic tag stripping |
+| HTML to text conversion | :large_blue_circle: | Full litehtml rendering with CSS layout, positioning, font styles |
 | Navigation history | :white_check_mark: | Back/forward |
 | Link display | :yellow_circle: | Shows URLs, no clickable links |
 | Form submission | :yellow_circle: | `eww-submit-form` command registered |
