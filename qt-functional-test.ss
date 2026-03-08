@@ -4140,6 +4140,64 @@
   (displayln "Group 38 complete"))
 
 ;;;============================================================================
+;;; Group 39: Parity4 commands (stubs, aliases, functional)
+;;;============================================================================
+
+(def (run-group-39-parity4-commands)
+  (displayln "--- Group 39: Parity4 commands ---")
+
+  ;; Mode toggles
+  (let ((mode-samples '(adaptive-wrap-prefix-mode artist-mode company-mode
+                        electric-indent-mode golden-ratio-mode rainbow-mode
+                        writeroom-mode olivetti-mode winner-mode)))
+    (for-each
+      (lambda (name)
+        (let ((label (string-append (symbol->string name) " registered")))
+          (if (find-command name)
+            (pass! label)
+            (fail! label #f "procedure"))))
+      mode-samples))
+
+  ;; Stubs
+  (let ((stub-samples '(docker customize-themes gptel print-buffer
+                        package-install nerd-icons-install-fonts)))
+    (for-each
+      (lambda (name)
+        (let ((label (string-append (symbol->string name) " registered")))
+          (if (find-command name)
+            (pass! label)
+            (fail! label #f "procedure"))))
+      stub-samples))
+
+  ;; Aliases
+  (let ((alias-samples '(eww-browse-url ido-find-file ido-switch-buffer
+                          execute-extended-command-fuzzy)))
+    (for-each
+      (lambda (name)
+        (let ((label (string-append (symbol->string name) " registered")))
+          (if (find-command name)
+            (pass! label)
+            (fail! label #f "procedure"))))
+      alias-samples))
+
+  ;; Functional commands
+  (let ((func-samples '(proced calculator gdb mc-add-next mc-add-all
+                        mc-cursors-on-lines scheme-send-region
+                        vc-dir vc-stash uptime memory-usage
+                        generate-password titlecase-region
+                        html-encode-region jq-filter
+                        fold-this wrap-region-with)))
+    (for-each
+      (lambda (name)
+        (let ((label (string-append (symbol->string name) " registered")))
+          (if (find-command name)
+            (pass! label)
+            (fail! label #f "procedure"))))
+      func-samples))
+
+  (displayln "Group 39 complete"))
+
+;;;============================================================================
 ;;; Main
 ;;;============================================================================
 
@@ -4186,6 +4244,7 @@
     (run-group-36-repeat-mode)
     (run-group-37-parity-commands)
     (run-group-38-bulk-toggles)
+    (run-group-39-parity4-commands)
 
     (displayln "---")
     (displayln "Results: " *passes* " passed, " *failures* " failed")

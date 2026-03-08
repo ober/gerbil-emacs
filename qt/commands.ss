@@ -1772,6 +1772,8 @@
   (qt-register-helm-commands!)
   ;; Bulk toggle parity commands (339 toggles)
   (qt-register-parity3-toggles!)
+  ;; Parity4: mode toggles, stubs, aliases, functional commands
+  (qt-register-parity4-commands!)
   ;; Wire modeline providers
   (set-box! *modeline-overwrite-provider* (lambda () *overwrite-mode*))
   (set-box! *modeline-narrow-provider*
