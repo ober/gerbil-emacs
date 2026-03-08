@@ -9,6 +9,7 @@
         :std/misc/string
         :std/srfi/13
         :std/format
+        :std/sort
         :gemacs/core
         :gemacs/qt/sci-shim
         :gemacs/qt/buffer
@@ -124,17 +125,12 @@
       (register-command! (car pair) (make-stub-command (car pair) (cdr pair))))
     '((all-the-icons-install-fonts . "Install all-the-icons fonts")
       (nerd-icons-install-fonts . "Install nerd-icons fonts")
-      (dap-continue . "DAP debugger continue")
       (dash-at-point . "Look up symbol in Dash documentation")
       (devdocs-lookup . "Look up symbol in DevDocs")
-      (docker . "Docker management interface")
-      (docker-containers . "List Docker containers")
-      (docker-images . "List Docker images")
       (doom-themes . "Switch Doom theme")
       (customize-group . "Customize settings group")
       (customize-themes . "Customize color themes")
       (ediff-show-registry . "Show Ediff session registry")
-      (embark-dwim . "Embark do-what-I-mean action")
       (gptel . "GPT integration chat")
       (gptel-send . "Send message to GPT")
       (list-packages . "List available packages")
@@ -145,12 +141,10 @@
       (package-refresh-contents . "Refresh package database")
       (menu-bar-open . "Open menu bar")
       (notifications-list . "List notifications")
-      (rmail . "Read mail (Rstrstrmail)")
+      (rmail . "Read mail (Rmail)")
       (slime . "Start SLIME (Superior Lisp Interaction Mode)")
       (sly . "Start Sly (Sylvester the cat's SLIME)")
-      (speedbar . "Open Speedbar file browser")
       (woman . "Read man page without man command")
-      (treemacs . "Open Treemacs file browser")
       (citar-insert-citation . "Insert citation reference")
       (facemenu-set-background . "Set face background color"))))
 
@@ -502,6 +496,100 @@
 
 ;;;============================================================================
 ;;; Registration
+;; docker: show Docker info
+(def (cmd-docker app)
+  "Docker management interface — shows containers and images."
+  (with-exception-catcher
+    (lambda (e) (echo-error! (app-state-echo app) "Docker not available"))
+    (lambda ()
+      (let* ((proc (open-process
+                     (list path: "docker"
+                           arguments: '("info" "--format" "Server Version: {{.ServerVersion}}\nContainers: {{.Containers}}\nImages: {{.Images}}")
+                           stdin-redirection: #f stdout-redirection: #t stderr-redirection: #t)))
+             (out (read-line proc #f)))
+        (process-status proc)
+        (let* ((fr (app-state-frame app))
+               (win (qt-current-window fr))
+               (ed (qt-edit-window-editor win))
+               (buf (qt-buffer-create! "*Docker*" ed #f)))
+          (qt-buffer-attach! ed buf)
+          (set! (qt-edit-window-buffer win) buf)
+          (qt-plain-text-edit-set-text! ed (or out "Docker info unavailable"))
+          (sci-send ed SCI_SETREADONLY 1))))))
+
+(def (cmd-docker-containers app)
+  "List Docker containers."
+  (with-exception-catcher
+    (lambda (e) (echo-error! (app-state-echo app) "Docker not available"))
+    (lambda ()
+      (let* ((proc (open-process
+                     (list path: "docker"
+                           arguments: '("ps" "--format" "{{.Names}}\t{{.Status}}\t{{.Image}}")
+                           stdin-redirection: #f stdout-redirection: #t stderr-redirection: #t)))
+             (out (read-line proc #f)))
+        (process-status proc)
+        (let* ((fr (app-state-frame app))
+               (win (qt-current-window fr))
+               (ed (qt-edit-window-editor win))
+               (buf (qt-buffer-create! "*Docker*" ed #f)))
+          (qt-buffer-attach! ed buf)
+          (set! (qt-edit-window-buffer win) buf)
+          (qt-plain-text-edit-set-text! ed
+            (string-append "Docker Containers\n\nName\tStatus\tImage\n" (or out "(no containers)") "\n"))
+          (sci-send ed SCI_SETREADONLY 1))))))
+
+(def (cmd-docker-images app)
+  "List Docker images."
+  (with-exception-catcher
+    (lambda (e) (echo-error! (app-state-echo app) "Docker not available"))
+    (lambda ()
+      (let* ((proc (open-process
+                     (list path: "docker"
+                           arguments: '("images" "--format" "{{.Repository}}\t{{.Tag}}\t{{.Size}}")
+                           stdin-redirection: #f stdout-redirection: #t stderr-redirection: #t)))
+             (out (read-line proc #f)))
+        (process-status proc)
+        (let* ((fr (app-state-frame app))
+               (win (qt-current-window fr))
+               (ed (qt-edit-window-editor win))
+               (buf (qt-buffer-create! "*Docker Images*" ed #f)))
+          (qt-buffer-attach! ed buf)
+          (set! (qt-edit-window-buffer win) buf)
+          (qt-plain-text-edit-set-text! ed
+            (string-append "Docker Images\n\nRepository\tTag\tSize\n" (or out "(no images)") "\n"))
+          (sci-send ed SCI_SETREADONLY 1))))))
+
+;; speedbar: directory-based file browser
+(def (cmd-speedbar app)
+  "Open speedbar file browser in current directory."
+  (let* ((fr (app-state-frame app))
+         (ed (current-qt-editor app))
+         (buf (current-qt-buffer app))
+         (path (and buf (buffer-file-path buf)))
+         (dir (if path (path-directory path) (current-directory)))
+         (entries (with-catch (lambda (e) '()) (lambda () (directory-files dir))))
+         (sorted (sort entries string<?))
+         (out (open-output-string)))
+    (display (string-append "Speedbar: " dir "\n") out)
+    (display (make-string 40 #\=) out)
+    (newline out)
+    (for-each
+      (lambda (name)
+        (let* ((full (string-append dir "/" name))
+               (is-dir (with-catch (lambda (e) #f) (lambda () (eq? 'directory (file-info-type (file-info full)))))))
+          (display (string-append (if is-dir "[+] " "    ") name "\n") out)))
+      sorted)
+    (let* ((text (get-output-string out))
+           (sbuf (qt-buffer-create! "*Speedbar*" ed #f)))
+      (qt-buffer-attach! ed sbuf)
+      (set! (qt-edit-window-buffer (qt-current-window fr)) sbuf)
+      (qt-plain-text-edit-set-text! ed text)
+      (sci-send ed SCI_SETREADONLY 1)
+      (qt-plain-text-edit-set-cursor-position! ed 0)
+      (echo-message! (app-state-echo app) (string-append "Speedbar: " dir)))))
+
+;;;============================================================================
+;;; Registration
 ;;;============================================================================
 
 (def (qt-register-parity5-commands!)
@@ -531,7 +619,11 @@
       (cons 'rotate-window cmd-rotate-window)
       (cons 'run-scheme cmd-run-scheme)
       (cons 'shell-here cmd-shell-here)
-      (cons 'whitespace-report cmd-whitespace-report))))
+      (cons 'whitespace-report cmd-whitespace-report)
+      (cons 'docker cmd-docker)
+      (cons 'docker-containers cmd-docker-containers)
+      (cons 'docker-images cmd-docker-images)
+      (cons 'speedbar cmd-speedbar))))
 
 ;;;============================================================================
 ;;; Moved stubs/aliases from parity3 (file size management)

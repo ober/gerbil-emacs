@@ -940,8 +940,33 @@
     (if *qt-company-mode* "Company mode: on" "Company mode: off")))
 
 ;;; --- Treemacs ---
+(def (treemacs-format-entry path name depth)
+  "Format a single treemacs entry with indentation and type indicator."
+  (let* ((full (string-append path "/" name))
+         (is-dir (with-catch (lambda (e) #f)
+                   (lambda () (eq? 'directory (file-info-type (file-info full))))))
+         (indent (make-string (* depth 2) #\space))
+         (icon (if is-dir "+" " ")))
+    (string-append indent icon " " name)))
+
+(def (treemacs-list-dir path depth max-depth)
+  "Recursively list directory contents as formatted tree lines."
+  (let* ((entries (with-catch (lambda (e) '()) (lambda () (directory-files path))))
+         (sorted (sort entries string<?)))
+    (let loop ((es sorted) (lines []))
+      (if (null? es)
+        (reverse lines)
+        (let* ((name (car es))
+               (full (string-append path "/" name))
+               (is-dir (with-catch (lambda (e) #f) (lambda () (eq? 'directory (file-info-type (file-info full))))))
+               (line (treemacs-format-entry path name depth))
+               (sub-lines (if (and is-dir (< depth max-depth))
+                            (treemacs-list-dir full (+ depth 1) max-depth)
+                            [])))
+          (loop (cdr es) (append (reverse (cons line sub-lines)) lines)))))))
+
 (def (cmd-treemacs app)
-  "Toggle treemacs file-tree view."
+  "Toggle treemacs file-tree view with directory structure."
   (let* ((fr (app-state-frame app))
          (ed (current-qt-editor app))
          (buf (current-qt-buffer app)))
@@ -953,17 +978,20 @@
           (qt-buffer-attach! ed other)
           (set! (qt-edit-window-buffer (qt-current-window fr)) other))
         (echo-message! (app-state-echo app) "Treemacs closed"))
-      ;; Open treemacs — show directory listing
+      ;; Open treemacs — show directory tree (2 levels deep)
       (let* ((path (and buf (buffer-file-path buf)))
              (dir (if path (path-directory path) (current-directory)))
-             (entries (with-catch (lambda (e) '()) (lambda () (directory-files dir))))
-             (text (string-append "Treemacs: " dir "\n\n"
-                     (string-join (sort entries string<?) "\n") "\n"))
+             (tree-lines (treemacs-list-dir dir 0 2))
+             (text (string-append "Treemacs: " dir "\n"
+                     (make-string 40 #\-) "\n"
+                     (string-join tree-lines "\n") "\n"))
              (tbuf (qt-buffer-create! "*Treemacs*" ed #f)))
         (qt-buffer-attach! ed tbuf)
         (set! (qt-edit-window-buffer (qt-current-window fr)) tbuf)
         (qt-plain-text-edit-set-text! ed text)
-        (qt-plain-text-edit-set-cursor-position! ed 0)))))
+        (sci-send ed SCI_SETREADONLY 1)
+        (qt-plain-text-edit-set-cursor-position! ed 0)
+        (echo-message! (app-state-echo app) (string-append "Treemacs: " dir))))))
 
 ;;; --- Org set tags ---
 (def (cmd-org-set-tags app)
