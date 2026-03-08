@@ -34,16 +34,23 @@
         ;; Chain of all prior command modules
         :gemacs/qt/magit
         :gemacs/qt/commands-core
+        :gemacs/qt/commands-core2
         :gemacs/qt/commands-edit
         :gemacs/qt/commands-edit2
         :gemacs/qt/commands-search
+        :gemacs/qt/commands-search2
         :gemacs/qt/commands-file
+        :gemacs/qt/commands-file2
         :gemacs/qt/commands-sexp
+        :gemacs/qt/commands-sexp2
         :gemacs/qt/commands-ide
         :gemacs/qt/commands-ide2
         :gemacs/qt/commands-vcs
+        :gemacs/qt/commands-vcs2
         :gemacs/qt/commands-shell
+        :gemacs/qt/commands-shell2
         :gemacs/qt/commands-modes
+        :gemacs/qt/commands-modes2
         :gemacs/qt/commands-config
         :gemacs/qt/commands-config2)
 

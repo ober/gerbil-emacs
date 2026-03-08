@@ -121,24 +121,32 @@
         :gemacs/qt/image
         ;; Sub-modules (chain)
         :gemacs/qt/commands-core
+        :gemacs/qt/commands-core2
         :gemacs/qt/commands-edit
         :gemacs/qt/commands-edit2
         :gemacs/qt/commands-search
+        :gemacs/qt/commands-search2
         :gemacs/qt/commands-file
+        :gemacs/qt/commands-file2
         :gemacs/qt/commands-sexp
+        :gemacs/qt/commands-sexp2
         :gemacs/qt/commands-ide
         :gemacs/qt/commands-ide2
         :gemacs/qt/commands-vcs
+        :gemacs/qt/commands-vcs2
         :gemacs/qt/lsp-client
         :gemacs/qt/commands-lsp
         :gemacs/qt/commands-shell
+        :gemacs/qt/commands-shell2
         :gemacs/qt/commands-modes
+        :gemacs/qt/commands-modes2
         :gemacs/qt/snippets
         :gemacs/qt/commands-config
         :gemacs/qt/commands-config2
         :gemacs/qt/commands-parity
         :gemacs/qt/commands-parity2
         :gemacs/qt/commands-aliases
+        :gemacs/qt/commands-aliases2
         :gemacs/qt/helm-commands)
 
 ;;;============================================================================
@@ -1651,6 +1659,8 @@
   (qt-register-alias-commands!)
   ;; Batch 12: Emacs-standard aliases
   (qt-register-batch12-aliases!)
+  ;; Aliases2: image, eww bookmarks, forge commands
+  (qt-register-aliases2-commands!)
   ;; Batch 14: facade-scope aliases
   (register-command! 'kill-emacs cmd-quit)
   ;; Batch 6: header-line, project-keymaps, org-columns

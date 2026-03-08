@@ -12,7 +12,8 @@
         :gemacs/qt/buffer
         :gemacs/qt/window
         :gemacs/qt/echo
-        :gemacs/qt/commands-core)
+        :gemacs/qt/commands-core
+        :gemacs/qt/commands-core2)
 
 ;;; ============================================================================
 ;;; Qt snippet commands

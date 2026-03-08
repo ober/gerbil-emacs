@@ -19,6 +19,7 @@
         :gemacs/qt/image
         :gemacs/qt/modeline
         :gemacs/qt/commands-core
+        :gemacs/qt/commands-core2
         :gemacs/qt/commands-edit)
 
 ;;;============================================================================

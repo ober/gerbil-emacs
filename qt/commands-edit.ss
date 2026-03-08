@@ -27,7 +27,8 @@
         :gemacs/qt/highlight
         :gemacs/qt/modeline
         :gemacs/qt/image
-        :gemacs/qt/commands-core)
+        :gemacs/qt/commands-core
+        :gemacs/qt/commands-core2)
 
 ;;;============================================================================
 ;;; Incremental Search (isearch)

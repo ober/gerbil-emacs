@@ -18,11 +18,15 @@
         :gemacs/qt/highlight
         :gemacs/qt/modeline
         :gemacs/qt/commands-core
+        :gemacs/qt/commands-core2
         :gemacs/qt/commands-edit
         :gemacs/qt/commands-edit2
         :gemacs/qt/commands-search
+        :gemacs/qt/commands-search2
         :gemacs/qt/commands-file
+        :gemacs/qt/commands-file2
         :gemacs/qt/commands-sexp
+        :gemacs/qt/commands-sexp2
         (only-in :gemacs/editor-extra-helpers project-current)
         :gemacs/qt/commands-ide)
 

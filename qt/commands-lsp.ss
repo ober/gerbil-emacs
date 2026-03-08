@@ -23,14 +23,19 @@
         :gemacs/qt/modeline
         :gemacs/qt/lsp-client
         :gemacs/qt/commands-core
+        :gemacs/qt/commands-core2
         :gemacs/qt/commands-edit
         :gemacs/qt/commands-edit2
         :gemacs/qt/commands-search
+        :gemacs/qt/commands-search2
         :gemacs/qt/commands-file
+        :gemacs/qt/commands-file2
         :gemacs/qt/commands-sexp
+        :gemacs/qt/commands-sexp2
         :gemacs/qt/commands-ide
         :gemacs/qt/commands-ide2
-        :gemacs/qt/commands-vcs)
+        :gemacs/qt/commands-vcs
+        :gemacs/qt/commands-vcs2)
 
 ;;;============================================================================
 ;;; Scintilla indicator IDs for LSP diagnostics
