@@ -1735,6 +1735,7 @@
   (register-command! 'pdf-view-mode cmd-pdf-view-mode)
   (register-command! 'pdf-view-next-page cmd-pdf-view-next-page)
   (register-command! 'pdf-view-previous-page cmd-pdf-view-previous-page)
+  (register-command! 'pdf-view-goto-page cmd-pdf-view-goto-page)
   (register-command! 'doc-view-mode cmd-doc-view-mode)
   (register-command! 'compose-mail cmd-compose-mail)
   (register-command! 'gnus cmd-gnus)
@@ -2623,21 +2624,146 @@
   "Open vterm terminal (Qt)."
   (execute-command! app 'term))
 
+;;; PDF viewing state
+(def *qt-pdf-file* #f)
+(def *qt-pdf-page* 1)
+(def *qt-pdf-total* 1)
+
+(def (qt-pdf-page-count file)
+  "Get page count using pdfinfo."
+  (with-catch (lambda (e) 1)
+    (lambda ()
+      (let* ((proc (open-process
+                     (list path: "pdfinfo" arguments: [file]
+                           stdin-redirection: #f stdout-redirection: #t
+                           stderr-redirection: #f)))
+             (output (read-line proc #f)))
+        (process-status proc) (close-port proc)
+        (if output
+          (let* ((lines (string-split output #\newline))
+                 (pages-line (find (lambda (l) (string-prefix? "Pages:" l)) lines)))
+            (if pages-line
+              (or (string->number (string-trim (substring pages-line 6 (string-length pages-line)))) 1)
+              1))
+          1)))))
+
+(def (qt-pdf-extract file page)
+  "Extract text from a PDF page using pdftotext."
+  (with-catch (lambda (e) #f)
+    (lambda ()
+      (let* ((proc (open-process
+                     (list path: "pdftotext"
+                           arguments: ["-f" (number->string page)
+                                       "-l" (number->string page)
+                                       "-layout" file "-"]
+                           stdin-redirection: #f stdout-redirection: #t
+                           stderr-redirection: #f)))
+             (output (read-line proc #f)))
+        (process-status proc) (close-port proc)
+        output))))
+
+(def (qt-pdf-display! app)
+  "Display current PDF page in Qt buffer."
+  (let* ((fr (app-state-frame app))
+         (ed (current-qt-editor app))
+         (content (qt-pdf-extract *qt-pdf-file* *qt-pdf-page*))
+         (text (string-append "PDF: " (path-strip-directory *qt-pdf-file*)
+                 " - Page " (number->string *qt-pdf-page*)
+                 "/" (number->string *qt-pdf-total*) "\n"
+                 (make-string 60 #\-) "\n\n"
+                 (or content "Could not extract text from page")
+                 "\n\n[n: next, p: previous, g: goto, q: quit]"))
+         (buf (or (buffer-by-name "*PDF View*")
+                  (qt-buffer-create! "*PDF View*" ed #f))))
+    (qt-buffer-attach! ed buf)
+    (set! (qt-edit-window-buffer (qt-current-window fr)) buf)
+    (sci-send ed SCI_SETREADONLY 0)
+    (qt-plain-text-edit-set-text! ed text)
+    (qt-plain-text-edit-set-cursor-position! ed 0)
+    (sci-send ed SCI_SETREADONLY 1)))
+
 (def (cmd-pdf-view-mode app)
-  "View PDF file (Qt)."
-  (echo-message! (app-state-echo app) "PDF: use pdftotext for text extraction"))
+  "Open a PDF file for viewing (Qt)."
+  (let* ((echo (app-state-echo app))
+         (file (qt-echo-read-string app "PDF file: ")))
+    (when (and file (> (string-length file) 0))
+      (let ((full (path-expand file)))
+        (if (not (file-exists? full))
+          (echo-error! echo "File not found")
+          (begin
+            (set! *qt-pdf-file* full)
+            (set! *qt-pdf-page* 1)
+            (set! *qt-pdf-total* (qt-pdf-page-count full))
+            (qt-pdf-display! app)))))))
 
 (def (cmd-pdf-view-next-page app)
-  "Next PDF page (Qt)."
-  (echo-message! (app-state-echo app) "PDF: next page"))
+  "Go to next page in PDF (Qt)."
+  (if (not *qt-pdf-file*)
+    (echo-message! (app-state-echo app) "No PDF open")
+    (if (>= *qt-pdf-page* *qt-pdf-total*)
+      (echo-message! (app-state-echo app) "Already at last page")
+      (begin
+        (set! *qt-pdf-page* (+ *qt-pdf-page* 1))
+        (qt-pdf-display! app)))))
 
 (def (cmd-pdf-view-previous-page app)
-  "Previous PDF page (Qt)."
-  (echo-message! (app-state-echo app) "PDF: previous page"))
+  "Go to previous page in PDF (Qt)."
+  (if (not *qt-pdf-file*)
+    (echo-message! (app-state-echo app) "No PDF open")
+    (if (<= *qt-pdf-page* 1)
+      (echo-message! (app-state-echo app) "Already at first page")
+      (begin
+        (set! *qt-pdf-page* (- *qt-pdf-page* 1))
+        (qt-pdf-display! app)))))
+
+(def (cmd-pdf-view-goto-page app)
+  "Go to specific PDF page (Qt)."
+  (if (not *qt-pdf-file*)
+    (echo-message! (app-state-echo app) "No PDF open")
+    (let* ((input (qt-echo-read-string app
+                    (string-append "Go to page (1-" (number->string *qt-pdf-total*) "): ")))
+           (page (and input (string->number input))))
+      (if (and page (> page 0) (<= page *qt-pdf-total*))
+        (begin
+          (set! *qt-pdf-page* page)
+          (qt-pdf-display! app))
+        (echo-error! (app-state-echo app) "Invalid page number")))))
 
 (def (cmd-doc-view-mode app)
-  "View document (Qt)."
-  (echo-message! (app-state-echo app) "DocView: use pdftotext/ps2txt for conversion"))
+  "View document — converts PDF/PS to text using pdftotext or ps2ascii (Qt)."
+  (let* ((echo (app-state-echo app))
+         (fr (app-state-frame app))
+         (buf (qt-edit-window-buffer (qt-current-window fr)))
+         (file (and buf (buffer-file-path buf))))
+    (if (not file)
+      (echo-message! echo "No file associated with buffer")
+      (let* ((ext (let ((dot (string-index-right file #\.)))
+                    (if dot (substring file (+ dot 1) (string-length file)) "")))
+             (cmd (cond
+                    ((member ext '("pdf" "PDF")) (list "pdftotext" "-layout" file "-"))
+                    ((member ext '("ps" "PS" "eps" "EPS")) (list "ps2ascii" file))
+                    (else #f))))
+        (if (not cmd)
+          (echo-message! echo (string-append "Cannot convert ." ext " files"))
+          (with-catch
+            (lambda (e) (echo-error! echo "Conversion failed"))
+            (lambda ()
+              (let* ((proc (open-process
+                             (list path: (car cmd) arguments: (cdr cmd)
+                                   stdin-redirection: #f stdout-redirection: #t
+                                   stderr-redirection: #f)))
+                     (output (read-line proc #f)))
+                (process-status proc) (close-port proc)
+                (let* ((ed (current-qt-editor app))
+                       (doc-buf (or (buffer-by-name "*DocView*")
+                                   (qt-buffer-create! "*DocView*" ed #f))))
+                  (qt-buffer-attach! ed doc-buf)
+                  (set! (qt-edit-window-buffer (qt-current-window fr)) doc-buf)
+                  (qt-plain-text-edit-set-text! ed (or output ""))
+                  (qt-plain-text-edit-set-cursor-position! ed 0)
+                  (sci-send ed SCI_SETREADONLY 1)
+                  (echo-message! echo (string-append "Converted " (path-strip-directory file))))))))))))
+
 
 (def (cmd-compose-mail app)
   "Compose email (Qt)."

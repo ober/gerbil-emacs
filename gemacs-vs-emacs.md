@@ -874,8 +874,8 @@
 
 | Feature | Status | Notes |
 |---------|--------|-------|
-| PDF viewing (pdf-tools) | :yellow_circle: | `pdf-view-mode`, `pdf-view-next-page`, `pdf-view-previous-page` |
-| DocView | :yellow_circle: | `doc-view-mode` with text extraction |
+| PDF viewing (pdf-tools) | :large_blue_circle: | `pdf-view-mode` with `pdftotext` extraction, page navigation (next/prev/goto), both TUI and Qt |
+| DocView | :large_blue_circle: | `doc-view-mode` converts PDF/PS to text via `pdftotext`/`ps2ascii`, both TUI and Qt |
 | Image viewing | :large_blue_circle: | Image buffers in Qt layer |
 
 **Summary:** No PDF viewing. Image display works in Qt layer.

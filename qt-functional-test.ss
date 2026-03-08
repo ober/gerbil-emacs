@@ -3559,6 +3559,35 @@
   (displayln "Group 28 complete"))
 
 ;;;============================================================================
+;;; Group 29: PDF/DocView
+;;;============================================================================
+
+(def (run-group-29-pdf-docview)
+  (displayln "\n=== Group 29: PDF/DocView ===")
+
+  (if (find-command 'pdf-view-mode)
+    (pass! "pdf-view-mode registered")
+    (fail! "pdf-view-mode" #f "procedure"))
+
+  (if (find-command 'pdf-view-next-page)
+    (pass! "pdf-view-next-page registered")
+    (fail! "pdf-view-next-page" #f "procedure"))
+
+  (if (find-command 'pdf-view-previous-page)
+    (pass! "pdf-view-previous-page registered")
+    (fail! "pdf-view-previous-page" #f "procedure"))
+
+  (if (find-command 'pdf-view-goto-page)
+    (pass! "pdf-view-goto-page registered")
+    (fail! "pdf-view-goto-page" #f "procedure"))
+
+  (if (find-command 'doc-view-mode)
+    (pass! "doc-view-mode registered")
+    (fail! "doc-view-mode" #f "procedure"))
+
+  (displayln "Group 29 complete"))
+
+;;;============================================================================
 ;;; Main
 ;;;============================================================================
 
@@ -3595,6 +3624,7 @@
     (run-group-26-hooks-upgrades)
     (run-group-27-ctags)
     (run-group-28-tramp-sudo-crypt)
+    (run-group-29-pdf-docview)
 
     (displayln "---")
     (displayln "Results: " *passes* " passed, " *failures* " failed")
