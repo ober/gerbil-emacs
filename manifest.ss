@@ -1,4 +1,4 @@
 (def version-manifest
-     '(("" . "729febf")
-       ("Gerbil" . "2ffad2bb5")
-       ("Gambit" . "v4.9.7-47-g090ae227")))
+     '(("" . "3521d99")
+       ("Gerbil" . "6dc65f65")
+       ("Gambit" . "v4.9.7-6-g64f4d369")))

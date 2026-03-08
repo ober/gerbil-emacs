@@ -1454,3 +1454,125 @@
             (echo-message! (app-state-echo app)
               (string-append key-str " → " cmd-name " in " mode-name "-mode"))))))))
 
+;;;============================================================================
+;;; Tags (ctags) support
+;;;============================================================================
+
+(def *tags-file* #f)  ;; path to current TAGS/tags file
+(def *tags-table* (make-hash-table))  ;; tag-name -> list of (file . line)
+
+(def (parse-ctags-file path)
+  "Parse a ctags tags file into a hash table: name -> list of (file . line-num)."
+  (let ((table (make-hash-table)))
+    (with-catch
+      (lambda (e) table)
+      (lambda ()
+        (let ((text (read-file-as-string path)))
+          (when text
+            (for-each
+              (lambda (line)
+                (when (and (> (string-length line) 0)
+                           (not (char=? (string-ref line 0) #\!)))  ;; skip ctags headers
+                  (let ((parts (string-split line #\tab)))
+                    (when (>= (length parts) 3)
+                      (let* ((name (car parts))
+                             (file (cadr parts))
+                             (addr (caddr parts))
+                             ;; Extract line number from "123;" or "/pattern/"
+                             (line-num
+                               (with-catch (lambda (e) 1)
+                                 (lambda ()
+                                   (string->number
+                                     (let ((s (string-trim-both addr)))
+                                       (if (and (> (string-length s) 0)
+                                                (char-numeric? (string-ref s 0)))
+                                         ;; "123;" -> 123
+                                         (let loop ((i 0))
+                                           (if (and (< i (string-length s))
+                                                    (char-numeric? (string-ref s i)))
+                                             (loop (+ i 1))
+                                             (substring s 0 i)))
+                                         "1")))))) ;; pattern-based: default to line 1
+                             (existing (or (hash-get table name) '())))
+                        (hash-put! table name
+                          (cons (cons file line-num) existing)))))))
+              (string-split text #\newline))))
+        table))))
+
+(def (cmd-visit-tags-table app)
+  "Generate tags file using ctags -R in current project root."
+  (let* ((root (current-project-root app))
+         (tags-path (string-append root "/tags")))
+    (echo-message! (app-state-echo app) "Generating tags...")
+    (with-catch
+      (lambda (e)
+        (echo-error! (app-state-echo app) "ctags not available — install universal-ctags"))
+      (lambda ()
+        (let ((proc (open-process
+                      (list path: "ctags"
+                            arguments: ["-R" "-o" tags-path root]
+                            stdin-redirection: #f
+                            stdout-redirection: #t
+                            stderr-redirection: #f))))
+          (read-line proc)  ;; wait for completion
+          (process-status proc)
+          (close-port proc))
+        (set! *tags-file* tags-path)
+        (set! *tags-table* (parse-ctags-file tags-path))
+        (echo-message! (app-state-echo app)
+          (string-append "Tags: " (number->string (hash-length *tags-table*))
+                         " symbols from " root))))))
+
+(def (cmd-find-tag app)
+  "Jump to a tag definition (M-.). Prompts with completion from tags table."
+  (when (and (not *tags-file*) (not (= (hash-length *tags-table*) 0)))
+    ;; Try to auto-load tags from project root
+    (let* ((root (current-project-root app))
+           (tags-path (string-append root "/tags")))
+      (when (file-exists? tags-path)
+        (set! *tags-file* tags-path)
+        (set! *tags-table* (parse-ctags-file tags-path)))))
+  (if (= (hash-length *tags-table*) 0)
+    (echo-error! (app-state-echo app) "No tags loaded — run M-x visit-tags-table first")
+    (let* ((ed (current-qt-editor app))
+           (default (symbol-at-point ed))
+           (tag-names (sort (hash-keys *tags-table*) string<?))
+           (prompt (if default
+                     (string-append "Find tag (default " default "): ")
+                     "Find tag: "))
+           (input (qt-echo-read-string-with-completion app prompt tag-names))
+           (tag (if (and input (> (string-length input) 0))
+                  input
+                  default)))
+      (if (not tag)
+        (echo-error! (app-state-echo app) "No tag specified")
+        (let ((entries (hash-get *tags-table* tag)))
+          (if (not entries)
+            (echo-error! (app-state-echo app)
+              (string-append "Tag not found: " tag))
+            (let* ((entry (car entries))  ;; first match
+                   (file (car entry))
+                   (line-num (cdr entry))
+                   (full-path (if (and (> (string-length file) 0)
+                                      (char=? (string-ref file 0) #\/))
+                                file
+                                (string-append (path-directory *tags-file*) "/" file))))
+              (xref-push-location! app)
+              ;; Open file and jump to line
+              (let* ((name (path-strip-directory full-path))
+                     (fr (app-state-frame app))
+                     (ed (current-qt-editor app))
+                     (existing (buffer-by-name name))
+                     (buf (or existing (qt-buffer-create! name ed full-path))))
+                (qt-buffer-attach! ed buf)
+                (set! (qt-edit-window-buffer (qt-current-window fr)) buf)
+                (unless existing
+                  (let ((ftext (read-file-as-string full-path)))
+                    (when ftext
+                      (qt-plain-text-edit-set-text! ed ftext)
+                      (qt-text-document-set-modified! (buffer-doc-pointer buf) #f))))
+                (sci-send ed SCI_GOTOLINE (- line-num 1) 0)
+                (qt-plain-text-edit-ensure-cursor-visible! ed))
+              (echo-message! (app-state-echo app)
+                (string-append tag " → " file ":" (number->string line-num))))))))))
+

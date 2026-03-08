@@ -139,20 +139,101 @@
               (string-append "Found " (number->string (length results))
                             " occurrences. Use query-replace in each file."))))))))
 
-(def (cmd-visit-tags-table app)
-  "Visit a TAGS file (create from current directory using ctags)."
-  (let ((echo (app-state-echo app)))
-    (with-exception-catcher
-      (lambda (e) (echo-message! echo "ctags not available"))
+(def *tags-file* #f)
+(def *tags-table* (make-hash-table))
+
+(def (parse-ctags-file path)
+  "Parse a ctags tags file into hash table: name -> list of (file . line-num)."
+  (let ((table (make-hash-table)))
+    (with-catch
+      (lambda (e) table)
       (lambda ()
-        (let* ((proc (open-process
-                        (list path: "ctags"
-                              arguments: '("-R" ".")
-                              stdin-redirection: #f stdout-redirection: #t
-                              stderr-redirection: #t)))
-               (out (read-line proc #f)))
+        (let ((text (read-file-as-string path)))
+          (when text
+            (for-each
+              (lambda (line)
+                (when (and (> (string-length line) 0)
+                           (not (char=? (string-ref line 0) #\!)))
+                  (let ((parts (string-split line #\tab)))
+                    (when (>= (length parts) 3)
+                      (let* ((name (car parts))
+                             (file (cadr parts))
+                             (addr (caddr parts))
+                             (line-num
+                               (with-catch (lambda (e) 1)
+                                 (lambda ()
+                                   (string->number
+                                     (let ((s (string-trim-both addr)))
+                                       (if (and (> (string-length s) 0)
+                                                (char-numeric? (string-ref s 0)))
+                                         (let loop ((i 0))
+                                           (if (and (< i (string-length s))
+                                                    (char-numeric? (string-ref s i)))
+                                             (loop (+ i 1))
+                                             (substring s 0 i)))
+                                         "1"))))))
+                             (existing (or (hash-get table name) '())))
+                        (hash-put! table name
+                          (cons (cons file line-num) existing)))))))
+              (string-split text #\newline))))
+        table))))
+
+(def (cmd-visit-tags-table app)
+  "Generate tags file using ctags -R in current directory, then load tags."
+  (let ((echo (app-state-echo app))
+        (root (current-directory)))
+    (echo-message! echo "Generating tags...")
+    (with-catch
+      (lambda (e) (echo-message! echo "ctags not available — install universal-ctags"))
+      (lambda ()
+        (let* ((tags-path (string-append root "/tags"))
+               (proc (open-process
+                       (list path: "ctags"
+                             arguments: ["-R" "-o" tags-path root]
+                             stdin-redirection: #f stdout-redirection: #t
+                             stderr-redirection: #f))))
+          (read-line proc)
           (process-status proc)
-          (echo-message! echo "TAGS file generated"))))))
+          (close-port proc)
+          (set! *tags-file* tags-path)
+          (set! *tags-table* (parse-ctags-file tags-path))
+          (echo-message! echo
+            (string-append "Tags: " (number->string (hash-length *tags-table*))
+                           " symbols from " root)))))))
+
+(def (cmd-find-tag app)
+  "Jump to a tag definition (M-.). Prompts with completion from tags table."
+  ;; Auto-load tags if not yet loaded
+  (when (and (not *tags-file*) (= (hash-length *tags-table*) 0))
+    (let ((tags-path (string-append (current-directory) "/tags")))
+      (when (file-exists? tags-path)
+        (set! *tags-file* tags-path)
+        (set! *tags-table* (parse-ctags-file tags-path)))))
+  (if (= (hash-length *tags-table*) 0)
+    (echo-message! (app-state-echo app) "No tags loaded — run M-x visit-tags-table first")
+    (let* ((default (xref-get-symbol-at-point app))
+           (prompt (if default
+                     (string-append "Find tag (default " default "): ")
+                     "Find tag: "))
+           (input (app-read-string app prompt))
+           (tag (if (and input (> (string-length input) 0)) input default)))
+      (if (not tag)
+        (echo-message! (app-state-echo app) "No tag specified")
+        (let ((entries (hash-get *tags-table* tag)))
+          (if (not entries)
+            (echo-message! (app-state-echo app) (string-append "Tag not found: " tag))
+            (let* ((entry (car entries))
+                   (file (car entry))
+                   (line-num (cdr entry))
+                   (full-path (if (and (> (string-length file) 0)
+                                      (char=? (string-ref file 0) #\/))
+                                file
+                                (string-append (path-directory *tags-file*) "/" file))))
+              (xref-push-location! app)
+              (xref-goto-location app full-path (- line-num 1))
+              (echo-message! (app-state-echo app)
+                (string-append tag " → " file ":" (number->string line-num))))))))))
+
 
 ;; Whitespace extras
 (def (cmd-whitespace-toggle-options app)

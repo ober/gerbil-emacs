@@ -395,6 +395,10 @@
   (register-command! 'remove-hook cmd-remove-hook)
   (register-command! 'list-hooks cmd-list-hooks)
 
+  ;; Tags
+  (register-command! 'visit-tags-table cmd-visit-tags-table)
+  (register-command! 'find-tag cmd-find-tag)
+
   ;; Toggles
   ;; show-dir-locals → registered in facade (cross-cutting)
   (register-command! 'toggle-auto-indent cmd-toggle-auto-indent)

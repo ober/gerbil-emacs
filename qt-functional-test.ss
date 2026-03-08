@@ -3485,6 +3485,23 @@
   (displayln "Group 26 complete"))
 
 ;;;============================================================================
+;;; Group 27: Tags (ctags) Support
+;;;============================================================================
+
+(def (run-group-27-ctags)
+  (displayln "\n=== Group 27: Tags (ctags) Support ===")
+
+  (if (find-command 'visit-tags-table)
+    (pass! "visit-tags-table registered")
+    (fail! "visit-tags-table" #f "procedure"))
+
+  (if (find-command 'find-tag)
+    (pass! "find-tag registered")
+    (fail! "find-tag" #f "procedure"))
+
+  (displayln "Group 27 complete"))
+
+;;;============================================================================
 ;;; Main
 ;;;============================================================================
 
@@ -3519,6 +3536,7 @@
     (run-group-24-ibuffer)
     (run-group-25-major-modes)
     (run-group-26-hooks-upgrades)
+    (run-group-27-ctags)
 
     (displayln "---")
     (displayln "Results: " *passes* " passed, " *failures* " failed")

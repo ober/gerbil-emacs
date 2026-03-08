@@ -507,6 +507,7 @@
 | Eldoc (function signatures) | :large_blue_circle: | Echo area display |
 | Xref (definitions) | :large_blue_circle: | Grep-based fallback |
 | Xref (references) | :large_blue_circle: | Grep-based |
+| Tags (ctags/etags) | :large_blue_circle: | `visit-tags-table` generates+loads tags, `find-tag` (M-.) jumps to definition with completion |
 | Imenu (symbol index) | :large_blue_circle: | Works for structured languages |
 | Which-function mode | :large_blue_circle: | Multi-language: Scheme, Python, C, Go, Rust, JS/TS |
 | Semantic analysis | :yellow_circle: | `semantic-mode` toggle in both layers |

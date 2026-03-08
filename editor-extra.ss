@@ -295,6 +295,7 @@
   (register-command! 'tags-search cmd-tags-search)
   (register-command! 'tags-query-replace cmd-tags-query-replace)
   (register-command! 'visit-tags-table cmd-visit-tags-table)
+  (register-command! 'find-tag cmd-find-tag)
   ;; Whitespace extras
   (register-command! 'whitespace-toggle-options cmd-whitespace-toggle-options)
   ;; Highlight

@@ -55,7 +55,7 @@ Implemented popup UX matching Ruby Scintilla editors — inline autocomplete dro
 
 ### Maintenance
 - ~~**Split over-limit files**~~ — DONE: split `qt/commands-edit.ss` (2457→1155+1325) and `editor-extra-editing.ss` (2204→1097+1130). Remaining `editor-extra-media.ss` (2013) and `qt/commands-vcs.ss` (2003) are barely over limit
-- ~~**Test coverage**~~ — DONE: added Group 13 tests (dired, which-key, zoom, compile/search, bookmarks, M-x history). 181 total TUI functional tests, 364 Qt tests
+- ~~**Test coverage**~~ — DONE: added Group 13 tests (dired, which-key, zoom, compile/search, bookmarks, M-x history). 181 total TUI functional tests, 366 Qt tests
 
 ### Recently Completed
 - ~~**Vterm terminal fixes**~~ — DONE: PTY window size from editor dimensions, PS1 prompt cleanup, batched rendering for speed
@@ -72,6 +72,7 @@ Implemented popup UX matching Ruby Scintilla editors — inline autocomplete dro
 - ~~**Project keybindings (C-x p)**~~ — DONE: Emacs 28+ standard prefix map, narrowing for find-file/switch-buffer/switch-project
 - ~~**Windmove keybindings**~~ — DONE: Shift+arrow keys for directional window navigation
 - ~~**File splits: commands-config + commands-ide**~~ — DONE: split 2415→1087+1359 and 2513→1165+1540, all under 2000 limit
+- ~~**Hook system & ctags integration**~~ — DONE: `add-hook!`/`remove-hook!`/`run-hooks!` in core.ss, hook management commands, mode hooks, ctags support (`visit-tags-table`, `find-tag` with completion) in both TUI and Qt
 - ~~**Consult-ripgrep (M-s r)**~~ — DONE: interactive `rg` search with narrowing popup, auto-detect project root, jump to result
 - ~~**Consult-bookmark**~~ — DONE: bookmark jump with file:position info in narrowing popup
 - ~~**Fill-column indicator**~~ — DONE: visual vertical line using Scintilla edge mode (SCI_SETEDGEMODE), both TUI and Qt
