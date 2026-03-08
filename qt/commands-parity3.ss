@@ -1605,8 +1605,42 @@
 (def (cmd-untabify-region app)
   (execute-command! app 'tabify-region))
 
+(def *re-builder-indicator* 30)  ;; Scintilla indicator for regex matches
+
 (def (cmd-re-builder app)
-  (echo-message! (app-state-echo app) "Use C-M-s for regexp search"))
+  "Interactive regex builder — highlights matches in current buffer."
+  (let ((pattern (qt-echo-read-string app "Regex: ")))
+    (when (and pattern (> (string-length pattern) 0))
+      (let* ((fr (app-state-frame app))
+             (ed (qt-edit-window-editor (qt-current-window fr)))
+             (text (qt-plain-text-edit-text ed))
+             (tlen (string-length text)))
+        ;; Setup indicator for regex matches
+        (sci-send ed SCI_INDICSETSTYLE *re-builder-indicator* 7)  ; INDIC_ROUNDBOX
+        (sci-send ed SCI_INDICSETFORE *re-builder-indicator* #x00FF00)  ; green
+        (sci-send ed 2523 *re-builder-indicator* 80)  ; SCI_INDICSETALPHA
+        (sci-send ed SCI_SETINDICATORCURRENT *re-builder-indicator*)
+        (sci-send ed SCI_INDICATORCLEARRANGE 0 tlen)
+        ;; Search for regex matches using Scintilla
+        (sci-send ed SCI_SETSEARCHFLAGS 2)  ; SCFIND_REGEXP
+        (let loop ((pos 0) (count 0))
+          (sci-send ed SCI_SETTARGETSTART pos)
+          (sci-send ed SCI_SETTARGETEND tlen)
+          (let ((found (sci-send/string ed SCI_SEARCHINTARGET pattern)))
+            (if (< found 0)
+              (echo-message! (app-state-echo app)
+                (string-append "Regex: " (number->string count) " matches for /" pattern "/"))
+              (let ((mstart (sci-send ed SCI_GETTARGETSTART))
+                    (mend (sci-send ed SCI_GETTARGETEND)))
+                (if (or (<= mend pos) (= mstart mend))
+                  (echo-message! (app-state-echo app)
+                    (string-append "Regex: " (number->string count) " matches for /" pattern "/"))
+                  (begin
+                    ;; Highlight this match
+                    (sci-send ed SCI_SETINDICATORCURRENT *re-builder-indicator*)
+                    (sci-send ed SCI_INDICATORFILLRANGE mstart (- mend mstart))
+                    (loop mend (+ count 1))))))))))))
+
 (def (cmd-regex-builder app)
   (cmd-re-builder app))
 

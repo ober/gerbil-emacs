@@ -150,6 +150,8 @@ Largest files: modes (~1851), lsp (~1802), search (~1778)
 
 - ~~**GPTel AI chat, customize, package management**~~ — DONE: GPTel chat buffer with OpenAI API integration (curl-based, OPENAI_API_KEY), customize-group settings browser with toggle states, customize-themes theme catalog, full package management (list-packages via dpkg/rpm/brew, package-list-packages/install/delete/refresh via gerbil pkg, package-archives info). 653 Qt tests
 
+- ~~**Stub cleanup + re-builder + doc/theme/mail upgrades**~~ — DONE: Upgraded re-builder from echo stub to real interactive regex builder with Scintilla match highlighting (INDIC_ROUNDBOX). Upgraded dash-at-point, devdocs-lookup, doom-themes, rmail, citar-insert-citation, facemenu-set-background from stubs to real. Cleaned up 37 parity3 stubs overridden by real implementations. Only 10 stubs remain across entire Qt codebase. 661 Qt tests
+
 ### Aspirational
 - LSP in TUI
 - ~~DAP/debugger integration~~ — DONE: real GDB/MI interface (Qt), DAP protocol skeleton (TUI)

@@ -4869,6 +4869,10 @@
     (if (find-command 'facemenu-set-background) (pass! "facemenu-set-background registered")
       (fail! "facemenu-set-background registered" #f #t))
 
+    ;; re-builder — real regex highlighter
+    (if (find-command 're-builder) (pass! "re-builder registered")
+      (fail! "re-builder registered" #f #t))
+
     (destroy-qt-test-app! ed w)
     (displayln "Group 47 complete")))
 
