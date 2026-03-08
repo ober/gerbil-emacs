@@ -146,6 +146,8 @@
         :gemacs/qt/commands-parity
         :gemacs/qt/commands-parity2
         :gemacs/qt/commands-parity3
+        :gemacs/qt/commands-parity4
+        :gemacs/qt/commands-parity5
         :gemacs/qt/commands-aliases
         :gemacs/qt/commands-aliases2
         :gemacs/qt/helm-commands)
@@ -1774,6 +1776,10 @@
   (qt-register-parity3-toggles!)
   ;; Parity4: mode toggles, stubs, aliases, functional commands
   (qt-register-parity4-commands!)
+  ;; Parity4 toggles (339 remaining toggles)
+  (qt-register-parity4-toggles!)
+  ;; Parity5: remaining mode toggles, stubs, aliases, functional
+  (qt-register-parity5-commands!)
   ;; Wire modeline providers
   (set-box! *modeline-overwrite-provider* (lambda () *overwrite-mode*))
   (set-box! *modeline-narrow-provider*

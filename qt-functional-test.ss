@@ -4198,6 +4198,122 @@
   (displayln "Group 39 complete"))
 
 ;;;============================================================================
+;;; Group 40: Parity4/5 — remaining 473 toggle, mode, stub, alias, functional
+;;;============================================================================
+
+(def (run-group-40-parity5-commands)
+  (displayln "\n=== Group 40: Parity4/5 Commands ===")
+
+  (let-values (((_ed _w app) (make-qt-test-app "parity5-test")))
+
+    ;; Test parity4 toggles (sample 10 from the 339)
+    (let ((toggle-samples '(toggle-ad-activate-all
+                            toggle-blink-cursor-mode
+                            toggle-company-mode
+                            toggle-display-time
+                            toggle-global-company
+                            toggle-global-flycheck
+                            toggle-ivy-mode
+                            toggle-mode-line
+                            toggle-prettify-symbols
+                            toggle-zen-mode)))
+      (for-each
+        (lambda (name)
+          (let ((label (string-append (symbol->string name) " registered")))
+            (if (find-command name)
+              (pass! label)
+              (fail! label #f "registered"))))
+        toggle-samples))
+
+    ;; Test parity5 mode toggles (sample 8)
+    (let ((mode-samples '(adaptive-wrap-prefix-mode
+                          company-mode
+                          fundamental-mode
+                          java-mode
+                          olivetti-mode
+                          rainbow-mode
+                          toml-mode
+                          writeroom-mode)))
+      (for-each
+        (lambda (name)
+          (let ((label (string-append (symbol->string name) " registered")))
+            (if (find-command name)
+              (pass! label)
+              (fail! label #f "registered"))))
+        mode-samples))
+
+    ;; Test parity5 stubs (sample 6)
+    (let ((stub-samples '(docker gptel list-packages
+                          slime speedbar woman)))
+      (for-each
+        (lambda (name)
+          (let ((label (string-append (symbol->string name) " registered")))
+            (if (find-command name)
+              (pass! label)
+              (fail! label #f "registered"))))
+        stub-samples))
+
+    ;; Test parity5 aliases (sample 6)
+    (let ((alias-samples '(ido-find-file ido-switch-buffer helm-mini
+                           widen-simple digit-argument org-set-tags)))
+      (for-each
+        (lambda (name)
+          (let ((label (string-append (symbol->string name) " registered")))
+            (if (find-command name)
+              (pass! label)
+              (fail! label #f "registered"))))
+        alias-samples))
+
+    ;; Test parity5 functional commands (sample 5)
+    (let ((func-samples '(auto-insert print-buffer help-for-help
+                          whitespace-report run-scheme)))
+      (for-each
+        (lambda (name)
+          (let ((label (string-append (symbol->string name) " functional")))
+            (if (procedure? (find-command name))
+              (pass! label)
+              (fail! label #f "procedure"))))
+        func-samples))
+
+    ;; Functional test: toggle works
+    (with-catch
+      (lambda (e)
+        (fail! "parity4 toggle functional"
+               (with-output-to-string "" (lambda () (display-exception e)))
+               "no error"))
+      (lambda ()
+        (execute-command! app 'toggle-zen-mode)
+        (let ((msg (echo-state-message (app-state-echo app))))
+          (if (and msg (string-contains msg "ON"))
+            (pass! "parity4 toggle-zen-mode ON")
+            (fail! "parity4 toggle-zen-mode" msg "contains ON")))))
+
+    ;; Functional test: mode toggle works
+    (with-catch
+      (lambda (e)
+        (fail! "parity5 mode toggle functional"
+               (with-output-to-string "" (lambda () (display-exception e)))
+               "no error"))
+      (lambda ()
+        (execute-command! app 'writeroom-mode)
+        (let ((msg (echo-state-message (app-state-echo app))))
+          (if (and msg (string-contains msg "ON"))
+            (pass! "parity5 writeroom-mode ON")
+            (fail! "parity5 writeroom-mode" msg "contains ON")))))
+
+    ;; Functional test: alias dispatches
+    (with-catch
+      (lambda (e)
+        (fail! "parity5 alias dispatch"
+               (with-output-to-string "" (lambda () (display-exception e)))
+               "no error"))
+      (lambda ()
+        (execute-command! app 'widen-simple)
+        (pass! "parity5 widen-simple dispatches"))))
+
+  (displayln "Group 40 complete"))
+
+;;;============================================================================
 ;;; Main
 ;;;============================================================================
 
@@ -4245,6 +4361,7 @@
     (run-group-37-parity-commands)
     (run-group-38-bulk-toggles)
     (run-group-39-parity4-commands)
+    (run-group-40-parity5-commands)
 
     (displayln "---")
     (displayln "Results: " *passes* " passed, " *failures* " failed")

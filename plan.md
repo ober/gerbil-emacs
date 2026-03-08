@@ -134,6 +134,8 @@ Largest files: modes (~1851), lsp (~1802), search (~1778)
 
 - ~~**Bulk toggle parity: 339 toggle commands**~~ — DONE: bulk registration infrastructure with shared hash-table state, auto-generated display names (e.g. "Global Rainbow Mode ON/OFF"), all 339 missing TUI toggles now available in Qt via M-x. 502 Qt tests
 
+- ~~**Full Qt/TUI command parity**~~ — DONE: closed remaining 473-command gap with parity4 (339 toggles) and parity5 (63 mode toggles, 31 stubs, 24 aliases, 18 functional). Every TUI command now has a Qt counterpart. 576 Qt tests
+
 ### Aspirational
 - LSP in TUI
 - DAP/debugger integration

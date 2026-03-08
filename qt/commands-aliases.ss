@@ -46,7 +46,9 @@
         :gemacs/qt/commands-config2
         :gemacs/qt/commands-parity
         :gemacs/qt/commands-parity2
-        :gemacs/qt/commands-parity3)
+        :gemacs/qt/commands-parity3
+        :gemacs/qt/commands-parity4
+        :gemacs/qt/commands-parity5)
 
 ;;;============================================================================
 ;;; Org structure templates (<s TAB, <e TAB, etc.)
