@@ -362,7 +362,36 @@
   "Recompile using last compile command."
   (let ((last-cmd (app-state-last-compile app)))
     (if last-cmd
-      (echo-message! (app-state-echo app) (string-append "Recompile: " last-cmd))
+      (begin
+        (echo-message! (app-state-echo app) (string-append "Recompiling: " last-cmd))
+        (with-exception-catcher
+          (lambda (e) (echo-error! (app-state-echo app) "Recompile failed"))
+          (lambda ()
+            (let* ((proc (open-process
+                           (list path: "/bin/sh"
+                                 arguments: (list "-c" last-cmd)
+                                 stdin-redirection: #f stdout-redirection: #t
+                                 stderr-redirection: #t)))
+                   (out (read-line proc #f))
+                   (status (process-status proc))
+                   (output (string-append
+                             (or out "")
+                             "\n\nCompilation "
+                             (if (= status 0) "finished" "FAILED")
+                             ".\n"))
+                   (fr (app-state-frame app))
+                   (ed (edit-window-editor (current-window fr)))
+                   (buf (or (buffer-by-name "*Compilation*")
+                            (buffer-create! "*Compilation*" ed #f))))
+              (buffer-attach! ed buf)
+              (set! (edit-window-buffer (current-window fr)) buf)
+              (editor-set-read-only ed #f)
+              (editor-set-text ed output)
+              (editor-set-save-point ed)
+              (editor-goto-pos ed 0)
+              (editor-set-read-only ed #t)
+              (echo-message! (app-state-echo app)
+                (if (= status 0) "Compilation finished" "Compilation FAILED"))))))
       (echo-message! (app-state-echo app) "No previous compile command"))))
 
 (def (cmd-kill-compilation app)

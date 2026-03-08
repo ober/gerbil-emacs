@@ -142,9 +142,6 @@
       (menu-bar-open . "Open menu bar")
       (notifications-list . "List notifications")
       (rmail . "Read mail (Rmail)")
-      (slime . "Start SLIME (Superior Lisp Interaction Mode)")
-      (sly . "Start Sly (Sylvester the cat's SLIME)")
-      (woman . "Read man page without man command")
       (citar-insert-citation . "Insert citation reference")
       (facemenu-set-background . "Set face background color"))))
 
@@ -180,7 +177,10 @@
       (yas-new-snippet . yas-expand)
       (yas-visit-snippet-file . yas-expand)
       (digit-argument . universal-argument)
-      (org-set-tags . org-set-tags-command))))
+      (org-set-tags . org-set-tags-command)
+      (woman . man)
+      (slime . run-gerbil)
+      (sly . run-gerbil))))
 
 ;;;============================================================================
 ;;; Functional commands (18) — real implementations
