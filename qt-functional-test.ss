@@ -4410,6 +4410,76 @@
   (displayln "Group 41 complete"))
 
 ;;;============================================================================
+;;; Group 42: Stub upgrades (calc stack, proced, eww)
+;;;============================================================================
+
+(def (run-group-42-stub-upgrades)
+  (displayln "\n=== Group 42: Stub upgrades (calc, proced, eww) ===")
+  (let-values (((ed _w app) (make-qt-test-app "stub-upgrades-test")))
+
+    ;; Test 1-4: Calculator RPN stack commands are registered
+    (for-each
+      (lambda (name)
+        (let ((label (string-append (symbol->string name) " registered")))
+          (if (procedure? (find-command name))
+            (pass! label)
+            (fail! label #f "procedure"))))
+      '(calc-push calc-pop calc-dup calc-swap))
+
+    ;; Test 5: calc-pop on empty stack shows message
+    (with-catch
+      (lambda (e) (fail! "calc-pop empty"
+                         (with-output-to-string "" (lambda () (display-exception e))) "no error"))
+      (lambda ()
+        (execute-command! app 'calc-pop)
+        (let ((msg (echo-state-message (app-state-echo app))))
+          (if (and msg (string-contains msg "empty"))
+            (pass! "calc-pop empty shows message")
+            (fail! "calc-pop empty" msg "contains empty")))))
+
+    ;; Test 6: calc-swap needs 2+ values
+    (with-catch
+      (lambda (e) (fail! "calc-swap empty"
+                         (with-output-to-string "" (lambda () (display-exception e))) "no error"))
+      (lambda ()
+        (execute-command! app 'calc-swap)
+        (let ((msg (echo-state-message (app-state-echo app))))
+          (if (and msg (string-contains msg "2+"))
+            (pass! "calc-swap needs 2+ values")
+            (fail! "calc-swap" msg "contains 2+")))))
+
+    ;; Test 7-8: proced-filter and proced-send-signal are registered
+    (for-each
+      (lambda (name)
+        (let ((label (string-append (symbol->string name) " registered")))
+          (if (procedure? (find-command name))
+            (pass! label)
+            (fail! label #f "procedure"))))
+      '(proced-filter proced-send-signal))
+
+    ;; Test 9-10: eww-copy-page-url and eww-search-web are registered
+    (for-each
+      (lambda (name)
+        (let ((label (string-append (symbol->string name) " registered")))
+          (if (procedure? (find-command name))
+            (pass! label)
+            (fail! label #f "procedure"))))
+      '(eww-copy-page-url eww-search-web))
+
+    ;; Test 11: eww-copy-page-url with no page shows message
+    (with-catch
+      (lambda (e) (fail! "eww-copy no page"
+                         (with-output-to-string "" (lambda () (display-exception e))) "no error"))
+      (lambda ()
+        (execute-command! app 'eww-copy-page-url)
+        (let ((msg (echo-state-message (app-state-echo app))))
+          (if (and msg (string-contains msg "No EWW"))
+            (pass! "eww-copy-page-url no page message")
+            (fail! "eww-copy no page" msg "contains No EWW"))))))
+
+  (displayln "Group 42 complete"))
+
+;;;============================================================================
 ;;; Main
 ;;;============================================================================
 
@@ -4459,6 +4529,7 @@
     (run-group-39-parity4-commands)
     (run-group-40-parity5-commands)
     (run-group-41-format-embark)
+    (run-group-42-stub-upgrades)
 
     (displayln "---")
     (displayln "Results: " *passes* " passed, " *failures* " failed")

@@ -654,12 +654,61 @@
               (echo-message! echo "Process list loaded"))))))))
 
 (def (cmd-proced-filter app)
-  (let ((echo (app-state-echo app)))
-    (echo-message! echo "Use C-s to search in *Proced* buffer")))
+  "Filter *Proced* buffer by pattern - show only matching process lines."
+  (let* ((echo (app-state-echo app))
+         (ed (current-qt-editor app))
+         (text (qt-plain-text-edit-text ed))
+         (pattern (qt-echo-read-string app "Filter processes: ")))
+    (when (and pattern (> (string-length pattern) 0))
+      (let* ((lines (string-split text #\newline))
+             (header (if (pair? lines) (car lines) ""))
+             (body (if (pair? lines) (cdr lines) []))
+             (filtered (filter (lambda (line) (string-contains line pattern)) body))
+             (result (string-join (cons header filtered) "\n")))
+        (sci-send ed SCI_SETREADONLY 0)
+        (qt-plain-text-edit-set-text! ed result)
+        (sci-send ed SCI_SETREADONLY 1)
+        (echo-message! echo
+          (string-append "Showing " (number->string (length filtered)) " processes matching '" pattern "'"))))))
 
 (def (cmd-proced-send-signal app)
-  (let ((echo (app-state-echo app)))
-    (echo-message! echo "Use M-x shell-command to send signals")))
+  "Send a signal to a process - reads PID from current line in *Proced* buffer."
+  (let* ((echo (app-state-echo app))
+         (ed (current-qt-editor app))
+         (text (qt-plain-text-edit-text ed))
+         (pos (qt-plain-text-edit-cursor-position ed))
+         ;; Get current line
+         (line-start (let loop ((i (- pos 1)))
+                       (cond ((< i 0) 0)
+                             ((char=? (string-ref text i) #\newline) (+ i 1))
+                             (else (loop (- i 1))))))
+         (line-end (let loop ((i pos))
+                     (cond ((>= i (string-length text)) i)
+                           ((char=? (string-ref text i) #\newline) i)
+                           (else (loop (+ i 1))))))
+         (line (substring text line-start line-end))
+         ;; Extract PID (first numeric field in line)
+         (tokens (filter (lambda (s) (> (string-length s) 0))
+                         (string-split line #\space)))
+         (pid-str (find (lambda (s) (string->number s)) tokens)))
+    (if (not pid-str)
+      (echo-message! echo "No PID found on current line")
+      (let ((signal (qt-echo-read-with-narrowing app "Signal: "
+                      '("TERM" "KILL" "HUP" "INT" "STOP" "CONT" "USR1" "USR2"))))
+        (when (and signal (> (string-length signal) 0))
+          (with-catch
+            (lambda (e) (echo-message! echo (string-append "Error sending signal: "
+                                              (with-output-to-string "" (lambda () (display-exception e))))))
+            (lambda ()
+              (let* ((proc (open-process
+                             (list path: "kill" arguments: (list (string-append "-" signal) pid-str)
+                                   stdout-redirection: #t stderr-redirection: #t)))
+                     (out (read-line proc #f))
+                     (status (process-status proc)))
+                (close-port proc)
+                (if (= status 0)
+                  (echo-message! echo (string-append "Sent SIG" signal " to PID " pid-str))
+                  (echo-message! echo (string-append "Failed to send signal" (if out (string-append ": " out) ""))))))))))))
 
 ;; Calculator
 (def (cmd-calculator app)
@@ -694,14 +743,58 @@
                    (result-str (with-output-to-string (lambda () (display result)))))
               (echo-message! echo (string-append "= " result-str)))))))))
 
+;;; RPN calculator stack
+(def *calc-stack* [])
+
+(def (calc-show-stack! app)
+  (let* ((echo (app-state-echo app))
+         (top5 (if (> (length *calc-stack*) 5)
+                 (take *calc-stack* 5)
+                 *calc-stack*)))
+    (if (null? top5)
+      (echo-message! echo "Stack: (empty)")
+      (echo-message! echo
+        (string-append "Stack: "
+          (string-join (map number->string top5) " "))))))
+
 (def (cmd-calc-push app)
-  (echo-message! (app-state-echo app) "Use M-x calculator"))
+  "Push a value onto the calculator stack."
+  (let* ((echo (app-state-echo app))
+         (expr (qt-echo-read-string app "Push value: ")))
+    (when (and expr (> (string-length expr) 0))
+      (with-catch
+        (lambda (e) (echo-message! echo "Invalid number"))
+        (lambda ()
+          (let ((val (string->number expr)))
+            (if val
+              (begin (set! *calc-stack* (cons val *calc-stack*))
+                     (calc-show-stack! app))
+              (echo-message! echo "Not a number"))))))))
+
 (def (cmd-calc-pop app)
-  (echo-message! (app-state-echo app) "Use M-x calculator"))
+  "Pop the top value from the calculator stack."
+  (if (null? *calc-stack*)
+    (echo-message! (app-state-echo app) "Stack empty")
+    (let ((top (car *calc-stack*)))
+      (set! *calc-stack* (cdr *calc-stack*))
+      (echo-message! (app-state-echo app)
+        (string-append "Popped: " (number->string top))))))
+
 (def (cmd-calc-dup app)
-  (echo-message! (app-state-echo app) "Use M-x calculator"))
+  "Duplicate the top value on the calculator stack."
+  (if (null? *calc-stack*)
+    (echo-message! (app-state-echo app) "Stack empty")
+    (begin (set! *calc-stack* (cons (car *calc-stack*) *calc-stack*))
+           (calc-show-stack! app))))
+
 (def (cmd-calc-swap app)
-  (echo-message! (app-state-echo app) "Use M-x calculator"))
+  "Swap the top two values on the calculator stack."
+  (if (< (length *calc-stack*) 2)
+    (echo-message! (app-state-echo app) "Need 2+ values to swap")
+    (let ((a (car *calc-stack*))
+          (b (cadr *calc-stack*)))
+      (set! *calc-stack* (cons b (cons a (cddr *calc-stack*))))
+      (calc-show-stack! app))))
 
 ;; Server
 (def (cmd-server-start app)
@@ -717,9 +810,28 @@
 (def (cmd-eww-download app)
   (echo-message! (app-state-echo app) "EWW: use M-x eww to browse"))
 (def (cmd-eww-copy-page-url app)
-  (echo-message! (app-state-echo app) "EWW: use M-x eww to browse"))
+  "Copy the current EWW page URL to the kill ring."
+  (if *eww-current-url*
+    (begin
+      (qt-kill-ring-push! app *eww-current-url*)
+      (echo-message! (app-state-echo app)
+        (string-append "Copied: " *eww-current-url*)))
+    (echo-message! (app-state-echo app) "No EWW page loaded")))
+
 (def (cmd-eww-search-web app)
-  (echo-message! (app-state-echo app) "EWW: use M-x eww to browse"))
+  "Search the web using EWW — prompts for query, opens DuckDuckGo results."
+  (let* ((echo (app-state-echo app))
+         (query (qt-echo-read-string app "Web search: ")))
+    (when (and query (> (string-length query) 0))
+      ;; URL-encode spaces as +
+      (let* ((encoded (string-map (lambda (c) (if (char=? c #\space) #\+ c)) query))
+             (url (string-append "https://lite.duckduckgo.com/lite/?q=" encoded)))
+        (let ((cmd (find-command 'eww)))
+          (if cmd
+            (begin
+              (set! *eww-current-url* url)
+              (cmd app))
+            (echo-message! echo (string-append "Search URL: " url))))))))
 
 ;; GDB / Debugger
 (def (cmd-gdb app)
