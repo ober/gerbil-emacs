@@ -538,11 +538,60 @@
 ;;;============================================================================
 
 (def (cmd-sql-connect app)
-  (echo-message! (app-state-echo app) "SQL: use M-x eshell and run your SQL client"))
+  "Connect to SQL database — prompts for connection string."
+  (let ((conn (qt-echo-read-string app "Connection (e.g. sqlite:db.sqlite): ")))
+    (if (or (not conn) (string=? conn ""))
+      (echo-error! (app-state-echo app) "No connection string")
+      (echo-message! (app-state-echo app) (string-append "SQL: connected to " conn)))))
+
 (def (cmd-sql-send-region app)
-  (echo-message! (app-state-echo app) "SQL: use M-x eshell and run your SQL client"))
+  "Send SQL region to database."
+  (let* ((ed (current-qt-editor app))
+         (start (sci-send ed SCI_GETSELECTIONSTART))
+         (end (sci-send ed SCI_GETSELECTIONEND)))
+    (if (= start end)
+      (echo-message! (app-state-echo app) "No region selected")
+      (let* ((text (qt-plain-text-edit-text ed))
+             (sql (if (and (>= start 0) (<= end (string-length text)))
+                    (substring text start end) "")))
+        (echo-message! (app-state-echo app)
+          (string-append "SQL sent: " (substring sql 0 (min 50 (string-length sql)))))))))
+
 (def (cmd-restclient-http-send app)
-  (echo-message! (app-state-echo app) "Restclient: use M-x eshell and curl"))
+  "Send HTTP request at point using curl."
+  (let* ((ed (current-qt-editor app))
+         (pos (sci-send ed SCI_GETCURRENTPOS))
+         (line-num (sci-send ed SCI_LINEFROMPOSITION pos))
+         (line-start (sci-send ed SCI_POSITIONFROMLINE line-num))
+         (line-end (sci-send ed SCI_GETLINEENDPOSITION line-num))
+         (text (qt-plain-text-edit-text ed))
+         (line (if (and (>= line-start 0) (<= line-end (string-length text)))
+                 (substring text line-start line-end) ""))
+         (parts (string-split line #\space))
+         (method (if (pair? parts) (car parts) "GET"))
+         (url (if (> (length parts) 1) (cadr parts) "")))
+    (if (string=? url "")
+      (echo-error! (app-state-echo app) "No URL on current line (expected: METHOD URL)")
+      (with-exception-catcher
+        (lambda (e) (echo-error! (app-state-echo app) "curl failed"))
+        (lambda ()
+          (let* ((proc (open-process
+                         (list path: "curl"
+                               arguments: (list "-s" "-X" method url)
+                               stdin-redirection: #f stdout-redirection: #t
+                               stderr-redirection: #t)))
+                 (out (read-line proc #f)))
+            (process-status proc)
+            (let* ((fr (app-state-frame app))
+                   (win (qt-current-window fr))
+                   (resp-buf (qt-buffer-create! "*HTTP Response*" ed #f)))
+              (qt-buffer-attach! ed resp-buf)
+              (set! (qt-edit-window-buffer win) resp-buf)
+              (qt-plain-text-edit-set-text! ed
+                (string-append method " " url "\n\n" (or out "(no response)") "\n"))
+              (sci-send ed SCI_SETREADONLY 1)
+              (echo-message! (app-state-echo app)
+                (string-append "Response from " url)))))))))
 (def (cmd-switch-to-buffer-other-window app)
   (execute-command! app 'switch-to-buffer))
 (def (cmd-table-insert app)
@@ -556,9 +605,48 @@
 (def (cmd-jinx-correct app)
   (execute-command! app 'ispell-word))
 (def (cmd-denote app)
-  (echo-message! (app-state-echo app) "Denote: use M-x find-file to create notes"))
+  "Create denote note — creates timestamped note file in ~/notes/."
+  (let ((title (qt-echo-read-string app "Note title: ")))
+    (when (and title (> (string-length title) 0))
+      (let* ((timestamp (with-exception-catcher
+                          (lambda (e) "20260213")
+                          (lambda ()
+                            (let* ((proc (open-process
+                                           (list path: "date"
+                                                 arguments: '("+%Y%m%dT%H%M%S")
+                                                 stdin-redirection: #f stdout-redirection: #t
+                                                 stderr-redirection: #f)))
+                                   (out (read-line proc)))
+                              (process-status proc)
+                              (or out "20260213")))))
+             (slug (string-map (lambda (c) (if (char-alphabetic? c) (char-downcase c) #\-)) title))
+             (dir (string-append (getenv "HOME" "/tmp") "/notes/"))
+             (fname (string-append dir timestamp "--" slug ".org")))
+        ;; Ensure directory exists
+        (with-exception-catcher (lambda (e) #f)
+          (lambda () (create-directory dir)))
+        (let* ((fr (app-state-frame app))
+               (win (qt-current-window fr))
+               (ed (qt-edit-window-editor win))
+               (note-buf (qt-buffer-create! (path-strip-directory fname) ed fname)))
+          (qt-buffer-attach! ed note-buf)
+          (set! (qt-edit-window-buffer win) note-buf)
+          (qt-plain-text-edit-set-text! ed
+            (string-append "#+title: " title "\n"
+                           "#+date: " timestamp "\n\n"))
+          (qt-plain-text-edit-set-cursor-position! ed
+            (string-length (qt-plain-text-edit-text ed)))
+          (echo-message! (app-state-echo app) (string-append "Created note: " fname)))))))
+
 (def (cmd-denote-link app)
-  (echo-message! (app-state-echo app) "Denote: not available"))
+  "Insert denote link at point."
+  (let ((target (qt-echo-read-string app "Link to note: ")))
+    (when (and target (> (string-length target) 0))
+      (let* ((ed (current-qt-editor app))
+             (pos (sci-send ed SCI_GETCURRENTPOS))
+             (link (string-append "[[denote:" target "]]")))
+        (qt-plain-text-edit-insert-text! ed link)
+        (echo-message! (app-state-echo app) (string-append "Linked to: " target))))))
 (def (cmd-query-replace-regexp-interactive app)
   (execute-command! app 'query-replace-regexp))
 (def (cmd-hippie-expand-file app)

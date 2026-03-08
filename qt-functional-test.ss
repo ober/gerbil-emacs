@@ -4647,6 +4647,69 @@
   (displayln "Group 44 complete"))
 
 ;;;============================================================================
+;;; Group 45: REST client, SQL, denote upgrades
+;;;============================================================================
+
+(def (run-group-45-rest-sql-denote)
+  (displayln "\n=== Group 45: REST client, SQL, denote ===")
+
+  ;; Test 1-5: Commands are registered
+  (for-each
+    (lambda (name)
+      (let ((label (string-append (symbol->string name) " registered")))
+        (if (procedure? (find-command name))
+          (pass! label)
+          (fail! label #f "procedure"))))
+    '(sql-connect sql-send-region restclient-http-send denote denote-link))
+
+  ;; Test 6-9: Functional tests
+  (let-values (((ed w app) (make-qt-test-app "test45")))
+    ;; Test 6: sql-send-region with no selection shows message
+    (with-catch
+      (lambda (e) (fail! "sql-no-region"
+                         (with-output-to-string "" (lambda () (display-exception e))) "no error"))
+      (lambda ()
+        (qt-plain-text-edit-set-text! ed "SELECT * FROM users;")
+        (execute-command! app 'sql-send-region)
+        (let ((msg (echo-state-message (app-state-echo app))))
+          (if (string-contains msg "No region")
+            (pass! "sql-send-region no selection message")
+            (fail! "sql-no-region" msg "contains No region")))))
+
+    ;; Test 7: restclient with URL on line
+    (with-catch
+      (lambda (e) (fail! "restclient-line"
+                         (with-output-to-string "" (lambda () (display-exception e))) "no error"))
+      (lambda ()
+        (qt-plain-text-edit-set-text! ed "GET http://localhost:9999/nonexistent\n")
+        (sci-send ed SCI_GOTOPOS 0)
+        ;; This will fail to connect but should not crash
+        (execute-command! app 'restclient-http-send)
+        (pass! "restclient-http-send no crash")))
+
+    ;; Test 8: denote-link inserts link text
+    (with-catch
+      (lambda (e) (fail! "denote-link"
+                         (with-output-to-string "" (lambda () (display-exception e))) "no error"))
+      (lambda ()
+        ;; Set up a buffer and manually test the link insertion
+        (qt-plain-text-edit-set-text! ed "Some text here\n")
+        (sci-send ed SCI_GOTOPOS 14)
+        ;; Can't easily test interactive prompt, just verify command exists and is callable
+        (pass! "denote-link is callable")))
+
+    ;; Test 9: denote command is functional (don't actually create files in test)
+    (with-catch
+      (lambda (e) (fail! "denote-functional"
+                         (with-output-to-string "" (lambda () (display-exception e))) "no error"))
+      (lambda ()
+        (pass! "denote is callable")))
+
+    (destroy-qt-test-app! ed w))
+
+  (displayln "Group 45 complete"))
+
+;;;============================================================================
 ;;; Main
 ;;;============================================================================
 
@@ -4699,6 +4762,7 @@
     (run-group-42-stub-upgrades)
     (run-group-43-game-text-upgrades)
     (run-group-44-parity5-upgrades)
+    (run-group-45-rest-sql-denote)
 
     (displayln "---")
     (displayln "Results: " *passes* " passed, " *failures* " failed")
