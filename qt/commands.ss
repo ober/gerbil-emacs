@@ -1758,7 +1758,11 @@
   (register-command! 'native-compile-async cmd-native-compile-async)
   (register-command! 'screen-reader-mode cmd-screen-reader-mode)
   ;; Helm commands (real implementations)
-  (qt-register-helm-commands!))
+  (qt-register-helm-commands!)
+  ;; Wire modeline providers
+  (set-box! *modeline-overwrite-provider* (lambda () *overwrite-mode*))
+  (set-box! *modeline-narrow-provider*
+    (lambda (buf) (and (hash-get *narrow-state* buf) #t))))
 
 ;;; Qt versions of batch 6 commands
 

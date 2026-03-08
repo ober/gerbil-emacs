@@ -7,7 +7,9 @@
 (export qt-modeline-update!
         detect-eol-from-text
         *buffer-eol-cache*
-        *lsp-modeline-provider*)
+        *lsp-modeline-provider*
+        *modeline-overwrite-provider*
+        *modeline-narrow-provider*)
 
 (import :std/sugar
         :gemacs/qt/sci-shim
@@ -119,6 +121,12 @@
 ;; Box holding a thunk: (lambda () "LSP string") or #f
 (def *lsp-modeline-provider* (box #f))
 
+;; Box holding a thunk: (lambda () #t/#f) for overwrite mode
+(def *modeline-overwrite-provider* (box #f))
+
+;; Box holding a function: (lambda (buf) #t/#f) for narrowing active
+(def *modeline-narrow-provider* (box #f))
+
 ;;;============================================================================
 ;;; Modeline rendering
 ;;;============================================================================
@@ -159,14 +167,23 @@
          ;; LSP status
          (lsp-provider (unbox *lsp-modeline-provider*))
          (lsp-str (if lsp-provider (lsp-provider) #f))
+         ;; Overwrite mode indicator
+         (ovr-provider (unbox *modeline-overwrite-provider*))
+         (ovr? (and ovr-provider (ovr-provider)))
+         ;; Narrowing indicator
+         (nar-provider (unbox *modeline-narrow-provider*))
+         (nar? (and nar-provider (nar-provider buf)))
          ;; Build the modeline string
          (info (string-append
                  "-U:" state-str "-  "
+                 (if nar? "Narrow " "")
                  (buffer-name buf) "    "
                  "L" (number->string line)
                  " C" (number->string col)
                  "  " pct
-                 "  (" mode " " eol ")"
+                 "  (" mode
+                 (if ovr? " Ovwrt" "")
+                 " " eol ")"
                  (if branch
                    (string-append "  " branch)
                    "")

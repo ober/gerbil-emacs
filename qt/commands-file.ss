@@ -1680,8 +1680,10 @@
 (def *overwrite-mode* #f)
 
 (def (cmd-toggle-overwrite-mode app)
-  "Toggle overwrite mode (display only - Qt doesn't expose overwrite API)."
+  "Toggle overwrite mode (Insert vs Overwrite)."
   (set! *overwrite-mode* (not *overwrite-mode*))
+  (let ((ed (current-qt-editor app)))
+    (sci-send ed 2186 (if *overwrite-mode* 1 0)))  ;; SCI_SETOVERTYPE
   (echo-message! (app-state-echo app)
     (if *overwrite-mode* "Overwrite mode ON" "Overwrite mode OFF")))
 

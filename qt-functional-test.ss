@@ -101,7 +101,9 @@
                  magit-format-status
                  magit-file-at-point)
         (only-in :gemacs/qt/modeline
-                 *lsp-modeline-provider*)
+                 *lsp-modeline-provider*
+                 *modeline-overwrite-provider*
+                 *modeline-narrow-provider*)
         (only-in :gemacs/qt/highlight
                  qt-enable-code-folding!))
 
@@ -3706,6 +3708,66 @@
   (displayln "Group 31 complete"))
 
 ;;;============================================================================
+;;; Group 32: Overwrite mode, modeline indicators
+;;;============================================================================
+
+(def (run-group-32-overwrite-modeline)
+  (displayln "--- Group 32: Overwrite mode, modeline indicators ---")
+
+  ;; overwrite-mode command registered
+  (if (find-command 'toggle-overwrite-mode)
+    (pass! "toggle-overwrite-mode registered")
+    (fail! "toggle-overwrite-mode" #f "procedure"))
+
+  ;; overwrite-mode command registered (Emacs alias)
+  (if (find-command 'overwrite-mode)
+    (pass! "overwrite-mode alias registered")
+    (fail! "overwrite-mode" #f "procedure"))
+
+  ;; Test real overwrite mode toggle via SCI_SETOVERTYPE
+  (let-values (((ed w app) (make-qt-test-app "overwrite-test")))
+    ;; Initially not in overwrite mode
+    (let ((ov (sci-send ed 2187 0)))  ;; SCI_GETOVERTYPE
+      (if (= ov 0)
+        (pass! "initially not in overwrite mode")
+        (fail! "initial overwrite" ov 0)))
+    ;; Toggle on
+    (execute-command! app 'toggle-overwrite-mode)
+    (let ((ov (sci-send ed 2187 0)))
+      (if (= ov 1)
+        (pass! "overwrite mode toggled ON via Scintilla")
+        (fail! "overwrite ON" ov 1)))
+    ;; Toggle off
+    (execute-command! app 'toggle-overwrite-mode)
+    (let ((ov (sci-send ed 2187 0)))
+      (if (= ov 0)
+        (pass! "overwrite mode toggled OFF via Scintilla")
+        (fail! "overwrite OFF" ov 0)))
+    (destroy-qt-test-app! ed w))
+
+  ;; modeline providers exist
+  (if (box? *modeline-overwrite-provider*)
+    (pass! "modeline-overwrite-provider exists")
+    (fail! "modeline-overwrite-provider" #f "box"))
+
+  (if (box? *modeline-narrow-provider*)
+    (pass! "modeline-narrow-provider exists")
+    (fail! "modeline-narrow-provider" #f "box"))
+
+  ;; Providers return correct values
+  (let ((ovr-fn (unbox *modeline-overwrite-provider*)))
+    (if (procedure? ovr-fn)
+      (pass! "overwrite provider is a procedure")
+      (fail! "overwrite provider" ovr-fn "procedure")))
+
+  (let ((nar-fn (unbox *modeline-narrow-provider*)))
+    (if (procedure? nar-fn)
+      (pass! "narrow provider is a procedure")
+      (fail! "narrow provider" nar-fn "procedure")))
+
+  (displayln "Group 32 complete"))
+
+;;;============================================================================
 ;;; Main
 ;;;============================================================================
 
@@ -3745,6 +3807,7 @@
     (run-group-29-pdf-docview)
     (run-group-30-sort-mail-compile)
     (run-group-31-quoted-insert-goto-change)
+    (run-group-32-overwrite-modeline)
 
     (displayln "---")
     (displayln "Results: " *passes* " passed, " *failures* " failed")
