@@ -115,11 +115,11 @@
       writeroom-mode)))
 
 ;;;============================================================================
-;;; Stub commands (31) — echo-only placeholders
+;;; Stub commands (10) — echo-only placeholders
 ;;;============================================================================
 
 (def (qt-register-parity5-stubs!)
-  "Register 31 stub commands."
+  "Register 10 stub commands."
   (for-each
     (lambda (pair)
       (register-command! (car pair) (make-stub-command (car pair) (cdr pair))))
@@ -128,17 +128,7 @@
       (dash-at-point . "Look up symbol in Dash documentation")
       (devdocs-lookup . "Look up symbol in DevDocs")
       (doom-themes . "Switch Doom theme")
-      (customize-group . "Customize settings group")
-      (customize-themes . "Customize color themes")
       (ediff-show-registry . "Show Ediff session registry")
-      (gptel . "GPT integration chat")
-      (gptel-send . "Send message to GPT")
-      (list-packages . "List available packages")
-      (package-archives . "Manage package archives")
-      (package-delete . "Delete an installed package")
-      (package-install . "Install a package")
-      (package-list-packages . "List all packages")
-      (package-refresh-contents . "Refresh package database")
       (menu-bar-open . "Open menu bar")
       (notifications-list . "List notifications")
       (rmail . "Read mail (Rmail)")
@@ -589,6 +579,257 @@
       (echo-message! (app-state-echo app) (string-append "Speedbar: " dir)))))
 
 ;;;============================================================================
+;;; GPTel — AI chat integration
+;;;============================================================================
+
+(def (cmd-gptel app)
+  "Open GPTel chat buffer."
+  (let* ((fr (app-state-frame app))
+         (win (qt-current-window fr))
+         (ed (qt-edit-window-editor win))
+         (buf (qt-buffer-create! "*GPTel*" ed #f)))
+    (qt-buffer-attach! ed buf)
+    (set! (qt-edit-window-buffer win) buf)
+    (qt-plain-text-edit-set-text! ed
+      (string-append "GPTel Chat\n\n"
+                     "Type your message below and use M-x gptel-send to send.\n"
+                     "Set OPENAI_API_KEY environment variable for API access.\n\n"
+                     "You: "))
+    (qt-plain-text-edit-set-cursor-position! ed
+      (string-length (qt-plain-text-edit-text ed)))))
+
+(def (cmd-gptel-send app)
+  "Send prompt to GPTel — sends buffer content to API."
+  (let* ((fr (app-state-frame app))
+         (ed (qt-edit-window-editor (qt-current-window fr)))
+         (text (qt-plain-text-edit-text ed)))
+    ;; Extract last user message (after last "You: ")
+    (let ((last-you (let loop ((pos (- (string-length text) 1)))
+                      (cond ((< pos 5) 0)
+                            ((and (char=? (string-ref text pos) #\:)
+                                  (> pos 3)
+                                  (string=? "You" (substring text (- pos 3) pos))) (+ pos 2))
+                            (else (loop (- pos 1)))))))
+      (let ((prompt (substring text last-you (string-length text))))
+        (if (string=? (string-trim prompt) "")
+          (echo-message! (app-state-echo app) "No prompt to send")
+          ;; Try calling the API if key is set
+          (let ((api-key (getenv "OPENAI_API_KEY" #f)))
+            (if (not api-key)
+              (echo-message! (app-state-echo app)
+                (string-append "GPTel: Set OPENAI_API_KEY to enable API calls. Prompt: "
+                               (substring prompt 0 (min 50 (string-length prompt)))))
+              (begin
+                (echo-message! (app-state-echo app) "GPTel: sending...")
+                (with-exception-catcher
+                  (lambda (e)
+                    (echo-error! (app-state-echo app) "GPTel: API call failed"))
+                  (lambda ()
+                    (let* ((escaped (string-map (lambda (c)
+                                                  (cond ((char=? c #\") #\\)
+                                                        ((char=? c #\newline) #\space)
+                                                        (else c))) prompt))
+                           (body (string-append
+                                   "{\"model\":\"gpt-3.5-turbo\",\"messages\":[{\"role\":\"user\",\"content\":\""
+                                   escaped "\"}]}"))
+                           (proc (open-process
+                                   (list path: "curl"
+                                         arguments: (list "-s" "-X" "POST"
+                                                         "https://api.openai.com/v1/chat/completions"
+                                                         "-H" "Content-Type: application/json"
+                                                         "-H" (string-append "Authorization: Bearer " api-key)
+                                                         "-d" body)
+                                         stdin-redirection: #f stdout-redirection: #t
+                                         stderr-redirection: #t)))
+                           (out (read-line proc #f)))
+                      (process-status proc)
+                      (let ((response (or out "(no response)")))
+                        (qt-plain-text-edit-set-text! ed
+                          (string-append text "\n\nAssistant: " response "\n\nYou: "))
+                        (qt-plain-text-edit-set-cursor-position! ed
+                          (string-length (qt-plain-text-edit-text ed)))
+                        (echo-message! (app-state-echo app) "GPTel: response received")))))))))))))
+
+;;;============================================================================
+;;; Customize — settings and theme browser
+;;;============================================================================
+
+(def (cmd-customize-group app)
+  "Show current editor settings grouped by category."
+  (let* ((fr (app-state-frame app))
+         (win (qt-current-window fr))
+         (ed (qt-edit-window-editor win))
+         (buf (qt-buffer-create! "*Customize*" ed #f))
+         ;; Gather toggle states
+         (toggle-entries (hash->list *qt-toggle-states*))
+         (text (string-append
+                 "Editor Settings\n"
+                 (make-string 60 #\=) "\n\n"
+                 "Active Toggles:\n"
+                 (if (null? toggle-entries) "  (none set)\n"
+                   (string-join
+                     (map (lambda (p)
+                            (string-append "  " (symbol->string (car p)) ": "
+                                          (if (cdr p) "on" "off")))
+                          toggle-entries)
+                     "\n"))
+                 "\n\nAvailable Commands:\n"
+                 "  M-x customize-variable    Set a custom variable\n"
+                 "  M-x customize-themes      Browse available themes\n"
+                 "  M-x load-theme            Activate a color theme\n"
+                 "  M-x disable-theme         Reset to default colors\n"
+                 "  M-x describe-bindings     Show all key bindings\n"
+                 "  M-x describe-mode         Describe current mode\n"
+                 "\nTheme Commands:\n"
+                 "  M-x load-theme            Load a named theme\n"
+                 "  M-x disable-theme         Reset all colors\n"
+                 "\nPackage Management:\n"
+                 "  M-x list-packages         List system packages\n"
+                 "  M-x package-install        Install a Gerbil package\n"
+                 "  M-x package-delete         Remove a Gerbil package\n"
+                 "  M-x package-refresh-contents  Update package list\n")))
+    (qt-buffer-attach! ed buf)
+    (set! (qt-edit-window-buffer win) buf)
+    (qt-plain-text-edit-set-text! ed text)
+    (sci-send ed SCI_SETREADONLY 1)
+    (qt-plain-text-edit-set-cursor-position! ed 0)
+    (echo-message! (app-state-echo app) "Customize group")))
+
+(def (cmd-customize-themes app)
+  "List available color themes."
+  (let* ((fr (app-state-frame app))
+         (win (qt-current-window fr))
+         (ed (qt-edit-window-editor win))
+         (buf (qt-buffer-create! "*Themes*" ed #f))
+         (text (string-append
+                 "Available Themes\n"
+                 (make-string 40 #\=) "\n\n"
+                 "  default       — Standard dark theme\n"
+                 "  light         — Light background\n"
+                 "  solarized     — Solarized color scheme\n"
+                 "  monokai       — Monokai-inspired\n"
+                 "  gruvbox       — Gruvbox warm colors\n"
+                 "  zenburn       — Low contrast warm theme\n"
+                 "  dracula       — Dark purple theme\n"
+                 "  nord          — Arctic blue palette\n"
+                 "\nUse M-x load-theme to activate a theme.\n"
+                 "Use M-x disable-theme to reset to defaults.\n")))
+    (qt-buffer-attach! ed buf)
+    (set! (qt-edit-window-buffer win) buf)
+    (qt-plain-text-edit-set-text! ed text)
+    (sci-send ed SCI_SETREADONLY 1)
+    (qt-plain-text-edit-set-cursor-position! ed 0)
+    (echo-message! (app-state-echo app) "Available themes")))
+
+;;;============================================================================
+;;; Package management — real gerbil pkg integration
+;;;============================================================================
+
+(def (qt-run-gerbil-pkg args)
+  "Run gerbil pkg with given arguments, return output string."
+  (with-exception-catcher
+    (lambda (e) "(gerbil pkg not available)")
+    (lambda ()
+      (let* ((proc (open-process
+                     (list path: "gerbil"
+                           arguments: (cons "pkg" args)
+                           stdin-redirection: #f stdout-redirection: #t
+                           stderr-redirection: #t)))
+             (out (read-line proc #f)))
+        (process-status proc)
+        (or out "")))))
+
+(def (cmd-list-packages app)
+  "List installed system packages."
+  (with-exception-catcher
+    (lambda (e) (echo-error! (app-state-echo app) "Cannot list packages"))
+    (lambda ()
+      (let* ((pkg-cmd (cond
+                        ((file-exists? "/usr/bin/dpkg") "dpkg -l | head -50")
+                        ((file-exists? "/usr/bin/rpm") "rpm -qa | head -50")
+                        ((file-exists? "/usr/local/bin/brew") "brew list | head -50")
+                        (else #f))))
+        (if (not pkg-cmd)
+          (echo-message! (app-state-echo app) "No package manager found")
+          (let* ((proc (open-process
+                         (list path: "/bin/sh"
+                               arguments: (list "-c" pkg-cmd)
+                               stdin-redirection: #f stdout-redirection: #t
+                               stderr-redirection: #t)))
+                 (output (read-line proc #f)))
+            (process-status proc)
+            (let* ((text (or output ""))
+                   (fr (app-state-frame app))
+                   (win (qt-current-window fr))
+                   (ed (qt-edit-window-editor win))
+                   (buf (qt-buffer-create! "*Packages*" ed #f)))
+              (qt-buffer-attach! ed buf)
+              (set! (qt-edit-window-buffer win) buf)
+              (qt-plain-text-edit-set-text! ed
+                (string-append "System Packages (first 50):\n\n" text))
+              (sci-send ed SCI_SETREADONLY 1)
+              (qt-plain-text-edit-set-cursor-position! ed 0))))))))
+
+(def (cmd-package-list-packages app)
+  "List installed Gerbil packages."
+  (let* ((output (qt-run-gerbil-pkg '("list")))
+         (fr (app-state-frame app))
+         (win (qt-current-window fr))
+         (ed (qt-edit-window-editor win))
+         (buf (qt-buffer-create! "*Packages*" ed #f)))
+    (qt-buffer-attach! ed buf)
+    (set! (qt-edit-window-buffer win) buf)
+    (qt-plain-text-edit-set-text! ed
+      (string-append "Installed Gerbil Packages\n\n" output "\n"))
+    (sci-send ed SCI_SETREADONLY 1)
+    (qt-plain-text-edit-set-cursor-position! ed 0)))
+
+(def (cmd-package-install app)
+  "Install a Gerbil package by name."
+  (let ((pkg (qt-echo-read-string app "Package to install: ")))
+    (when (and pkg (> (string-length pkg) 0))
+      (echo-message! (app-state-echo app) (string-append "Installing " pkg "..."))
+      (let ((result (qt-run-gerbil-pkg (list "install" pkg))))
+        (echo-message! (app-state-echo app) (string-append "Install: " result))))))
+
+(def (cmd-package-delete app)
+  "Uninstall a Gerbil package."
+  (let ((pkg (qt-echo-read-string app "Package to remove: ")))
+    (when (and pkg (> (string-length pkg) 0))
+      (let ((result (qt-run-gerbil-pkg (list "uninstall" pkg))))
+        (echo-message! (app-state-echo app) (string-append "Uninstall: " result))))))
+
+(def (cmd-package-refresh-contents app)
+  "Refresh Gerbil package list."
+  (echo-message! (app-state-echo app) "Updating packages...")
+  (let ((result (qt-run-gerbil-pkg '("update"))))
+    (echo-message! (app-state-echo app) (string-append "Update: " result))))
+
+(def (cmd-package-archives app)
+  "Show package archive configuration."
+  (let* ((fr (app-state-frame app))
+         (win (qt-current-window fr))
+         (ed (qt-edit-window-editor win))
+         (buf (qt-buffer-create! "*Package Archives*" ed #f))
+         (text (string-append
+                 "Package Archives\n"
+                 (make-string 40 #\=) "\n\n"
+                 "Gerbil packages are managed via gerbil pkg.\n\n"
+                 "Commands:\n"
+                 "  M-x package-install          Install a package\n"
+                 "  M-x package-delete           Remove a package\n"
+                 "  M-x package-list-packages    List installed packages\n"
+                 "  M-x package-refresh-contents Update package list\n\n"
+                 "To install a package from GitHub:\n"
+                 "  M-x package-install → github.com/user/repo\n")))
+    (qt-buffer-attach! ed buf)
+    (set! (qt-edit-window-buffer win) buf)
+    (qt-plain-text-edit-set-text! ed text)
+    (sci-send ed SCI_SETREADONLY 1)
+    (qt-plain-text-edit-set-cursor-position! ed 0)
+    (echo-message! (app-state-echo app) "Package archives")))
+
+;;;============================================================================
 ;;; Registration
 ;;;============================================================================
 
@@ -623,7 +864,17 @@
       (cons 'docker cmd-docker)
       (cons 'docker-containers cmd-docker-containers)
       (cons 'docker-images cmd-docker-images)
-      (cons 'speedbar cmd-speedbar))))
+      (cons 'speedbar cmd-speedbar)
+      (cons 'gptel cmd-gptel)
+      (cons 'gptel-send cmd-gptel-send)
+      (cons 'customize-group cmd-customize-group)
+      (cons 'customize-themes cmd-customize-themes)
+      (cons 'list-packages cmd-list-packages)
+      (cons 'package-list-packages cmd-package-list-packages)
+      (cons 'package-install cmd-package-install)
+      (cons 'package-delete cmd-package-delete)
+      (cons 'package-refresh-contents cmd-package-refresh-contents)
+      (cons 'package-archives cmd-package-archives))))
 
 ;;;============================================================================
 ;;; Moved stubs/aliases from parity3 (file size management)

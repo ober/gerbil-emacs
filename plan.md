@@ -148,6 +148,8 @@ Largest files: modes (~1851), lsp (~1802), search (~1778)
 
 - ~~**GDB/MI debugger integration**~~ — DONE: real GDB process spawning with MI2 interpreter, breakpoint toggle via -break-insert/-break-delete, step over/in/out/continue via -exec-* commands, interactive GDB REPL, output accumulated in *GDB* buffer. 638 Qt tests
 
+- ~~**GPTel AI chat, customize, package management**~~ — DONE: GPTel chat buffer with OpenAI API integration (curl-based, OPENAI_API_KEY), customize-group settings browser with toggle states, customize-themes theme catalog, full package management (list-packages via dpkg/rpm/brew, package-list-packages/install/delete/refresh via gerbil pkg, package-archives info). 653 Qt tests
+
 ### Aspirational
 - LSP in TUI
 - ~~DAP/debugger integration~~ — DONE: real GDB/MI interface (Qt), DAP protocol skeleton (TUI)

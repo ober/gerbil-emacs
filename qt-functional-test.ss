@@ -4774,6 +4774,78 @@
 ;;;============================================================================
 ;;; Main
 ;;;============================================================================
+;;; Group 47: GPTel, customize, package management
+;;;============================================================================
+
+(def (run-group-47-gptel-customize-packages)
+  (displayln "\n=== Group 47: GPTel, customize, package management ===")
+  (let-values (((ed w app) (make-qt-test-app "test")))
+    ;; gptel registration
+    (if (find-command 'gptel) (pass! "gptel registered")
+      (fail! "gptel registered" #f #t))
+    (if (find-command 'gptel-send) (pass! "gptel-send registered")
+      (fail! "gptel-send registered" #f #t))
+
+    ;; gptel creates chat buffer
+    (let ((cmd (find-command 'gptel)))
+      (cmd app)
+      (let ((text (qt-plain-text-edit-text ed)))
+        (if (string-contains text "GPTel Chat")
+          (pass! "gptel creates chat buffer")
+          (fail! "gptel creates chat buffer" text "contains GPTel Chat"))))
+
+    ;; gptel-send without prompt — should not crash
+    (qt-plain-text-edit-set-text! ed "GPTel Chat\n\nYou: ")
+    (let ((cmd (find-command 'gptel-send)))
+      (cmd app)
+      (pass! "gptel-send no prompt no crash"))
+
+    ;; customize-group
+    (if (find-command 'customize-group) (pass! "customize-group registered")
+      (fail! "customize-group registered" #f #t))
+    (let ((cmd (find-command 'customize-group)))
+      (cmd app)
+      (let ((text (qt-plain-text-edit-text ed)))
+        (if (string-contains text "Editor Settings")
+          (pass! "customize-group shows settings")
+          (fail! "customize-group shows settings" text "contains Editor Settings"))))
+
+    ;; customize-themes
+    (if (find-command 'customize-themes) (pass! "customize-themes registered")
+      (fail! "customize-themes registered" #f #t))
+    (let ((cmd (find-command 'customize-themes)))
+      (cmd app)
+      (let ((text (qt-plain-text-edit-text ed)))
+        (if (string-contains text "Available Themes")
+          (pass! "customize-themes shows themes")
+          (fail! "customize-themes shows themes" text "contains Available Themes"))))
+
+    ;; package commands registered
+    (if (find-command 'list-packages) (pass! "list-packages registered")
+      (fail! "list-packages registered" #f #t))
+    (if (find-command 'package-list-packages) (pass! "package-list-packages registered")
+      (fail! "package-list-packages registered" #f #t))
+    (if (find-command 'package-install) (pass! "package-install registered")
+      (fail! "package-install registered" #f #t))
+    (if (find-command 'package-delete) (pass! "package-delete registered")
+      (fail! "package-delete registered" #f #t))
+    (if (find-command 'package-refresh-contents) (pass! "package-refresh-contents registered")
+      (fail! "package-refresh-contents registered" #f #t))
+
+    ;; package-archives creates buffer
+    (if (find-command 'package-archives) (pass! "package-archives registered")
+      (fail! "package-archives registered" #f #t))
+    (let ((cmd (find-command 'package-archives)))
+      (cmd app)
+      (let ((text (qt-plain-text-edit-text ed)))
+        (if (string-contains text "Package Archives")
+          (pass! "package-archives shows info")
+          (fail! "package-archives shows info" text "contains Package Archives"))))
+
+    (destroy-qt-test-app! ed w)
+    (displayln "Group 47 complete")))
+
+;;;============================================================================
 
 (def (main . args)
   (with-qt-app _app
@@ -4826,6 +4898,7 @@
     (run-group-44-parity5-upgrades)
     (run-group-45-rest-sql-denote)
     (run-group-46-gdb-debugger)
+    (run-group-47-gptel-customize-packages)
 
     (displayln "---")
     (displayln "Results: " *passes* " passed, " *failures* " failed")
