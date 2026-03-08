@@ -3984,6 +3984,80 @@
   (displayln "Group 36 complete"))
 
 ;;;============================================================================
+;;; Group 37: Qt parity commands (scroll other, insert, convert, statistics)
+;;;============================================================================
+
+(def (run-group-37-parity-commands)
+  (displayln "--- Group 37: Qt parity commands ---")
+
+  ;; Command registration checks
+  (for-each
+    (lambda (cmd-name)
+      (if (find-command cmd-name)
+        (pass! (string-append (symbol->string cmd-name) " registered"))
+        (fail! (string-append (symbol->string cmd-name) " registration") #f "procedure")))
+    '(scroll-up-other-window scroll-down-other-window recenter-other-window
+      buffer-statistics convert-line-endings set-buffer-encoding
+      diff diff-two-files
+      insert-current-file-name insert-env-var insert-separator-line
+      insert-form-feed insert-page-break insert-zero-width-space
+      insert-fixme insert-todo insert-backslash insert-sequential-numbers
+      hex-to-decimal decimal-to-hex
+      shell-command-on-region-replace shell-command-to-string
+      tabify-region goto-scratch org-store-link
+      word-frequency-analysis display-cursor-position display-column-number
+      narrow-to-page))
+
+  ;; Functional test: insert-fixme inserts text
+  (let-values (((ed w app) (make-qt-test-app "parity-test")))
+    (qt-plain-text-edit-set-text! ed "hello")
+    (qt-plain-text-edit-set-cursor-position! ed 5)
+    (execute-command! app 'insert-fixme)
+    (let ((text (qt-plain-text-edit-text ed)))
+      (if (string-contains text "FIXME")
+        (pass! "insert-fixme inserts FIXME text")
+        (fail! "insert-fixme" text "contains FIXME")))
+
+    ;; insert-todo
+    (qt-plain-text-edit-set-text! ed "code")
+    (qt-plain-text-edit-set-cursor-position! ed 4)
+    (execute-command! app 'insert-todo)
+    (let ((text (qt-plain-text-edit-text ed)))
+      (if (string-contains text "TODO")
+        (pass! "insert-todo inserts TODO text")
+        (fail! "insert-todo" text "contains TODO")))
+
+    ;; insert-backslash
+    (qt-plain-text-edit-set-text! ed "path")
+    (qt-plain-text-edit-set-cursor-position! ed 4)
+    (execute-command! app 'insert-backslash)
+    (let ((text (qt-plain-text-edit-text ed)))
+      (if (string-contains text "\\")
+        (pass! "insert-backslash inserts backslash")
+        (fail! "insert-backslash" text "contains backslash")))
+
+    ;; insert-separator-line
+    (qt-plain-text-edit-set-text! ed "")
+    (execute-command! app 'insert-separator-line)
+    (let ((text (qt-plain-text-edit-text ed)))
+      (if (>= (string-length text) 72)
+        (pass! "insert-separator-line inserts 72+ char line")
+        (fail! "insert-separator-line" (string-length text) ">= 72")))
+
+    ;; goto-scratch creates or switches to *scratch*
+    (execute-command! app 'goto-scratch)
+    (let* ((fr (app-state-frame app))
+           (win (list-ref (qt-frame-windows fr) (qt-frame-current-idx fr)))
+           (buf (qt-edit-window-buffer win)))
+      (if (and buf (string=? (buffer-name buf) "*scratch*"))
+        (pass! "goto-scratch switches to *scratch* buffer")
+        (fail! "goto-scratch" (and buf (buffer-name buf)) "*scratch*")))
+
+    (destroy-qt-test-app! ed w))
+
+  (displayln "Group 37 complete"))
+
+;;;============================================================================
 ;;; Main
 ;;;============================================================================
 
@@ -4028,6 +4102,7 @@
     (run-group-34-mode-upgrades)
     (run-group-35-winum-eldoc)
     (run-group-36-repeat-mode)
+    (run-group-37-parity-commands)
 
     (displayln "---")
     (displayln "Results: " *passes* " passed, " *failures* " failed")

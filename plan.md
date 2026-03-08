@@ -130,6 +130,8 @@ Largest files: modes (~1851), lsp (~1802), search (~1778)
 
 - ~~**Repeat-mode (Emacs 28+ transient repeat maps)**~~ — DONE: `*repeat-mode*` flag (boxed for cross-module mutation), repeat map infrastructure in core.ss, 6 default maps (other-window, buffer-nav, next-error, undo, page-nav, window-resize), dispatch hooks in both TUI and Qt. 443 Qt tests, 149 TUI functional tests
 
+- ~~**Qt parity batch: 30+ missing commands**~~ — DONE: scroll-other-window (up/down/recenter), buffer-statistics, convert-line-endings, set-buffer-encoding, diff-two-files, insert utilities (file-name, env-var, separator, form-feed, fixme, todo, backslash, sequential-numbers, zero-width-space), hex-to-decimal/decimal-to-hex, shell-command-on-region-replace, shell-command-to-string, tabify-region, goto-scratch, org-store-link, word-frequency-analysis, display-cursor-position/column-number, narrow-to-page. 477 Qt tests
+
 ### Aspirational
 - LSP in TUI
 - DAP/debugger integration

@@ -806,6 +806,504 @@
             ", "))))))
 
 ;;;============================================================================
+;;; Scroll other window (Qt)
+;;;============================================================================
+
+(def (qt-find-other-window app)
+  "Find the other window's editor, or #f if only one window."
+  (let* ((fr (app-state-frame app))
+         (wins (qt-frame-windows fr)))
+    (if (<= (length wins) 1)
+      #f
+      (let* ((cur (qt-current-window fr))
+             (idx (let loop ((ws wins) (i 0))
+                    (cond ((null? ws) 0)
+                          ((eq? (car ws) cur) i)
+                          (else (loop (cdr ws) (+ i 1))))))
+             (other-idx (modulo (+ idx 1) (length wins))))
+        (qt-edit-window-editor (list-ref wins other-idx))))))
+
+(def (cmd-scroll-up-other-window app)
+  "Scroll the other window up (like scroll-other-window)."
+  (let ((other-ed (qt-find-other-window app)))
+    (if (not other-ed)
+      (echo-message! (app-state-echo app) "Only one window")
+      (let ((page-lines (max 1 (- (sci-send other-ed SCI_LINESONSCREEN 0) 2))))
+        (sci-send other-ed SCI_LINESCROLL 0 page-lines)
+        (echo-message! (app-state-echo app) "Scrolled other window up")))))
+
+(def (cmd-scroll-down-other-window app)
+  "Scroll the other window down (like scroll-other-window-down)."
+  (let ((other-ed (qt-find-other-window app)))
+    (if (not other-ed)
+      (echo-message! (app-state-echo app) "Only one window")
+      (let ((page-lines (max 1 (- (sci-send other-ed SCI_LINESONSCREEN 0) 2))))
+        (sci-send other-ed SCI_LINESCROLL 0 (- page-lines))
+        (echo-message! (app-state-echo app) "Scrolled other window down")))))
+
+(def (cmd-recenter-other-window app)
+  "Recenter the other window around its cursor."
+  (let ((other-ed (qt-find-other-window app)))
+    (if (not other-ed)
+      (echo-message! (app-state-echo app) "Only one window")
+      (let* ((pos (sci-send other-ed SCI_GETCURRENTPOS 0))
+             (line (sci-send other-ed SCI_LINEFROMPOSITION pos))
+             (screen-lines (sci-send other-ed SCI_LINESONSCREEN 0))
+             (target (max 0 (- line (quotient screen-lines 2)))))
+        (sci-send other-ed SCI_SETFIRSTVISIBLELINE target)
+        (echo-message! (app-state-echo app) "Other window recentered")))))
+
+;;;============================================================================
+;;; Buffer statistics & text utilities (Qt)
+;;;============================================================================
+
+(def (cmd-buffer-statistics app)
+  "Show detailed buffer statistics: lines, words, chars."
+  (let* ((ed (current-qt-editor app))
+         (text (qt-plain-text-edit-text ed))
+         (len (string-length text))
+         (lines (+ 1 (let loop ((i 0) (count 0))
+                       (if (>= i len) count
+                         (if (char=? (string-ref text i) #\newline)
+                           (loop (+ i 1) (+ count 1))
+                           (loop (+ i 1) count))))))
+         (words (let loop ((i 0) (count 0) (in-word #f))
+                  (if (>= i len) (if in-word (+ count 1) count)
+                    (let ((c (string-ref text i)))
+                      (if (or (char=? c #\space) (char=? c #\newline)
+                              (char=? c #\tab) (char=? c #\return))
+                        (loop (+ i 1) (if in-word (+ count 1) count) #f)
+                        (loop (+ i 1) count #t)))))))
+    (echo-message! (app-state-echo app)
+      (string-append "Lines: " (number->string lines)
+                     "  Words: " (number->string words)
+                     "  Chars: " (number->string len)))))
+
+(def (cmd-convert-line-endings app)
+  "Convert line endings in current buffer (unix/dos/mac)."
+  (let* ((ed (current-qt-editor app))
+         (echo (app-state-echo app))
+         (choice (qt-echo-read-string app "Convert to (unix/dos/mac): ")))
+    (when choice
+      (let ((text (qt-plain-text-edit-text ed)))
+        (cond
+          ((string=? choice "unix")
+           (let ((new-text (string-subst (string-subst text "\r\n" "\n") "\r" "\n")))
+             (qt-plain-text-edit-set-text! ed new-text)
+             (echo-message! echo "Converted to Unix line endings (LF)")))
+          ((string=? choice "dos")
+           (let* ((clean (string-subst (string-subst text "\r\n" "\n") "\r" "\n"))
+                  (new-text (string-subst clean "\n" "\r\n")))
+             (qt-plain-text-edit-set-text! ed new-text)
+             (echo-message! echo "Converted to DOS line endings (CRLF)")))
+          ((string=? choice "mac")
+           (let ((new-text (string-subst (string-subst text "\r\n" "\r") "\n" "\r")))
+             (qt-plain-text-edit-set-text! ed new-text)
+             (echo-message! echo "Converted to Mac line endings (CR)")))
+          (else
+           (echo-error! echo "Unknown format. Use unix, dos, or mac.")))))))
+
+(def (cmd-set-buffer-encoding app)
+  "Set the buffer encoding (display only — all buffers use UTF-8)."
+  (let* ((echo (app-state-echo app))
+         (enc (qt-echo-read-string app "Encoding (utf-8/latin-1/ascii): ")))
+    (when enc
+      (echo-message! echo (string-append "Encoding set to: " enc
+                                          " (note: internally UTF-8)")))))
+
+(def (cmd-diff-two-files app)
+  "Diff two files and show the result in a buffer."
+  (let* ((echo (app-state-echo app))
+         (file1 (qt-echo-read-string app "File A: "))
+         (file2 (when file1 (qt-echo-read-string app "File B: "))))
+    (when (and file1 file2
+               (not (string=? file1 "")) (not (string=? file2 "")))
+      (let ((result (with-catch
+                      (lambda (e) (string-append "Error: "
+                                    (with-output-to-string
+                                      (lambda () (display-exception e)))))
+                      (lambda ()
+                        (let ((p (open-process
+                                   (list path: "diff"
+                                         arguments: (list "-u" file1 file2)
+                                         stdout-redirection: #t
+                                         stderr-redirection: #t))))
+                          (let ((out (read-line p #f)))
+                            (process-status p)
+                            (or out "Files are identical")))))))
+        (let* ((fr (app-state-frame app))
+               (ed (qt-current-editor fr))
+               (buf (or (buffer-by-name "*Diff*")
+                        (qt-buffer-create! "*Diff*" ed #f))))
+          (qt-buffer-attach! ed buf)
+          (set! (qt-edit-window-buffer (qt-current-window fr)) buf)
+          (qt-plain-text-edit-set-text! ed result)
+          (qt-text-document-set-modified! (buffer-doc-pointer buf) #f)
+          (qt-plain-text-edit-set-cursor-position! ed 0))))))
+
+;;;============================================================================
+;;; Insert utilities (Qt)
+;;;============================================================================
+
+(def (qt-insert-at-point! ed str)
+  "Insert string at cursor position in the editor."
+  (let* ((text (qt-plain-text-edit-text ed))
+         (pos (qt-plain-text-edit-cursor-position ed))
+         (new-text (string-append
+                     (substring text 0 pos) str
+                     (substring text pos (string-length text)))))
+    (qt-plain-text-edit-set-text! ed new-text)
+    (qt-plain-text-edit-set-cursor-position! ed (+ pos (string-length str)))))
+
+(def (cmd-insert-current-file-name app)
+  "Insert the current buffer's file name at point."
+  (let* ((ed (current-qt-editor app))
+         (buf (current-qt-buffer app))
+         (path (buffer-file-path buf)))
+    (if path
+      (begin
+        (qt-insert-at-point! ed path)
+        (echo-message! (app-state-echo app) (string-append "Inserted: " path)))
+      (echo-message! (app-state-echo app) "Buffer has no file name"))))
+
+(def (cmd-insert-env-var app)
+  "Insert the value of an environment variable at point."
+  (let* ((echo (app-state-echo app))
+         (var (qt-echo-read-string app "Env var: ")))
+    (when (and var (not (string=? var "")))
+      (let ((val (getenv var #f)))
+        (if val
+          (begin
+            (qt-insert-at-point! (current-qt-editor app) val)
+            (echo-message! echo (string-append "$" var " = " val)))
+          (echo-error! echo (string-append "$" var " not set")))))))
+
+(def (cmd-insert-separator-line app)
+  "Insert a separator line at point."
+  (qt-insert-at-point! (current-qt-editor app)
+    (string-append (make-string 72 #\-) "\n")))
+
+(def (cmd-insert-form-feed app)
+  "Insert a form feed (page break) character."
+  (qt-insert-at-point! (current-qt-editor app)
+    (string-append (string (integer->char 12)) "\n")))
+
+(def (cmd-insert-page-break app)
+  "Insert a page break character (same as form feed)."
+  (cmd-insert-form-feed app))
+
+(def (cmd-insert-zero-width-space app)
+  "Insert a zero-width space character."
+  (qt-insert-at-point! (current-qt-editor app)
+    (string (integer->char #x200b))))
+
+(def (cmd-insert-fixme app)
+  "Insert a FIXME comment at point."
+  (qt-insert-at-point! (current-qt-editor app) "FIXME: "))
+
+(def (cmd-insert-todo app)
+  "Insert a TODO comment at point."
+  (qt-insert-at-point! (current-qt-editor app) "TODO: "))
+
+(def (cmd-insert-backslash app)
+  "Insert a backslash character at point."
+  (qt-insert-at-point! (current-qt-editor app) "\\"))
+
+(def (cmd-insert-sequential-numbers app)
+  "Insert sequential numbers at point."
+  (let* ((echo (app-state-echo app))
+         (input (qt-echo-read-string app "Count (e.g. 10): ")))
+    (when (and input (not (string=? input "")))
+      (let ((n (string->number input)))
+        (when (and n (> n 0))
+          (let ((text (string-join
+                        (let loop ((i 1) (acc []))
+                          (if (> i n) (reverse acc)
+                            (loop (+ i 1) (cons (number->string i) acc))))
+                        "\n")))
+            (qt-insert-at-point! (current-qt-editor app)
+              (string-append text "\n"))))))))
+
+;;;============================================================================
+;;; Number conversion (Qt)
+;;;============================================================================
+
+(def (cmd-hex-to-decimal app)
+  "Convert hexadecimal number at point to decimal."
+  (let* ((ed (current-qt-editor app))
+         (echo (app-state-echo app)))
+    (let-values (((word start end) (word-at-point ed)))
+      (if (not word)
+        (echo-message! echo "No number at point")
+        (with-catch
+          (lambda (e) (echo-message! echo "Not a valid hex number"))
+          (lambda ()
+            (let* ((hex-str (if (string-prefix? "0x" word)
+                              (substring word 2 (string-length word))
+                              word))
+                   (val (string->number hex-str 16)))
+              (if val
+                (let* ((text (qt-plain-text-edit-text ed))
+                       (replacement (number->string val))
+                       (new-text (string-append
+                                   (substring text 0 start)
+                                   replacement
+                                   (substring text end (string-length text)))))
+                  (qt-plain-text-edit-set-text! ed new-text)
+                  (qt-plain-text-edit-set-cursor-position! ed (+ start (string-length replacement)))
+                  (echo-message! echo (string-append word " -> " replacement)))
+                (echo-message! echo "Not a valid hex number")))))))))
+
+(def (cmd-decimal-to-hex app)
+  "Convert decimal number at point to hexadecimal."
+  (let* ((ed (current-qt-editor app))
+         (echo (app-state-echo app)))
+    (let-values (((word start end) (word-at-point ed)))
+      (if (not word)
+        (echo-message! echo "No number at point")
+        (let ((val (string->number word)))
+          (if val
+            (let* ((hex (string-append "0x" (number->string val 16)))
+                   (text (qt-plain-text-edit-text ed))
+                   (new-text (string-append
+                               (substring text 0 start)
+                               hex
+                               (substring text end (string-length text)))))
+              (qt-plain-text-edit-set-text! ed new-text)
+              (qt-plain-text-edit-set-cursor-position! ed (+ start (string-length hex)))
+              (echo-message! echo (string-append word " -> " hex)))
+            (echo-message! echo "Not a valid decimal number")))))))
+
+;;;============================================================================
+;;; Shell command on region (Qt)
+;;;============================================================================
+
+(def (cmd-shell-command-on-region-replace app)
+  "Replace region with output of shell command piped through it."
+  (let* ((ed (current-qt-editor app))
+         (echo (app-state-echo app))
+         (start (sci-send ed SCI_GETSELECTIONSTART 0))
+         (end (sci-send ed SCI_GETSELECTIONEND 0)))
+    (if (= start end)
+      (echo-error! echo "No region selected")
+      (let ((cmd-str (qt-echo-read-string app "Shell command on region (replace): ")))
+        (when (and cmd-str (> (string-length cmd-str) 0))
+          (let* ((text (qt-plain-text-edit-text ed))
+                 (region (substring text start end)))
+            (with-catch
+              (lambda (e)
+                (echo-error! echo
+                  (string-append "Error: "
+                    (with-output-to-string
+                      (lambda () (display-exception e))))))
+              (lambda ()
+                (let* ((p (open-process
+                            (list path: "/bin/sh"
+                                  arguments: ["-c" cmd-str]
+                                  stdin-redirection: #t
+                                  stdout-redirection: #t
+                                  stderr-redirection: #t)))
+                       (_ (begin (display region p) (force-output p) (close-output-port p)))
+                       (output (or (read-line p #f) "")))
+                  (process-status p)
+                  (let* ((text (qt-plain-text-edit-text ed))
+                         (new-text (string-append
+                                     (substring text 0 start)
+                                     output
+                                     (substring text end (string-length text)))))
+                    (qt-plain-text-edit-set-text! ed new-text)
+                    (qt-plain-text-edit-set-cursor-position! ed (+ start (string-length output)))
+                    (echo-message! echo
+                      (string-append "Replaced " (number->string (- end start)) " chars"))))))))))))
+
+(def (cmd-shell-command-to-string app)
+  "Run a shell command and insert its output at point."
+  (let* ((ed (current-qt-editor app))
+         (echo (app-state-echo app))
+         (cmd-str (qt-echo-read-string app "Shell command: ")))
+    (when (and cmd-str (> (string-length cmd-str) 0))
+      (with-catch
+        (lambda (e) (echo-error! echo "Command failed"))
+        (lambda ()
+          (let* ((p (open-process
+                      (list path: "/bin/sh"
+                            arguments: ["-c" cmd-str]
+                            stdout-redirection: #t
+                            stderr-redirection: #t)))
+                 (output (read-line p #f)))
+            (process-status p)
+            (when output
+              (qt-insert-at-point! ed output))))))))
+
+;;;============================================================================
+;;; Tabify/untabify (Qt)
+;;;============================================================================
+
+(def (cmd-tabify-region app)
+  "Convert spaces to tabs in the selected region (or entire buffer)."
+  (let* ((ed (current-qt-editor app))
+         (echo (app-state-echo app))
+         (sel-start (sci-send ed SCI_GETSELECTIONSTART 0))
+         (sel-end (sci-send ed SCI_GETSELECTIONEND 0))
+         (spaces (make-string 4 #\space)))
+    (if (= sel-start sel-end)
+      (let* ((text (qt-plain-text-edit-text ed))
+             (result (string-subst text spaces "\t")))
+        (qt-plain-text-edit-set-text! ed result)
+        (echo-message! echo "Tabified buffer"))
+      (let* ((text (qt-plain-text-edit-text ed))
+             (region (substring text sel-start sel-end))
+             (result (string-subst region spaces "\t"))
+             (new-text (string-append
+                         (substring text 0 sel-start)
+                         result
+                         (substring text sel-end (string-length text)))))
+        (qt-plain-text-edit-set-text! ed new-text)
+        (echo-message! echo "Tabified region")))))
+
+;;;============================================================================
+;;; Goto scratch buffer (Qt)
+;;;============================================================================
+
+(def (cmd-goto-scratch app)
+  "Switch to the *scratch* buffer."
+  (let* ((fr (app-state-frame app))
+         (ed (qt-current-editor fr))
+         (existing (buffer-by-name "*scratch*")))
+    (if existing
+      (begin
+        (qt-buffer-attach! ed existing)
+        (set! (qt-edit-window-buffer (qt-current-window fr)) existing))
+      (let ((buf (qt-buffer-create! "*scratch*" ed #f)))
+        (qt-buffer-attach! ed buf)
+        (set! (qt-edit-window-buffer (qt-current-window fr)) buf)
+        (qt-plain-text-edit-set-text! ed
+          ";; This buffer is for text that is not saved.\n;; Use M-x eval-expression for Gerbil evaluation.\n\n")))))
+
+;;;============================================================================
+;;; Org store-link (Qt)
+;;;============================================================================
+
+(def *org-stored-link* #f)
+
+(def (cmd-org-store-link app)
+  "Store link to current file:line for later insertion."
+  (let* ((fr (app-state-frame app))
+         (buf (qt-current-buffer fr))
+         (ed (qt-current-editor fr))
+         (file (and buf (buffer-file-path buf)))
+         (pos (qt-plain-text-edit-cursor-position ed))
+         (text (qt-plain-text-edit-text ed))
+         (line (+ 1 (let loop ((i 0) (n 0))
+                      (if (or (>= i pos) (>= i (string-length text))) n
+                        (if (char=? (string-ref text i) #\newline)
+                          (loop (+ i 1) (+ n 1))
+                          (loop (+ i 1) n))))))
+         (echo (app-state-echo app)))
+    (if file
+      (let ((link (string-append "file:" file "::" (number->string line))))
+        (set! *org-stored-link* link)
+        (echo-message! echo (string-append "Stored: " link)))
+      (echo-message! echo "Buffer has no file"))))
+
+;;;============================================================================
+;;; Word frequency analysis (Qt)
+;;;============================================================================
+
+(def (cmd-word-frequency-analysis app)
+  "Show word frequency analysis of buffer content."
+  (let* ((ed (current-qt-editor app))
+         (echo (app-state-echo app))
+         (text (qt-plain-text-edit-text ed))
+         (words (string-tokenize text))
+         (freq (make-hash-table)))
+    (for-each (lambda (w)
+                (let ((lw (string-downcase w)))
+                  (hash-put! freq lw (+ 1 (or (hash-get freq lw) 0)))))
+              words)
+    (let* ((pairs (hash->list freq))
+           (sorted (sort pairs (lambda (a b) (> (cdr a) (cdr b)))))
+           (top (let loop ((ls sorted) (n 0) (acc []))
+                  (if (or (null? ls) (>= n 30)) (reverse acc)
+                    (loop (cdr ls) (+ n 1) (cons (car ls) acc)))))
+           (report (with-output-to-string
+                     (lambda ()
+                       (display "Word Frequency Analysis:\n")
+                       (display (make-string 40 #\-))
+                       (display "\n")
+                       (for-each
+                         (lambda (p)
+                           (display (string-pad (number->string (cdr p)) 6))
+                           (display "  ")
+                           (display (car p))
+                           (display "\n"))
+                         top)
+                       (display (make-string 40 #\-))
+                       (display "\n")
+                       (display "Total unique words: ")
+                       (display (number->string (length pairs)))
+                       (display "\n")
+                       (display "Total words: ")
+                       (display (number->string (length words)))
+                       (display "\n")))))
+      (let* ((fr (app-state-frame app))
+             (buf (or (buffer-by-name "*Word Freq*")
+                      (qt-buffer-create! "*Word Freq*" ed #f))))
+        (qt-buffer-attach! ed buf)
+        (set! (qt-edit-window-buffer (qt-current-window fr)) buf)
+        (qt-plain-text-edit-set-text! ed report)
+        (qt-text-document-set-modified! (buffer-doc-pointer buf) #f)
+        (qt-plain-text-edit-set-cursor-position! ed 0)
+        (echo-message! echo
+          (string-append (number->string (length pairs)) " unique words analyzed"))))))
+
+;;;============================================================================
+;;; Display utilities (Qt)
+;;;============================================================================
+
+(def (cmd-display-cursor-position app)
+  "Display cursor position information."
+  (let* ((ed (current-qt-editor app))
+         (pos (qt-plain-text-edit-cursor-position ed))
+         (text (qt-plain-text-edit-text ed))
+         (line (qt-plain-text-edit-cursor-line ed))
+         (col (qt-plain-text-edit-cursor-column ed)))
+    (echo-message! (app-state-echo app)
+      (string-append "Line " (number->string (+ line 1))
+                     ", Col " (number->string col)
+                     ", Pos " (number->string pos)
+                     "/" (number->string (string-length text))))))
+
+(def (cmd-display-column-number app)
+  "Display the current column number."
+  (let ((col (qt-plain-text-edit-cursor-column (current-qt-editor app))))
+    (echo-message! (app-state-echo app)
+      (string-append "Column: " (number->string col)))))
+
+;;;============================================================================
+;;; Narrow to page (Qt)
+;;;============================================================================
+
+(def (cmd-narrow-to-page app)
+  "Show page boundaries around cursor (form-feed delimited)."
+  (let* ((ed (current-qt-editor app))
+         (text (qt-plain-text-edit-text ed))
+         (pos (qt-plain-text-edit-cursor-position ed))
+         (len (string-length text))
+         (page-start (let loop ((i (- pos 1)))
+                       (if (< i 0) 0
+                         (if (char=? (string-ref text i) #\page) (+ i 1)
+                           (loop (- i 1))))))
+         (page-end (let loop ((i pos))
+                     (if (>= i len) len
+                       (if (char=? (string-ref text i) #\page) i
+                         (loop (+ i 1)))))))
+    (echo-message! (app-state-echo app)
+      (string-append "Page: chars " (number->string page-start)
+                     "-" (number->string page-end)
+                     " (" (number->string (- page-end page-start)) " chars)"))))
+
+;;;============================================================================
 ;;; Registration for commands moved from commands-aliases.ss
 ;;;============================================================================
 
@@ -835,5 +1333,48 @@
       (repeat-mode-set! (not (repeat-mode?)))
       (clear-repeat-map!)
       (echo-message! (app-state-echo app)
-        (if (repeat-mode?) "Repeat mode enabled" "Repeat mode disabled")))))
+        (if (repeat-mode?) "Repeat mode enabled" "Repeat mode disabled"))))
+  ;; Scroll other window
+  (register-command! 'scroll-up-other-window cmd-scroll-up-other-window)
+  (register-command! 'scroll-down-other-window cmd-scroll-down-other-window)
+  (register-command! 'scroll-other-window cmd-scroll-up-other-window)
+  (register-command! 'scroll-other-window-down cmd-scroll-down-other-window)
+  (register-command! 'recenter-other-window cmd-recenter-other-window)
+  ;; Buffer statistics & text utilities
+  (register-command! 'buffer-statistics cmd-buffer-statistics)
+  (register-command! 'convert-line-endings cmd-convert-line-endings)
+  (register-command! 'set-buffer-encoding cmd-set-buffer-encoding)
+  (register-command! 'diff cmd-diff-two-files)
+  (register-command! 'diff-two-files cmd-diff-two-files)
+  (register-command! 'diff-summary cmd-diff-two-files)
+  ;; Insert utilities
+  (register-command! 'insert-current-file-name cmd-insert-current-file-name)
+  (register-command! 'insert-env-var cmd-insert-env-var)
+  (register-command! 'insert-separator-line cmd-insert-separator-line)
+  (register-command! 'insert-form-feed cmd-insert-form-feed)
+  (register-command! 'insert-page-break cmd-insert-page-break)
+  (register-command! 'insert-zero-width-space cmd-insert-zero-width-space)
+  (register-command! 'insert-fixme cmd-insert-fixme)
+  (register-command! 'insert-todo cmd-insert-todo)
+  (register-command! 'insert-backslash cmd-insert-backslash)
+  (register-command! 'insert-sequential-numbers cmd-insert-sequential-numbers)
+  ;; Number conversion
+  (register-command! 'hex-to-decimal cmd-hex-to-decimal)
+  (register-command! 'decimal-to-hex cmd-decimal-to-hex)
+  ;; Shell command on region
+  (register-command! 'shell-command-on-region-replace cmd-shell-command-on-region-replace)
+  (register-command! 'shell-command-to-string cmd-shell-command-to-string)
+  ;; Tabify
+  (register-command! 'tabify-region cmd-tabify-region)
+  ;; Goto scratch
+  (register-command! 'goto-scratch cmd-goto-scratch)
+  ;; Org store-link
+  (register-command! 'org-store-link cmd-org-store-link)
+  ;; Word frequency
+  (register-command! 'word-frequency-analysis cmd-word-frequency-analysis)
+  ;; Display utilities
+  (register-command! 'display-cursor-position cmd-display-cursor-position)
+  (register-command! 'display-column-number cmd-display-column-number)
+  ;; Narrow to page
+  (register-command! 'narrow-to-page cmd-narrow-to-page))
 
