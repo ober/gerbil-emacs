@@ -96,7 +96,7 @@
         (only-in :gemacs/editor-extra-helpers
                  project-current)
         (only-in :gemacs/persist
-                 buffer-local-set!
+                 buffer-local-set! buffer-local-get
                  save-place-save! save-place-load!
                  save-place-remember! save-place-restore
                  *save-place-enabled* *require-final-newline*
@@ -1714,6 +1714,7 @@
   (register-command! 'ai-code-explain cmd-ai-code-explain)
   (register-command! 'ai-code-refactor cmd-ai-code-refactor)
   (register-command! 'tramp-ssh-edit cmd-tramp-ssh-edit)
+  (register-command! 'tramp-ssh-save cmd-tramp-ssh-save)
   (register-command! 'tramp-docker-edit cmd-tramp-docker-edit)
   (register-command! 'tramp-remote-shell cmd-tramp-remote-shell)
   (register-command! 'tramp-remote-compile cmd-tramp-remote-compile)
@@ -2396,7 +2397,7 @@
 (def *qt-tramp-connections* (make-hash-table))
 
 (def (cmd-tramp-ssh-edit app)
-  "Edit file via SSH (Qt)."
+  "Edit file via SSH. Fetches remote file via ssh cat."
   (let* ((echo (app-state-echo app))
          (path (qt-echo-read-string app "SSH path (/ssh:host:path): ")))
     (when (and path (> (string-length path) 0))
@@ -2407,12 +2408,78 @@
                 (host (if colon (substring rest 0 colon) rest))
                 (rpath (if colon (substring rest (+ colon 1) (string-length rest)) "~")))
            (hash-put! *qt-tramp-connections* host #t)
-           (echo-message! echo (string-append "SSH: connecting to " host ":" rpath " ..."))))
+           (echo-message! echo (string-append "SSH: fetching " host ":" rpath " ..."))
+           (with-catch
+             (lambda (e)
+               (echo-error! echo (string-append "SSH failed: "
+                 (with-output-to-string (lambda () (display-exception e))))))
+             (lambda ()
+               (let* ((proc (open-process
+                              (list path: "ssh"
+                                    arguments: [host "cat" rpath]
+                                    stdin-redirection: #f
+                                    stdout-redirection: #t
+                                    stderr-redirection: #t)))
+                      (content (read-line proc #f)))
+                 (process-status proc)
+                 (close-port proc)
+                 (if (or (not content) (string=? content ""))
+                   (echo-error! echo (string-append "Could not read " host ":" rpath))
+                   (let* ((name (string-append "[ssh:" host "]"
+                                  (path-strip-directory rpath)))
+                          (fr (app-state-frame app))
+                          (ed (current-qt-editor app))
+                          (buf (qt-buffer-create! name ed #f)))
+                     ;; Store remote path for saving back
+                     (buffer-local-set! buf 'tramp-host host)
+                     (buffer-local-set! buf 'tramp-path rpath)
+                     (buffer-local-set! buf 'tramp-full path)
+                     (qt-buffer-attach! ed buf)
+                     (set! (qt-edit-window-buffer (qt-current-window fr)) buf)
+                     (qt-plain-text-edit-set-text! ed content)
+                     (qt-text-document-set-modified! (buffer-doc-pointer buf) #f)
+                     (qt-plain-text-edit-set-cursor-position! ed 0)
+                     ;; Set up highlighting
+                     (qt-setup-highlighting! app buf)
+                     (echo-message! echo
+                       (string-append "Opened " host ":" rpath)))))))))
         (else
          (echo-message! echo "Use format: /ssh:hostname:/path/to/file"))))))
 
+(def (cmd-tramp-ssh-save app)
+  "Save the current buffer back to the remote host via SSH."
+  (let* ((echo (app-state-echo app))
+         (buf (current-qt-buffer app))
+         (host (buffer-local-get buf 'tramp-host))
+         (rpath (buffer-local-get buf 'tramp-path)))
+    (if (not host)
+      (echo-error! echo "Not a TRAMP buffer")
+      (let ((ed (current-qt-editor app))
+            (text (qt-plain-text-edit-text (current-qt-editor app))))
+        (echo-message! echo (string-append "SSH: saving to " host ":" rpath " ..."))
+        (with-catch
+          (lambda (e)
+            (echo-error! echo (string-append "SSH save failed: "
+              (with-output-to-string (lambda () (display-exception e))))))
+          (lambda ()
+            (let ((proc (open-process
+                          (list path: "ssh"
+                                arguments: [host "tee" rpath]
+                                stdin-redirection: #t
+                                stdout-redirection: #t
+                                stderr-redirection: #t))))
+              (display text proc)
+              (force-output proc)
+              (close-output-port proc)
+              (read-line proc #f) ;; consume output
+              (process-status proc)
+              (close-port proc)
+              (qt-text-document-set-modified! (buffer-doc-pointer buf) #f)
+              (echo-message! echo
+                (string-append "Saved to " host ":" rpath)))))))))
+
 (def (cmd-tramp-docker-edit app)
-  "Edit file in Docker container (Qt)."
+  "Edit file in Docker container via docker exec cat."
   (let* ((echo (app-state-echo app))
          (path (qt-echo-read-string app "Docker path (/docker:name:path): ")))
     (when (and path (> (string-length path) 0))
@@ -2422,7 +2489,40 @@
                 (colon (string-index rest #\:))
                 (container (if colon (substring rest 0 colon) rest))
                 (rpath (if colon (substring rest (+ colon 1) (string-length rest)) "/")))
-           (echo-message! echo (string-append "Docker: connecting to " container ":" rpath " ..."))))
+           (echo-message! echo (string-append "Docker: fetching " container ":" rpath " ..."))
+           (with-catch
+             (lambda (e)
+               (echo-error! echo (string-append "Docker failed: "
+                 (with-output-to-string (lambda () (display-exception e))))))
+             (lambda ()
+               (let* ((proc (open-process
+                              (list path: "docker"
+                                    arguments: ["exec" container "cat" rpath]
+                                    stdin-redirection: #f
+                                    stdout-redirection: #t
+                                    stderr-redirection: #t)))
+                      (content (read-line proc #f)))
+                 (process-status proc)
+                 (close-port proc)
+                 (if (or (not content) (string=? content ""))
+                   (echo-error! echo (string-append "Could not read " container ":" rpath))
+                   (let* ((name (string-append "[docker:" container "]"
+                                  (path-strip-directory rpath)))
+                          (fr (app-state-frame app))
+                          (ed (current-qt-editor app))
+                          (buf (qt-buffer-create! name ed #f)))
+                     (buffer-local-set! buf 'tramp-host container)
+                     (buffer-local-set! buf 'tramp-path rpath)
+                     (buffer-local-set! buf 'tramp-full path)
+                     (buffer-local-set! buf 'tramp-type 'docker)
+                     (qt-buffer-attach! ed buf)
+                     (set! (qt-edit-window-buffer (qt-current-window fr)) buf)
+                     (qt-plain-text-edit-set-text! ed content)
+                     (qt-text-document-set-modified! (buffer-doc-pointer buf) #f)
+                     (qt-plain-text-edit-set-cursor-position! ed 0)
+                     (qt-setup-highlighting! app buf)
+                     (echo-message! echo
+                       (string-append "Opened " container ":" rpath)))))))))
         (else
          (echo-message! echo "Use format: /docker:container:/path/to/file"))))))
 

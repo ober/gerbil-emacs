@@ -609,7 +609,7 @@
 | Async shell command (`M-&`) | :white_check_mark: | |
 | Eshell | :large_blue_circle: | Built-in commands (cd, ls, cat, echo, grep, find, wc, head, tail), pipelines, output redirect (`>`, `>>`), glob expansion (`*.txt`), env var expansion (`$HOME`), Scheme eval |
 | Terminal (term/ansi-term) | :large_blue_circle: | PTY support, ANSI colors, signals |
-| Vterm | :yellow_circle: | `vterm` delegates to built-in `term`; `vterm-copy-mode` in Qt |
+| Vterm | :large_blue_circle: | Full PTY terminal; `vterm-copy-mode` in Qt; multi-vterm support |
 | Shell mode | :large_blue_circle: | External shell buffer |
 | Compilation mode | :white_check_mark: | Error parsing, navigation, ANSI color rendering |
 | Comint (process interaction) | :large_blue_circle: | Full PTY terminal with async/sync I/O, ANSI colors, signals |
@@ -802,9 +802,9 @@
 
 | Feature | Status | Notes |
 |---------|--------|-------|
-| SSH file editing | :yellow_circle: | `tramp-ssh-edit` with `/ssh:host:path` syntax |
+| SSH file editing | :large_blue_circle: | `tramp-ssh-edit` fetches remote file via ssh, `tramp-ssh-save` writes back |
 | TRAMP sudo | :yellow_circle: | `sudo-write` exists, `tramp-sudo` stub |
-| Docker container editing | :yellow_circle: | `tramp-docker-edit` with `/docker:name:path` syntax |
+| Docker container editing | :large_blue_circle: | `tramp-docker-edit` fetches file via `docker exec cat`, with highlighting |
 | Remote shell | :yellow_circle: | `tramp-remote-shell` command |
 | Remote compilation | :yellow_circle: | `tramp-remote-compile` command |
 
@@ -1058,7 +1058,7 @@ No remaining Tier 1 gaps. All core editing, completion, and navigation features 
 
 | Feature | Status | Notes |
 |---------|--------|-------|
-| Vterm (libvterm) | :yellow_circle: | `vterm` delegates to built-in PTY terminal |
+| Vterm (libvterm) | :large_blue_circle: | Full PTY terminal with ANSI colors, signals, async I/O (no libvterm, uses built-in) |
 | Multi-vterm (multiple terminals) | :white_check_mark: | `term-list`, `term-next`, `term-prev` commands |
 | Vterm copy mode | :white_check_mark: | Terminal copy mode with `C-c C-k` / `C-c C-j` |
 | Terminal per-project | :white_check_mark: | `M-x project-term` opens/switches to project terminal |
