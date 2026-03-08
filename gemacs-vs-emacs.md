@@ -616,7 +616,7 @@
 | Comint (process interaction) | :large_blue_circle: | Full PTY terminal with async/sync I/O, ANSI colors, signals |
 | Process sentinels/filters | :white_check_mark: | `set-process-sentinel!`, `set-process-filter!` API |
 
-**Summary:** Shell command execution works well. Terminal mode provides PTY with ANSI support. Eshell is basic. Missing vterm and full process management.
+**Summary:** Shell command execution works well. Terminal mode provides full PTY with ANSI support. Vterm with copy-mode and multi-vterm. Eshell with pipelines, redirects, and glob expansion. Process sentinels and filters.
 
 ---
 
@@ -869,7 +869,7 @@
 | ERC (IRC) | :large_blue_circle: | TCP connection to IRC server, NICK/USER/JOIN, displays channel messages |
 | rcirc | :large_blue_circle: | Delegates to ERC |
 
-**Summary:** No chat/IRC client.
+**Summary:** IRC client via ERC with TCP connection, NICK/USER/JOIN, and channel display.
 
 ---
 
@@ -881,7 +881,7 @@
 | DocView | :large_blue_circle: | `doc-view-mode` converts PDF/PS to text via `pdftotext`/`ps2ascii`, both TUI and Qt |
 | Image viewing | :large_blue_circle: | Image buffers in Qt layer |
 
-**Summary:** No PDF viewing. Image display works in Qt layer.
+**Summary:** PDF viewing via `pdftotext` extraction with page navigation. DocView converts PDF/PS to text. Image display in Qt layer.
 
 ---
 
@@ -1003,21 +1003,21 @@ No remaining Tier 1 gaps. All core editing, completion, and navigation features 
 
 | Gap | Impact | Effort |
 |-----|--------|--------|
-| **TRAMP (remote editing)** | Can't edit files over SSH/Docker | Large |
+| ~~TRAMP (remote editing)~~ | ~~Can't edit files over SSH/Docker~~ Implemented: SSH/Docker file fetching, remote shell, remote compile, sudo-edit | ~~Large~~ Done |
 | ~~Tab bar / workspaces~~ | ~~No visual workspace management~~ Implemented: workspace tabs (create/close/switch/rename/move), Qt visual buffer tab bar | ~~Medium~~ Done |
 | **Tree-sitter highlighting** | Less accurate highlighting than modern Emacs | Large |
 | ~~Package/plugin system~~ | ~~Users can't extend gemacs easily~~ Implemented: `~/.gemacs-plugins/`, `load-plugin`/`list-plugins`, dynamic module loading | ~~Large~~ Done |
 | ~~Org capture buffer~~ | ~~No interactive capture~~ Implemented: template selection, `*Org Capture*` buffer, C-c C-c / C-c C-k | ~~Small~~ Done |
 | ~~Named keyboard macros~~ | ~~Only last-recorded macro~~ Implemented: name, call, save/load | ~~Small~~ Done |
 | ~~Info reader~~ | ~~Can't browse GNU documentation~~ Implemented: `info-reader` with node navigation | ~~Medium~~ Done |
-| **PDF viewing** | No document viewer | Large |
+| ~~PDF viewing~~ | ~~No document viewer~~ Implemented: `pdf-view-mode` with pdftotext, page navigation, DocView | ~~Large~~ Done |
 
 ### Tier 4 — Emacs-Specific (Low Priority)
 
 | Gap | Impact | Effort |
 |-----|--------|--------|
-| Email (Gnus/mu4e) | Most users use dedicated email clients | Very Large |
-| IRC (ERC) | Most users use dedicated chat clients | Large |
+| ~~Email (Gnus/mu4e)~~ | ~~Most users use dedicated email clients~~ Implemented: compose-mail (msmtp/sendmail), Gnus RSS, mu4e/notmuch | ~~Very Large~~ Done |
+| ~~IRC (ERC)~~ | ~~Most users use dedicated chat clients~~ Implemented: ERC IRC with TCP, NICK/USER/JOIN | ~~Large~~ Done |
 | ~~M-x customize UI~~ | ~~Programmatic config is fine for power users~~ Implemented: `customize`, `set-variable`, custom groups, face editor | ~~Medium~~ Done |
 | Elisp compatibility | Fundamental architecture choice (Gerbil vs Elisp) | N/A |
 

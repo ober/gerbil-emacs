@@ -617,12 +617,81 @@
             (echo-message! echo "Rectangle opened")))))))
 
 ;;;============================================================================
-;;; Hippie expand (acts like dabbrev-expand)
+;;; Hippie expand — multi-strategy expansion
 ;;;============================================================================
 
+(def *hippie-strategy-index* 0)
+(def *hippie-last-prefix* "")
+
+(def (hippie-try-file-expand prefix)
+  "Try to expand prefix as a file path."
+  (with-catch (lambda (e) [])
+    (lambda ()
+      (let* ((dir (if (string-index prefix #\/)
+                    (path-directory prefix)
+                    "."))
+             (base (path-strip-directory prefix))
+             (entries (with-catch (lambda (e) [])
+                        (lambda () (directory-files dir)))))
+        (filter (lambda (f) (string-prefix? base f))
+                entries)))))
+
+(def (hippie-try-line-expand ed prefix)
+  "Try to complete with matching lines from current buffer."
+  (let* ((text (qt-plain-text-edit-text ed))
+         (lines (string-split text #\newline))
+         (matches (filter (lambda (line)
+                            (let ((trimmed (string-trim-both line)))
+                              (and (> (string-length trimmed) (string-length prefix))
+                                   (string-prefix? prefix trimmed)
+                                   (not (string=? trimmed prefix)))))
+                          lines)))
+    (map string-trim-both matches)))
+
 (def (cmd-hippie-expand app)
-  "Expand word at point using buffer content (like dabbrev)."
-  (cmd-dabbrev-expand app))
+  "Expand word at point using multiple strategies (dabbrev, file, line)."
+  (let* ((ed (current-qt-editor app))
+         (prefix (get-word-prefix ed)))
+    (if (string=? prefix "")
+      (echo-message! (app-state-echo app) "No expansion found")
+      ;; If prefix changed, reset strategy
+      (begin
+        (when (not (string=? prefix *hippie-last-prefix*))
+          (set! *hippie-strategy-index* 0)
+          (set! *hippie-last-prefix* prefix))
+        ;; Try strategies in order
+        (let loop ((idx *hippie-strategy-index*))
+          (case idx
+            ((0)
+             ;; Strategy 1: dabbrev (buffer words)
+             (cmd-dabbrev-expand app)
+             (set! *hippie-strategy-index* 1))
+            ((1)
+             ;; Strategy 2: file name expansion
+             (let ((files (hippie-try-file-expand prefix)))
+               (if (pair? files)
+                 (let* ((pos (qt-plain-text-edit-cursor-position ed))
+                        (match (car files))
+                        (dir (if (string-index prefix #\/)
+                               (path-directory prefix) ""))
+                        (suffix (substring match (string-length (path-strip-directory prefix))
+                                          (string-length match)))
+                        (text (qt-plain-text-edit-text ed))
+                        (new-text (string-append
+                                    (substring text 0 pos) suffix
+                                    (substring text pos (string-length text)))))
+                   (qt-plain-text-edit-set-text! ed new-text)
+                   (qt-plain-text-edit-set-cursor-position! ed (+ pos (string-length suffix)))
+                   (set! *hippie-strategy-index* 2)
+                   (echo-message! (app-state-echo app)
+                     (string-append "File: " match)))
+                 (begin
+                   (set! *hippie-strategy-index* 2)
+                   (loop 2)))))
+            (else
+             ;; No more strategies
+             (set! *hippie-strategy-index* 0)
+             (echo-message! (app-state-echo app) "No further expansions"))))))))
 
 ;;;============================================================================
 ;;; Split line
