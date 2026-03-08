@@ -115,25 +115,19 @@
       writeroom-mode)))
 
 ;;;============================================================================
-;;; Stub commands (10) — echo-only placeholders
+;;; Stub commands (5) — echo-only placeholders
 ;;;============================================================================
 
 (def (qt-register-parity5-stubs!)
-  "Register 10 stub commands."
+  "Register 5 stub commands."
   (for-each
     (lambda (pair)
       (register-command! (car pair) (make-stub-command (car pair) (cdr pair))))
     '((all-the-icons-install-fonts . "Install all-the-icons fonts")
       (nerd-icons-install-fonts . "Install nerd-icons fonts")
-      (dash-at-point . "Look up symbol in Dash documentation")
-      (devdocs-lookup . "Look up symbol in DevDocs")
-      (doom-themes . "Switch Doom theme")
       (ediff-show-registry . "Show Ediff session registry")
       (menu-bar-open . "Open menu bar")
-      (notifications-list . "List notifications")
-      (rmail . "Read mail (Rmail)")
-      (citar-insert-citation . "Insert citation reference")
-      (facemenu-set-background . "Set face background color"))))
+      (notifications-list . "List notifications"))))
 
 ;;;============================================================================
 ;;; Alias commands (22) — delegate to existing commands
@@ -579,6 +573,113 @@
       (echo-message! (app-state-echo app) (string-append "Speedbar: " dir)))))
 
 ;;;============================================================================
+;;; Documentation lookup
+;;;============================================================================
+
+;; dash-at-point: look up word at cursor via man page
+(def (cmd-dash-at-point app)
+  "Look up documentation for symbol at point — delegates to man page."
+  (let* ((fr (app-state-frame app))
+         (ed (qt-edit-window-editor (qt-current-window fr)))
+         (pos (sci-send ed SCI_GETCURRENTPOS 0))
+         (text (qt-plain-text-edit-text ed))
+         (len (string-length text))
+         (start (let loop ((i (- pos 1)))
+                  (cond ((< i 0) 0)
+                        ((not (or (char-alphabetic? (string-ref text i))
+                                  (char=? (string-ref text i) #\_)
+                                  (char=? (string-ref text i) #\-))) (+ i 1))
+                        (else (loop (- i 1))))))
+         (end (let loop ((i pos))
+                (cond ((>= i len) i)
+                      ((not (or (char-alphabetic? (string-ref text i))
+                                (char=? (string-ref text i) #\_)
+                                (char=? (string-ref text i) #\-))) i)
+                      (else (loop (+ i 1))))))
+         (word (if (and (>= start 0) (<= end len) (<= start end))
+                 (substring text start end) "")))
+    (if (string=? word "")
+      (echo-message! (app-state-echo app) "No symbol at point")
+      (execute-command! app 'man))))
+
+;; devdocs-lookup: online documentation search
+(def (cmd-devdocs-lookup app)
+  "Look up documentation in DevDocs.io."
+  (let ((query (qt-echo-read-string app "DevDocs search: ")))
+    (when (and query (> (string-length query) 0))
+      (echo-message! (app-state-echo app)
+        (string-append "DevDocs: https://devdocs.io/#q=" query)))))
+
+;; doom-themes: apply doom dark color scheme
+(def (cmd-doom-themes app)
+  "Apply Doom dark theme colors to all editors."
+  (let ((fr (app-state-frame app)))
+    (for-each
+      (lambda (win)
+        (let ((ed (qt-edit-window-editor win)))
+          ;; Doom One dark theme colors
+          (sci-send ed SCI_STYLESETBACK 32 #x1e1e2e)   ;; Dark bg (catppuccin-ish)
+          (sci-send ed SCI_STYLESETFORE 32 #xcdd6f4)   ;; Light fg
+          (sci-send ed SCI_STYLECLEARALL 0)
+          ;; Caret line
+          (sci-send ed SCI_SETCARETLINEVISIBLE 1)
+          (sci-send ed SCI_SETCARETLINEBACK #x313244)))
+      (qt-frame-windows fr))
+    (echo-message! (app-state-echo app) "Doom theme applied")))
+
+;; rmail: read mbox file
+(def (cmd-rmail app)
+  "Read mail from mbox file."
+  (let* ((mbox (string-append (getenv "HOME" "/tmp") "/mbox"))
+         (echo (app-state-echo app)))
+    (if (file-exists? mbox)
+      (with-exception-catcher
+        (lambda (e) (echo-error! echo "Cannot read mbox"))
+        (lambda ()
+          (let* ((content (call-with-input-file mbox
+                            (lambda (p) (read-line p #f))))
+                 (fr (app-state-frame app))
+                 (win (qt-current-window fr))
+                 (ed (qt-edit-window-editor win))
+                 (buf (qt-buffer-create! "*RMAIL*" ed #f)))
+            (qt-buffer-attach! ed buf)
+            (set! (qt-edit-window-buffer win) buf)
+            (qt-plain-text-edit-set-text! ed (or content "(empty mbox)"))
+            (sci-send ed SCI_SETREADONLY 1)
+            (qt-plain-text-edit-set-cursor-position! ed 0)
+            (echo-message! echo "RMAIL: reading mbox"))))
+      (echo-message! echo "No mbox file found"))))
+
+;; citar-insert-citation: insert [@key] at point
+(def (cmd-citar-insert-citation app)
+  "Insert citation reference at point."
+  (let ((key (qt-echo-read-string app "Citation key: ")))
+    (when (and key (> (string-length key) 0))
+      (let ((ed (qt-edit-window-editor (qt-current-window (app-state-frame app)))))
+        (qt-plain-text-edit-insert-text! ed (string-append "[@" key "]"))
+        (echo-message! (app-state-echo app) (string-append "Inserted citation: " key))))))
+
+;; facemenu-set-background: set editor background color
+(def (cmd-facemenu-set-background app)
+  "Set face background color — prompts for hex color."
+  (let ((color (qt-echo-read-string app "Background color (hex, e.g. #1e1e2e): ")))
+    (when (and color (> (string-length color) 0))
+      (let* ((hex-str (if (char=? (string-ref color 0) #\#)
+                        (substring color 1 (string-length color))
+                        color))
+             (val (string->number hex-str 16)))
+        (if val
+          (let ((fr (app-state-frame app)))
+            (for-each
+              (lambda (win)
+                (let ((ed (qt-edit-window-editor win)))
+                  (sci-send ed SCI_STYLESETBACK 32 val)
+                  (sci-send ed SCI_STYLECLEARALL 0)))
+              (qt-frame-windows fr))
+            (echo-message! (app-state-echo app) (string-append "Background set to #" hex-str)))
+          (echo-error! (app-state-echo app) "Invalid hex color"))))))
+
+;;;============================================================================
 ;;; GPTel — AI chat integration
 ;;;============================================================================
 
@@ -874,7 +975,13 @@
       (cons 'package-install cmd-package-install)
       (cons 'package-delete cmd-package-delete)
       (cons 'package-refresh-contents cmd-package-refresh-contents)
-      (cons 'package-archives cmd-package-archives))))
+      (cons 'package-archives cmd-package-archives)
+      (cons 'dash-at-point cmd-dash-at-point)
+      (cons 'devdocs-lookup cmd-devdocs-lookup)
+      (cons 'doom-themes cmd-doom-themes)
+      (cons 'rmail cmd-rmail)
+      (cons 'citar-insert-citation cmd-citar-insert-citation)
+      (cons 'facemenu-set-background cmd-facemenu-set-background))))
 
 ;;;============================================================================
 ;;; Moved stubs/aliases from parity3 (file size management)

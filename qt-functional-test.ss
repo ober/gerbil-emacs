@@ -4842,6 +4842,33 @@
           (pass! "package-archives shows info")
           (fail! "package-archives shows info" text "contains Package Archives"))))
 
+    ;; dash-at-point
+    (if (find-command 'dash-at-point) (pass! "dash-at-point registered")
+      (fail! "dash-at-point registered" #f #t))
+
+    ;; devdocs-lookup
+    (if (find-command 'devdocs-lookup) (pass! "devdocs-lookup registered")
+      (fail! "devdocs-lookup registered" #f #t))
+
+    ;; doom-themes
+    (if (find-command 'doom-themes) (pass! "doom-themes registered")
+      (fail! "doom-themes registered" #f #t))
+    (let ((cmd (find-command 'doom-themes)))
+      (cmd app)
+      (pass! "doom-themes applies without crash"))
+
+    ;; rmail
+    (if (find-command 'rmail) (pass! "rmail registered")
+      (fail! "rmail registered" #f #t))
+
+    ;; citar-insert-citation
+    (if (find-command 'citar-insert-citation) (pass! "citar-insert-citation registered")
+      (fail! "citar-insert-citation registered" #f #t))
+
+    ;; facemenu-set-background
+    (if (find-command 'facemenu-set-background) (pass! "facemenu-set-background registered")
+      (fail! "facemenu-set-background registered" #f #t))
+
     (destroy-qt-test-app! ed w)
     (displayln "Group 47 complete")))
 
