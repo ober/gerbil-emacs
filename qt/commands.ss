@@ -145,6 +145,7 @@
         :gemacs/qt/commands-config2
         :gemacs/qt/commands-parity
         :gemacs/qt/commands-parity2
+        :gemacs/qt/commands-parity3
         :gemacs/qt/commands-aliases
         :gemacs/qt/commands-aliases2
         :gemacs/qt/helm-commands)
@@ -1769,6 +1770,8 @@
   (register-command! 'screen-reader-mode cmd-screen-reader-mode)
   ;; Helm commands (real implementations)
   (qt-register-helm-commands!)
+  ;; Bulk toggle parity commands (339 toggles)
+  (qt-register-parity3-toggles!)
   ;; Wire modeline providers
   (set-box! *modeline-overwrite-provider* (lambda () *overwrite-mode*))
   (set-box! *modeline-narrow-provider*

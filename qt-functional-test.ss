@@ -4058,6 +4058,88 @@
   (displayln "Group 37 complete"))
 
 ;;;============================================================================
+;;; Group 38: Bulk toggle parity commands (339 toggles)
+;;;============================================================================
+
+(def (run-group-38-bulk-toggles)
+  (displayln "--- Group 38: Bulk toggle parity commands ---")
+
+  ;; Test a sample of toggle registrations across the full list
+  (let ((sample-toggles '(toggle-aggressive-indent
+                           toggle-auto-highlight-symbol
+                           toggle-blink-cursor-mode
+                           toggle-buffer-read-only
+                           toggle-company-mode
+                           toggle-delete-selection
+                           toggle-display-line-numbers
+                           toggle-electric-indent-mode
+                           toggle-global-flycheck
+                           toggle-global-font-lock
+                           toggle-global-lsp-mode
+                           toggle-global-rainbow-mode
+                           toggle-global-undo-tree
+                           toggle-global-which-key
+                           toggle-hl-todo
+                           toggle-ivy-mode
+                           toggle-marginalia-mode
+                           toggle-prettify-symbols
+                           toggle-recentf-mode
+                           toggle-vertico-mode
+                           toggle-zen-mode)))
+    (for-each
+      (lambda (name)
+        (let ((label (string-append (symbol->string name) " registered")))
+          (if (find-command name)
+            (pass! label)
+            (fail! label #f "procedure"))))
+      sample-toggles))
+
+  ;; Test that toggle execution works (flip state + echo)
+  (let-values (((ed w app) (make-qt-test-app "toggle-test.txt")))
+    (let ((echo (app-state-echo app)))
+
+      ;; Execute toggle-aggressive-indent
+      (let ((cmd (find-command 'toggle-aggressive-indent)))
+        (cmd app)
+        (let ((msg (echo-state-message echo)))
+          (if (and msg (string-contains msg "ON"))
+            (pass! "toggle-aggressive-indent toggles ON")
+            (fail! "toggle-aggressive-indent ON" msg "...ON"))))
+
+      ;; Execute again to toggle OFF
+      (let ((cmd (find-command 'toggle-aggressive-indent)))
+        (cmd app)
+        (let ((msg (echo-state-message echo)))
+          (if (and msg (string-contains msg "OFF"))
+            (pass! "toggle-aggressive-indent toggles OFF")
+            (fail! "toggle-aggressive-indent OFF" msg "...OFF"))))
+
+      ;; Verify display name formatting
+      (let ((cmd (find-command 'toggle-global-rainbow-mode)))
+        (cmd app)
+        (let ((msg (echo-state-message echo)))
+          (if (and msg (string-contains msg "Global Rainbow Mode"))
+            (pass! "toggle display name has proper capitalization")
+            (fail! "toggle display name" msg "Global Rainbow Mode...")))))
+
+    (destroy-qt-test-app! ed w))
+
+  ;; Verify total count of registered toggles from a diverse sample
+  (let ((count 0))
+    (for-each
+      (lambda (name)
+        (when (find-command name) (set! count (+ count 1))))
+      '(toggle-ad-activate-all toggle-aggressive-indent toggle-allout-mode
+        toggle-all-the-icons toggle-auto-composition toggle-zen-mode
+        toggle-global-zone toggle-global-zoom-window toggle-xterm-mouse-mode
+        toggle-ws-butler-mode toggle-word-wrap-column))
+    (if (= count 11)
+      (pass! "bulk toggles registered (sample of 11)")
+      (fail! "bulk toggles count" count 11)))
+
+  (displayln "Group 38 complete"))
+
+;;;============================================================================
 ;;; Main
 ;;;============================================================================
 
@@ -4103,6 +4185,7 @@
     (run-group-35-winum-eldoc)
     (run-group-36-repeat-mode)
     (run-group-37-parity-commands)
+    (run-group-38-bulk-toggles)
 
     (displayln "---")
     (displayln "Results: " *passes* " passed, " *failures* " failed")
