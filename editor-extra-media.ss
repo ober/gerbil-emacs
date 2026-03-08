@@ -346,34 +346,44 @@
   "Push value onto calc stack."
   (let ((val (app-read-string app "Push value: ")))
     (when (and val (not (string-empty? val)))
-      (echo-message! (app-state-echo app) (string-append "Pushed: " val)))))
+      (let ((num (string->number val)))
+        (if num
+          (begin
+            (set! *calc-stack* (cons num *calc-stack*))
+            (echo-message! (app-state-echo app)
+              (string-append "Stack: "
+                (string-join (map (lambda (n) (number->string n))
+                               (if (> (length *calc-stack*) 5) (take *calc-stack* 5) *calc-stack*))
+                             " "))))
+          (echo-message! (app-state-echo app) "Not a number"))))))
 
 (def *calc-stack* '())
 
 (def (cmd-calc-pop app)
   "Pop value from calc stack."
   (if (null? *calc-stack*)
-    (echo-message! (app-state-echo app) "Calc: stack empty")
+    (echo-message! (app-state-echo app) "Stack empty")
     (let ((val (car *calc-stack*)))
       (set! *calc-stack* (cdr *calc-stack*))
-      (echo-message! (app-state-echo app) (string-append "Popped: " val)))))
+      (echo-message! (app-state-echo app) (string-append "Popped: " (number->string val))))))
 
 (def (cmd-calc-dup app)
   "Duplicate top of calc stack."
   (if (null? *calc-stack*)
-    (echo-message! (app-state-echo app) "Calc: stack empty")
+    (echo-message! (app-state-echo app) "Stack empty")
     (begin
       (set! *calc-stack* (cons (car *calc-stack*) *calc-stack*))
-      (echo-message! (app-state-echo app) (string-append "Duplicated: " (car *calc-stack*))))))
+      (echo-message! (app-state-echo app) (string-append "Duplicated: " (number->string (car *calc-stack*)))))))
 
 (def (cmd-calc-swap app)
   "Swap top two calc stack items."
   (if (or (null? *calc-stack*) (null? (cdr *calc-stack*)))
-    (echo-message! (app-state-echo app) "Calc: need at least 2 items")
+    (echo-message! (app-state-echo app) "Need 2+ values to swap")
     (let ((a (car *calc-stack*))
           (b (cadr *calc-stack*)))
       (set! *calc-stack* (cons b (cons a (cddr *calc-stack*))))
-      (echo-message! (app-state-echo app) (string-append "Swapped: " b " <-> " a)))))
+      (echo-message! (app-state-echo app)
+        (string-append "Swapped: " (number->string b) " <-> " (number->string a))))))
 
 ;; Ace-jump / Avy navigation - quick cursor movement
 ;; Simplified implementation: searches for matches in visible text and jumps
