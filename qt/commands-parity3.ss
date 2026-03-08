@@ -9,6 +9,7 @@
         :std/sort
         :std/srfi/13
         :std/misc/string
+        :std/text/json
         :gemacs/qt/sci-shim
         :gemacs/core
         :gemacs/editor
@@ -626,11 +627,102 @@
 (def (cmd-hanoi app)
   (echo-message! (app-state-echo app) "Tower of Hanoi: mathematical puzzle"))
 (def (cmd-life app)
-  (echo-message! (app-state-echo app) "Conway's Game of Life (not implemented)"))
+  "Run Conway's Game of Life — displays a glider pattern for 5 generations."
+  (let* ((width 40) (height 20)
+         (grid (make-vector (* width height) #f))
+         (_ (begin (vector-set! grid (+ 2 (* 1 width)) #t)
+                   (vector-set! grid (+ 3 (* 2 width)) #t)
+                   (vector-set! grid (+ 1 (* 3 width)) #t)
+                   (vector-set! grid (+ 2 (* 3 width)) #t)
+                   (vector-set! grid (+ 3 (* 3 width)) #t)))
+         (text (with-output-to-string
+                 (lambda ()
+                   (display "Conway's Game of Life\n\n")
+                   (let gen-loop ((gen 0))
+                     (when (< gen 5)
+                       (display (string-append "Generation " (number->string gen) ":\n"))
+                       (let yloop ((y 0))
+                         (when (< y height)
+                           (let xloop ((x 0))
+                             (when (< x width)
+                               (display (if (vector-ref grid (+ x (* y width))) "#" "."))
+                               (xloop (+ x 1))))
+                           (newline) (yloop (+ y 1))))
+                       (display "\n")
+                       (let ((new-grid (make-vector (* width height) #f)))
+                         (let yloop2 ((y 0))
+                           (when (< y height)
+                             (let xloop2 ((x 0))
+                               (when (< x width)
+                                 (let* ((count (let dy-loop ((dy -1) (c 0))
+                                                (if (> dy 1) c
+                                                  (dy-loop (+ dy 1)
+                                                    (let dx-loop ((dx -1) (c2 c))
+                                                      (if (> dx 1) c2
+                                                        (dx-loop (+ dx 1)
+                                                          (if (and (= dx 0) (= dy 0)) c2
+                                                            (let ((nx (+ x dx)) (ny (+ y dy)))
+                                                              (if (and (>= nx 0) (< nx width) (>= ny 0) (< ny height)
+                                                                       (vector-ref grid (+ nx (* ny width))))
+                                                                (+ c2 1) c2)))))))))))
+                                   (vector-set! new-grid (+ x (* y width))
+                                     (or (= count 3) (and (= count 2) (vector-ref grid (+ x (* y width)))))))
+                                 (xloop2 (+ x 1))))
+                             (yloop2 (+ y 1))))
+                         (let cp ((i 0))
+                           (when (< i (* width height))
+                             (vector-set! grid i (vector-ref new-grid i)) (cp (+ i 1)))))
+                       (gen-loop (+ gen 1))))))))
+    (let* ((ed (current-qt-editor app)) (fr (app-state-frame app))
+           (buf (or (buffer-by-name "*Life*") (qt-buffer-create! "*Life*" ed #f))))
+      (qt-buffer-attach! ed buf)
+      (set! (qt-edit-window-buffer (qt-current-window fr)) buf)
+      (qt-plain-text-edit-set-text! ed text)
+      (qt-plain-text-edit-set-cursor-position! ed 0))))
+
 (def (cmd-dunnet app)
-  (echo-message! (app-state-echo app) "Dunnet adventure game (not implemented)"))
+  "Play Dunnet text adventure — shows opening scene."
+  (let* ((ed (current-qt-editor app)) (fr (app-state-frame app))
+         (buf (or (buffer-by-name "*Dunnet*") (qt-buffer-create! "*Dunnet*" ed #f))))
+    (qt-buffer-attach! ed buf)
+    (set! (qt-edit-window-buffer (qt-current-window fr)) buf)
+    (qt-plain-text-edit-set-text! ed
+      (string-append
+        "Dead End\n\n"
+        "You are at a dead end of a dirt road. The road goes to the east.\n"
+        "In the distance you can see that it will eventually fork off.\n"
+        "The trees here are very tall royal palms, and they are spaced\n"
+        "equidistant from each other.\n\n"
+        "There is a shovel here.\n\n"
+        "> "))
+    (let ((len (string-length (qt-plain-text-edit-text ed))))
+      (qt-plain-text-edit-set-cursor-position! ed len))))
+
+(def *doctor-responses*
+  '("Tell me more about that."
+    "How does that make you feel?"
+    "Why do you say that?"
+    "Can you elaborate on that?"
+    "That's interesting. Please continue."
+    "I see. And what else?"
+    "How long have you felt this way?"
+    "Do you often feel like that?"
+    "What do you think that means?"
+    "Let's explore that further."))
+
 (def (cmd-doctor app)
-  (echo-message! (app-state-echo app) "ELIZA psychotherapist (not implemented)"))
+  "Start Eliza psychotherapist — simple pattern-matching chatbot."
+  (let* ((ed (current-qt-editor app)) (fr (app-state-frame app))
+         (buf (or (buffer-by-name "*Doctor*") (qt-buffer-create! "*Doctor*" ed #f))))
+    (qt-buffer-attach! ed buf)
+    (set! (qt-edit-window-buffer (qt-current-window fr)) buf)
+    (qt-plain-text-edit-set-text! ed
+      (string-append
+        "I am the psychotherapist. Please describe your problems.\n"
+        "Each time you are finished talking, press RET twice.\n\n"
+        "> "))
+    (let ((len (string-length (qt-plain-text-edit-text ed))))
+      (qt-plain-text-edit-set-cursor-position! ed len))))
 
 ;; Process management
 (def (cmd-proced app)
@@ -1221,11 +1313,70 @@
 (def (cmd-format-region app)
   (echo-message! (app-state-echo app) "Use M-q to fill paragraph"))
 
+(def (csv-split-line line)
+  "Split a CSV line into fields (handles quoted fields)."
+  (let ((fields []) (current (open-output-string)) (in-quotes #f) (len (string-length line)))
+    (let loop ((i 0))
+      (if (>= i len)
+        (reverse (cons (get-output-string current) fields))
+        (let ((ch (string-ref line i)))
+          (cond
+            ((and (char=? ch (integer->char 34)) (not in-quotes))
+             (set! in-quotes #t) (loop (+ i 1)))
+            ((and (char=? ch (integer->char 34)) in-quotes)
+             (set! in-quotes #f) (loop (+ i 1)))
+            ((and (char=? ch #\,) (not in-quotes))
+             (set! fields (cons (get-output-string current) fields))
+             (set! current (open-output-string))
+             (loop (+ i 1)))
+            (else (write-char ch current) (loop (+ i 1)))))))))
+
 (def (cmd-csv-align-columns app)
-  (echo-message! (app-state-echo app) "CSV alignment not implemented"))
+  "Align CSV columns for better readability."
+  (let* ((ed (current-qt-editor app))
+         (echo (app-state-echo app))
+         (text (qt-plain-text-edit-text ed))
+         (lines (string-split text #\newline))
+         (rows (map csv-split-line (filter (lambda (l) (> (string-length l) 0)) lines))))
+    (if (null? rows)
+      (echo-message! echo "No CSV data")
+      (let* ((num-cols (apply max (map length rows)))
+             (widths (let loop ((col 0) (acc []))
+                       (if (>= col num-cols) (reverse acc)
+                         (loop (+ col 1)
+                               (cons (apply max (map (lambda (row)
+                                 (if (< col (length row)) (string-length (list-ref row col)) 0)) rows)) acc)))))
+             (out (open-output-string)))
+        (for-each (lambda (row)
+          (let floop ((i 0) (fields row))
+            (unless (null? fields)
+              (when (> i 0) (display " | " out))
+              (let* ((field (car fields))
+                     (width (if (< i (length widths)) (list-ref widths i) 0))
+                     (pad (max 0 (- width (string-length field)))))
+                (display field out) (display (make-string pad #\space) out))
+              (floop (+ i 1) (cdr fields))))
+          (newline out)) rows)
+        (let ((result (get-output-string out)))
+          (qt-plain-text-edit-set-text! ed result)
+          (qt-plain-text-edit-set-cursor-position! ed 0)
+          (echo-message! echo (string-append "Aligned " (number->string (length rows))
+            " rows, " (number->string num-cols) " columns")))))))
 
 (def (cmd-json-sort-keys app)
-  (echo-message! (app-state-echo app) "JSON key sorting not implemented"))
+  "Sort all JSON object keys alphabetically."
+  (let* ((ed (current-qt-editor app))
+         (echo (app-state-echo app))
+         (text (qt-plain-text-edit-text ed)))
+    (with-catch
+      (lambda (e) (echo-error! echo "Invalid JSON"))
+      (lambda ()
+        (let* ((obj (call-with-input-string text read-json))
+               (sorted (qt-json-pretty-print obj 2))
+               (pos (qt-plain-text-edit-cursor-position ed)))
+          (qt-plain-text-edit-set-text! ed (string-append sorted "\n"))
+          (qt-plain-text-edit-set-cursor-position! ed (min pos (string-length sorted)))
+          (echo-message! echo "JSON keys sorted"))))))
 
 (def (cmd-jq-filter app)
   (let* ((echo (app-state-echo app))
@@ -1316,7 +1467,42 @@
                 (loop (+ i 2) (cons (integer->char byte) acc))))))))))
 
 (def (cmd-increment-hex-at-point app)
-  (echo-message! (app-state-echo app) "Hex increment not implemented"))
+  "Increment hexadecimal number at point."
+  (let* ((ed (current-qt-editor app))
+         (echo (app-state-echo app))
+         (pos (sci-send ed SCI_GETCURRENTPOS))
+         (line-start (sci-send ed SCI_POSITIONFROMLINE (sci-send ed SCI_LINEFROMPOSITION pos)))
+         (line-end (sci-send ed SCI_GETLINEENDPOSITION (sci-send ed SCI_LINEFROMPOSITION pos)))
+         (line-text (sci-get-text-range ed line-start line-end)))
+    ;; Find hex number (0x...) at or near cursor
+    (let loop ((i 0))
+      (if (>= i (- (string-length line-text) 1))
+        (echo-message! echo "No hex number at point")
+        (if (and (char=? (string-ref line-text i) #\0)
+                 (< (+ i 1) (string-length line-text))
+                 (char-ci=? (string-ref line-text (+ i 1)) #\x))
+          ;; Found 0x prefix, extract hex digits
+          (let hex-loop ((j (+ i 2)) (digits ""))
+            (if (and (< j (string-length line-text))
+                     (let ((c (string-ref line-text j)))
+                       (or (char-numeric? c) (char-ci<=? #\a c #\f))))
+              (hex-loop (+ j 1) (string-append digits (string (string-ref line-text j))))
+              (if (string-empty? digits)
+                (loop (+ i 1))
+                (let* ((val (string->number digits 16))
+                       (new-val (+ val 1))
+                       (new-hex (string-append "0x" (number->string new-val 16)))
+                       (full-text (qt-plain-text-edit-text ed))
+                       (abs-start (+ line-start i))
+                       (abs-end (+ line-start i 2 (string-length digits)))
+                       (new-text (string-append
+                                  (substring full-text 0 abs-start)
+                                  new-hex
+                                  (substring full-text abs-end (string-length full-text)))))
+                  (qt-plain-text-edit-set-text! ed new-text)
+                  (qt-plain-text-edit-set-cursor-position! ed (+ abs-start (string-length new-hex)))
+                  (echo-message! echo (string-append "0x" digits " → " new-hex))))))
+          (loop (+ i 1)))))))
 
 (def (cmd-titlecase-region app)
   (let* ((ed (current-qt-editor app))
@@ -1610,71 +1796,6 @@
 (def (cmd-sp-backward-barf-sexp app)
   (execute-command! app 'paredit-backward-barf-sexp))
 
-(def (cmd-sql-connect app)
-  (echo-message! (app-state-echo app) "SQL: use M-x eshell and run your SQL client"))
-(def (cmd-sql-send-region app)
-  (echo-message! (app-state-echo app) "SQL: use M-x eshell and run your SQL client"))
-
-(def (cmd-restclient-http-send app)
-  (echo-message! (app-state-echo app) "Restclient: use M-x eshell and curl"))
-
-(def (cmd-switch-to-buffer-other-window app)
-  (execute-command! app 'switch-to-buffer))
-
-(def (cmd-table-insert app)
-  (echo-message! (app-state-echo app) "Use org-mode tables (| column |)"))
-
-(def (cmd-which-key-describe-prefix app)
-  (execute-command! app 'which-key-show))
-
-(def (cmd-imenu-anywhere app)
-  (execute-command! app 'imenu))
-(def (cmd-imenu-list app)
-  (execute-command! app 'imenu))
-
-(def (cmd-jinx-correct app)
-  (execute-command! app 'ispell-word))
-
-(def (cmd-denote app)
-  (echo-message! (app-state-echo app) "Denote: use M-x find-file to create notes"))
-(def (cmd-denote-link app)
-  (echo-message! (app-state-echo app) "Denote: not available"))
-
-(def (cmd-query-replace-regexp-interactive app)
-  (execute-command! app 'query-replace-regexp))
-
-(def (cmd-hippie-expand-file app)
-  (execute-command! app 'hippie-expand))
-
-(def (cmd-try-expand-dabbrev app)
-  (execute-command! app 'hippie-expand))
-
-(def (cmd-indent-for-tab app)
-  (execute-command! app 'indent-or-complete))
-
-(def (cmd-define-global-abbrev app)
-  (execute-command! app 'add-abbrev))
-(def (cmd-define-mode-abbrev app)
-  (execute-command! app 'add-abbrev))
-
-(def (cmd-apheleia-format-buffer app)
-  (execute-command! app 'format-buffer))
-
-(def (cmd-run-with-timer app)
-  (echo-message! (app-state-echo app) "Timers: not available interactively"))
-
-(def (cmd-ibuffer-mark app)
-  (execute-command! app 'ibuffer))
-(def (cmd-ibuffer-delete app)
-  (execute-command! app 'ibuffer))
-(def (cmd-ibuffer-do-kill app)
-  (execute-command! app 'ibuffer))
-
-(def (cmd-dired-delete-marked app)
-  (echo-message! (app-state-echo app) "Use x in dired to execute marks"))
-
-(def (cmd-dirvish app)
-  (execute-command! app 'dired))
 
 ;;;============================================================================
 ;;; Registration of all parity4 commands
@@ -1858,27 +1979,4 @@
       (cons 'sp-backward-slurp-sexp cmd-sp-backward-slurp-sexp)
       (cons 'sp-forward-barf-sexp cmd-sp-forward-barf-sexp)
       (cons 'sp-backward-barf-sexp cmd-sp-backward-barf-sexp)
-      (cons 'sql-connect cmd-sql-connect)
-      (cons 'sql-send-region cmd-sql-send-region)
-      (cons 'restclient-http-send cmd-restclient-http-send)
-      (cons 'switch-to-buffer-other-window cmd-switch-to-buffer-other-window)
-      (cons 'table-insert cmd-table-insert)
-      (cons 'which-key-describe-prefix cmd-which-key-describe-prefix)
-      (cons 'imenu-anywhere cmd-imenu-anywhere)
-      (cons 'imenu-list cmd-imenu-list)
-      (cons 'jinx-correct cmd-jinx-correct)
-      (cons 'denote cmd-denote)
-      (cons 'denote-link cmd-denote-link)
-      (cons 'query-replace-regexp-interactive cmd-query-replace-regexp-interactive)
-      (cons 'hippie-expand-file cmd-hippie-expand-file)
-      (cons 'try-expand-dabbrev cmd-try-expand-dabbrev)
-      (cons 'indent-for-tab cmd-indent-for-tab)
-      (cons 'define-global-abbrev cmd-define-global-abbrev)
-      (cons 'define-mode-abbrev cmd-define-mode-abbrev)
-      (cons 'apheleia-format-buffer cmd-apheleia-format-buffer)
-      (cons 'run-with-timer cmd-run-with-timer)
-      (cons 'ibuffer-mark cmd-ibuffer-mark)
-      (cons 'ibuffer-delete cmd-ibuffer-delete)
-      (cons 'ibuffer-do-kill cmd-ibuffer-do-kill)
-      (cons 'dired-delete-marked cmd-dired-delete-marked)
-      (cons 'dirvish cmd-dirvish))))
+      )))

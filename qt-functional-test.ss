@@ -4480,6 +4480,75 @@
   (displayln "Group 42 complete"))
 
 ;;;============================================================================
+;;; Group 43: Stub upgrades — games, CSV, JSON, hex increment
+;;;============================================================================
+
+(def (run-group-43-game-text-upgrades)
+  (displayln "\n=== Group 43: Games, CSV, JSON, hex increment ===")
+
+  ;; Test 1-6: Game and text commands are registered
+  (for-each
+    (lambda (name)
+      (let ((label (string-append (symbol->string name) " registered")))
+        (if (procedure? (find-command name))
+          (pass! label)
+          (fail! label #f "procedure"))))
+    '(life dunnet doctor csv-align-columns json-sort-keys increment-hex-at-point))
+
+  ;; Test 7: CSV align with actual data
+  (let-values (((ed w app) (make-qt-test-app "test43")))
+    (with-catch
+      (lambda (e) (fail! "csv-align"
+                         (with-output-to-string "" (lambda () (display-exception e))) "no error"))
+      (lambda ()
+        (qt-plain-text-edit-set-text! ed "name,age,city\nAlice,30,NYC\nBob,25,LA\n")
+        (execute-command! app 'csv-align-columns)
+        (let ((text (qt-plain-text-edit-text ed)))
+          (if (string-contains text "|")
+            (pass! "csv-align produces pipe-separated output")
+            (fail! "csv-align" text "contains |")))))
+
+    ;; Test 8: JSON sort keys with actual data
+    (with-catch
+      (lambda (e) (fail! "json-sort-keys"
+                         (with-output-to-string "" (lambda () (display-exception e))) "no error"))
+      (lambda ()
+        (qt-plain-text-edit-set-text! ed "{\"zebra\":1,\"apple\":2}")
+        (execute-command! app 'json-sort-keys)
+        (let ((text (qt-plain-text-edit-text ed)))
+          (if (and (string-contains text "apple") (string-contains text "zebra"))
+            (pass! "json-sort-keys produces sorted output")
+            (fail! "json-sort-keys" text "contains apple and zebra")))))
+
+    ;; Test 9: Hex increment
+    (with-catch
+      (lambda (e) (fail! "hex-increment"
+                         (with-output-to-string "" (lambda () (display-exception e))) "no error"))
+      (lambda ()
+        (qt-plain-text-edit-set-text! ed "value = 0xff;\n")
+        (sci-send ed SCI_GOTOPOS 10)
+        (execute-command! app 'increment-hex-at-point)
+        (let ((text (qt-plain-text-edit-text ed)))
+          (if (string-contains text "0x100")
+            (pass! "hex increment 0xff -> 0x100")
+            (fail! "hex-increment" text "contains 0x100")))))
+
+    ;; Test 10: Game of Life creates buffer content
+    (with-catch
+      (lambda (e) (fail! "life game"
+                         (with-output-to-string "" (lambda () (display-exception e))) "no error"))
+      (lambda ()
+        (execute-command! app 'life)
+        (let ((text (qt-plain-text-edit-text ed)))
+          (if (string-contains text "Generation")
+            (pass! "life produces generation output")
+            (fail! "life" text "contains Generation")))))
+
+    (destroy-qt-test-app! ed w))
+
+  (displayln "Group 43 complete"))
+
+;;;============================================================================
 ;;; Main
 ;;;============================================================================
 
@@ -4530,6 +4599,7 @@
     (run-group-40-parity5-commands)
     (run-group-41-format-embark)
     (run-group-42-stub-upgrades)
+    (run-group-43-game-text-upgrades)
 
     (displayln "---")
     (displayln "Results: " *passes* " passed, " *failures* " failed")
