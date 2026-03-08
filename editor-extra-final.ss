@@ -88,9 +88,11 @@
     (echo-message! (app-state-echo app) (if on "So-long mode: on" "So-long mode: off"))))
 
 (def (cmd-repeat-mode app)
-  "Toggle repeat-mode for transient maps."
-  (let ((on (toggle-mode! 'repeat)))
-    (echo-message! (app-state-echo app) (if on "Repeat mode: on" "Repeat mode: off"))))
+  "Toggle repeat-mode for transient repeat maps."
+  (repeat-mode-set! (not (repeat-mode?)))
+  (clear-repeat-map!)
+  (echo-message! (app-state-echo app)
+    (if (repeat-mode?) "Repeat mode enabled" "Repeat mode disabled")))
 
 (def (cmd-context-menu-mode app)
   "Toggle context-menu-mode — N/A in terminal."
@@ -1622,7 +1624,7 @@
 (def *nano-theme* #f)
 (def *ligature-mode* #f)
 (def *pixel-scroll-precision* #f)
-(def *repeat-mode* #f)
+;; *repeat-mode* is defined in core.ss (needed by execute-command!)
 (def *tab-line-mode* #f)
 (def *scroll-bar-mode* #t)
 (def *tool-bar-mode* #f)
@@ -1664,10 +1666,10 @@
 
 (def (cmd-toggle-repeat-mode app)
   "Toggle repeat-mode (repeat last command with single key)."
-  (let ((echo (app-state-echo app)))
-    (set! *repeat-mode* (not *repeat-mode*))
-    (echo-message! echo (if *repeat-mode*
-                          "Repeat mode ON" "Repeat mode OFF"))))
+  (repeat-mode-set! (not (repeat-mode?)))
+  (clear-repeat-map!)
+  (echo-message! (app-state-echo app)
+    (if (repeat-mode?) "Repeat mode enabled" "Repeat mode disabled")))
 
 (def (cmd-toggle-tab-line-mode app)
   "Toggle tab-line-mode (per-window tab display)."

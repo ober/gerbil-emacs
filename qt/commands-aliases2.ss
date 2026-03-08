@@ -822,5 +822,18 @@
   (register-command! 'image-zoom-in cmd-image-zoom-in)
   (register-command! 'image-zoom-out cmd-image-zoom-out)
   (register-command! 'image-zoom-fit cmd-image-zoom-fit)
-  (register-command! 'image-zoom-reset cmd-image-zoom-reset))
+  (register-command! 'image-zoom-reset cmd-image-zoom-reset)
+  ;; Repeat-mode (Emacs 28+ transient repeat maps)
+  (register-command! 'repeat-mode
+    (lambda (app)
+      (repeat-mode-set! (not (repeat-mode?)))
+      (clear-repeat-map!)
+      (echo-message! (app-state-echo app)
+        (if (repeat-mode?) "Repeat mode enabled" "Repeat mode disabled"))))
+  (register-command! 'toggle-repeat-mode
+    (lambda (app)
+      (repeat-mode-set! (not (repeat-mode?)))
+      (clear-repeat-map!)
+      (echo-message! (app-state-echo app)
+        (if (repeat-mode?) "Repeat mode enabled" "Repeat mode disabled")))))
 

@@ -64,7 +64,7 @@ Largest files: modes (~1851), lsp (~1802), search (~1778)
 - ~~**goto-last-change-reverse**~~ — DONE: navigate forward through edit positions (both layers)
 - ~~**rename-visited-file**~~ — DONE: rename file on disk + update buffer name (both layers)
 - ~~**Edit position tracking**~~ — DONE: qt-record-edit-position!/tui-record-edit-position! hooked into self-insert
-- ~~**Qt functional tests**~~ — 432 tests (Groups 31-35 added)
+- ~~**Qt functional tests**~~ — 443 tests (Groups 31-36 added)
 - ~~**Selective display (C-x $)**~~ — DONE: hide lines by indentation level using SCI_HIDELINES/SCI_SHOWLINES
 - ~~**Show-paren-mode upgrade**~~ — DONE: real toggle of brace matching in qt-update-visual-decorations
 - ~~**Delete-selection-mode upgrade**~~ — DONE: typing deselects before insert when mode OFF
@@ -127,6 +127,8 @@ Largest files: modes (~1851), lsp (~1802), search (~1778)
 - ~~**Fullscreen/maximized toggle**~~ — DONE: proper toggle using `qt-widget-window-state` to detect current state, toggles back to normal
 - ~~**Find-file-literally**~~ — DONE: opens file with syntax highlighting disabled (SCLEX_NULL)
 - ~~**Backup file toggle**~~ — DONE: `*backup-files*` variable respected in Qt save-buffer
+
+- ~~**Repeat-mode (Emacs 28+ transient repeat maps)**~~ — DONE: `*repeat-mode*` flag (boxed for cross-module mutation), repeat map infrastructure in core.ss, 6 default maps (other-window, buffer-nav, next-error, undo, page-nav, window-resize), dispatch hooks in both TUI and Qt. 443 Qt tests, 149 TUI functional tests
 
 ### Aspirational
 - LSP in TUI

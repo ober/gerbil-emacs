@@ -633,6 +633,15 @@
 
 (def (dispatch-key-normal! app ev)
   "Process a key event through the keymap state machine (no chord detection)."
+  ;; Repeat-mode: check active repeat map before normal dispatch
+  (let ((repeat-handled
+         (and (active-repeat-map)
+              (let* ((key-str (key-event->string ev))
+                     (repeat-cmd (repeat-map-lookup key-str)))
+                (if repeat-cmd
+                  (begin (execute-command! app repeat-cmd) #t)
+                  (begin (clear-repeat-map!) #f))))))
+    (unless repeat-handled
   (let-values (((action data new-state)
                 (key-state-feed! (app-state-key-state app) ev)))
     (set! (app-state-key-state app) new-state)
@@ -706,7 +715,8 @@
              (set! (app-state-prefix-digit-mode? app) #f)))))
       ((undefined)
        (echo-error! (app-state-echo app)
-                    (string-append data " is undefined")))))))  ;; extra paren closes quoted-insert if
+                    (string-append data " is undefined"))))))))  ;; extra paren closes unless + let
+  ) ;; close let repeat-handled
 
 (def (dispatch-key! app ev)
   "Process a key event with chord detection and key translation."

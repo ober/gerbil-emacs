@@ -495,6 +495,14 @@
                 (letrec
                   ((do-normal-key!
                     (lambda (code mods text)
+                     ;; Repeat-mode: check active repeat map before normal dispatch
+                     (if (and (active-repeat-map)
+                              (let* ((ks (qt-key-event->string code mods text))
+                                     (repeat-cmd (and ks (repeat-map-lookup ks))))
+                                (if repeat-cmd
+                                  (begin (execute-command! app repeat-cmd) #t)
+                                  (begin (clear-repeat-map!) #f))))
+                       (void) ;; handled by repeat map
                      (let-values (((action data new-state)
                                    (qt-key-state-feed! (app-state-key-state app)
                                                        code mods text)))
@@ -655,7 +663,7 @@
                        (qt-modeline-update! app)
                        (qt-tabbar-update! app)
                        (qt-update-frame-title! app)
-                       (qt-echo-draw! (app-state-echo app) echo-label)))))
+                       (qt-echo-draw! (app-state-echo app) echo-label))))))  ;; extra paren closes repeat-map if
                   ;; Chord detection logic
                   (cond
                     ;; Case 1: A chord is pending and a new key arrived

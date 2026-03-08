@@ -1772,7 +1772,9 @@
   ;; Wire modeline providers
   (set-box! *modeline-overwrite-provider* (lambda () *overwrite-mode*))
   (set-box! *modeline-narrow-provider*
-    (lambda (buf) (and (hash-get *narrow-state* buf) #t))))
+    (lambda (buf) (and (hash-get *narrow-state* buf) #t)))
+  ;; Repeat maps (Emacs 28+ transient repeat maps)
+  (register-default-repeat-maps!))
 
 ;;; Qt versions of batch 6 commands
 

@@ -48,7 +48,10 @@
                  app-state-prefix-arg
                  write-string-to-file
                  eval-expression-string
-                 *hooks* add-hook! remove-hook! run-hooks!)
+                 *hooks* add-hook! remove-hook! run-hooks!
+                 repeat-mode? repeat-mode-set!
+                 active-repeat-map active-repeat-map-set!
+                 repeat-map-for-command repeat-map-lookup clear-repeat-map!)
         (only-in :gemacs/qt/window
                  make-qt-edit-window
                  make-qt-frame
@@ -3913,6 +3916,74 @@
   (displayln "Group 35 complete"))
 
 ;;;============================================================================
+;;; Group 36: Repeat-mode (Emacs 28+ transient repeat maps)
+;;;============================================================================
+
+(def (run-group-36-repeat-mode)
+  (displayln "--- Group 36: Repeat-mode ---")
+
+  ;; repeat-mode and toggle-repeat-mode commands registered
+  (if (find-command 'repeat-mode)
+    (pass! "repeat-mode registered")
+    (fail! "repeat-mode" #f "procedure"))
+  (if (find-command 'toggle-repeat-mode)
+    (pass! "toggle-repeat-mode registered")
+    (fail! "toggle-repeat-mode" #f "procedure"))
+
+  ;; Toggle flag via execute-command!
+  (let-values (((ed w app) (make-qt-test-app "repeat-toggle")))
+    (let ((old (repeat-mode?)))
+      (repeat-mode-set! #f)
+      (execute-command! app 'toggle-repeat-mode)
+      (if (repeat-mode?)
+        (pass! "toggle-repeat-mode enables flag")
+        (fail! "repeat-mode flag" (repeat-mode?) #t))
+      (execute-command! app 'toggle-repeat-mode)
+      (if (not (repeat-mode?))
+        (pass! "toggle-repeat-mode disables flag")
+        (fail! "repeat-mode flag off" (repeat-mode?) #f))
+      (repeat-mode-set! old))
+    (destroy-qt-test-app! ed w))
+
+  ;; Default repeat maps registered
+  (if (repeat-map-for-command 'other-window)
+    (pass! "other-window has repeat map")
+    (fail! "other-window repeat-map" #f "alist"))
+  (if (repeat-map-for-command 'undo)
+    (pass! "undo has repeat map")
+    (fail! "undo repeat-map" #f "alist"))
+  (if (repeat-map-for-command 'next-error)
+    (pass! "next-error has repeat map")
+    (fail! "next-error repeat-map" #f "alist"))
+
+  ;; repeat-map-lookup works
+  (active-repeat-map-set! '(("o" . other-window) ("n" . next-buffer)))
+  (if (eq? (repeat-map-lookup "o") 'other-window)
+    (pass! "repeat-map-lookup finds 'o'")
+    (fail! "repeat-map-lookup o" (repeat-map-lookup "o") 'other-window))
+  (if (not (repeat-map-lookup "x"))
+    (pass! "repeat-map-lookup returns #f for unknown")
+    (fail! "repeat-map-lookup x" (repeat-map-lookup "x") #f))
+  (clear-repeat-map!)
+
+  ;; execute-command! activates repeat map when repeat-mode is on
+  (repeat-mode-set! #t)
+  (let-values (((ed w app) (make-qt-test-app "repeat-test")))
+    (execute-command! app 'other-window)
+    (if (active-repeat-map)
+      (pass! "execute-command! activates repeat map")
+      (fail! "active-repeat-map after other-window" (active-repeat-map) "non-#f"))
+    ;; Non-repeatable command deactivates repeat map
+    (execute-command! app 'forward-char)
+    (if (not (active-repeat-map))
+      (pass! "non-repeatable command clears repeat map")
+      (fail! "active-repeat-map after forward-char" (active-repeat-map) #f))
+    (destroy-qt-test-app! ed w))
+  (repeat-mode-set! #f)
+
+  (displayln "Group 36 complete"))
+
+;;;============================================================================
 ;;; Main
 ;;;============================================================================
 
@@ -3956,6 +4027,7 @@
     (run-group-33-selective-display)
     (run-group-34-mode-upgrades)
     (run-group-35-winum-eldoc)
+    (run-group-36-repeat-mode)
 
     (displayln "---")
     (displayln "Results: " *passes* " passed, " *failures* " failed")

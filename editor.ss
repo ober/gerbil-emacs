@@ -954,4 +954,6 @@
   (register-command! 'keep-matching-lines cmd-keep-lines)
   (register-command! 'calc-dispatch cmd-calc)
   ;; Task #46+ (in editor-extra.ss)
-  (register-extra-commands!))
+  (register-extra-commands!)
+  ;; Repeat maps (Emacs 28+ transient repeat maps)
+  (register-default-repeat-maps!))

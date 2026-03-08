@@ -92,6 +92,7 @@
 | Digit arguments (`M-0`..`M-9`) | :white_check_mark:  |                                                 |
 | Negative argument (`M--`)      | :white_check_mark:  |                                                 |
 | Repeat (`C-x z`)               | :white_check_mark:  |                                                 |
+| Repeat-mode (transient maps)   | :large_blue_circle: | 6 maps: window, buffer, error, undo, page, resize |
 
 **Summary:** Core editing is feature-complete. All standard Emacs editing primitives work.
 

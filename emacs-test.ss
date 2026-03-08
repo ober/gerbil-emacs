@@ -210,7 +210,7 @@
                  *history-delete-duplicates*
                  *modus-themes* *ef-themes* *nano-theme*
                  *ligature-mode* *pixel-scroll-precision*
-                 *repeat-mode* *tab-line-mode*
+                 repeat-mode? *tab-line-mode*
                  *scroll-bar-mode* *tool-bar-mode*
                  *global-auto-revert-non-file* *global-tree-sitter*
                  *global-copilot* *global-lsp-mode*
@@ -2465,7 +2465,7 @@
       (check *nano-theme* => #f)
       (check *ligature-mode* => #f)
       (check *pixel-scroll-precision* => #f)
-      (check *repeat-mode* => #f)
+      (check (repeat-mode?) => #f)
       (check *tab-line-mode* => #f)
       (check *scroll-bar-mode* => #t)
       (check *tool-bar-mode* => #f))

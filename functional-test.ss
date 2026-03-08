@@ -2215,6 +2215,48 @@
           (check (equal? (cadr ordered) "save-buffer") => #t))
         (set! *mx-history* old-hist)))
 
+    ;; ── Group 14: Repeat-mode ──────────────────────────────────────────
+    (test-case "repeat-mode: command registration"
+      (check (procedure? (find-command 'repeat-mode)) => #t)
+      (check (procedure? (find-command 'toggle-repeat-mode)) => #t))
+
+    (test-case "repeat-mode: toggle flag"
+      (let-values (((ed app) (make-test-app "test.ss")))
+        (repeat-mode-set! #f)
+        (execute-command! app 'toggle-repeat-mode)
+        (check (repeat-mode?) => #t)
+        (execute-command! app 'toggle-repeat-mode)
+        (check (repeat-mode?) => #f)))
+
+    (test-case "repeat-mode: repeat maps registered"
+      ;; After register-all-commands!, default repeat maps should exist
+      (check (not (not (repeat-map-for-command 'other-window))) => #t)
+      (check (not (not (repeat-map-for-command 'undo))) => #t)
+      (check (not (not (repeat-map-for-command 'next-error))) => #t)
+      (check (not (not (repeat-map-for-command 'scroll-up))) => #t))
+
+    (test-case "repeat-mode: repeat-map-lookup finds entry"
+      (active-repeat-map-set!
+        '(("o" . other-window) ("n" . next-buffer)))
+      (check (repeat-map-lookup "o") => 'other-window)
+      (check (repeat-map-lookup "n") => 'next-buffer)
+      (check (repeat-map-lookup "x") => #f)
+      (clear-repeat-map!)
+      (check (active-repeat-map) => #f))
+
+    (test-case "repeat-mode: execute-command activates repeat map"
+      (let-values (((ed app) (make-test-app "test.ss")))
+        (repeat-mode-set! #t)
+        (clear-repeat-map!)
+        (execute-command! app 'undo)
+        ;; After undo (which has a repeat map), repeat map should be active
+        (check (not (not (active-repeat-map))) => #t)
+        (check (repeat-map-lookup "u") => 'undo)
+        ;; Command not in any repeat map deactivates it
+        (execute-command! app 'forward-char)
+        (check (active-repeat-map) => #f)
+        (repeat-mode-set! #f)))
+
 ))
 
 (def main

@@ -126,6 +126,18 @@
   chord-lookup
   chord-start-char?
 
+  ;; Repeat-mode (transient repeat maps)
+  repeat-mode?
+  repeat-mode-set!
+  *repeat-maps*
+  active-repeat-map
+  active-repeat-map-set!
+  register-repeat-map!
+  register-default-repeat-maps!
+  repeat-map-for-command
+  repeat-map-lookup
+  clear-repeat-map!
+
   ;; Image buffer support
   *editor-window-map*
   *image-buffer-state*
@@ -1277,7 +1289,13 @@
                             digit-argument-3 digit-argument-4 digit-argument-5 digit-argument-6
                             digit-argument-7 digit-argument-8 digit-argument-9 negative-argument))
           (set! (app-state-prefix-arg app) #f)
-          (set! (app-state-prefix-digit-mode? app) #f)))
+          (set! (app-state-prefix-digit-mode? app) #f))
+        ;; Activate repeat map if repeat-mode is on and command has one
+        (when (repeat-mode?)
+          (let ((rmap (repeat-map-for-command name)))
+            (if rmap
+              (active-repeat-map-set! rmap)
+              (active-repeat-map-set! #f)))))
       (let ((buf-name (with-catch (lambda (e) "<unknown>")
                         (lambda ()
                           (let ((bufs (buffer-list)))
@@ -1871,6 +1889,81 @@
   "Can this character start a chord? Only when chord-mode is on."
   (and *chord-mode*
        (hash-get *chord-first-chars* (char-upcase ch))))
+
+;;;============================================================================
+;;; Repeat-mode (Emacs 28+ transient repeat maps)
+;;;============================================================================
+
+;; Hash: command-name (symbol) -> repeat-map-name (symbol)
+;; Associates commands with repeat maps
+(def *repeat-command-map* (make-hash-table-eq))
+
+;; Hash: repeat-map-name (symbol) -> alist ((key-char . command-name) ...)
+;; Each repeat map defines single-key shortcuts for repeating related commands
+(def *repeat-maps* (make-hash-table-eq))
+
+;; Whether repeat-mode is enabled (boxed for cross-module mutation)
+(def *repeat-mode-box* (box #f))
+(def (repeat-mode?) (unbox *repeat-mode-box*))
+(def (repeat-mode-set! v) (set-box! *repeat-mode-box* v))
+
+;; Currently active repeat map: #f or alist of (key-string . command-name)
+;; Boxed for cross-module mutation
+(def *active-repeat-map-box* (box #f))
+
+(def (register-repeat-map! map-name entries)
+  "Register a repeat map. ENTRIES is alist of (key-char . command-name).
+Each command in the map is also associated back to this map."
+  (hash-put! *repeat-maps* map-name entries)
+  ;; Associate each command in the map with this map name
+  (for-each (lambda (entry)
+              (hash-put! *repeat-command-map* (cdr entry) map-name))
+            entries))
+
+(def (repeat-map-for-command cmd-name)
+  "Return the repeat map entries for CMD-NAME, or #f."
+  (let ((map-name (hash-get *repeat-command-map* cmd-name)))
+    (and map-name (hash-get *repeat-maps* map-name))))
+
+(def (active-repeat-map) (unbox *active-repeat-map-box*))
+(def (active-repeat-map-set! v) (set-box! *active-repeat-map-box* v))
+
+(def (clear-repeat-map!)
+  "Deactivate any active repeat map."
+  (active-repeat-map-set! #f))
+
+(def (repeat-map-lookup key-str)
+  "Look up KEY-STR in the active repeat map. Returns command name or #f."
+  (let ((amap (active-repeat-map)))
+    (and amap
+         (let loop ((entries amap))
+           (cond
+             ((null? entries) #f)
+             ((string=? (car (car entries)) key-str)
+              (cdr (car entries)))
+             (else (loop (cdr entries))))))))
+
+(def (register-default-repeat-maps!)
+  "Register the standard Emacs 28+ repeat maps."
+  ;; Window navigation: after C-x o, just press o to cycle windows
+  (register-repeat-map! 'other-window-repeat-map
+    '(("o" . other-window)))
+  ;; Buffer cycling: after C-x <left>/<right>, press n/p to cycle
+  (register-repeat-map! 'buffer-navigation-repeat-map
+    '(("n" . next-buffer) ("p" . previous-buffer)))
+  ;; Error navigation: after M-g n/p, press n/p to continue
+  (register-repeat-map! 'next-error-repeat-map
+    '(("n" . next-error) ("p" . previous-error)))
+  ;; Undo: after C-/, press u to keep undoing
+  (register-repeat-map! 'undo-repeat-map
+    '(("u" . undo)))
+  ;; Page navigation: after C-v/M-v, press v/V to keep scrolling
+  (register-repeat-map! 'page-navigation-repeat-map
+    '(("v" . scroll-up) ("V" . scroll-down)))
+  ;; Window resize: after C-x ^/{/}, press key to keep resizing
+  (register-repeat-map! 'window-size-repeat-map
+    '(("^" . enlarge-window) ("{" . shrink-window-horizontally)
+      ("}" . enlarge-window-horizontally))))
 
 ;;;============================================================================
 ;;; Image buffer support
