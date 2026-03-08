@@ -1,8 +1,9 @@
 # Gemacs vs GNU Emacs — Feature Comparison
 
-> **Last updated:** 2026-03-08
-> **Gemacs version:** master (84ec97f)
+> **Last updated:** 2026-03-07
+> **Gemacs version:** master (e003280)
 > **Compared against:** GNU Emacs 29.x / 30.x feature set
+> **Command parity:** 2168+ commands registered in both TUI and Qt layers (zero gap)
 
 ## Status Legend
 
