@@ -419,6 +419,7 @@
   (register-command! 'goto-last-change-reverse cmd-goto-last-change-reverse)
   ;; File operations (copy-file, goto-last-change, diff-buffer-with-file registered elsewhere)
   (register-command! 'rename-visited-file cmd-rename-visited-file)
+  (register-command! 'set-selective-display cmd-set-selective-display)
 
   ;; Toggles
   ;; show-dir-locals → registered in facade (cross-cutting)

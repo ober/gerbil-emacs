@@ -624,8 +624,8 @@
   ;; Async shell command
   (keymap-bind! *global-keymap* "M-&" 'async-shell-command)
 
-  ;; Toggle truncate lines
-  (keymap-bind! *ctrl-x-map* "$" 'toggle-truncate-lines)
+  ;; Selective display (hide lines by indentation)
+  (keymap-bind! *ctrl-x-map* "$" 'set-selective-display)
 
   ;; Grep buffer
   (keymap-bind! *meta-s-map* "g" 'grep-buffer)

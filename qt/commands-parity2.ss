@@ -1469,3 +1469,56 @@
                 (echo-message! echo
                   (string-append "Renamed to " new-path))))))))))
 
+;;;============================================================================
+;;; Selective display (hide lines by indentation level)
+;;;============================================================================
+
+(def *selective-display-level* #f) ;; #f = off, integer = column threshold
+
+(def (cmd-set-selective-display app)
+  "Hide lines with indentation greater than a threshold (C-x $).
+With prefix argument N, hide lines indented more than N columns.
+Without argument, prompt for level. Level 0 or empty disables."
+  (let* ((echo (app-state-echo app))
+         (n (get-prefix-arg app))
+         (level (if (> n 1) n
+                  (let ((input (qt-echo-read-string app "Selective display level (0=off): ")))
+                    (and input (> (string-length input) 0)
+                         (string->number input))))))
+    (if (or (not level) (= level 0))
+      ;; Disable selective display — show all lines
+      (let ((ed (current-qt-editor app)))
+        (set! *selective-display-level* #f)
+        (let ((total (sci-send ed SCI_GETLINECOUNT 0)))
+          (sci-send ed SCI_SHOWLINES 0 (- total 1)))
+        (echo-message! echo "Selective display off"))
+      ;; Enable selective display — hide lines indented more than level
+      (let* ((ed (current-qt-editor app))
+             (text (qt-plain-text-edit-text ed))
+             (lines (string-split text #\newline))
+             (total (length lines))
+             (hidden 0))
+        (set! *selective-display-level* level)
+        ;; First show all lines
+        (sci-send ed SCI_SHOWLINES 0 (- total 1))
+        ;; Then hide lines with indentation > level
+        (let loop ((i 0) (ls lines))
+          (when (pair? ls)
+            (let* ((line (car ls))
+                   (indent (let indent-loop ((j 0))
+                             (if (>= j (string-length line)) j
+                               (let ((ch (string-ref line j)))
+                                 (cond
+                                   ((char=? ch #\space) (indent-loop (+ j 1)))
+                                   ((char=? ch #\tab) (indent-loop (+ j 8)))
+                                   (else j)))))))
+              (when (and (> indent level) (> (string-length line) 0))
+                (sci-send ed SCI_HIDELINES i i)
+                (set! hidden (+ hidden 1))))
+            (loop (+ i 1) (cdr ls))))
+        (echo-message! echo
+          (string-append "Selective display: hiding "
+            (number->string hidden) " lines indented > "
+            (number->string level)))))))
+
+

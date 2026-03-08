@@ -3768,6 +3768,35 @@
   (displayln "Group 32 complete"))
 
 ;;;============================================================================
+;;; Group 33: Selective display, hippie-expand, keybinding
+;;;============================================================================
+
+(def (run-group-33-selective-display)
+  (displayln "--- Group 33: Selective display, hippie-expand ---")
+
+  ;; selective display registered
+  (if (find-command 'set-selective-display)
+    (pass! "set-selective-display registered")
+    (fail! "set-selective-display" #f "procedure"))
+
+  ;; hippie-expand registered
+  (if (find-command 'hippie-expand)
+    (pass! "hippie-expand registered")
+    (fail! "hippie-expand" #f "procedure"))
+
+  ;; Test selective display via dispatch
+  (let-values (((ed w app) (make-qt-test-app "selective-test")))
+    (set-qt-text! ed "line1\n  line2\n    line3\n      line4\n  line5\n" 0)
+    ;; All lines should be visible initially
+    (let ((visible (sci-send ed SCI_GETLINECOUNT 0)))
+      (if (>= visible 5)
+        (pass! "all lines visible initially")
+        (fail! "visible lines" visible ">= 5")))
+    (destroy-qt-test-app! ed w))
+
+  (displayln "Group 33 complete"))
+
+;;;============================================================================
 ;;; Main
 ;;;============================================================================
 
@@ -3808,6 +3837,7 @@
     (run-group-30-sort-mail-compile)
     (run-group-31-quoted-insert-goto-change)
     (run-group-32-overwrite-modeline)
+    (run-group-33-selective-display)
 
     (displayln "---")
     (displayln "Results: " *passes* " passed, " *failures* " failed")
