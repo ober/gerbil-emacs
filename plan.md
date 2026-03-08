@@ -136,6 +136,8 @@ Largest files: modes (~1851), lsp (~1802), search (~1778)
 
 - ~~**Full Qt/TUI command parity**~~ — DONE: closed remaining 473-command gap with parity4 (339 toggles) and parity5 (63 mode toggles, 31 stubs, 24 aliases, 18 functional). Every TUI command now has a Qt counterpart. 576 Qt tests
 
+- ~~**Format-on-save & embark upgrade**~~ — DONE: apheleia-mode wires `before-save-hook` to run language formatter on save (both layers), `apheleia-format-buffer` delegates to real `format-buffer`, TUI `cmd-save-buffer` now calls `before-save-hook`/`after-save-hook` (parity with Qt), `embark-act` upgraded to interactive contextual actions with target detection (URL/file/symbol) and narrowing popup (Qt) / key dispatch (TUI), `embark-dwim` executes default action. 586 Qt tests
+
 ### Aspirational
 - LSP in TUI
 - DAP/debugger integration

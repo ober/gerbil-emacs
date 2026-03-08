@@ -946,6 +946,8 @@
     (if path
       ;; Save to existing path
       (begin
+        ;; Run before-save-hook (parity with Qt layer)
+        (run-hooks! 'before-save-hook app buf)
         ;; Create backup file if original exists and hasn't been backed up yet
         (when (and (file-exists? path) (not (buffer-backup-done? buf)))
           (let ((backup-path (string-append path "~")))
@@ -981,7 +983,9 @@
           (let ((auto-save-path (make-auto-save-path path)))
             (when (file-exists? auto-save-path)
               (delete-file auto-save-path)))
-          (echo-message! echo (string-append "Wrote " path))))
+          (echo-message! echo (string-append "Wrote " path))
+          ;; Run after-save-hook (parity with Qt layer)
+          (run-hooks! 'after-save-hook app buf)))
       ;; No path: prompt for one
       (let* ((fr (app-state-frame app))
              (row (- (frame-height fr) 1))

@@ -1546,7 +1546,7 @@
   (execute-command! app 'add-abbrev))
 
 (def (cmd-apheleia-format-buffer app)
-  (echo-message! (app-state-echo app) "Auto-format: use M-x format-region"))
+  (execute-command! app 'format-buffer))
 
 (def (cmd-run-with-timer app)
   (echo-message! (app-state-echo app) "Timers: not available interactively"))

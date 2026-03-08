@@ -1700,6 +1700,9 @@
   (register-command! 'fido-mode cmd-fido-mode)
   (register-command! 'marginalia-mode cmd-marginalia-mode)
   (register-command! 'embark-act cmd-embark-act)
+  (register-command! 'embark-dwim cmd-embark-dwim)
+  ;; Apheleia format-on-save (override parity3 toggle with real hook wiring)
+  (register-command! 'apheleia-mode cmd-apheleia-mode)
   ;; Batch 12: persistent undo, image thumbnails, virtual dired, key translation
   (register-command! 'undo-history-save cmd-undo-history-save)
   (register-command! 'undo-history-load cmd-undo-history-load)
