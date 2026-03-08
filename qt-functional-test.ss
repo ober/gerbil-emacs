@@ -3373,6 +3373,45 @@
   (displayln "Group 23 complete"))
 
 ;;;============================================================================
+;;; Group 24: Interactive IBBuffer
+;;;============================================================================
+
+(def (run-group-24-ibuffer)
+  (displayln "\n=== Group 24: Interactive IBBuffer ===")
+
+  ;; Test 1: ibuffer command registered
+  (if (find-command 'ibuffer)
+    (pass! "ibuffer command registered")
+    (fail! "ibuffer" "not found" "registered"))
+
+  ;; Test 2: ibuffer interactive commands registered
+  (for-each
+    (lambda (sym)
+      (if (find-command sym)
+        (pass! (string-append (symbol->string sym) " registered"))
+        (fail! (symbol->string sym) "not found" "registered")))
+    '(ibuffer-mark-delete ibuffer-mark-save ibuffer-unmark
+      ibuffer-execute ibuffer-goto-buffer ibuffer-filter-name
+      ibuffer-sort-name ibuffer-sort-size ibuffer-toggle-marks))
+
+  ;; Test 3: ibuffer dispatch creates *IBBuffer* buffer
+  (let-values (((ed _w app) (make-qt-test-app "ibuffer-test")))
+    (with-catch
+      (lambda (e)
+        (fail! "ibuffer dispatch"
+               (with-output-to-string "" (lambda () (display-exception e)))
+               "no error"))
+      (lambda ()
+        (execute-command! app 'ibuffer)
+        (let* ((fr (app-state-frame app))
+               (buf (qt-edit-window-buffer (qt-current-window fr))))
+          (if (and buf (string=? (buffer-name buf) "*IBBuffer*"))
+            (pass! "ibuffer creates *IBBuffer* buffer")
+            (fail! "ibuffer buffer" (if buf (buffer-name buf) "nil") "*IBBuffer*"))))))
+
+  (displayln "Group 24 complete"))
+
+;;;============================================================================
 ;;; Main
 ;;;============================================================================
 
@@ -3404,6 +3443,7 @@
     (run-group-22-save-and-eval-dispatch)
     (run-group-23-helm)
     (run-group-21-theme-split-lsp)
+    (run-group-24-ibuffer)
 
     (displayln "---")
     (displayln "Results: " *passes* " passed, " *failures* " failed")

@@ -217,6 +217,16 @@
   (register-command! 'ibuffer-mark cmd-ibuffer-mark)
   (register-command! 'ibuffer-delete cmd-ibuffer-delete)
   (register-command! 'ibuffer-do-kill cmd-ibuffer-do-kill)
+  ;; Ibuffer interactive commands (names matching Qt layer)
+  (register-command! 'ibuffer-mark-delete cmd-ibuffer-delete)
+  (register-command! 'ibuffer-mark-save cmd-ibuffer-mark)
+  (register-command! 'ibuffer-unmark cmd-ibuffer-mark) ;; toggle
+  (register-command! 'ibuffer-execute cmd-ibuffer-do-kill)
+  (register-command! 'ibuffer-goto-buffer cmd-ibuffer)
+  (register-command! 'ibuffer-filter-name cmd-ibuffer)
+  (register-command! 'ibuffer-sort-name cmd-ibuffer)
+  (register-command! 'ibuffer-sort-size cmd-ibuffer)
+  (register-command! 'ibuffer-toggle-marks cmd-ibuffer-mark)
   ;; Which-key
   (register-command! 'which-key cmd-which-key)
   ;; Markdown

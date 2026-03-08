@@ -279,29 +279,134 @@ Returns (file line col message) or #f."
 (def *flycheck-errors* [])      ; list of (file line col message)
 (def *flycheck-error-idx* 0)    ; index for next/prev error navigation
 
+(def (flycheck-linter-cmd path)
+  "Return linter shell command for PATH based on extension, or #f."
+  (cond
+    ((or (string-suffix? ".py" path))
+     (string-append "python3 -m py_compile " path " 2>&1"))
+    ((or (string-suffix? ".js" path) (string-suffix? ".jsx" path)
+         (string-suffix? ".ts" path) (string-suffix? ".tsx" path))
+     (string-append "eslint --no-color --format compact " path " 2>&1"))
+    ((string-suffix? ".go" path)
+     (string-append "go vet " path " 2>&1"))
+    ((or (string-suffix? ".sh" path) (string-suffix? ".bash" path))
+     (string-append "shellcheck -f gcc " path " 2>&1"))
+    ((or (string-suffix? ".c" path) (string-suffix? ".h" path))
+     (string-append "gcc -fsyntax-only -Wall " path " 2>&1"))
+    ((or (string-suffix? ".cpp" path) (string-suffix? ".cc" path)
+         (string-suffix? ".hpp" path))
+     (string-append "g++ -fsyntax-only -Wall " path " 2>&1"))
+    ((string-suffix? ".rb" path)
+     (string-append "ruby -c " path " 2>&1"))
+    (else #f)))
+
+(def (flycheck-parse-gcc-format output file)
+  "Parse GCC/shellcheck format: 'file:line:col: severity: msg'"
+  (let ((lines (string-split output #\newline))
+        (errors []))
+    (for-each
+      (lambda (line)
+        (let ((parts (string-split line #\:)))
+          (when (>= (length parts) 4)
+            (let ((lnum (string->number (string-trim (list-ref parts 1))))
+                  (col (string->number (string-trim (list-ref parts 2))))
+                  (msg (string-join (list-tail parts 3) ":")))
+              (when lnum
+                (set! errors (cons (list file lnum (or col 0) (string-trim msg)) errors)))))))
+      lines)
+    (reverse errors)))
+
+(def (flycheck-parse-multi output file path)
+  "Parse linter output for multi-language flycheck."
+  (cond
+    ((string-suffix? ".py" path)
+     ;; Python: look for SyntaxError and line numbers
+     (let ((lines (string-split output #\newline))
+           (errors []))
+       (for-each
+         (lambda (line)
+           (when (string-contains line "SyntaxError:")
+             (set! errors (cons (list file 0 0 (string-trim line)) errors)))
+           (when (and (string-contains line "line ") (string-contains line "File"))
+             (let* ((lpos (string-contains line "line "))
+                    (rest (substring line (+ lpos 5) (string-length line)))
+                    (num-end (let loop ((i 0))
+                               (if (and (< i (string-length rest))
+                                        (char-numeric? (string-ref rest i)))
+                                 (loop (+ i 1)) i)))
+                    (lnum (string->number (substring rest 0 num-end))))
+               (when lnum
+                 (set! errors (cons (list file lnum 0 "syntax error") errors))))))
+         lines)
+       (reverse errors)))
+    ((or (string-suffix? ".js" path) (string-suffix? ".jsx" path)
+         (string-suffix? ".ts" path) (string-suffix? ".tsx" path))
+     ;; ESLint compact: 'file: line N, col N, Error - msg'
+     (let ((lines (string-split output #\newline))
+           (errors []))
+       (for-each
+         (lambda (line)
+           (when (string-contains line "Error -")
+             (let ((colon (string-contains line ": line ")))
+               (when colon
+                 (let* ((rest (substring line (+ colon 7) (string-length line)))
+                        (parts (string-split rest #\,))
+                        (lnum (string->number (string-trim (car parts))))
+                        (msg-start (string-contains line "Error - "))
+                        (msg (if msg-start
+                               (substring line (+ msg-start 8) (string-length line))
+                               line)))
+                   (when lnum
+                     (set! errors (cons (list file lnum 0 (string-trim msg)) errors))))))))
+         lines)
+       (reverse errors)))
+    (else (flycheck-parse-gcc-format output file))))
+
 (def (flycheck-check! app path)
-  "Run gxc -S async on a Gerbil file, parse errors. Updates *flycheck-errors*."
-  (when (and *flycheck-mode* path (string-suffix? ".ss" path))
-    (let* ((dir (path-directory path))
-           (loadpath (flycheck-find-loadpath dir))
-           (env-prefix (if loadpath
-                         (string-append "GERBIL_LOADPATH=" loadpath " ")
-                         ""))
-           (cmd (string-append env-prefix "gxc -S " path " 2>&1")))
-      (async-process! cmd
-        callback: (lambda (result)
-          (let ((errors (flycheck-parse-errors result path)))
-            (set! *flycheck-errors* errors)
-            (set! *flycheck-error-idx* 0)
-            (if (null? errors)
-              (echo-message! (app-state-echo app) "Flycheck: no errors")
-              (let* ((count (length errors))
-                     (first-err (car errors))
-                     (msg (string-append "Flycheck: "
-                            (number->string count)
-                            (if (= count 1) " error" " errors")
-                            " — " (cadddr first-err))))
-                (echo-error! (app-state-echo app) msg)))))))))
+  "Run linter async on a source file, parse errors. Updates *flycheck-errors*.
+Supports Gerbil (.ss), Python, JS/TS, Go, Shell, C/C++, Ruby."
+  (when (and *flycheck-mode* path)
+    (cond
+      ;; Gerbil files: use gxc -S
+      ((string-suffix? ".ss" path)
+       (let* ((dir (path-directory path))
+              (loadpath (flycheck-find-loadpath dir))
+              (env-prefix (if loadpath
+                            (string-append "GERBIL_LOADPATH=" loadpath " ")
+                            ""))
+              (cmd (string-append env-prefix "gxc -S " path " 2>&1")))
+         (async-process! cmd
+           callback: (lambda (result)
+             (let ((errors (flycheck-parse-errors result path)))
+               (set! *flycheck-errors* errors)
+               (set! *flycheck-error-idx* 0)
+               (if (null? errors)
+                 (echo-message! (app-state-echo app) "Flycheck: no errors")
+                 (let* ((count (length errors))
+                        (first-err (car errors))
+                        (msg (string-append "Flycheck: "
+                               (number->string count)
+                               (if (= count 1) " error" " errors")
+                               " — " (cadddr first-err))))
+                   (echo-error! (app-state-echo app) msg))))))))
+      ;; Other languages
+      (else
+       (let ((cmd (flycheck-linter-cmd path)))
+         (when cmd
+           (async-process! cmd
+             callback: (lambda (result)
+               (let ((errors (flycheck-parse-multi result path path)))
+                 (set! *flycheck-errors* errors)
+                 (set! *flycheck-error-idx* 0)
+                 (if (null? errors)
+                   (echo-message! (app-state-echo app) "Flycheck: no errors")
+                   (let* ((count (length errors))
+                          (first-err (car errors))
+                          (msg (string-append "Flycheck: "
+                                 (number->string count)
+                                 (if (= count 1) " error" " errors")
+                                 " — " (cadddr first-err))))
+                     (echo-error! (app-state-echo app) msg))))))))))))
 
 (def (flycheck-find-loadpath dir)
   "Search upward from dir for gerbil.pkg and construct GERBIL_LOADPATH."

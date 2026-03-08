@@ -1028,3 +1028,239 @@
           (echo-message! (app-state-echo app)
             (string-append "Created tag: " tag)))))))
 
+;;;============================================================================
+;;; Interactive IBBuffer — mark/execute/filter/sort
+;;;============================================================================
+
+;; Marks: hash of buffer-name -> mark-char (#\D = delete, #\S = save)
+(def *ibuffer-marks* (make-hash-table))
+(def *ibuffer-filter* #f)  ; string or #f
+(def *ibuffer-sort* 'name) ; 'name or 'size
+
+(def (ibuffer-header-lines) 2) ;; header + separator = 2 lines
+
+(def (ibuffer-buffer-at-line app line-num)
+  "Get the buffer object corresponding to ibuffer line LINE-NUM, or #f."
+  (let ((bufs (ibuffer-visible-buffers)))
+    (let ((idx (- line-num (ibuffer-header-lines))))
+      (if (and (>= idx 0) (< idx (length bufs)))
+        (list-ref bufs idx)
+        #f))))
+
+(def (ibuffer-visible-buffers)
+  "Return the list of buffers that match the current filter, sorted."
+  (let* ((all (filter (lambda (b) (not (string=? (buffer-name b) "*IBBuffer*")))
+                      (buffer-list)))
+         (filtered (if *ibuffer-filter*
+                     (let ((pat (string-downcase *ibuffer-filter*)))
+                       (filter (lambda (b)
+                                 (string-contains (string-downcase (buffer-name b)) pat))
+                               all))
+                     all)))
+    (case *ibuffer-sort*
+      ((size)
+       (sort filtered (lambda (a b)
+                        (let ((sa (or (buffer-file-path a) ""))
+                              (sb (or (buffer-file-path b) "")))
+                          (string<? sa sb)))))
+      (else
+       (sort filtered (lambda (a b)
+                        (string<? (buffer-name a) (buffer-name b))))))))
+
+(def (ibuffer-format-line fr b)
+  "Format a single ibuffer line for buffer B."
+  (let* ((name (buffer-name b))
+         (mark-ch (hash-get *ibuffer-marks* name))
+         (mark-str (if mark-ch (string mark-ch) " "))
+         (modified? (let ((doc (buffer-doc-pointer b)))
+                      (and doc (qt-text-document-modified? doc))))
+         (readonly? (let loop ((ws (qt-frame-windows fr)))
+                      (cond
+                        ((null? ws) #f)
+                        ((eq? (qt-edit-window-buffer (car ws)) b)
+                         (qt-plain-text-edit-read-only?
+                           (qt-edit-window-editor (car ws))))
+                        (else (loop (cdr ws))))))
+         (path (or (buffer-file-path b) ""))
+         (size-str
+           (let loop ((wins (qt-frame-windows fr)))
+             (cond
+               ((null? wins) "?")
+               ((eq? (qt-edit-window-buffer (car wins)) b)
+                (number->string
+                  (string-length
+                    (qt-plain-text-edit-text
+                      (qt-edit-window-editor (car wins))))))
+               (else (loop (cdr wins))))))
+         (flag (string-append
+                 (if modified? "*" " ")
+                 (if readonly? "%" " "))))
+    (string-append
+      mark-str " " flag " "
+      (string-pad-right name 30)
+      (string-pad-right size-str 10)
+      path)))
+
+(def (ibuffer-refresh! app)
+  "Refresh the *IBBuffer* contents."
+  (let* ((fr (app-state-frame app))
+         (ed (current-qt-editor app))
+         (bufs (ibuffer-visible-buffers))
+         (lines (map (lambda (b) (ibuffer-format-line fr b)) bufs))
+         (header " M Flags  Name                          Size      File")
+         (sep    " - -----  ----------------------------  --------  ----")
+         (filter-info (if *ibuffer-filter*
+                        (string-append "  [filter: " *ibuffer-filter* "]")
+                        ""))
+         (text (string-join (cons (string-append header filter-info)
+                                  (cons sep lines)) "\n"))
+         (line (qt-plain-text-edit-cursor-line ed)))
+    ;; Temporarily disable read-only to update
+    (sci-send ed SCI_SETREADONLY 0)
+    (qt-plain-text-edit-set-text! ed text)
+    (qt-text-document-set-modified! (buffer-doc-pointer (qt-current-buffer fr)) #f)
+    (sci-send ed SCI_SETREADONLY 1)
+    ;; Restore cursor position
+    (let ((pos (sci-send ed SCI_POSITIONFROMLINE (min line (+ (ibuffer-header-lines) (length bufs) -1)) 0)))
+      (qt-plain-text-edit-set-cursor-position! ed pos))))
+
+(def (cmd-ibuffer app)
+  "Open an interactive buffer list with mark/execute.
+Keys: d=mark delete, s=mark save, u=unmark, x=execute, RET=switch,
+/=filter by name, S=sort name, z=sort path, t=toggle marks, g=refresh, q=quit."
+  (let* ((fr (app-state-frame app))
+         (ed (current-qt-editor app))
+         (buf-name "*IBBuffer*")
+         (buf (or (buffer-by-name buf-name)
+                  (qt-buffer-create! buf-name ed #f))))
+    ;; Clear marks and filter for fresh view
+    (set! *ibuffer-marks* (make-hash-table))
+    (set! *ibuffer-filter* #f)
+    (qt-buffer-attach! ed buf)
+    (set! (qt-edit-window-buffer (qt-current-window fr)) buf)
+    (ibuffer-refresh! app)
+    ;; Position on first buffer line (after header)
+    (let ((pos (sci-send ed SCI_POSITIONFROMLINE 2 0)))
+      (qt-plain-text-edit-set-cursor-position! ed pos))
+    (sci-send ed SCI_SETREADONLY 1)
+    (echo-message! (app-state-echo app)
+      "IBBuffer: d=delete s=save u=unmark x=execute RET=goto /=filter q=quit")))
+
+(def (cmd-ibuffer-mark-delete app)
+  "Mark the buffer at point for deletion (D)."
+  (let* ((ed (current-qt-editor app))
+         (line (qt-plain-text-edit-cursor-line ed))
+         (buf (ibuffer-buffer-at-line app line)))
+    (when buf
+      (hash-put! *ibuffer-marks* (buffer-name buf) #\D)
+      (ibuffer-refresh! app)
+      ;; Move to next line
+      (let ((next-pos (sci-send ed SCI_POSITIONFROMLINE (+ line 1) 0)))
+        (qt-plain-text-edit-set-cursor-position! ed next-pos)))))
+
+(def (cmd-ibuffer-mark-save app)
+  "Mark the buffer at point for saving (S)."
+  (let* ((ed (current-qt-editor app))
+         (line (qt-plain-text-edit-cursor-line ed))
+         (buf (ibuffer-buffer-at-line app line)))
+    (when buf
+      (hash-put! *ibuffer-marks* (buffer-name buf) #\S)
+      (ibuffer-refresh! app)
+      (let ((next-pos (sci-send ed SCI_POSITIONFROMLINE (+ line 1) 0)))
+        (qt-plain-text-edit-set-cursor-position! ed next-pos)))))
+
+(def (cmd-ibuffer-unmark app)
+  "Remove mark from buffer at point."
+  (let* ((ed (current-qt-editor app))
+         (line (qt-plain-text-edit-cursor-line ed))
+         (buf (ibuffer-buffer-at-line app line)))
+    (when buf
+      (hash-remove! *ibuffer-marks* (buffer-name buf))
+      (ibuffer-refresh! app)
+      (let ((next-pos (sci-send ed SCI_POSITIONFROMLINE (+ line 1) 0)))
+        (qt-plain-text-edit-set-cursor-position! ed next-pos)))))
+
+(def (cmd-ibuffer-execute app)
+  "Execute marked operations: delete buffers marked D, save buffers marked S."
+  (let* ((echo (app-state-echo app))
+         (fr (app-state-frame app))
+         ;; Collect buffers to delete/save first
+         (to-delete [])
+         (to-save []))
+    (hash-for-each
+      (lambda (name mark)
+        (let ((buf (buffer-by-name name)))
+          (when buf
+            (cond
+              ((char=? mark #\D)
+               (set! to-delete (cons buf to-delete)))
+              ((char=? mark #\S)
+               (set! to-save (cons buf to-save)))))))
+      *ibuffer-marks*)
+    ;; Execute deletions
+    (for-each buffer-list-remove! to-delete)
+    ;; Execute saves
+    (for-each
+      (lambda (buf)
+        (let ((path (buffer-file-path buf)))
+          (when path
+            (let loop ((wins (qt-frame-windows fr)))
+              (when (pair? wins)
+                (if (eq? (qt-edit-window-buffer (car wins)) buf)
+                  (let* ((ed (qt-edit-window-editor (car wins)))
+                         (text (qt-plain-text-edit-text ed)))
+                    (call-with-output-file path
+                      (lambda (port) (display text port)))
+                    (qt-text-document-set-modified! (buffer-doc-pointer buf) #f))
+                  (loop (cdr wins))))))))
+      to-save)
+    ;; Clear marks and refresh
+    (set! *ibuffer-marks* (make-hash-table))
+    (ibuffer-refresh! app)
+    (echo-message! echo
+      (string-append "Executed: " (number->string (length to-delete)) " deleted, "
+                     (number->string (length to-save)) " saved"))))
+
+(def (cmd-ibuffer-goto-buffer app)
+  "Switch to the buffer at point in ibuffer."
+  (let* ((ed (current-qt-editor app))
+         (line (qt-plain-text-edit-cursor-line ed))
+         (buf (ibuffer-buffer-at-line app line)))
+    (if buf
+      (let* ((fr (app-state-frame app))
+             (win (qt-current-window fr)))
+        (qt-buffer-attach! ed buf)
+        (set! (qt-edit-window-buffer win) buf)
+        (qt-setup-highlighting! app buf)
+        (qt-modeline-update! app))
+      (echo-message! (app-state-echo app) "No buffer on this line"))))
+
+(def (cmd-ibuffer-filter-name app)
+  "Filter ibuffer by buffer name substring."
+  (let ((pattern (qt-echo-read-string app "Filter by name (empty=clear): ")))
+    (set! *ibuffer-filter* (if (or (not pattern) (string=? pattern "")) #f pattern))
+    (ibuffer-refresh! app)))
+
+(def (cmd-ibuffer-sort-name app)
+  "Sort ibuffer by buffer name."
+  (set! *ibuffer-sort* 'name)
+  (ibuffer-refresh! app)
+  (echo-message! (app-state-echo app) "Sorted by name"))
+
+(def (cmd-ibuffer-sort-size app)
+  "Sort ibuffer by file path."
+  (set! *ibuffer-sort* 'size)
+  (ibuffer-refresh! app)
+  (echo-message! (app-state-echo app) "Sorted by path"))
+
+(def (cmd-ibuffer-toggle-marks app)
+  "Toggle D marks on all visible buffers."
+  (let ((bufs (ibuffer-visible-buffers)))
+    (for-each
+      (lambda (b)
+        (let ((name (buffer-name b)))
+          (if (hash-get *ibuffer-marks* name)
+            (hash-remove! *ibuffer-marks* name)
+            (hash-put! *ibuffer-marks* name #\D))))
+      bufs))
+  (ibuffer-refresh! app))

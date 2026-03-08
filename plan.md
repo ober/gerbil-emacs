@@ -55,7 +55,7 @@ Implemented popup UX matching Ruby Scintilla editors — inline autocomplete dro
 
 ### Maintenance
 - ~~**Split over-limit files**~~ — DONE: split `qt/commands-edit.ss` (2457→1155+1325) and `editor-extra-editing.ss` (2204→1097+1130). Remaining `editor-extra-media.ss` (2013) and `qt/commands-vcs.ss` (2003) are barely over limit
-- ~~**Test coverage**~~ — DONE: added Group 13 tests (dired, which-key, zoom, compile/search, bookmarks, M-x history). 181 total TUI functional tests, 323 Qt tests
+- ~~**Test coverage**~~ — DONE: added Group 13 tests (dired, which-key, zoom, compile/search, bookmarks, M-x history). 181 total TUI functional tests, 334 Qt tests
 
 ### Recently Completed
 - ~~**Vterm terminal fixes**~~ — DONE: PTY window size from editor dimensions, PS1 prompt cleanup, batched rendering for speed
@@ -95,6 +95,9 @@ Implemented popup UX matching Ruby Scintilla editors — inline autocomplete dro
 - ~~**Consult-line with narrowing**~~ — DONE: upgraded from two-step to interactive narrowing popup with line numbers and jump-to-line
 - ~~**Auto-highlight symbol under cursor**~~ — DONE: idle timer highlights all occurrences of word at point using Scintilla INDIC_ROUNDBOX indicators, word-boundary aware, toggleable
 - ~~**Consult-outline**~~ — DONE: jump to headings/definitions with narrowing, multi-language (Org/Markdown/Scheme/Python/C/JS/Ruby/Go/Rust)
+
+- ~~**Interactive ibuffer**~~ — DONE: upgraded from display-only to interactive mark/execute (d=delete, s=save, u=unmark, x=execute, /=filter, S=sort, RET=goto, t=toggle). Mode keymap bindings, read-only buffer with refresh
+- ~~**Multi-language flycheck**~~ — DONE: extended from Gerbil-only to 7 languages (Python, JS/TS/eslint, Go/go-vet, Shell/shellcheck, C/C++/gcc, Ruby). Auto-detects by file extension, runs on save
 
 ### Aspirational
 - LSP in TUI

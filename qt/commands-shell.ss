@@ -384,60 +384,7 @@ SPC = page down, DEL = page up, q = quit view-mode."
 ;;; IBBuffer — enhanced buffer list
 ;;; ========================================================================
 
-(def (cmd-ibuffer app)
-  "Open an enhanced buffer list with filtering and sorting.
-Marks: d=delete, s=save, u=unmark, x=execute, /n=filter by name, /m=filter by mode,
-S=sort by name, z=sort by size, q=quit."
-  (let* ((fr (app-state-frame app))
-         (ed (current-qt-editor app))
-         (bufs (buffer-list))
-         (lines
-           (let loop ((bs bufs) (acc []))
-             (if (null? bs) (reverse acc)
-               (let* ((b (car bs))
-                      (name (buffer-name b))
-                      (modified? (let ((doc (buffer-doc-pointer b)))
-                                   (and doc (qt-text-document-modified? doc))))
-                      (readonly? (let loop2r ((ws (qt-frame-windows fr)))
-                                   (cond
-                                     ((null? ws) #f)
-                                     ((eq? (qt-edit-window-buffer (car ws)) b)
-                                      (qt-plain-text-edit-read-only?
-                                        (qt-edit-window-editor (car ws))))
-                                     (else (loop2r (cdr ws))))))
-                      (path (or (buffer-file-path b) ""))
-                      (size-str
-                        (let loop2 ((wins (qt-frame-windows fr)))
-                          (cond
-                            ((null? wins) "?")
-                            ((eq? (qt-edit-window-buffer (car wins)) b)
-                             (number->string
-                               (string-length
-                                 (qt-plain-text-edit-text
-                                   (qt-edit-window-editor (car wins))))))
-                            (else (loop2 (cdr wins))))))
-                      (flag (string-append
-                              (if modified? "*" " ")
-                              (if readonly? "%" " ")))
-                      (line (string-append
-                              "  " flag " "
-                              (string-pad-right name 30)
-                              (string-pad-right size-str 10)
-                              path)))
-                 (loop (cdr bs) (cons line acc))))))
-         (header "  Flags  Name                          Size      File")
-         (sep    "  -----  ----------------------------  --------  ----")
-         (text (string-join (cons header (cons sep lines)) "\n"))
-         (buf-name "*IBBuffer*")
-         (buf (or (buffer-by-name buf-name)
-                  (qt-buffer-create! buf-name ed #f))))
-    (qt-buffer-attach! ed buf)
-    (set! (qt-edit-window-buffer (qt-current-window fr)) buf)
-    (qt-plain-text-edit-set-text! ed text)
-    (qt-text-document-set-modified! (buffer-doc-pointer buf) #f)
-    (qt-plain-text-edit-set-cursor-position! ed 0)
-    (echo-message! (app-state-echo app)
-      "IBBuffer: d=mark delete, s=mark save, u=unmark, x=execute, q=quit")))
+;; cmd-ibuffer moved to commands-parity.ss for interactive mark/execute support
 
 ;;; ========================================================================
 ;;; Savehist — persistent minibuffer history

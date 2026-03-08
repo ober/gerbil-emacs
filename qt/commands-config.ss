@@ -908,6 +908,7 @@
                      ((string=? name "*Magit Stash*") (hash-get *mode-keymaps* 'magit-stash))
                      ((string=? name "*Magit Stash Diff*") (hash-get *mode-keymaps* 'magit-stash-diff))
                      ((string=? name "*Org Capture*") (hash-get *mode-keymaps* 'org-capture))
+                     ((string=? name "*IBBuffer*") (hash-get *mode-keymaps* 'ibuffer))
                      (else #f))))))
     (and km (keymap-lookup km key-str))))
 
@@ -953,6 +954,23 @@
     (keymap-bind! bl-km "p" 'previous-line)
     (keymap-bind! bl-km "q" 'kill-buffer-cmd)
     (hash-put! *mode-keymaps* 'buffer-list bl-km))
+
+  ;; IBBuffer mode: interactive buffer management
+  (let ((ib-km (make-keymap)))
+    (keymap-bind! ib-km "d" 'ibuffer-mark-delete)
+    (keymap-bind! ib-km "s" 'ibuffer-mark-save)
+    (keymap-bind! ib-km "u" 'ibuffer-unmark)
+    (keymap-bind! ib-km "x" 'ibuffer-execute)
+    (keymap-bind! ib-km "RET" 'ibuffer-goto-buffer)
+    (keymap-bind! ib-km "/" 'ibuffer-filter-name)
+    (keymap-bind! ib-km "S" 'ibuffer-sort-name)
+    (keymap-bind! ib-km "z" 'ibuffer-sort-size)
+    (keymap-bind! ib-km "t" 'ibuffer-toggle-marks)
+    (keymap-bind! ib-km "g" 'ibuffer-refresh)
+    (keymap-bind! ib-km "n" 'next-line)
+    (keymap-bind! ib-km "p" 'previous-line)
+    (keymap-bind! ib-km "q" 'kill-buffer-cmd)
+    (hash-put! *mode-keymaps* 'ibuffer ib-km))
 
   ;; Occur mode
   (let ((occur-km (make-keymap)))

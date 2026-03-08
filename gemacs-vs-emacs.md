@@ -295,12 +295,12 @@
 | Clone buffer | :white_check_mark: | |
 | Scratch buffer | :white_check_mark: | |
 | Messages buffer | :white_check_mark: | `*Messages*` equivalent |
-| ibuffer (advanced list) | :yellow_circle: | Registered, limited functionality |
+| ibuffer (advanced list) | :large_blue_circle: | Interactive: mark/delete/save/execute, filter by name, sort, goto buffer |
 | Uniquify buffer names | :white_check_mark: | Emacs-style `filename<dir>` — renames both old and new same-name buffers |
 | Indirect buffers | :yellow_circle: | `clone-indirect-buffer` registered |
 | Buffer-local variables | :yellow_circle: | Some support via app-state |
 
-**Summary:** Core buffer management works well. Missing advanced ibuffer filtering/grouping.
+**Summary:** Core buffer management works well. IBBuffer provides interactive mark/execute/filter/sort.
 
 ---
 
@@ -501,8 +501,8 @@
 | S-expression navigation | :white_check_mark: | Forward/backward/up/down sexp |
 | Compile command | :white_check_mark: | `C-x d` runs compile |
 | Error navigation | :white_check_mark: | Next/prev error in compilation buffer |
-| Flycheck (syntax checking) | :large_blue_circle: | Live Gerbil syntax checking, LSP diagnostics, toggle-flymake delegates to flycheck |
-| Flymake | :yellow_circle: | Registered |
+| Flycheck (syntax checking) | :white_check_mark: | Multi-language: Gerbil (gxc), Python, JS/TS (eslint), Go, Shell (shellcheck), C/C++ (gcc), Ruby |
+| Flymake | :large_blue_circle: | Delegates to flycheck; multi-language support |
 | Eldoc (function signatures) | :large_blue_circle: | Echo area display |
 | Xref (definitions) | :large_blue_circle: | Grep-based fallback |
 | Xref (references) | :large_blue_circle: | Grep-based |
