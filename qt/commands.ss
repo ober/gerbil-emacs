@@ -80,7 +80,12 @@
         *diff-hl-active*
         ;; Describe-key interception
         *qt-describe-key-pending*
-        qt-describe-key-result!)
+        qt-describe-key-result!
+        ;; Quoted insert interception
+        *qt-quoted-insert-pending*
+        qt-quoted-insert-handle!
+        ;; Edit position tracking for goto-last-change
+        qt-record-edit-position!)
 
 (import :std/sugar
         :std/sort

@@ -1277,3 +1277,75 @@
     (when (> end pos)
       (send-message ed SCI_DELETERANGE pos (- end pos)))))
 
+;;;============================================================================
+;;; Goto last change (goto-chg package emulation)
+;;;============================================================================
+
+(def *tui-edit-positions* (make-hash-table))  ;; buffer-name -> list of positions
+(def *tui-edit-pos-index* (make-hash-table))  ;; buffer-name -> current index
+
+(def (tui-record-edit-position! app)
+  "Record current cursor position as an edit site (TUI)."
+  (let* ((fr (app-state-frame app))
+         (ed (edit-window-editor (current-window fr)))
+         (buf (current-buffer-from-app app))
+         (name (buffer-name buf))
+         (pos (editor-get-current-pos ed))
+         (positions (or (hash-get *tui-edit-positions* name) '())))
+    (when (or (null? positions)
+              (> (abs (- pos (car positions))) 5))
+      (hash-put! *tui-edit-positions* name
+        (cons pos (take positions (min 100 (length positions)))))
+      (hash-remove! *tui-edit-pos-index* name))))
+
+(def (cmd-goto-last-change-reverse app)
+  "Jump forward through edit positions (opposite of goto-last-change)."
+  (let* ((buf (current-buffer-from-app app))
+         (name (buffer-name buf))
+         (echo (app-state-echo app))
+         (ed (edit-window-editor (current-window (app-state-frame app))))
+         (positions (or (hash-get *tui-edit-positions* name) '()))
+         (idx (or (hash-get *tui-edit-pos-index* name) 0))
+         (new-idx (- idx 1)))
+    (if (< new-idx 0)
+      (echo-message! echo "At most recent edit position")
+      (begin
+        (hash-put! *tui-edit-pos-index* name new-idx)
+        (let ((target (list-ref positions new-idx)))
+          (editor-goto-pos ed (min target (string-length (editor-get-text ed))))
+          (editor-scroll-caret ed)
+          (echo-message! echo
+            (string-append "Edit position " (number->string (+ new-idx 1))
+                           "/" (number->string (length positions)))))))))
+
+;;;============================================================================
+;;; File operations: copy-file, rename-visited-file, diff-buffer-with-file
+;;;============================================================================
+
+(def (cmd-rename-visited-file app)
+  "Rename the current file on disk and update the buffer name."
+  (let* ((echo (app-state-echo app))
+         (buf (current-buffer-from-app app))
+         (ed (edit-window-editor (current-window (app-state-frame app))))
+         (path (buffer-file-path buf)))
+    (if (not path)
+      (echo-error! echo "Buffer has no associated file")
+      (let ((new-name (app-read-string app
+                        (string-append "Rename " (path-strip-directory path) " to: "))))
+        (when (and new-name (> (string-length new-name) 0))
+          (let ((new-path (if (and (> (string-length new-name) 0) (char=? (string-ref new-name 0) #\/)) new-name
+                            (path-expand new-name (path-directory path)))))
+            (with-catch
+              (lambda (e)
+                (echo-error! echo
+                  (string-append "Rename failed: "
+                    (with-output-to-string (lambda () (display-exception e))))))
+              (lambda ()
+                (rename-file path new-path)
+                (set! (buffer-file-path buf) new-path)
+                (set! (buffer-name buf) (path-strip-directory new-path))
+                (echo-message! echo
+                  (string-append "Renamed to " new-path))))))))))
+
+
+

@@ -1388,3 +1388,77 @@
                           (qt-plain-text-edit-set-text! ed new-text)
                           (qt-plain-text-edit-set-cursor-position! ed pos)
                           (echo-message! echo "Entry decrypted"))))))))))))))
+
+;;;============================================================================
+;;; Goto last change (goto-chg package emulation)
+;;;============================================================================
+;; Tracks cursor positions when text is modified. Jump to the most recent
+;; edit position with goto-last-change, navigate backwards with
+;; goto-last-change-reverse.
+
+(def *qt-edit-positions* (make-hash-table))  ;; buffer-name -> list of positions
+(def *qt-edit-pos-index* (make-hash-table))  ;; buffer-name -> current index
+
+(def (qt-record-edit-position! app)
+  "Record current cursor position as an edit site."
+  (let* ((ed (current-qt-editor app))
+         (buf (current-qt-buffer app))
+         (name (buffer-name buf))
+         (pos (qt-plain-text-edit-cursor-position ed))
+         (positions (or (hash-get *qt-edit-positions* name) '())))
+    ;; Don't record if same as most recent position (within 5 chars)
+    (when (or (null? positions)
+              (> (abs (- pos (car positions))) 5))
+      (hash-put! *qt-edit-positions* name (cons pos (take positions (min 100 (length positions)))))
+      (hash-remove! *qt-edit-pos-index* name))))
+
+(def (cmd-goto-last-change-reverse app)
+  "Jump forward through edit positions (opposite of goto-last-change)."
+  (let* ((buf (current-qt-buffer app))
+         (name (buffer-name buf))
+         (echo (app-state-echo app))
+         (ed (current-qt-editor app))
+         (positions (or (hash-get *qt-edit-positions* name) '()))
+         (idx (or (hash-get *qt-edit-pos-index* name) 0))
+         (new-idx (- idx 1)))
+    (if (< new-idx 0)
+      (echo-message! echo "At most recent edit position")
+      (begin
+        (hash-put! *qt-edit-pos-index* name new-idx)
+        (let ((target (list-ref positions new-idx)))
+          (qt-plain-text-edit-set-cursor-position! ed
+            (min target (string-length (qt-plain-text-edit-text ed))))
+          (qt-plain-text-edit-ensure-cursor-visible! ed)
+          (echo-message! echo
+            (string-append "Edit position " (number->string (+ new-idx 1))
+                           "/" (number->string (length positions)))))))))
+
+;;;============================================================================
+;;; Copy file & Rename visited file
+;;;============================================================================
+
+(def (cmd-rename-visited-file app)
+  "Rename the current file on disk and update the buffer name."
+  (let* ((echo (app-state-echo app))
+         (buf (current-qt-buffer app))
+         (ed (current-qt-editor app))
+         (path (buffer-file-path buf)))
+    (if (not path)
+      (echo-error! echo "Buffer has no associated file")
+      (let ((new-name (qt-echo-read-string app
+                        (string-append "Rename " (path-strip-directory path) " to: "))))
+        (when (and new-name (> (string-length new-name) 0))
+          (let ((new-path (if (and (> (string-length new-name) 0) (char=? (string-ref new-name 0) #\/)) new-name
+                            (path-expand new-name (path-directory path)))))
+            (with-catch
+              (lambda (e)
+                (echo-error! echo
+                  (string-append "Rename failed: "
+                    (with-output-to-string (lambda () (display-exception e))))))
+              (lambda ()
+                (rename-file path new-path)
+                (set! (buffer-file-path buf) new-path)
+                (set! (buffer-name buf) (path-strip-directory new-path))
+                (echo-message! echo
+                  (string-append "Renamed to " new-path))))))))))
+

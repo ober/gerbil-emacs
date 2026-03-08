@@ -305,6 +305,10 @@
   ;; Org-crypt
   (register-command! 'org-encrypt-entry cmd-org-encrypt-entry)
   (register-command! 'org-decrypt-entry cmd-org-decrypt-entry)
+  ;; Goto last change reverse (forward registered elsewhere)
+  (register-command! 'goto-last-change-reverse cmd-goto-last-change-reverse)
+  ;; File operations (copy-file, diff-buffer-with-file registered elsewhere)
+  (register-command! 'rename-visited-file cmd-rename-visited-file)
   ;; Whitespace extras
   (register-command! 'whitespace-toggle-options cmd-whitespace-toggle-options)
   ;; Highlight

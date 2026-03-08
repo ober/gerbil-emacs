@@ -3667,6 +3667,45 @@
   (displayln "Group 30 complete"))
 
 ;;;============================================================================
+;;; Group 31: Quoted insert, Goto-last-change, Rename-visited-file
+;;;============================================================================
+(def (run-group-31-quoted-insert-goto-change)
+  (displayln "\n=== Group 31: Quoted insert, Goto-last-change, File ops ===")
+
+  ;; quoted-insert — upgraded from stub to real key interception
+  (let ((cmd (find-command 'quoted-insert)))
+    (if cmd
+      (pass! "quoted-insert registered")
+      (fail! "quoted-insert" #f "procedure")))
+
+  ;; goto-last-change
+  (if (find-command 'goto-last-change)
+    (pass! "goto-last-change registered")
+    (fail! "goto-last-change" #f "procedure"))
+
+  ;; goto-last-change-reverse
+  (if (find-command 'goto-last-change-reverse)
+    (pass! "goto-last-change-reverse registered")
+    (fail! "goto-last-change-reverse" #f "procedure"))
+
+  ;; rename-visited-file
+  (if (find-command 'rename-visited-file)
+    (pass! "rename-visited-file registered")
+    (fail! "rename-visited-file" #f "procedure"))
+
+  ;; diff-buffer-with-file
+  (if (find-command 'diff-buffer-with-file)
+    (pass! "diff-buffer-with-file registered")
+    (fail! "diff-buffer-with-file" #f "procedure"))
+
+  ;; copy-file (already existed)
+  (if (find-command 'copy-file)
+    (pass! "copy-file registered")
+    (fail! "copy-file" #f "procedure"))
+
+  (displayln "Group 31 complete"))
+
+;;;============================================================================
 ;;; Main
 ;;;============================================================================
 
@@ -3705,6 +3744,7 @@
     (run-group-28-tramp-sudo-crypt)
     (run-group-29-pdf-docview)
     (run-group-30-sort-mail-compile)
+    (run-group-31-quoted-insert-goto-change)
 
     (displayln "---")
     (displayln "Results: " *passes* " passed, " *failures* " failed")

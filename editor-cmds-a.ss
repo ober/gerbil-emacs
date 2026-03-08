@@ -1093,9 +1093,13 @@
             (echo-message! echo (string-append "Zapped to '" (string ch) "'")))
           (echo-error! echo (string-append "'" (string ch) "' not found")))))))
 
+(def *quoted-insert-pending* #f)
+
 (def (cmd-quoted-insert app)
-  "Insert the next character literally (for control chars)."
-  (echo-message! (app-state-echo app) "C-q: Next key inserts literally (use self-insert)"))
+  "Insert the next character literally (C-q). The next keypress will be
+   inserted as a literal character instead of being executed as a command."
+  (set! *quoted-insert-pending* #t)
+  (echo-message! (app-state-echo app) "C-q: "))
 
 (def (cmd-what-line-col app)
   "Show current line and column."

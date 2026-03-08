@@ -25,7 +25,8 @@
         :gemacs/persist
         :gemacs/shell-history
         :gemacs/ipc
-        :gemacs/helm-commands)
+        :gemacs/helm-commands
+        (only-in :gemacs/editor-extra-editing tui-record-edit-position!))
 
 ;;;============================================================================
 ;;; Application initialization
@@ -635,6 +636,32 @@
   (let-values (((action data new-state)
                 (key-state-feed! (app-state-key-state app) ev)))
     (set! (app-state-key-state app) new-state)
+    ;; Quoted insert: insert next key literally (C-q)
+    (if *quoted-insert-pending*
+      (begin
+        (set! *quoted-insert-pending* #f)
+        (let* ((fr (app-state-frame app))
+               (ed (edit-window-editor (current-window fr)))
+               (pos (editor-get-current-pos ed)))
+          (cond
+            ;; Self-insert: data is a char code
+            ((eq? action 'self-insert)
+             (let ((ch (integer->char data)))
+               (editor-insert-text ed pos (string ch))
+               (echo-message! (app-state-echo app) (string-append "Inserted: " (string ch)))))
+            ;; Command key with a printable char in the event
+            (else
+             (let ((ch (tui-event-ch ev)))
+               (if (and ch (> ch 0))
+                 (let ((c (integer->char ch)))
+                   (editor-insert-text ed pos (string c))
+                   (echo-message! (app-state-echo app) (string-append "Inserted: " (string c))))
+                 ;; Control char: convert key code to character
+                 (let ((key (tui-event-key ev)))
+                   (when (and key (< key 32))
+                     (editor-insert-text ed pos (string (integer->char key)))
+                     (echo-message! (app-state-echo app)
+                       (string-append "Inserted control char: ^" (string (integer->char (+ key 64)))))))))))))
     (case action
       ((command)
        ;; Record macro step (skip macro control commands themselves)
@@ -673,11 +700,13 @@
                  (cons (cons 'self-insert translated)
                        (app-state-macro-recording app))))
              (cmd-self-insert! app translated)
+             ;; Track edit position for goto-last-change
+             (tui-record-edit-position! app)
              (set! (app-state-prefix-arg app) #f)
              (set! (app-state-prefix-digit-mode? app) #f)))))
       ((undefined)
        (echo-error! (app-state-echo app)
-                    (string-append data " is undefined"))))))
+                    (string-append data " is undefined")))))))  ;; extra paren closes quoted-insert if
 
 (def (dispatch-key! app ev)
   "Process a key event with chord detection and key translation."

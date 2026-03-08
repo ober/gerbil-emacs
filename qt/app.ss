@@ -508,6 +508,11 @@
                        (if (and *qt-describe-key-pending* (not (eq? action 'prefix)))
                          (let ((ks (qt-key-event->string code mods text)))
                            (qt-describe-key-result! app ks action data))
+                       ;; Quoted insert: insert next key literally (C-q)
+                       (if *qt-quoted-insert-pending*
+                         (qt-quoted-insert-handle! app
+                           (if (and text (> (string-length text) 0)) text
+                             (qt-key-event->string code mods text)))
                        (case action
                          ((command)
                           ;; Record for keyboard macro
@@ -612,6 +617,8 @@
                                     (qt-plain-text-edit-insert-text! ed str)))))))
                           ;; Auto-fill: break line if past fill-column
                           (auto-fill-check! (qt-current-editor (app-state-frame app)))
+                          ;; Track edit position for goto-last-change
+                          (qt-record-edit-position! app)
                           (set! (app-state-prefix-arg app) #f)
                            (set! (app-state-prefix-digit-mode? app) #f))))) ; Reset prefix arg
                          ((prefix)
@@ -633,7 +640,7 @@
                          ((undefined)
                           (echo-error! (app-state-echo app)
                                        (string-append data " is undefined")))
-                         ((ignore) (void))))  ;; bare modifier keys — do nothing (extra paren closes describe-key if)
+                         ((ignore) (void)))))  ;; bare modifier keys — do nothing (extra parens close quoted-insert + describe-key ifs)
                        ;; Update visual decorations (current-line + brace match)
                        (qt-update-visual-decorations!
                          (qt-current-editor (app-state-frame app)))

@@ -457,9 +457,22 @@
 ;;; Quoted insert
 ;;;============================================================================
 
+(def *qt-quoted-insert-pending* #f)
+
 (def (cmd-quoted-insert app)
-  "Insert the next character literally."
-  (echo-message! (app-state-echo app) "C-q: type character to insert literally"))
+  "Insert the next character literally (C-q). Sets a flag so the next keypress
+   is inserted as a literal character instead of being executed as a command."
+  (set! *qt-quoted-insert-pending* #t)
+  (echo-message! (app-state-echo app) "C-q: "))
+
+(def (qt-quoted-insert-handle! app text)
+  "Handle the next key after C-q by inserting it literally."
+  (set! *qt-quoted-insert-pending* #f)
+  (let ((ed (qt-current-editor (app-state-frame app))))
+    (when (and text (> (string-length text) 0))
+      (qt-plain-text-edit-insert-text! ed text)
+      (echo-message! (app-state-echo app)
+        (string-append "Inserted: " text)))))
 
 ;;;============================================================================
 ;;; Quick calc

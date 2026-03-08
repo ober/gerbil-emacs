@@ -27,7 +27,9 @@
   auto-save-buffers!
   check-file-modifications!
   make-auto-save-path
-  file-mod-time)
+  file-mod-time
+  ;; Quoted insert
+  *quoted-insert-pending*)
 
 (import :gemacs/core
         :gemacs/editor-extra
