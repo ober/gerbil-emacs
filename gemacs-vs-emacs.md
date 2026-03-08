@@ -823,7 +823,7 @@
 | HTML to text conversion | :large_blue_circle: | Full litehtml rendering with CSS layout, positioning, font styles |
 | Navigation history | :white_check_mark: | Back/forward |
 | Link display | :yellow_circle: | Shows URLs, no clickable links |
-| Form submission | :yellow_circle: | `eww-submit-form` command registered |
+| Form submission | :large_blue_circle: | `eww-submit-form` parses `[field: value]` form fields from buffer |
 | CSS rendering | :yellow_circle: | `eww-toggle-css` mode toggle |
 | Image display | :yellow_circle: | `eww-toggle-images` mode toggle |
 | JavaScript | :yellow_circle: | Not implemented (no JS engine) |
@@ -853,12 +853,12 @@
 
 | Feature | Status | Notes |
 |---------|--------|-------|
-| Gnus | :yellow_circle: | `gnus` command with group buffer |
-| mu4e | :yellow_circle: | `mu4e` command registered |
-| notmuch | :yellow_circle: | `notmuch` command registered |
+| Gnus | :large_blue_circle: | RSS/Atom feed reader via `curl`, extracts titles from feeds |
+| mu4e | :large_blue_circle: | Checks for `mu` installation, displays latest messages from maildir |
+| notmuch | :large_blue_circle: | Checks for `notmuch` installation, displays search results |
 | message-mode (compose) | :large_blue_circle: | `compose-mail` prompts To/Subject, creates mail buffer with headers; `message-send` (C-c C-c) sends via msmtp/sendmail |
 
-**Summary:** Basic mail composition and sending via msmtp/sendmail. No full mail client (Gnus/mu4e).
+**Summary:** Mail composition via msmtp/sendmail. Gnus as RSS reader. mu4e/notmuch integration when installed.
 
 ---
 
@@ -866,8 +866,8 @@
 
 | Feature | Status | Notes |
 |---------|--------|-------|
-| ERC (IRC) | :yellow_circle: | `erc` command with server connection |
-| rcirc | :yellow_circle: | `rcirc` command with server connection |
+| ERC (IRC) | :large_blue_circle: | TCP connection to IRC server, NICK/USER/JOIN, displays channel messages |
+| rcirc | :large_blue_circle: | Delegates to ERC |
 
 **Summary:** No chat/IRC client.
 
@@ -975,7 +975,7 @@
 | Incremental display | :white_check_mark: | Scintilla viewport rendering |
 | Background process | :large_blue_circle: | LSP reader thread |
 | Garbage collection tuning | :yellow_circle: | Gerbil/Gambit GC |
-| Native compilation | :large_blue_circle: | Gerbil uses AOT compilation via `gxc`; `native-compile-file` registered |
+| Native compilation | :white_check_mark: | `native-compile-file` runs `gxc -S` on current file; `native-compile-async` via compilation buffer |
 
 **Summary:** Good performance characteristics thanks to Scintilla's native text handling.
 

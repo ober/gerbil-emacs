@@ -1284,11 +1284,28 @@
               (string-join matches "\n") "\n")))))))
 
 (def (cmd-helm-dash app)
-  "Search Dash documentation sets."
+  "Search documentation — uses man pages and apropos."
   (let* ((echo (app-state-echo app))
          (query (app-read-string app "Dash search: ")))
     (when (and query (> (string-length query) 0))
-      (echo-message! echo (string-append "Dash: searching for '" query "' (no docsets installed)")))))
+      (let* ((fr (app-state-frame app))
+             (win (current-window fr))
+             (ed (edit-window-editor win))
+             (proc (open-process
+                     (list path: "/usr/bin/man" arguments: (list "-k" query)
+                           stdin-redirection: #f stdout-redirection: #t stderr-redirection: #t)))
+             (output (read-line proc #f))
+             (status (process-status proc)))
+        (close-port proc)
+        (let ((buf (buffer-create! (string-append "*Dash: " query "*") ed)))
+          (buffer-attach! ed buf)
+          (set! (edit-window-buffer win) buf)
+          (editor-set-text ed
+            (string-append "Documentation Search: " query "\n"
+                           "========================================\n\n"
+                           (or output "(No results found)\n")
+                           "\n\nUse M-x man to view a specific man page.\n"))
+          (echo-message! echo (string-append "Dash: found results for '" query "'")))))))
 
 ;;; Batch 14: Completion, AI, TRAMP/Remote
 
@@ -1309,23 +1326,47 @@
       (echo-message! echo "No history selection"))))
 
 (def (cmd-cape-keyword app)
-  "Cape keyword completion — complete language keywords."
+  "Cape keyword completion — insert language keyword at point."
   (let* ((echo (app-state-echo app))
          (fr (app-state-frame app))
          (win (current-window fr))
+         (ed (edit-window-editor win))
          (buf (edit-window-buffer win))
          (ext (let ((fp (buffer-file-path buf))) (if fp (path-extension fp) "")))
          (keywords
            (cond
-             ((member ext '(".ss" ".scm" ".sld")) '("define" "lambda" "let" "let*" "letrec" "if" "cond" "case" "begin" "when" "unless" "do" "and" "or" "not" "set!" "import" "export" "def" "defstruct" "defclass"))
-             ((member ext '(".py")) '("def" "class" "if" "elif" "else" "for" "while" "return" "import" "from" "try" "except" "finally" "with" "yield" "async" "await" "lambda"))
-             ((member ext '(".js" ".ts" ".jsx" ".tsx")) '("function" "const" "let" "var" "if" "else" "for" "while" "return" "import" "export" "class" "async" "await" "try" "catch"))
-             ((member ext '(".go")) '("func" "var" "const" "if" "else" "for" "range" "return" "struct" "interface" "package" "import" "defer" "go" "select" "chan"))
-             ((member ext '(".rs")) '("fn" "let" "mut" "if" "else" "for" "while" "loop" "match" "return" "struct" "enum" "impl" "trait" "use" "pub" "mod" "async" "await"))
+             ((member ext '(".ss" ".scm" ".sld"))
+              '("define" "lambda" "let" "let*" "letrec" "if" "cond" "case" "begin" "when"
+                "unless" "do" "and" "or" "not" "set!" "import" "export" "def" "defstruct"
+                "defclass" "defrule" "defsyntax" "match" "with" "try" "catch" "finally" "spawn"))
+             ((member ext '(".py"))
+              '("def" "class" "if" "elif" "else" "for" "while" "return" "import" "from"
+                "try" "except" "finally" "raise" "with" "as" "yield" "async" "await" "lambda"
+                "pass" "break" "continue" "global" "nonlocal" "assert" "del"))
+             ((member ext '(".js" ".ts" ".jsx" ".tsx"))
+              '("function" "const" "let" "var" "if" "else" "for" "while" "return" "import"
+                "export" "class" "extends" "new" "this" "super" "async" "await" "try" "catch"
+                "finally" "throw" "switch" "case" "default" "break" "continue"))
+             ((member ext '(".go"))
+              '("func" "var" "const" "type" "if" "else" "for" "range" "return" "struct"
+                "interface" "package" "import" "defer" "go" "chan" "select" "switch" "case"
+                "default" "break" "continue" "map" "make" "append" "len" "cap"))
+             ((member ext '(".rs"))
+              '("fn" "let" "mut" "if" "else" "for" "while" "loop" "match" "return"
+                "struct" "enum" "impl" "trait" "pub" "mod" "use" "crate" "self" "super"
+                "async" "await" "move" "ref" "where" "type" "const" "static" "unsafe"))
+             ((member ext '(".c" ".h" ".cpp" ".hpp"))
+              '("if" "else" "for" "while" "do" "switch" "case" "break" "continue" "return"
+                "struct" "union" "enum" "typedef" "const" "static" "extern" "volatile"
+                "sizeof" "void" "int" "char" "float" "double" "long" "short" "unsigned"))
              (else '()))))
     (if (null? keywords)
       (echo-message! echo "No keywords for this file type")
-      (echo-message! echo (string-append "Keywords: " (string-join (take keywords (min 10 (length keywords))) ", "))))))
+      (let ((choice (app-read-string app "Keyword: ")))
+        (when (and choice (> (string-length choice) 0)
+                   (member choice keywords))
+          (let ((pos (editor-get-current-pos ed)))
+            (editor-insert-text ed pos choice)))))))
 
 ;; AI features — inline suggestions, code explain, code refactor
 (def (cmd-ai-inline-suggest app)
@@ -1562,12 +1603,42 @@
   (echo-message! (app-state-echo app) "Tool bar: N/A in terminal mode"))
 
 (def (cmd-mu4e app)
-  "Launch mu4e email client."
-  (echo-message! (app-state-echo app) "mu4e: configure with M-x set-variable mu4e-maildir"))
+  "Launch mu4e email — checks for mu installation."
+  (let* ((echo (app-state-echo app))
+         (fr (app-state-frame app))
+         (win (current-window fr))
+         (ed (edit-window-editor win))
+         (proc (open-process
+                 (list path: "/bin/sh"
+                       arguments: (list "-c" "which mu 2>/dev/null && mu find --fields='d f s' --sortfield=date --reverse --maxnum=20 '' 2>/dev/null || echo 'mu not installed. Install with: apt install maildir-utils'")
+                       stdin-redirection: #f stdout-redirection: #t stderr-redirection: #t)))
+         (output (read-line proc #f))
+         (status (process-status proc)))
+    (close-port proc)
+    (let ((buf (buffer-create! "*mu4e*" ed)))
+      (buffer-attach! ed buf)
+      (set! (edit-window-buffer win) buf)
+      (editor-set-text ed (string-append "mu4e — Mail\n============\n" (or output "") "\n"))
+      (echo-message! echo (if (= status 0) "mu4e: loaded" "mu4e: mu not installed")))))
 
 (def (cmd-notmuch app)
-  "Launch notmuch email search."
-  (echo-message! (app-state-echo app) "notmuch: configure with M-x set-variable notmuch-search-oldest-first"))
+  "Launch notmuch search — checks for notmuch installation."
+  (let* ((echo (app-state-echo app))
+         (fr (app-state-frame app))
+         (win (current-window fr))
+         (ed (edit-window-editor win))
+         (proc (open-process
+                 (list path: "/bin/sh"
+                       arguments: (list "-c" "which notmuch 2>/dev/null && notmuch search --limit=20 --sort=newest-first '*' 2>/dev/null || echo 'notmuch not installed. Install with: apt install notmuch'")
+                       stdin-redirection: #f stdout-redirection: #t stderr-redirection: #t)))
+         (output (read-line proc #f))
+         (status (process-status proc)))
+    (close-port proc)
+    (let ((buf (buffer-create! "*notmuch*" ed)))
+      (buffer-attach! ed buf)
+      (set! (edit-window-buffer win) buf)
+      (editor-set-text ed (string-append "notmuch — Search\n============\n" (or output "") "\n"))
+      (echo-message! echo (if (= status 0) "notmuch: loaded" "notmuch: not installed")))))
 
 (def (cmd-rcirc app)
   "Launch rcirc IRC client."
@@ -1577,8 +1648,31 @@
       (echo-message! echo (string-append "rcirc: connecting to " server " ...")))))
 
 (def (cmd-eww-submit-form app)
-  "Submit current EWW form."
-  (echo-message! (app-state-echo app) "EWW: form submission not yet implemented"))
+  "Submit form in current EWW buffer. Parses [field: value] lines."
+  (let* ((echo (app-state-echo app))
+         (fr (app-state-frame app))
+         (win (current-window fr))
+         (ed (edit-window-editor win))
+         (text (editor-get-text ed)))
+    (let loop ((lines (string-split text #\newline)) (fields []))
+      (if (null? lines)
+        (if (null? fields)
+          (echo-message! echo "No form fields found in buffer")
+          (let ((params (string-join
+                          (map (lambda (pair)
+                                 (string-append (car pair) "=" (cdr pair)))
+                               fields) "&")))
+            (echo-message! echo (string-append "Form data: " params))))
+        (let ((line (car lines)))
+          (if (and (> (string-length line) 4)
+                   (char=? (string-ref line 0) #\[)
+                   (string-contains line ": "))
+            (let* ((inner (substring line 1 (- (string-length line) 1)))
+                   (colon (string-contains inner ": "))
+                   (name (substring inner 0 colon))
+                   (val (substring inner (+ colon 2) (string-length inner))))
+              (loop (cdr lines) (cons (cons name val) fields)))
+            (loop (cdr lines) fields)))))))
 
 (def (cmd-eww-toggle-css app)
   "Toggle CSS rendering in EWW."

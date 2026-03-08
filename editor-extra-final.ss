@@ -35,13 +35,38 @@
 
 ;; --- Emacs built-in modes not yet covered ---
 (def (cmd-native-compile-file app)
-  "Native compile a file — runs gerbil build on current file."
-  (let* ((buf (current-buffer-from-app app))
+  "Native compile current file via gxc -S."
+  (let* ((echo (app-state-echo app))
+         (buf (current-buffer-from-app app))
          (path (and buf (buffer-file-path buf))))
     (if (not path)
-      (echo-error! (app-state-echo app) "Buffer has no file")
-      (echo-message! (app-state-echo app)
-        (string-append "Compile: use M-x compile for " (path-strip-directory path))))))
+      (echo-error! echo "Buffer has no file")
+      (if (not (member (path-extension path) '(".ss" ".scm")))
+        (echo-message! echo "Not a Gerbil/Scheme source file")
+        (begin
+          (echo-message! echo (string-append "Compiling " (path-strip-directory path) "..."))
+          (let* ((fr (app-state-frame app))
+                 (win (current-window fr))
+                 (ed (edit-window-editor win))
+                 (proc (open-process
+                         (list path: "gxc" arguments: (list "-S" path)
+                               stdin-redirection: #f stdout-redirection: #t stderr-redirection: #t)))
+                 (output (read-line proc #f))
+                 (status (process-status proc)))
+            (close-port proc)
+            (let ((comp-buf (buffer-create! "*compilation*" ed)))
+              (buffer-attach! ed comp-buf)
+              (set! (edit-window-buffer win) comp-buf)
+              (editor-set-text ed
+                (string-append "Compiling " path "...\n\n"
+                               (or output "")
+                               "\n\nCompilation "
+                               (if (= status 0) "finished" (string-append "failed (exit " (number->string status) ")"))
+                               "\n")))
+            (echo-message! echo
+              (if (= status 0)
+                (string-append "Compiled " (path-strip-directory path))
+                (string-append "Compilation failed: " (path-strip-directory path))))))))))
 
 (def (cmd-native-compile-async app)
   "Native compile asynchronously — background compilation."

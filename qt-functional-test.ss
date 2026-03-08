@@ -3627,6 +3627,43 @@
     (pass! "make-frame registered")
     (fail! "make-frame" #f "procedure"))
 
+  ;; Upgraded stubs — verify registration
+  (if (find-command 'cape-keyword)
+    (pass! "cape-keyword registered")
+    (fail! "cape-keyword" #f "procedure"))
+
+  (if (find-command 'helm-dash)
+    (pass! "helm-dash registered")
+    (fail! "helm-dash" #f "procedure"))
+
+  (if (find-command 'erc)
+    (pass! "erc registered")
+    (fail! "erc" #f "procedure"))
+
+  (if (find-command 'gnus)
+    (pass! "gnus registered")
+    (fail! "gnus" #f "procedure"))
+
+  (if (find-command 'mu4e)
+    (pass! "mu4e registered")
+    (fail! "mu4e" #f "procedure"))
+
+  (if (find-command 'notmuch)
+    (pass! "notmuch registered")
+    (fail! "notmuch" #f "procedure"))
+
+  (if (find-command 'native-compile-file)
+    (pass! "native-compile-file registered")
+    (fail! "native-compile-file" #f "procedure"))
+
+  (if (find-command 'eww-submit-form)
+    (pass! "eww-submit-form registered")
+    (fail! "eww-submit-form" #f "procedure"))
+
+  (if (find-command 'rcirc)
+    (pass! "rcirc registered")
+    (fail! "rcirc" #f "procedure"))
+
   (displayln "Group 30 complete"))
 
 ;;;============================================================================

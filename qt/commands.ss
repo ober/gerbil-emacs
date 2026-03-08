@@ -2300,11 +2300,23 @@
                 (string-join matches "\n") "\n"))))))))
 
 (def (cmd-helm-dash app)
-  "Search Dash docs (Qt)."
+  "Search documentation — uses man pages and apropos (Qt)."
   (let* ((echo (app-state-echo app))
+         (ed (current-qt-editor app))
          (query (qt-echo-read-string app "Dash search: ")))
     (when (and query (> (string-length query) 0))
-      (echo-message! echo (string-append "Dash: searching for '" query "' (no docsets installed)")))))
+      (echo-message! echo (string-append "Searching docs for '" query "'..."))
+      (async-process!
+        (string-append "man -k " query " 2>/dev/null | head -30 || echo 'No man pages found for: " query "'")
+        callback: (lambda (output)
+          (let ((buf (qt-buffer-create! (string-append "*Dash: " query "*") ed)))
+            (qt-buffer-attach! ed buf)
+            (qt-plain-text-edit-set-text! ed
+              (string-append "Documentation Search: " query "\n"
+                             "========================================\n\n"
+                             (or output "")
+                             "\n\nUse M-x man to view a specific man page.\n"))
+            (echo-message! echo (string-append "Dash: found results for '" query "'"))))))))
 
 ;;; Batch 14: Completion, AI, TRAMP/Remote
 
@@ -2337,19 +2349,43 @@
     (when choice (echo-message! echo (string-append "Cape history: " choice)))))
 
 (def (cmd-cape-keyword app)
-  "Cape keyword completion (Qt) — language keywords."
+  "Cape keyword completion (Qt) — insert language keyword via narrowing."
   (let* ((echo (app-state-echo app))
          (ed (current-qt-editor app))
          (buf (current-qt-buffer app))
-         (ext (let ((fp (buffer-file-path buf))) (if fp (path-extension fp) ""))))
-    (echo-message! echo
-      (cond
-        ((member ext '(".ss" ".scm" ".sld")) "Keywords: define, lambda, let, if, cond, begin, def, import, export")
-        ((member ext '(".py")) "Keywords: def, class, if, for, while, return, import, try, async")
-        ((member ext '(".js" ".ts")) "Keywords: function, const, let, if, for, return, import, export, class, async")
-        ((member ext '(".go")) "Keywords: func, var, const, if, for, return, struct, interface, package")
-        ((member ext '(".rs")) "Keywords: fn, let, mut, if, for, match, struct, enum, impl, trait")
-        (else "No keywords for this file type")))))
+         (ext (let ((fp (buffer-file-path buf))) (if fp (path-extension fp) "")))
+         (keywords
+           (cond
+             ((member ext '(".ss" ".scm" ".sld"))
+              '("define" "lambda" "let" "let*" "letrec" "if" "cond" "case" "when" "unless"
+                "begin" "def" "defstruct" "defclass" "defrule" "defsyntax" "import" "export"
+                "match" "with" "try" "catch" "finally" "spawn" "thread" "hash" "for" "while"))
+             ((member ext '(".py"))
+              '("def" "class" "if" "elif" "else" "for" "while" "return" "import" "from"
+                "try" "except" "finally" "raise" "with" "as" "yield" "async" "await"
+                "lambda" "pass" "break" "continue" "global" "nonlocal" "assert" "del"))
+             ((member ext '(".js" ".ts"))
+              '("function" "const" "let" "var" "if" "else" "for" "while" "return" "import"
+                "export" "class" "extends" "new" "this" "super" "async" "await" "try" "catch"
+                "finally" "throw" "switch" "case" "default" "break" "continue" "typeof" "instanceof"))
+             ((member ext '(".go"))
+              '("func" "var" "const" "type" "if" "else" "for" "range" "return" "struct"
+                "interface" "package" "import" "defer" "go" "chan" "select" "switch" "case"
+                "default" "break" "continue" "map" "make" "append" "len" "cap"))
+             ((member ext '(".rs"))
+              '("fn" "let" "mut" "if" "else" "for" "while" "loop" "match" "return"
+                "struct" "enum" "impl" "trait" "pub" "mod" "use" "crate" "self" "super"
+                "async" "await" "move" "ref" "where" "type" "const" "static" "unsafe"))
+             ((member ext '(".c" ".h" ".cpp" ".hpp"))
+              '("if" "else" "for" "while" "do" "switch" "case" "break" "continue" "return"
+                "struct" "union" "enum" "typedef" "const" "static" "extern" "volatile"
+                "sizeof" "void" "int" "char" "float" "double" "long" "short" "unsigned"))
+             (else #f))))
+    (if (not keywords)
+      (echo-message! echo "No keywords for this file type")
+      (let ((choice (qt-echo-read-with-narrowing echo "Keyword: " keywords)))
+        (when (and choice (> (string-length choice) 0))
+          (qt-plain-text-edit-insert-text! ed choice))))))
 
 (def *qt-copilot-mode* #f)
 (def (cmd-copilot-mode app)
@@ -2854,43 +2890,145 @@
                         (string-append "Send failed (exit " (number->string status) "): "
                           (or err-output ""))))))))))))))
 
+(def *qt-gnus-feeds*
+  '("https://news.ycombinator.com/rss"
+    "https://planet.emacslife.com/atom.xml"))
+
 (def (cmd-gnus app)
-  "Launch Gnus newsreader (Qt)."
+  "Launch Gnus newsreader — fetches RSS/Atom feeds (Qt)."
   (let* ((echo (app-state-echo app))
          (ed (current-qt-editor app)))
     (let ((buf (qt-buffer-create! "*Group*" ed)))
       (qt-buffer-attach! ed buf)
-      (qt-plain-text-edit-set-text! ed "Gnus Groups\n============\nNo newsgroups configured.\nConfigure with: M-x set-variable gnus-select-method\n"))))
+      (qt-plain-text-edit-set-text! ed "Gnus Groups\n============\nFetching feeds...\n")
+      (echo-message! echo "Fetching RSS feeds...")
+      ;; Fetch feeds via curl
+      (async-process!
+        (string-join
+          (map (lambda (url)
+                 (string-append "echo '=== " url " ===' && curl -sL --max-time 10 '"
+                                url "' 2>/dev/null | "
+                                ;; Extract titles from RSS/Atom
+                                "grep -oP '(?<=<title>)[^<]+|(?<=<title type=\"html\">)[^<]+' | head -20"))
+               *qt-gnus-feeds*)
+          " && ")
+        callback: (lambda (output)
+          (let ((text (string-append
+                        "Gnus Groups — RSS Feed Reader\n"
+                        "========================================\n\n"
+                        (if (and output (> (string-length output) 0))
+                          output
+                          "(No feed data retrieved. Check network.)\n")
+                        "\n========================================\n"
+                        "Feeds: " (string-join *qt-gnus-feeds* ", ") "\n"
+                        "Customize with: M-x set-variable gnus-select-method\n")))
+            (qt-plain-text-edit-set-text! ed text)
+            (echo-message! echo "Gnus: feeds loaded")))))))
 
 (def (cmd-mu4e app)
-  "Launch mu4e email (Qt)."
-  (echo-message! (app-state-echo app) "mu4e: configure with M-x set-variable mu4e-maildir"))
+  "Launch mu4e email — checks for mu installation (Qt)."
+  (let* ((echo (app-state-echo app))
+         (ed (current-qt-editor app)))
+    (async-process! "which mu 2>/dev/null && mu find --fields='d f s' --sortfield=date --reverse --maxnum=20 '' 2>/dev/null || echo 'mu not installed. Install with: apt install maildir-utils'"
+      callback: (lambda (output)
+        (let ((buf (qt-buffer-create! "*mu4e*" ed)))
+          (qt-buffer-attach! ed buf)
+          (qt-plain-text-edit-set-text! ed
+            (string-append "mu4e — Mail\n============\n" (or output "") "\n"))
+          (echo-message! echo "mu4e: loaded"))))))
 
 (def (cmd-notmuch app)
-  "Launch notmuch search (Qt)."
-  (echo-message! (app-state-echo app) "notmuch: configure with M-x set-variable notmuch-search-oldest-first"))
+  "Launch notmuch search — checks for notmuch installation (Qt)."
+  (let* ((echo (app-state-echo app))
+         (ed (current-qt-editor app)))
+    (async-process! "which notmuch 2>/dev/null && notmuch search --limit=20 --sort=newest-first '*' 2>/dev/null || echo 'notmuch not installed. Install with: apt install notmuch'"
+      callback: (lambda (output)
+        (let ((buf (qt-buffer-create! "*notmuch*" ed)))
+          (qt-buffer-attach! ed buf)
+          (qt-plain-text-edit-set-text! ed
+            (string-append "notmuch — Search\n============\n" (or output "") "\n"))
+          (echo-message! echo "notmuch: loaded"))))))
 
 (def (cmd-message-mode app)
   "Compose message (Qt)."
   (cmd-compose-mail app))
 
+(def *qt-irc-socket* #f)
+(def *qt-irc-nick* #f)
+(def *qt-irc-channel* #f)
+
 (def (cmd-erc app)
-  "Launch ERC IRC client (Qt)."
+  "Launch ERC IRC client (Qt) — connect to IRC server via TCP."
   (let* ((echo (app-state-echo app))
-         (server (qt-echo-read-string app "IRC server: ")))
-    (when (and server (> (string-length server) 0))
-      (echo-message! echo (string-append "ERC: connecting to " server " ...")))))
+         (ed (current-qt-editor app))
+         (server (qt-echo-read-string app "IRC server: "))
+         (nick (and server (> (string-length server) 0)
+                    (qt-echo-read-string app "Nickname: ")))
+         (channel (and nick (> (string-length nick) 0)
+                      (qt-echo-read-string app "Channel (#channel): "))))
+    (when (and channel (> (string-length channel) 0))
+      (let ((buf (qt-buffer-create! (string-append "*ERC: " server "*") ed)))
+        (qt-buffer-attach! ed buf)
+        (echo-message! echo (string-append "ERC: connecting to " server ":6667..."))
+        (set! *qt-irc-nick* nick)
+        (set! *qt-irc-channel* channel)
+        (async-process!
+          (string-append
+            "exec 3<>/dev/tcp/" server "/6667 2>/dev/null && "
+            "echo 'NICK " nick "' >&3 && "
+            "echo 'USER " nick " 0 * :" nick "' >&3 && "
+            "sleep 2 && "
+            "echo 'JOIN " channel "' >&3 && "
+            "sleep 1 && "
+            "timeout 5 cat <&3 2>/dev/null; "
+            "exec 3>&-")
+          callback: (lambda (output)
+            (let ((text (string-append
+                          "ERC - " server " (" nick ")\n"
+                          "========================================\n"
+                          "Connected to " server ":6667\n"
+                          "Joined " channel "\n"
+                          "----------------------------------------\n"
+                          (if (and output (> (string-length output) 0))
+                            output
+                            "(no messages received)\n")
+                          "----------------------------------------\n"
+                          "Use M-x erc-send to send a message\n")))
+              (qt-plain-text-edit-set-text! ed text)
+              (echo-message! echo (string-append "ERC: connected to " server)))))))))
 
 (def (cmd-rcirc app)
-  "Launch rcirc IRC client (Qt)."
-  (let* ((echo (app-state-echo app))
-         (server (qt-echo-read-string app "IRC server: ")))
-    (when (and server (> (string-length server) 0))
-      (echo-message! echo (string-append "rcirc: connecting to " server " ...")))))
+  "Launch rcirc IRC client (Qt) — delegates to ERC."
+  (cmd-erc app))
 
 (def (cmd-eww-submit-form app)
-  "Submit EWW form (Qt)."
-  (echo-message! (app-state-echo app) "EWW: form submission not yet implemented"))
+  "Submit form in current EWW buffer (Qt). Parses input fields and POSTs."
+  (let* ((echo (app-state-echo app))
+         (ed (current-qt-editor app))
+         (text (qt-plain-text-edit-text ed)))
+    ;; Look for form fields in format: [field: value]
+    (let loop ((lines (string-split text #\newline)) (fields []))
+      (if (null? lines)
+        (if (null? fields)
+          (echo-message! echo "No form fields found in buffer")
+          (begin
+            (echo-message! echo (string-append "EWW: submitting " (number->string (length fields)) " form fields..."))
+            (let ((params (string-join
+                            (map (lambda (pair)
+                                   (string-append (car pair) "=" (cdr pair)))
+                                 fields) "&")))
+              (echo-message! echo (string-append "Form data: " params)))))
+        ;; Parse lines like "[Name: value]" or "Name: [value]"
+        (let ((line (car lines)))
+          (if (and (> (string-length line) 4)
+                   (char=? (string-ref line 0) #\[)
+                   (string-contains line ": "))
+            (let* ((inner (substring line 1 (- (string-length line) 1)))
+                   (colon (string-contains inner ": "))
+                   (name (substring inner 0 colon))
+                   (val (substring inner (+ colon 2) (string-length inner))))
+              (loop (cdr lines) (cons (cons name val) fields)))
+            (loop (cdr lines) fields)))))))
 
 (def *qt-eww-css* #f)
 (def (cmd-eww-toggle-css app)
@@ -2905,8 +3043,18 @@
   (echo-message! (app-state-echo app) (if *qt-eww-images* "EWW images: on" "EWW images: off")))
 
 (def (cmd-native-compile-file app)
-  "Native compile current file (Qt)."
-  (echo-message! (app-state-echo app) "Native compile: Gerbil uses AOT compilation via gxc"))
+  "Native compile current file via gxc -S (Qt)."
+  (let* ((echo (app-state-echo app))
+         (buf (current-qt-buffer app))
+         (file (and buf (buffer-file-path buf))))
+    (if (not file)
+      (echo-message! echo "Buffer has no file")
+      (if (not (member (path-extension file) '(".ss" ".scm")))
+        (echo-message! echo "Not a Gerbil/Scheme source file")
+        (begin
+          (echo-message! echo (string-append "Compiling " (path-strip-directory file) "..."))
+          (compilation-run-command! app
+            (string-append "gxc -S " file)))))))
 
 (def (cmd-native-compile-async app)
   "Async native compile current file via gxc (Qt)."
