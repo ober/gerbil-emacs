@@ -138,8 +138,18 @@ Largest files: modes (~1851), lsp (~1802), search (~1778)
 
 - ~~**Format-on-save & embark upgrade**~~ — DONE: apheleia-mode wires `before-save-hook` to run language formatter on save (both layers), `apheleia-format-buffer` delegates to real `format-buffer`, TUI `cmd-save-buffer` now calls `before-save-hook`/`after-save-hook` (parity with Qt), `embark-act` upgraded to interactive contextual actions with target detection (URL/file/symbol) and narrowing popup (Qt) / key dispatch (TUI), `embark-dwim` executes default action. 586 Qt tests
 
+- ~~**Stub upgrades batch: calc, proced, eww**~~ — DONE: real RPN calculator stack (push/pop/dup/swap/+/-/*/÷), process manager with signal sending, EWW URL/search commands. 607 Qt tests
+
+- ~~**Games & text transforms**~~ — DONE: Game of Life (glider, 5 generations), Dunnet text adventure, ELIZA Doctor chatbot, CSV column alignment with pipe separators, JSON key sorting, hex number increment at point. 607 Qt tests
+
+- ~~**Help system, calendar, templates, themes, window mgmt**~~ — DONE: full help reference in *Help* buffer, real month calendar with day highlighting, auto-insert templates (13 languages + user template dir), Scintilla color reset, Qt minimize/restore. 619 Qt tests
+
+- ~~**REST client, SQL client, denote**~~ — DONE: real curl-based HTTP requests with response buffer, interactive SQL connection/region send, denote timestamped note creation in ~/notes/ with org headers. 628 Qt tests
+
+- ~~**GDB/MI debugger integration**~~ — DONE: real GDB process spawning with MI2 interpreter, breakpoint toggle via -break-insert/-break-delete, step over/in/out/continue via -exec-* commands, interactive GDB REPL, output accumulated in *GDB* buffer. 638 Qt tests
+
 ### Aspirational
 - LSP in TUI
-- DAP/debugger integration
+- ~~DAP/debugger integration~~ — DONE: real GDB/MI interface (Qt), DAP protocol skeleton (TUI)
 - Multi-frame support
 - ~~Spell checking integration~~ — DONE: flyspell-mode, ispell-word, ispell-buffer, ispell-region, dictionary switching (both TUI and Qt)
