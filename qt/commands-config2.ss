@@ -1420,3 +1420,37 @@
         (sci-send ed SCI_SETREADONLY 1 0)
         (qt-plain-text-edit-set-cursor-position! ed 0)))))
 
+;;;============================================================================
+;;; Local keybinding (per-mode)
+;;;============================================================================
+
+(def (cmd-local-set-key app)
+  "Bind a key in the current buffer's mode keymap."
+  (let* ((buf (current-qt-buffer app))
+         (lang (buffer-lexer-lang buf))
+         (mode-name (or (and lang (symbol->string lang))
+                        (let ((name (buffer-name buf)))
+                          (cond
+                            ((string=? name "*Magit*") "magit")
+                            ((string=? name "*compilation*") "compilation")
+                            ((string=? name "*Grep*") "grep")
+                            (else #f))))))
+    (if (not mode-name)
+      (echo-error! (app-state-echo app) "Buffer has no mode for local keybinding")
+      (let* ((key-str (qt-echo-read-string app
+                        (string-append "Local key for " mode-name "-mode: ")))
+             (cmds (sort (map (lambda (p) (symbol->string (car p)))
+                           (hash->list *all-commands*))
+                     string<?))
+             (cmd-name (qt-echo-read-string-with-completion app "Command: " cmds)))
+        (when (and key-str (not (string=? key-str ""))
+                   cmd-name (not (string=? cmd-name "")))
+          (let* ((mode-sym (string->symbol mode-name))
+                 (km (or (hash-get *mode-keymaps* mode-sym)
+                         (let ((new-km (make-keymap)))
+                           (hash-put! *mode-keymaps* mode-sym new-km)
+                           new-km))))
+            (keymap-bind! km key-str (string->symbol cmd-name))
+            (echo-message! (app-state-echo app)
+              (string-append key-str " → " cmd-name " in " mode-name "-mode"))))))))
+

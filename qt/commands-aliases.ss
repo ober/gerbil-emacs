@@ -1122,7 +1122,7 @@
   (register-command! 'whitespace-newline-mode cmd-whitespace-mode)
   (register-command! 'highlight-phrase cmd-highlight-regexp)
   (register-command! 'highlight-lines-matching-regexp cmd-highlight-regexp)
-  (register-command! 'local-set-key cmd-global-set-key)
+  (register-command! 'local-set-key cmd-local-set-key)
   (register-command! 'kmacro-bind-to-key cmd-global-set-key)
   (register-command! 'debug-on-entry cmd-debug-on-entry)
   (register-command! 'cancel-debug-on-entry cmd-cancel-debug-on-entry)

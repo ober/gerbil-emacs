@@ -256,7 +256,7 @@
 | Macro counter | :white_check_mark: | `M-x kbd-macro-counter-insert` / `kbd-macro-counter-set` |
 | Edit macro | :large_blue_circle: | `M-x edit-kbd-macro` shows macro events in buffer (TUI) |
 | Save macros to file | :white_check_mark: | `M-x save-kbd-macros` / `load-kbd-macros` persists to `~/.gemacs-macros` |
-| Execute with count prefix | :yellow_circle: | Basic repeat support |
+| Execute with count prefix | :large_blue_circle: | `C-u` prefix arg for navigation (char/word/line), `universal-argument`, digit arguments |
 
 **Summary:** Feature-rich macro system: recording/playback, named macros with save/load persistence, counter insert/set, macro viewer. Qt uses narrowing for macro selection.
 
@@ -298,8 +298,8 @@
 | Messages buffer | :white_check_mark: | `*Messages*` equivalent |
 | ibuffer (advanced list) | :large_blue_circle: | Interactive: mark/delete/save/execute, filter by name, sort, goto buffer |
 | Uniquify buffer names | :white_check_mark: | Emacs-style `filename<dir>` — renames both old and new same-name buffers |
-| Indirect buffers | :yellow_circle: | `clone-indirect-buffer` registered |
-| Buffer-local variables | :yellow_circle: | Some support via app-state |
+| Indirect buffers | :large_blue_circle: | `clone-indirect-buffer` creates text copy with `<clone>` suffix |
+| Buffer-local variables | :large_blue_circle: | `buffer-local-set!/get` per-buffer hash, used for major-mode, dir-locals, org settings |
 
 **Summary:** Core buffer management works well. IBBuffer provides interactive mark/execute/filter/sort.
 
@@ -341,7 +341,7 @@
 | Font family selection | :large_blue_circle: | Configurable |
 | Menu bar | :large_blue_circle: | Qt menu bar with File/Edit/View/etc |
 | Tool bar | :yellow_circle: | `tool-bar-mode` registered; uses M-x for commands |
-| Scroll bar | :yellow_circle: | `scroll-bar-mode` registered; Scintilla manages scrolling |
+| Scroll bar | :large_blue_circle: | Real toggle via Scintilla SCI_SETVSCROLLBAR/SCI_SETHSCROLLBAR |
 | Mode line (status bar) | :white_check_mark: | Shows mode, file, position, modified status |
 | Tab bar | :green_circle: | Qt visual buffer tab bar + workspace tabs (both layers) |
 | Header line | :white_check_mark: | Toggle header line display (file path breadcrumb) |
@@ -409,7 +409,7 @@
 | Shell command on file | :large_blue_circle: | Runs command, shows output in buffer |
 | Wdired (edit filenames) | :white_check_mark: | Edit mode with rename-on-commit |
 | Image thumbnails | :white_check_mark: | `image-dired-display-thumbnail` / `image-dired-show-all-thumbnails` |
-| Dired-x extensions | :yellow_circle: | find-dired, find-name-dired |
+| Dired-x extensions | :large_blue_circle: | `find-dired` (custom args), `find-name-dired` (by filename pattern) — real `find` subprocess |
 | Async operations | :white_check_mark: | `dired-async-copy`, `dired-async-move` |
 | Virtual dired | :white_check_mark: | `virtual-dired` from file list, `dired-from-find` from glob |
 | Dired subtree | :white_check_mark: | `M-x dired-subtree-toggle` for inline expansion |
@@ -433,7 +433,7 @@
 | Branch operations | :large_blue_circle: | Checkout/create/delete with narrowing selection |
 | Tag management | :yellow_circle: | Create tags |
 | Stash | :large_blue_circle: | Stash create + list + pop + show diff |
-| Blame | :yellow_circle: | `git blame` output display |
+| Blame | :large_blue_circle: | `magit-blame`, `show-git-blame`, `vc-annotate` — real `git blame` with async output |
 | Interactive rebase | :large_blue_circle: | Rebase with narrowing branch selection |
 | Merge UI | :large_blue_circle: | Merge with narrowing branch selection |
 | Cherry-pick | :large_blue_circle: | Interactive commit selection with narrowing |
@@ -442,7 +442,7 @@
 | Diff-hl (gutter marks) | :large_blue_circle: | Git diff gutter indicators |
 | Wgrep on grep results | :white_check_mark: | Edit and save back |
 | Magit keymap | :white_check_mark: | 20 bindings: s/S/u/c/d/l/g/n/p/q/b/B/f/F/P/r/m/z/Z/k |
-| VC generic backend | :yellow_circle: | Basic git-only |
+| VC generic backend | :large_blue_circle: | Git backend: `vc-annotate`, `vc-diff`, `vc-log-file`, `vc-revert`, `vc-dir` |
 
 **Summary:** Magit has been significantly enhanced. The status buffer shows **inline diffs** per file. **Hunk-level staging/unstaging** works via `git apply --cached`. Branch operations (checkout, merge, rebase) use the **narrowing framework** for interactive selection. 20+ single-key bindings in the magit keymap. **Commit composition** uses a dedicated `*Magit: Commit*` buffer with diff preview and `C-c C-c`/`C-c C-k` keybindings. **Interactive log** shows date/author/subject with graph; pressing Enter shows the full commit diff with highlighting. Forge integration provides PR/issue listing and creation via `gh` CLI.
 
@@ -512,7 +512,7 @@
 | Semantic analysis | :yellow_circle: | `semantic-mode` toggle in both layers |
 | Tree-sitter integration | :yellow_circle: | `tree-sitter-mode` toggle — grammar-based parsing scaffolded |
 | DAP (debug adapter) | :yellow_circle: | `dap-debug`, `dap-breakpoint-toggle`, step-over/in/out in both layers |
-| Prog-mode hooks | :yellow_circle: | Limited |
+| Prog-mode hooks | :large_blue_circle: | `prog-mode-hook` fires for 14 languages, per-language hooks (e.g. `python-mode-hook`), `after-change-major-mode-hook` |
 | Electric indent | :large_blue_circle: | Smart newline indentation |
 
 **Summary:** Programming support covers the basics well (highlighting, folding, compilation, error nav). Missing Tree-sitter, DAP debugger, and deep semantic analysis.
@@ -584,7 +584,7 @@
 | Feature | Status | Notes |
 |---------|--------|-------|
 | Dabbrev (dynamic abbrev) | :white_check_mark: | `M-/` word completion from buffer |
-| Hippie-expand | :yellow_circle: | Registered |
+| Hippie-expand | :large_blue_circle: | Delegates to dabbrev-expand (buffer word completion), `M-/` keybinding |
 | Complete at point | :white_check_mark: | `C-M-i` — Scintilla native autocomplete popup with buffer-local word candidates |
 | Company mode | :large_blue_circle: | Scintilla autocomplete popup with buffer words + LSP merged |
 | Corfu mode | :large_blue_circle: | Scintilla autocomplete popup (500ms idle trigger) |
@@ -772,7 +772,7 @@
 | Custom variables (defcustom) | :white_check_mark: | Customizable variables with getters/setters |
 | Custom groups | :white_check_mark: | `customize-group` with editing/display/files categories |
 | Face customization UI | :white_check_mark: | `customize-face`, `set-face-attribute` for face properties |
-| Mode-specific hooks | :yellow_circle: | Limited hook system |
+| Mode-specific hooks | :large_blue_circle: | Per-language mode hooks, `prog-mode-hook`, `text-mode-hook`, `after-change-major-mode-hook`, `after-init-hook` |
 
 **Summary:** Configuration via init file and `M-x customize` interactive buffer. `set-variable` for runtime changes.
 
@@ -1075,7 +1075,7 @@ No remaining Tier 1 gaps. All core editing, completion, and navigation features 
 | Key translation table | :white_check_mark: | Character remapping |
 | Swap brackets/parens | :white_check_mark: | `M-x toggle-bracket-paren-swap` and `M-x key-translation-list` |
 | Super/Hyper key mapping | :white_check_mark: | `toggle-super-key-mode` (super → meta), `key-translate` |
-| Per-mode keymaps | :yellow_circle: | Limited |
+| Per-mode keymaps | :large_blue_circle: | Mode keymaps for dired, magit, compilation, grep, ibuffer, calendar, eww, org, help; auto-lookup by lexer-lang or buffer name |
 | Global key remap (input-decode-map) | :white_check_mark: | `key-translate` + `describe-key-translations` |
 
 **Summary:** Key-chord system works well. Bracket/paren swap via key-translate system. Missing super-to-meta mapping.
