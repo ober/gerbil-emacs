@@ -462,7 +462,7 @@
 | Lists (ordered, unordered) | :large_blue_circle: | |
 | Checkboxes | :white_check_mark: | Toggle `[ ]`/`[X]` |
 | Links | :white_check_mark: | `[[url][description]]` format |
-| Footnotes | :yellow_circle: | Basic |
+| Footnotes | :large_blue_circle: | `org-footnote-new` (insert ref+def), `org-footnote-goto-definition` (jump between ref/def) |
 | **Tables** | :white_check_mark: | Create, align, row/col operations, sort, sum |
 | Table formulas | :large_blue_circle: | Basic recalculate |
 | Table CSV import/export | :white_check_mark: | |

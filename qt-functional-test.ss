@@ -3511,6 +3511,15 @@
     (pass! "xref-pop-marker-stack registered")
     (fail! "xref-pop-marker-stack" #f "procedure"))
 
+  ;; Org footnotes
+  (if (find-command 'org-footnote-new)
+    (pass! "org-footnote-new registered")
+    (fail! "org-footnote-new" #f "procedure"))
+
+  (if (find-command 'org-footnote-goto-definition)
+    (pass! "org-footnote-goto-definition registered")
+    (fail! "org-footnote-goto-definition" #f "procedure"))
+
   (displayln "Group 27 complete"))
 
 ;;;============================================================================

@@ -1620,3 +1620,71 @@
             (echo-message! (app-state-echo app)
               (string-append (number->string (length sorted)) " tags matching \"" pattern "\""))))))))
 
+;;;============================================================================
+;;; Org-mode footnotes
+;;;============================================================================
+
+(def (org-next-footnote-number text)
+  "Find the next available footnote number in TEXT."
+  (let loop ((n 1))
+    (if (string-contains text (string-append "[fn:" (number->string n) "]"))
+      (loop (+ n 1))
+      n)))
+
+(def (cmd-org-footnote-new app)
+  "Insert a new org-mode footnote reference and definition (C-c C-x f)."
+  (let* ((ed (current-qt-editor app))
+         (text (qt-plain-text-edit-text ed))
+         (n (org-next-footnote-number text))
+         (ref (string-append "[fn:" (number->string n) "]"))
+         (def-text (string-append "\n\n" ref " ")))
+    ;; Insert reference at cursor position
+    (qt-plain-text-edit-insert-text! ed ref)
+    ;; Insert definition at end of buffer
+    (let ((end (string-length (qt-plain-text-edit-text ed))))
+      (qt-plain-text-edit-set-cursor-position! ed end)
+      (qt-plain-text-edit-insert-text! ed def-text)
+      (qt-plain-text-edit-ensure-cursor-visible! ed))
+    (echo-message! (app-state-echo app)
+      (string-append "Inserted footnote " ref))))
+
+(def (cmd-org-footnote-goto app)
+  "Jump between footnote reference and definition."
+  (let* ((ed (current-qt-editor app))
+         (text (qt-plain-text-edit-text ed))
+         (pos (qt-plain-text-edit-cursor-position ed))
+         ;; Try to find [fn:N] around cursor
+         (fn-ref (let loop ((start (max 0 (- pos 10))))
+                   (let ((idx (string-contains text "[fn:" start)))
+                     (cond
+                       ((not idx) #f)
+                       ((> idx (+ pos 10)) #f)
+                       (else
+                         (let end-loop ((i (+ idx 4)))
+                           (cond
+                             ((>= i (string-length text)) #f)
+                             ((char=? (string-ref text i) #\])
+                              (substring text idx (+ i 1)))
+                             (else (end-loop (+ i 1)))))))))))
+    (if (not fn-ref)
+      (echo-error! (app-state-echo app) "No footnote at point")
+      ;; Find the OTHER occurrence of this reference
+      (let* ((first-idx (string-contains text fn-ref))
+             (second-idx (and first-idx
+                              (string-contains text fn-ref (+ first-idx 1)))))
+        (cond
+          ((and first-idx second-idx)
+           ;; Jump to whichever one we're NOT at
+           (let ((target (if (< (abs (- pos first-idx)) (abs (- pos second-idx)))
+                           second-idx
+                           first-idx)))
+             (qt-plain-text-edit-set-cursor-position! ed target)
+             (qt-plain-text-edit-ensure-cursor-visible! ed)
+             (echo-message! (app-state-echo app)
+               (string-append "Jumped to " fn-ref))))
+          (first-idx
+           (echo-message! (app-state-echo app)
+             (string-append fn-ref " — only one occurrence (no matching def/ref)")))
+          (else
+           (echo-error! (app-state-echo app) "Footnote not found")))))))
+

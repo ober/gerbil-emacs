@@ -299,6 +299,9 @@
   (register-command! 'visit-tags-table cmd-visit-tags-table)
   (register-command! 'find-tag cmd-find-tag)
   (register-command! 'tags-apropos cmd-tags-apropos)
+  ;; Org footnotes
+  (register-command! 'org-footnote-new cmd-org-footnote-new)
+  (register-command! 'org-footnote-goto-definition cmd-org-footnote-goto)
   ;; Whitespace extras
   (register-command! 'whitespace-toggle-options cmd-whitespace-toggle-options)
   ;; Highlight

@@ -276,6 +276,75 @@
             (editor-set-read-only ed #t)))))))
 
 
+;;;============================================================================
+;;; Org-mode footnotes
+;;;============================================================================
+
+(def (org-next-footnote-number text)
+  "Find the next available footnote number in TEXT."
+  (let loop ((n 1))
+    (if (string-contains text (string-append "[fn:" (number->string n) "]"))
+      (loop (+ n 1))
+      n)))
+
+(def (cmd-org-footnote-new app)
+  "Insert a new org-mode footnote reference and definition."
+  (let* ((fr (app-state-frame app))
+         (win (current-window fr))
+         (ed (edit-window-editor win))
+         (text (editor-get-text ed))
+         (n (org-next-footnote-number text))
+         (ref (string-append "[fn:" (number->string n) "]")))
+    ;; Insert reference at point
+    (let ((pos (editor-get-current-pos ed)))
+      (editor-insert-text ed pos ref)
+      ;; Insert definition at end of buffer
+      (let* ((end (editor-get-text-length ed))
+             (def-text (string-append "\n\n" ref " ")))
+        (editor-insert-text ed end def-text)
+        (editor-goto-pos ed (+ end (string-length def-text)))
+        (echo-message! (app-state-echo app)
+          (string-append "Inserted footnote " ref))))))
+
+(def (cmd-org-footnote-goto app)
+  "Jump between footnote reference and definition."
+  (let* ((fr (app-state-frame app))
+         (win (current-window fr))
+         (ed (edit-window-editor win))
+         (text (editor-get-text ed))
+         (pos (editor-get-current-pos ed))
+         ;; Try to find [fn:N] around cursor
+         (fn-ref (let loop ((start (max 0 (- pos 10))))
+                   (let ((idx (string-contains text "[fn:" start)))
+                     (cond
+                       ((not idx) #f)
+                       ((> idx (+ pos 10)) #f)
+                       (else
+                         (let end-loop ((i (+ idx 4)))
+                           (cond
+                             ((>= i (string-length text)) #f)
+                             ((char=? (string-ref text i) #\])
+                              (substring text idx (+ i 1)))
+                             (else (end-loop (+ i 1)))))))))))
+    (if (not fn-ref)
+      (echo-message! (app-state-echo app) "No footnote at point")
+      (let* ((first-idx (string-contains text fn-ref))
+             (second-idx (and first-idx
+                              (string-contains text fn-ref (+ first-idx 1)))))
+        (cond
+          ((and first-idx second-idx)
+           (let ((target (if (< (abs (- pos first-idx)) (abs (- pos second-idx)))
+                           second-idx
+                           first-idx)))
+             (editor-goto-pos ed target)
+             (echo-message! (app-state-echo app)
+               (string-append "Jumped to " fn-ref))))
+          (first-idx
+           (echo-message! (app-state-echo app)
+             (string-append fn-ref " — only one occurrence")))
+          (else
+           (echo-message! (app-state-echo app) "Footnote not found")))))))
+
 ;; Whitespace extras
 (def (cmd-whitespace-toggle-options app)
   "Toggle whitespace display mode."
