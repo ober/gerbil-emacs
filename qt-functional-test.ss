@@ -105,7 +105,10 @@
                  *modeline-overwrite-provider*
                  *modeline-narrow-provider*)
         (only-in :gemacs/qt/highlight
-                 qt-enable-code-folding!))
+                 qt-enable-code-folding!
+                 qt-update-visual-decorations!
+                 *qt-show-paren-enabled*
+                 *qt-delete-selection-enabled*))
 
 (export main)
 
@@ -3797,6 +3800,72 @@
   (displayln "Group 33 complete"))
 
 ;;;============================================================================
+;;; Group 34: Show-paren, delete-selection, encoding upgrades
+;;;============================================================================
+
+(def (run-group-34-mode-upgrades)
+  (displayln "--- Group 34: Show-paren, delete-selection, encoding ---")
+
+  ;; show-paren-mode registered
+  (if (find-command 'show-paren-mode)
+    (pass! "show-paren-mode registered")
+    (fail! "show-paren-mode" #f "procedure"))
+
+  ;; delete-selection-mode registered
+  (if (find-command 'delete-selection-mode)
+    (pass! "delete-selection-mode registered")
+    (fail! "delete-selection-mode" #f "procedure"))
+
+  ;; set-buffer-file-coding-system registered
+  (if (find-command 'set-buffer-file-coding-system)
+    (pass! "set-buffer-file-coding-system registered")
+    (fail! "set-buffer-file-coding-system" #f "procedure"))
+
+  ;; what-encoding registered
+  (if (find-command 'what-encoding)
+    (pass! "what-encoding registered")
+    (fail! "what-encoding" #f "procedure"))
+
+  ;; show-paren flag starts enabled
+  (if *qt-show-paren-enabled*
+    (pass! "show-paren starts enabled")
+    (fail! "show-paren default" *qt-show-paren-enabled* #t))
+
+  ;; delete-selection flag starts enabled
+  (if *qt-delete-selection-enabled*
+    (pass! "delete-selection starts enabled")
+    (fail! "delete-selection default" *qt-delete-selection-enabled* #t))
+
+  ;; Test show-paren toggle updates visual decorations
+  (let-values (((ed w app) (make-qt-test-app "paren-test")))
+    (set-qt-text! ed "(hello)" 0)
+    ;; Toggle off
+    (set! *qt-show-paren-enabled* #f)
+    (qt-update-visual-decorations! ed)  ;; Should not crash when disabled
+    (if (not *qt-show-paren-enabled*)
+      (pass! "show-paren toggled off runs decorations safely")
+      (fail! "show-paren off" *qt-show-paren-enabled* #f))
+    ;; Toggle back on
+    (set! *qt-show-paren-enabled* #t)
+    (qt-update-visual-decorations! ed)
+    (if *qt-show-paren-enabled*
+      (pass! "show-paren toggled back on")
+      (fail! "show-paren on" *qt-show-paren-enabled* #t))
+    (destroy-qt-test-app! ed w))
+
+  ;; revert-buffer-with-coding-system registered
+  (if (find-command 'revert-buffer-with-coding-system)
+    (pass! "revert-buffer-with-coding-system registered")
+    (fail! "revert-buffer-with-coding-system" #f "procedure"))
+
+  ;; set-language-environment registered
+  (if (find-command 'set-language-environment)
+    (pass! "set-language-environment registered")
+    (fail! "set-language-environment" #f "procedure"))
+
+  (displayln "Group 34 complete"))
+
+;;;============================================================================
 ;;; Main
 ;;;============================================================================
 
@@ -3838,6 +3907,7 @@
     (run-group-31-quoted-insert-goto-change)
     (run-group-32-overwrite-modeline)
     (run-group-33-selective-display)
+    (run-group-34-mode-upgrades)
 
     (displayln "---")
     (displayln "Results: " *passes* " passed, " *failures* " failed")

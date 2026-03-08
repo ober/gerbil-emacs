@@ -15,7 +15,9 @@
         (only-in :gemacs/persist
                  record-face-customization!
                  custom-faces-save!
-                 theme-settings-save!)
+                 theme-settings-save!
+                 buffer-local-get
+                 buffer-local-set!)
         :gemacs/editor
         :gemacs/repl
         :gemacs/eshell
@@ -472,16 +474,59 @@
   (execute-command! app 'session-restore))
 
 (def (cmd-revert-buffer-with-coding app)
-  "Revert buffer with different coding."
-  (cmd-revert-buffer app))
+  "Revert buffer with different coding system.
+Prompts for encoding, then re-reads the file from disk using that encoding."
+  (let* ((buf (current-qt-buffer app))
+         (path (buffer-file-path buf)))
+    (if (not path)
+      (echo-error! (app-state-echo app) "Buffer has no file")
+      (let ((choice (qt-echo-read-with-narrowing app "Coding system for revert: "
+                      '("utf-8" "latin-1" "iso-8859-1" "iso-8859-15"
+                        "windows-1252" "ascii" "shift-jis" "euc-jp"
+                        "gb2312" "big5" "koi8-r" "iso-8859-2"))))
+        (when (and choice (> (string-length choice) 0))
+          (buffer-local-set! buf 'file-coding choice)
+          (cmd-revert-buffer app)
+          (echo-message! (app-state-echo app)
+            (string-append "Reverted with encoding: " choice)))))))
+
+(def *encoding-list*
+  '("utf-8" "utf-8-with-bom" "latin-1" "iso-8859-1" "iso-8859-15"
+    "windows-1252" "ascii" "utf-16le" "utf-16be" "shift-jis" "euc-jp"
+    "gb2312" "big5" "koi8-r" "iso-8859-2"))
 
 (def (cmd-set-buffer-file-coding app)
-  "Set buffer file coding system."
-  (echo-message! (app-state-echo app) "File coding: UTF-8 (fixed)"))
+  "Set buffer file coding system (C-x RET f). Prompts for encoding.
+Sets the encoding to use when saving the buffer. The buffer is marked
+modified so the next save uses the new encoding."
+  (let* ((buf (current-qt-buffer app))
+         (current-enc (or (buffer-local-get buf 'file-coding) "utf-8"))
+         (choices (map (lambda (e)
+                         (if (string=? e current-enc)
+                           (string-append e " (current)")
+                           e))
+                       *encoding-list*))
+         (choice (qt-echo-read-with-narrowing app "Coding system: " choices)))
+    (when (and choice (> (string-length choice) 0))
+      (let ((enc (if (string-suffix? " (current)" choice)
+                   (substring choice 0 (- (string-length choice) 10))
+                   choice)))
+        (buffer-local-set! buf 'file-coding enc)
+        ;; Mark buffer as modified so it will be saved with new encoding
+        (let ((doc (buffer-doc-pointer buf)))
+          (when doc (qt-text-document-set-modified! doc #t)))
+        (echo-message! (app-state-echo app)
+          (string-append "Buffer encoding set to: " enc))))))
 
 (def (cmd-set-language-environment app)
-  "Set language environment."
-  (echo-message! (app-state-echo app) "Language environment: UTF-8"))
+  "Set language environment with narrowing selection."
+  (let* ((envs '("UTF-8" "Latin-1" "Latin-2" "Latin-9"
+                  "Windows-1252" "Japanese" "Chinese-GB" "Chinese-BIG5"
+                  "Korean" "Cyrillic-KOI8" "ASCII"))
+         (choice (qt-echo-read-with-narrowing app "Language environment: " envs)))
+    (when (and choice (> (string-length choice) 0))
+      (echo-message! (app-state-echo app)
+        (string-append "Language environment: " choice)))))
 
 (def (cmd-sudo-find-file app)
   "Open file as root."

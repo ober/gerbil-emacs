@@ -14,7 +14,9 @@
         qt-clear-search-highlights!
         qt-enable-code-folding!
         detect-language
-        *search-highlight-active*)
+        *search-highlight-active*
+        *qt-show-paren-enabled*
+        *qt-delete-selection-enabled*)
 
 (import :std/sugar
         :std/srfi/13
@@ -27,6 +29,13 @@
                  org-heading-line? org-heading-stars-of-line
                  org-comment-line? org-keyword-line?
                  org-table-line? org-block-begin? org-block-end?))
+
+;;;============================================================================
+;;; Mode flags (shared with commands layer)
+;;;============================================================================
+
+(def *qt-show-paren-enabled* #t)   ; Brace matching highlight; toggled by show-paren-mode
+(def *qt-delete-selection-enabled* #t) ; Typed text replaces selection; toggled by delete-selection-mode
 
 ;;;============================================================================
 ;;; Face-aware color helpers
@@ -1222,7 +1231,8 @@
     (qt-extra-selections-clear! ed)
     ;; 2. Current line highlight
     (qt-extra-selection-add-line! ed line cline-bg-r cline-bg-g cline-bg-b)
-    ;; 3. Brace matching
+    ;; 3. Brace matching (respects show-paren-mode toggle)
+    (when *qt-show-paren-enabled*
     (let check ((check-pos pos))
       (let-values (((match-pos matched?) (find-matching-brace text check-pos)))
         (cond
@@ -1244,7 +1254,7 @@
                  brace-err-bg-r brace-err-bg-g brace-err-bg-b bold: #t))))
           ((and (> check-pos 0) (= check-pos pos))
            (check (- pos 1)))
-          (else (void)))))
+          (else (void))))))  ; close when
     ;; 4. Apply all accumulated selections
     (qt-extra-selections-apply! ed)))
 

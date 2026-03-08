@@ -350,8 +350,9 @@
         "Mode: fundamental"))))
 
 (def (cmd-what-encoding app)
-  "Show the current buffer encoding."
-  (echo-message! (app-state-echo app) "Encoding: UTF-8"))
+  "Show the current buffer's file encoding.
+Use M-x set-buffer-file-coding-system to change."
+  (echo-message! (app-state-echo app) "Encoding: UTF-8 (use set-buffer-file-coding-system to change)"))
 
 (def (cmd-what-line-col app)
   "Show line and column of cursor."

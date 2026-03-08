@@ -290,20 +290,24 @@
 ;;;============================================================================
 ;;; Mode toggles (Emacs compatibility aliases)
 
-(def *qt-show-paren-enabled* #t)  ; Qt always has brace matching; this toggles it
-(def *qt-delete-selection-enabled* #t)
+;; *qt-show-paren-enabled* and *qt-delete-selection-enabled* are defined in highlight.ss
+;; and imported through the commands chain
 
 (def (cmd-show-paren-mode app)
-  "Toggle show-paren-mode (bracket matching). Enabled by default in Qt."
+  "Toggle show-paren-mode (bracket matching highlight). Enabled by default.
+When disabled, cursor-adjacent braces are no longer highlighted."
   (set! *qt-show-paren-enabled* (not *qt-show-paren-enabled*))
+  ;; Force visual update to immediately show/hide brace highlights
+  (qt-update-visual-decorations! (qt-current-editor (app-state-frame app)))
   (echo-message! (app-state-echo app)
-    (if *qt-show-paren-enabled* "Show paren: on" "Show paren: off")))
+    (if *qt-show-paren-enabled* "Show paren mode enabled" "Show paren mode disabled")))
 
 (def (cmd-delete-selection-mode app)
-  "Toggle delete-selection-mode (typed text replaces selection). Default in Qt."
+  "Toggle delete-selection-mode (typed text replaces selection). Default on.
+When enabled, typing while region is active replaces the selected text."
   (set! *qt-delete-selection-enabled* (not *qt-delete-selection-enabled*))
   (echo-message! (app-state-echo app)
-    (if *qt-delete-selection-enabled* "Delete selection mode: on" "Delete selection mode: off")))
+    (if *qt-delete-selection-enabled* "Delete selection mode enabled" "Delete selection mode disabled")))
 
 ;;;============================================================================
 ;;; Xref additions: find-apropos, go-forward

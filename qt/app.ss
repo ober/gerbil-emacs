@@ -593,6 +593,11 @@
                                        (qt-plain-text-edit-insert-text! ed (string ch))
                                        (loop (+ i 1)))))))
                               (else
+                               ;; Delete-selection-mode: when OFF, deselect before insert
+                               ;; so typed text doesn't replace selection
+                               (when (not *qt-delete-selection-enabled*)
+                                 (let ((pos (qt-plain-text-edit-cursor-position ed)))
+                                   (sci-send ed SCI_SETSEL pos pos)))
                                (cond
                                  ;; Auto-pair skip-over: typing closing delimiter when next char matches
                                  ((and *auto-pair-mode* (= n 1)
