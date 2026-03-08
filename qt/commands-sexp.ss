@@ -759,6 +759,39 @@
               (echo-message! (app-state-echo app)
                 (string-append "Wrote " path " (sudo)")))))))))
 
+(def (cmd-sudo-edit app)
+  "Open a file as root via sudo cat."
+  (let* ((echo (app-state-echo app))
+         (path (qt-echo-read-string app "Find file (sudo): ")))
+    (when (and path (> (string-length path) 0))
+      (let ((full-path (path-expand path)))
+        (with-catch
+          (lambda (e)
+            (echo-error! echo
+              (string-append "Sudo read failed: "
+                (with-output-to-string (lambda () (display-exception e))))))
+          (lambda ()
+            (let* ((proc (open-process
+                           (list path: "/usr/bin/sudo"
+                                 arguments: (list "cat" full-path)
+                                 stdin-redirection: #f
+                                 stdout-redirection: #t
+                                 stderr-redirection: #t)))
+                   (content (read-line proc #f)))
+              (process-status proc)
+              (close-port proc)
+              (let* ((buf-name (string-append full-path " (sudo)"))
+                     (fr (app-state-frame app))
+                     (ed (current-qt-editor app))
+                     (buf (qt-buffer-create! buf-name ed #f)))
+                (set! (buffer-file-path buf) full-path)
+                (qt-buffer-attach! ed buf)
+                (set! (qt-edit-window-buffer (qt-current-window fr)) buf)
+                (qt-plain-text-edit-set-text! ed (or content ""))
+                (qt-text-document-set-modified! (buffer-doc-pointer buf) #f)
+                (echo-message! echo
+                  (string-append "Opened " full-path " (sudo)"))))))))))
+
 ;;;============================================================================
 ;;; Ediff buffers
 ;;;============================================================================

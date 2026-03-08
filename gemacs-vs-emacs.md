@@ -479,7 +479,7 @@
 | Export footnotes/cross-refs | :white_check_mark: | `[fn:name]` refs, `<<target>>`/`[[#target]]` cross-refs, all 4 backends |
 | Custom export backends | :white_check_mark: | Register via `org-export-register-backend!`, list with `org-export-list-backends` |
 | **Clock tracking** | :large_blue_circle: | Clock-in/out, goto |
-| Org-crypt | :yellow_circle: | Registered |
+| Org-crypt | :large_blue_circle: | GPG symmetric encrypt/decrypt of org entry bodies (`org-encrypt-entry`, `org-decrypt-entry`) |
 | Heading promote/demote | :white_check_mark: | |
 | Move subtree up/down | :white_check_mark: | |
 | Template expansion (`<s TAB`) | :white_check_mark: | Source block templates |
@@ -803,12 +803,12 @@
 | Feature | Status | Notes |
 |---------|--------|-------|
 | SSH file editing | :large_blue_circle: | `tramp-ssh-edit` fetches remote file via ssh, `tramp-ssh-save` writes back |
-| TRAMP sudo | :yellow_circle: | `sudo-write` exists, `tramp-sudo` stub |
+| TRAMP sudo | :large_blue_circle: | `sudo-write` saves as root, `sudo-edit`/`find-file-sudo` opens file as root via `sudo cat` |
 | Docker container editing | :large_blue_circle: | `tramp-docker-edit` fetches file via `docker exec cat`, with highlighting |
-| Remote shell | :yellow_circle: | `tramp-remote-shell` command |
-| Remote compilation | :yellow_circle: | `tramp-remote-compile` command |
+| Remote shell | :large_blue_circle: | `tramp-remote-shell` runs SSH session, displays output in buffer |
+| Remote compilation | :large_blue_circle: | `tramp-remote-compile` runs command on remote host via SSH, shows in compilation buffer |
 
-**Summary:** No remote editing support. `sudo-write` exists for local privilege escalation.
+**Summary:** Full remote editing support: SSH edit/save, Docker edit, sudo read/write, remote shell, remote compilation.
 
 ---
 

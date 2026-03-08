@@ -358,8 +358,10 @@
   (register-command! 'rename-file-and-buffer cmd-rename-file-and-buffer)
   ;; Delete file
   (register-command! 'delete-file-and-buffer cmd-delete-file-and-buffer)
-  ;; Sudo write
+  ;; Sudo write/edit
   (register-command! 'sudo-write cmd-sudo-write)
+  (register-command! 'sudo-edit cmd-sudo-edit)
+  (register-command! 'find-file-sudo cmd-sudo-edit)
   ;; Sort numeric
   (register-command! 'sort-numeric cmd-sort-numeric)
   ;; Count words region

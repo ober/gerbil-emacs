@@ -1453,20 +1453,91 @@
          (echo-message! echo "Use format: /docker:container:/path/to/file"))))))
 
 (def (cmd-tramp-remote-shell app)
-  "Open remote shell via SSH."
+  "Open remote shell via SSH — runs ssh and displays session output."
   (let* ((echo (app-state-echo app))
          (host (app-read-string app "Remote host: ")))
     (when (and host (> (string-length host) 0))
-      (echo-message! echo (string-append "Opening shell on " host " ...")))))
+      (echo-message! echo (string-append "Connecting to " host "..."))
+      (with-catch
+        (lambda (e)
+          (echo-error! echo (string-append "SSH failed: "
+            (with-output-to-string (lambda () (display-exception e))))))
+        (lambda ()
+          (let* ((proc (open-process
+                         (list path: "ssh"
+                               arguments: ["-t" host]
+                               stdin-redirection: #f
+                               stdout-redirection: #t
+                               stderr-redirection: #t)))
+                 (output (read-line proc #f)))
+            (process-status proc)
+            (close-port proc)
+            (let* ((ed (current-editor app))
+                   (fr (app-state-frame app))
+                   (buf-name (string-append "*ssh:" host "*"))
+                   (buf (or (buffer-by-name buf-name)
+                            (buffer-create! buf-name ed #f))))
+              (buffer-attach! ed buf)
+              (set! (edit-window-buffer (current-window fr)) buf)
+              (editor-set-read-only ed #f)
+              (editor-set-text ed
+                (string-append "-*- SSH: " host " -*-\n"
+                  (make-string 60 #\-) "\n\n"
+                  (or output "")
+                  "\n" (make-string 60 #\-) "\n"
+                  "Connection closed.\n"))
+              (editor-set-save-point ed)
+              (editor-goto-pos ed 0)
+              (editor-set-read-only ed #t)
+              (echo-message! echo (string-append "SSH session to " host " ended")))))))))
 
 (def (cmd-tramp-remote-compile app)
-  "Run compilation command on remote host."
+  "Run compilation command on remote host via SSH."
   (let* ((echo (app-state-echo app))
          (host (app-read-string app "Remote host: "))
          (cmd (and host (> (string-length host) 0)
                    (app-read-string app (string-append "Command on " host ": ")))))
     (when (and cmd (> (string-length cmd) 0))
-      (echo-message! echo (string-append "Compiling on " host ": " cmd " ...")))))
+      (echo-message! echo (string-append "Compiling on " host ": " cmd))
+      (with-catch
+        (lambda (e)
+          (echo-error! echo (string-append "Remote compile failed: "
+            (with-output-to-string (lambda () (display-exception e))))))
+        (lambda ()
+          (let* ((quoted-cmd (string-append "'"
+                               (string-join (string-split cmd #\') "'\\''") "'"))
+                 (proc (open-process
+                         (list path: "ssh"
+                               arguments: [host quoted-cmd]
+                               stdin-redirection: #f
+                               stdout-redirection: #t
+                               stderr-redirection: #t)))
+                 (output (read-line proc #f))
+                 (status (process-status proc)))
+            (close-port proc)
+            (let* ((ed (current-editor app))
+                   (fr (app-state-frame app))
+                   (buf (or (buffer-by-name "*compilation*")
+                            (buffer-create! "*compilation*" ed #f)))
+                   (result-text (string-append
+                                  "-*- Compilation (remote: " host ") -*-\n"
+                                  "Command: ssh " host " " cmd "\n"
+                                  (make-string 60 #\-) "\n\n"
+                                  (or output "")
+                                  "\n" (make-string 60 #\-) "\n"
+                                  "Compilation "
+                                  (if (= status 0) "finished" "exited abnormally")
+                                  "\n")))
+              (buffer-attach! ed buf)
+              (set! (edit-window-buffer (current-window fr)) buf)
+              (editor-set-read-only ed #f)
+              (editor-set-text ed result-text)
+              (editor-set-save-point ed)
+              (editor-goto-pos ed 0)
+              (editor-set-read-only ed #t)
+              (echo-message! echo
+                (if (= status 0) "Compilation finished"
+                    "Compilation exited abnormally")))))))))
 
 ;; Helm C-yasnippet — browse snippets with helm-style narrowing
 (def (cmd-helm-c-yasnippet app)
@@ -1523,4 +1594,135 @@
   "Toggle screen reader support."
   (let ((on (toggle-mode! 'screen-reader)))
     (echo-message! (app-state-echo app) (if on "Screen reader: on" "Screen reader: off"))))
+
+;;;============================================================================
+;;; Org-crypt — encrypt/decrypt org entries with GPG
+;;;============================================================================
+
+(def (tui-org-find-entry-bounds text pos)
+  "Find the start and end of the org entry at POS.
+   Returns (values start end heading-end)."
+  (let* ((lines (string-split text #\newline))
+         (len (string-length text)))
+    (let loop ((i 0) (offset 0) (entry-start 0) (heading-end 0) (level 0))
+      (if (>= i (length lines))
+        (values entry-start len heading-end)
+        (let* ((line (list-ref lines i))
+               (line-end (+ offset (string-length line) 1)))
+          (cond
+            ((and (> (string-length line) 0) (char=? (string-ref line 0) #\*))
+             (let ((line-level (let count ((j 0))
+                                 (if (and (< j (string-length line))
+                                          (char=? (string-ref line j) #\*))
+                                   (count (+ j 1)) j))))
+               (if (<= offset pos)
+                 (loop (+ i 1) line-end offset line-end line-level)
+                 (if (<= line-level level)
+                   (values entry-start offset heading-end)
+                   (loop (+ i 1) line-end entry-start heading-end level)))))
+            (else
+             (loop (+ i 1) line-end entry-start heading-end level))))))))
+
+(def (cmd-org-encrypt-entry app)
+  "Encrypt the current org entry body with GPG (symmetric)."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app))
+         (text (editor-get-text ed))
+         (pos (editor-get-current-pos ed)))
+    (let-values (((entry-start entry-end heading-end)
+                  (tui-org-find-entry-bounds text pos)))
+      (let ((body (substring text heading-end entry-end)))
+        (if (or (string=? (string-trim-both body) "")
+                (string-contains body "-----BEGIN PGP MESSAGE-----"))
+          (echo-message! echo "Entry is empty or already encrypted")
+          (with-catch
+            (lambda (e)
+              (echo-error! echo (string-append "Encryption failed: "
+                (with-output-to-string (lambda () (display-exception e))))))
+            (lambda ()
+              (let* ((fr (app-state-frame app))
+                     (row (- (frame-height fr) 1))
+                     (width (frame-width fr))
+                     (pass (echo-read-string echo "Passphrase: " row width)))
+                (when (and pass (> (string-length pass) 0))
+                  (let* ((proc (open-process
+                                 (list path: "gpg"
+                                       arguments: ["--symmetric" "--armor"
+                                                   "--batch" "--yes"
+                                                   "--passphrase-fd" "0"]
+                                       stdin-redirection: #t
+                                       stdout-redirection: #t
+                                       stderr-redirection: #t))))
+                    (display pass proc)
+                    (display "\n" proc)
+                    (display body proc)
+                    (force-output proc)
+                    (close-output-port proc)
+                    (let ((encrypted (read-line proc #f)))
+                      (process-status proc)
+                      (close-port proc)
+                      (when (and encrypted (string-contains encrypted "BEGIN PGP"))
+                        (let ((new-text (string-append
+                                          (substring text 0 heading-end)
+                                          "\n" encrypted "\n"
+                                          (if (< entry-end (string-length text))
+                                            (substring text entry-end (string-length text))
+                                            ""))))
+                          (editor-set-text ed new-text)
+                          (editor-goto-pos ed pos)
+                          (echo-message! echo "Entry encrypted"))))))))))))))
+
+(def (cmd-org-decrypt-entry app)
+  "Decrypt the current org entry body (GPG symmetric)."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app))
+         (text (editor-get-text ed))
+         (pos (editor-get-current-pos ed)))
+    (let-values (((entry-start entry-end heading-end)
+                  (tui-org-find-entry-bounds text pos)))
+      (let ((body (substring text heading-end entry-end)))
+        (if (not (string-contains body "-----BEGIN PGP MESSAGE-----"))
+          (echo-message! echo "Entry is not encrypted")
+          (with-catch
+            (lambda (e)
+              (echo-error! echo (string-append "Decryption failed: "
+                (with-output-to-string (lambda () (display-exception e))))))
+            (lambda ()
+              (let* ((pgp-start (string-contains body "-----BEGIN PGP MESSAGE-----"))
+                     (pgp-end-marker "-----END PGP MESSAGE-----")
+                     (pgp-end-pos (string-contains body pgp-end-marker))
+                     (pgp-block (if pgp-end-pos
+                                  (substring body pgp-start
+                                    (+ pgp-end-pos (string-length pgp-end-marker)))
+                                  (substring body pgp-start (string-length body))))
+                     (fr (app-state-frame app))
+                     (row (- (frame-height fr) 1))
+                     (width (frame-width fr))
+                     (pass (echo-read-string echo "Passphrase: " row width)))
+                (when (and pass (> (string-length pass) 0))
+                  (let* ((proc (open-process
+                                 (list path: "gpg"
+                                       arguments: ["--decrypt" "--batch" "--yes"
+                                                   "--passphrase-fd" "0"]
+                                       stdin-redirection: #t
+                                       stdout-redirection: #t
+                                       stderr-redirection: #t))))
+                    (display pass proc)
+                    (display "\n" proc)
+                    (display pgp-block proc)
+                    (force-output proc)
+                    (close-output-port proc)
+                    (let ((decrypted (read-line proc #f)))
+                      (process-status proc)
+                      (close-port proc)
+                      (when decrypted
+                        (let ((new-text (string-append
+                                          (substring text 0 heading-end)
+                                          "\n" decrypted "\n"
+                                          (if (< entry-end (string-length text))
+                                            (substring text entry-end (string-length text))
+                                            ""))))
+                          (editor-set-text ed new-text)
+                          (editor-goto-pos ed pos)
+                          (echo-message! echo "Entry decrypted"))))))))))))))
 

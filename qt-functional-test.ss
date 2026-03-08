@@ -3523,6 +3523,42 @@
   (displayln "Group 27 complete"))
 
 ;;;============================================================================
+;;; Group 28: TRAMP, Sudo, Org-crypt
+;;;============================================================================
+
+(def (run-group-28-tramp-sudo-crypt)
+  (displayln "\n=== Group 28: TRAMP, Sudo, Org-crypt ===")
+
+  ;; TRAMP remote commands
+  (if (find-command 'tramp-remote-shell)
+    (pass! "tramp-remote-shell registered")
+    (fail! "tramp-remote-shell" #f "procedure"))
+
+  (if (find-command 'tramp-remote-compile)
+    (pass! "tramp-remote-compile registered")
+    (fail! "tramp-remote-compile" #f "procedure"))
+
+  ;; Sudo edit
+  (if (find-command 'sudo-edit)
+    (pass! "sudo-edit registered")
+    (fail! "sudo-edit" #f "procedure"))
+
+  (if (find-command 'find-file-sudo)
+    (pass! "find-file-sudo registered")
+    (fail! "find-file-sudo" #f "procedure"))
+
+  ;; Org-crypt
+  (if (find-command 'org-encrypt-entry)
+    (pass! "org-encrypt-entry registered")
+    (fail! "org-encrypt-entry" #f "procedure"))
+
+  (if (find-command 'org-decrypt-entry)
+    (pass! "org-decrypt-entry registered")
+    (fail! "org-decrypt-entry" #f "procedure"))
+
+  (displayln "Group 28 complete"))
+
+;;;============================================================================
 ;;; Main
 ;;;============================================================================
 
@@ -3558,6 +3594,7 @@
     (run-group-25-major-modes)
     (run-group-26-hooks-upgrades)
     (run-group-27-ctags)
+    (run-group-28-tramp-sudo-crypt)
 
     (displayln "---")
     (displayln "Results: " *passes* " passed, " *failures* " failed")

@@ -1324,6 +1324,41 @@
               (echo-message! echo (string-append "Saved (sudo) " path)))
             (echo-error! echo "sudo write failed")))))))
 
+(def (cmd-sudo-edit app)
+  "Open a file as root via sudo cat."
+  (let* ((echo (app-state-echo app))
+         (fr (app-state-frame app))
+         (row (- (frame-height fr) 1))
+         (width (frame-width fr))
+         (path (echo-read-string echo "Find file (sudo): " row width)))
+    (when (and path (> (string-length path) 0))
+      (let ((full-path (path-expand path)))
+        (with-catch
+          (lambda (e)
+            (echo-error! echo (string-append "Sudo read failed: "
+              (with-output-to-string (lambda () (display-exception e))))))
+          (lambda ()
+            (let* ((proc (open-process
+                           (list path: "/usr/bin/sudo"
+                                 arguments: (list "cat" full-path)
+                                 stdin-redirection: #f
+                                 stdout-redirection: #t
+                                 stderr-redirection: #t)))
+                   (content (read-line proc #f)))
+              (process-status proc)
+              (close-port proc)
+              (let* ((ed (current-editor app))
+                     (buf-name (string-append full-path " (sudo)"))
+                     (buf (buffer-create! buf-name ed #f)))
+                (set! (buffer-file-path buf) full-path)
+                (buffer-attach! ed buf)
+                (set! (edit-window-buffer (current-window fr)) buf)
+                (editor-set-text ed (or content ""))
+                (editor-set-save-point ed)
+                (editor-goto-pos ed 0)
+                (echo-message! echo
+                  (string-append "Opened " full-path " (sudo)"))))))))))
+
 ;;;============================================================================
 ;;; Sort region (different sort types)
 ;;;============================================================================

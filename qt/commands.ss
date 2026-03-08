@@ -87,6 +87,7 @@
         :std/srfi/13
         :std/misc/string
         :std/text/base64
+        :gemacs/async
         :gemacs/qt/sci-shim
         :gemacs/core
         :gemacs/snippets
@@ -1574,8 +1575,10 @@
   (register-command! 'increment-register cmd-increment-register)
   ;; Delete pair
   (register-command! 'delete-pair cmd-delete-pair)
-  ;; Sudo write
+  ;; Sudo write/edit
   (register-command! 'sudo-write cmd-sudo-write)
+  (register-command! 'sudo-edit cmd-sudo-edit)
+  (register-command! 'find-file-sudo cmd-sudo-edit)
   (register-command! 'sudo-save-buffer cmd-sudo-save-buffer)
   (register-command! 'consult-line cmd-consult-line)
   (register-command! 'consult-grep cmd-consult-grep)
@@ -2527,20 +2530,40 @@
          (echo-message! echo "Use format: /docker:container:/path/to/file"))))))
 
 (def (cmd-tramp-remote-shell app)
-  "Open remote shell via SSH (Qt)."
+  "Open remote shell via SSH in a compilation-style buffer (Qt)."
   (let* ((echo (app-state-echo app))
          (host (qt-echo-read-string app "Remote host: ")))
     (when (and host (> (string-length host) 0))
-      (echo-message! echo (string-append "Opening shell on " host " ...")))))
+      (let* ((buf-name (string-append "*ssh:" host "*"))
+             (cmd (string-append "ssh -t " host)))
+        (echo-message! echo (string-append "Connecting to " host "..."))
+        (async-process! cmd
+          callback: (lambda (result)
+            (let* ((fr (app-state-frame app))
+                   (ed (current-qt-editor app))
+                   (buf (or (buffer-by-name buf-name)
+                            (qt-buffer-create! buf-name ed #f))))
+              (qt-buffer-attach! ed buf)
+              (set! (qt-edit-window-buffer (qt-current-window fr)) buf)
+              (qt-plain-text-edit-set-text! ed
+                (string-append "-*- SSH: " host " -*-\n"
+                  (make-string 60 #\-) "\n\n"
+                  (or result "")
+                  "\n" (make-string 60 #\-) "\n"
+                  "Connection closed.\n"))
+              (sci-send ed SCI_SETREADONLY 1)
+              (echo-message! echo (string-append "SSH session to " host " ended")))))))))
 
 (def (cmd-tramp-remote-compile app)
-  "Run compilation on remote host (Qt)."
+  "Run compilation on remote host via SSH (Qt)."
   (let* ((echo (app-state-echo app))
          (host (qt-echo-read-string app "Remote host: "))
          (cmd (and host (> (string-length host) 0)
                    (qt-echo-read-string app (string-append "Command on " host ": ")))))
     (when (and cmd (> (string-length cmd) 0))
-      (echo-message! echo (string-append "Compiling on " host ": " cmd " ...")))))
+      (let ((remote-cmd (string-append "ssh " host " "
+                          "'" (string-join (string-split cmd #\') "'\\''") "'")))
+        (compilation-run-command! app remote-cmd)))))
 
 (def (cmd-helm-c-yasnippet app)
   "Helm-style snippet browser (Qt)."

@@ -302,6 +302,9 @@
   ;; Org footnotes
   (register-command! 'org-footnote-new cmd-org-footnote-new)
   (register-command! 'org-footnote-goto-definition cmd-org-footnote-goto)
+  ;; Org-crypt
+  (register-command! 'org-encrypt-entry cmd-org-encrypt-entry)
+  (register-command! 'org-decrypt-entry cmd-org-decrypt-entry)
   ;; Whitespace extras
   (register-command! 'whitespace-toggle-options cmd-whitespace-toggle-options)
   ;; Highlight

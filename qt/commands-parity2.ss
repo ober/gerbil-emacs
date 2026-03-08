@@ -1257,3 +1257,134 @@
           (echo-message! echo
             (string-append "Sparse tree: " (number->string match-count)
                            " matching headings")))))))
+
+;;;============================================================================
+;;; Org-crypt — encrypt/decrypt org entries with GPG
+;;;============================================================================
+
+(def (org-find-entry-bounds text pos)
+  "Find the start and end of the org entry at POS.
+   Returns (values start end heading-end) where heading-end is the end of the heading line."
+  (let* ((lines (string-split text #\newline))
+         (len (string-length text)))
+    ;; Find which line pos is on
+    (let loop ((i 0) (offset 0) (entry-start 0) (heading-end 0) (level 0))
+      (if (>= i (length lines))
+        (values entry-start len heading-end)
+        (let* ((line (list-ref lines i))
+               (line-end (+ offset (string-length line) 1))) ; +1 for newline
+          (cond
+            ;; This is a heading line
+            ((and (> (string-length line) 0) (char=? (string-ref line 0) #\*))
+             (let ((line-level (let count ((j 0))
+                                 (if (and (< j (string-length line))
+                                          (char=? (string-ref line j) #\*))
+                                   (count (+ j 1)) j))))
+               (if (<= offset pos)
+                 ;; We haven't passed pos yet, update entry start
+                 (loop (+ i 1) line-end offset line-end line-level)
+                 ;; We've passed pos — this heading at same/higher level ends our entry
+                 (if (<= line-level level)
+                   (values entry-start offset heading-end)
+                   (loop (+ i 1) line-end entry-start heading-end level)))))
+            (else
+             (loop (+ i 1) line-end entry-start heading-end level))))))))
+
+(def (cmd-org-encrypt-entry app)
+  "Encrypt the current org entry body with GPG (symmetric)."
+  (let* ((ed (current-qt-editor app))
+         (echo (app-state-echo app))
+         (text (qt-plain-text-edit-text ed))
+         (pos (qt-plain-text-edit-cursor-position ed)))
+    (let-values (((entry-start entry-end heading-end) (org-find-entry-bounds text pos)))
+      (let ((body (substring text heading-end entry-end)))
+        (if (or (string=? (string-trim-both body) "")
+                (string-contains body "-----BEGIN PGP MESSAGE-----"))
+          (echo-message! echo "Entry is empty or already encrypted")
+          (with-catch
+            (lambda (e)
+              (echo-error! echo
+                (string-append "Encryption failed: "
+                  (with-output-to-string (lambda () (display-exception e))))))
+            (lambda ()
+              (let* ((proc (open-process
+                             (list path: "gpg"
+                                   arguments: ["--symmetric" "--armor"
+                                               "--batch" "--yes"
+                                               "--passphrase-fd" "0"]
+                                   stdin-redirection: #t
+                                   stdout-redirection: #t
+                                   stderr-redirection: #t)))
+                     ;; Read passphrase
+                     (pass (qt-echo-read-string app "Passphrase: ")))
+                (when (and pass (> (string-length pass) 0))
+                  (display pass proc)
+                  (display "\n" proc)
+                  (display body proc)
+                  (force-output proc)
+                  (close-output-port proc)
+                  (let ((encrypted (read-line proc #f)))
+                    (process-status proc)
+                    (close-port proc)
+                    (when (and encrypted (string-contains encrypted "BEGIN PGP"))
+                      (let ((new-text (string-append
+                                        (substring text 0 heading-end)
+                                        "\n" encrypted "\n"
+                                        (if (< entry-end (string-length text))
+                                          (substring text entry-end (string-length text))
+                                          ""))))
+                        (qt-plain-text-edit-set-text! ed new-text)
+                        (qt-plain-text-edit-set-cursor-position! ed pos)
+                        (echo-message! echo "Entry encrypted")))))))))))))
+
+(def (cmd-org-decrypt-entry app)
+  "Decrypt the current org entry body (GPG symmetric)."
+  (let* ((ed (current-qt-editor app))
+         (echo (app-state-echo app))
+         (text (qt-plain-text-edit-text ed))
+         (pos (qt-plain-text-edit-cursor-position ed)))
+    (let-values (((entry-start entry-end heading-end) (org-find-entry-bounds text pos)))
+      (let ((body (substring text heading-end entry-end)))
+        (if (not (string-contains body "-----BEGIN PGP MESSAGE-----"))
+          (echo-message! echo "Entry is not encrypted")
+          (with-catch
+            (lambda (e)
+              (echo-error! echo
+                (string-append "Decryption failed: "
+                  (with-output-to-string (lambda () (display-exception e))))))
+            (lambda ()
+              ;; Extract just the PGP block
+              (let* ((pgp-start (string-contains body "-----BEGIN PGP MESSAGE-----"))
+                     (pgp-end-marker "-----END PGP MESSAGE-----")
+                     (pgp-end-pos (string-contains body pgp-end-marker))
+                     (pgp-block (if pgp-end-pos
+                                  (substring body pgp-start
+                                    (+ pgp-end-pos (string-length pgp-end-marker)))
+                                  (substring body pgp-start (string-length body))))
+                     (pass (qt-echo-read-string app "Passphrase: ")))
+                (when (and pass (> (string-length pass) 0))
+                  (let* ((proc (open-process
+                                 (list path: "gpg"
+                                       arguments: ["--decrypt" "--batch" "--yes"
+                                                   "--passphrase-fd" "0"]
+                                       stdin-redirection: #t
+                                       stdout-redirection: #t
+                                       stderr-redirection: #t))))
+                    (display pass proc)
+                    (display "\n" proc)
+                    (display pgp-block proc)
+                    (force-output proc)
+                    (close-output-port proc)
+                    (let ((decrypted (read-line proc #f)))
+                      (process-status proc)
+                      (close-port proc)
+                      (when decrypted
+                        (let ((new-text (string-append
+                                          (substring text 0 heading-end)
+                                          "\n" decrypted "\n"
+                                          (if (< entry-end (string-length text))
+                                            (substring text entry-end (string-length text))
+                                            ""))))
+                          (qt-plain-text-edit-set-text! ed new-text)
+                          (qt-plain-text-edit-set-cursor-position! ed pos)
+                          (echo-message! echo "Entry decrypted"))))))))))))))
