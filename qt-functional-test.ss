@@ -4873,6 +4873,17 @@
     (if (find-command 're-builder) (pass! "re-builder registered")
       (fail! "re-builder registered" #f #t))
 
+    ;; highlight-regexp — real indicator highlighting
+    (if (find-command 'highlight-regexp) (pass! "highlight-regexp registered")
+      (fail! "highlight-regexp registered" #f #t))
+    (if (find-command 'unhighlight-regexp) (pass! "unhighlight-regexp registered")
+      (fail! "unhighlight-regexp registered" #f #t))
+
+    ;; Test unhighlight-regexp clears
+    (let ((cmd (find-command 'unhighlight-regexp)))
+      (cmd app)
+      (pass! "unhighlight-regexp runs without crash"))
+
     (destroy-qt-test-app! ed w)
     (displayln "Group 47 complete")))
 

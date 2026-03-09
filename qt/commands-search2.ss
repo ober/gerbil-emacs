@@ -318,18 +318,47 @@
       (echo-message! (app-state-echo app) (string-append "Last edit in " name)))))
 
 ;; --- Highlight regexp ---
+(def *highlight-regexp-indicator* 31)  ;; Scintilla indicator for manual highlights
+
 (def (cmd-highlight-regexp app)
-  "Highlight text matching a pattern."
-  (let ((pat (qt-echo-read-string app "Highlight: ")))
+  "Highlight all occurrences of a pattern with visual indicators."
+  (let ((pat (qt-echo-read-string app "Highlight regexp: ")))
     (when (and pat (> (string-length pat) 0))
-      (let* ((ed (current-qt-editor app)) (text (qt-plain-text-edit-text ed))
-             (tlen (string-length text)) (plen (string-length pat))
-             (count (let loop ((i 0) (c 0))
-                      (if (> (+ i plen) tlen) c
-                        (if (string=? (substring text i (+ i plen)) pat)
-                          (loop (+ i 1) (+ c 1)) (loop (+ i 1) c))))))
-        (echo-message! (app-state-echo app)
-          (string-append "Found " (number->string count) " matches of \"" pat "\""))))))
+      (let* ((ed (current-qt-editor app))
+             (text (qt-plain-text-edit-text ed))
+             (tlen (string-length text))
+             (plen (string-length pat)))
+        ;; Setup indicator
+        (sci-send ed SCI_INDICSETSTYLE *highlight-regexp-indicator* 7)  ; INDIC_ROUNDBOX
+        (sci-send ed SCI_INDICSETFORE *highlight-regexp-indicator* #xFF00FF)  ; magenta
+        (sci-send ed 2523 *highlight-regexp-indicator* 80)  ; SCI_INDICSETALPHA
+        (sci-send ed SCI_SETINDICATORCURRENT *highlight-regexp-indicator*)
+        ;; Try Scintilla regex search first
+        (sci-send ed SCI_SETSEARCHFLAGS 2)  ; SCFIND_REGEXP
+        (let loop ((pos 0) (count 0))
+          (sci-send ed SCI_SETTARGETSTART pos)
+          (sci-send ed SCI_SETTARGETEND tlen)
+          (let ((found (sci-send/string ed SCI_SEARCHINTARGET pat)))
+            (if (< found 0)
+              (echo-message! (app-state-echo app)
+                (string-append "Highlighted " (number->string count) " matches of /" pat "/"))
+              (let ((mstart (sci-send ed SCI_GETTARGETSTART))
+                    (mend (sci-send ed SCI_GETTARGETEND)))
+                (if (or (<= mend pos) (= mstart mend))
+                  (echo-message! (app-state-echo app)
+                    (string-append "Highlighted " (number->string count) " matches of /" pat "/"))
+                  (begin
+                    (sci-send ed SCI_SETINDICATORCURRENT *highlight-regexp-indicator*)
+                    (sci-send ed SCI_INDICATORFILLRANGE mstart (- mend mstart))
+                    (loop mend (+ count 1))))))))))))
+
+(def (cmd-unhighlight-regexp app)
+  "Remove all manual regexp highlights."
+  (let* ((ed (current-qt-editor app))
+         (tlen (sci-send ed SCI_GETLENGTH)))
+    (sci-send ed SCI_SETINDICATORCURRENT *highlight-regexp-indicator*)
+    (sci-send ed SCI_INDICATORCLEARRANGE 0 tlen)
+    (echo-message! (app-state-echo app) "Highlights cleared")))
 
 ;; --- Describe char at point ---
 (def (cmd-describe-char-at-point app)

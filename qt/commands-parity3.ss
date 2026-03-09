@@ -1599,8 +1599,7 @@
 (def (cmd-symbol-overlay-remove-all app)
   (execute-command! app 'unhighlight-symbol))
 
-(def (cmd-unhighlight-regexp app)
-  (execute-command! app 'unhighlight-symbol))
+;; cmd-unhighlight-regexp moved to commands-search2.ss (real indicator clearing)
 
 (def (cmd-untabify-region app)
   (execute-command! app 'tabify-region))

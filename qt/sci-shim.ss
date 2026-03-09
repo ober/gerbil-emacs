@@ -186,8 +186,8 @@
   (sci-send sci SCI_GETCURRENTPOS))
 
 (def (qt-plain-text-edit-set-cursor-position! sci pos)
-  "Set cursor position and anchor (no selection)."
-  (sci-send sci SCI_GOTOPOS pos))
+  "Set cursor position and anchor (no selection), clamped to document length."
+  (sci-send sci SCI_GOTOPOS (min pos (sci-send sci SCI_GETLENGTH))))
 
 (def (qt-plain-text-edit-cursor-line sci)
   "Get current line number (0-based)."
@@ -279,12 +279,13 @@
                     (new-line (max 0 (min (+ line delta) max-line))))
                (sci-send sci SCI_POSITIONFROMLINE new-line)))
             (else cur-pos))))
-    ;; Apply the movement
-    (if keep-anchor?
-      ;; Keep anchor — extends selection
-      (sci-send sci SCI_SETCURRENTPOS new-pos)
-      ;; Move anchor too — no selection
-      (sci-send sci SCI_GOTOPOS new-pos))))
+    ;; Apply the movement (clamp to document length for safety)
+    (let ((safe-pos (min new-pos (sci-send sci SCI_GETLENGTH))))
+      (if keep-anchor?
+        ;; Keep anchor — extends selection
+        (sci-send sci SCI_SETCURRENTPOS safe-pos)
+        ;; Move anchor too — no selection
+        (sci-send sci SCI_GOTOPOS safe-pos)))))
 
 (def (qt-plain-text-edit-ensure-cursor-visible! sci)
   "Scroll to make cursor visible."
@@ -320,8 +321,9 @@
            (sci-send sci SCI_GETSELECTIONEND))))
 
 (def (qt-plain-text-edit-set-selection! sci start end)
-  "Set selection range."
-  (sci-send sci SCI_SETSEL start end))
+  "Set selection range, clamping to document length to prevent assertion failures."
+  (let ((doc-len (sci-send sci SCI_GETLENGTH)))
+    (sci-send sci SCI_SETSEL (min start doc-len) (min end doc-len))))
 
 ;;;============================================================================
 ;;; Undo/Redo/Clipboard
