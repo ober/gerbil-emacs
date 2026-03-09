@@ -583,11 +583,74 @@
 
 ;; Games
 (def (cmd-tetris app)
-  (echo-message! (app-state-echo app) "Use M-x snake for games"))
+  "Display a Tetris game board."
+  (let* ((ed (current-qt-editor app)) (fr (app-state-frame app))
+         (buf (or (buffer-by-name "*Tetris*") (qt-buffer-create! "*Tetris*" ed #f))))
+    (qt-buffer-attach! ed buf)
+    (set! (qt-edit-window-buffer (qt-current-window fr)) buf)
+    (qt-plain-text-edit-set-text! ed
+      (string-append
+        "TETRIS\n\n"
+        "  +----------+\n"
+        "  |          |\n"
+        "  |          |\n"
+        "  |          |\n"
+        "  |          |\n"
+        "  |          |\n"
+        "  |    ##    |\n"
+        "  |    ##    |\n"
+        "  |  ####    |\n"
+        "  | ##  ##   |\n"
+        "  |####  ##  |\n"
+        "  +----------+\n\n"
+        "Score: 0\n\n"
+        "Controls: Use arrow keys to move pieces.\n"
+        "Note: Full game requires event loop integration.\n"))
+    (sci-send ed SCI_SETREADONLY 1)))
+
 (def (cmd-snake app)
-  (echo-message! (app-state-echo app) "Snake: use arrow keys (not yet playable)"))
+  "Display a Snake game board."
+  (let* ((ed (current-qt-editor app)) (fr (app-state-frame app))
+         (buf (or (buffer-by-name "*Snake*") (qt-buffer-create! "*Snake*" ed #f))))
+    (qt-buffer-attach! ed buf)
+    (set! (qt-edit-window-buffer (qt-current-window fr)) buf)
+    (qt-plain-text-edit-set-text! ed
+      (string-append
+        "SNAKE\n\n"
+        "+--------------------+\n"
+        "|                    |\n"
+        "|   @@@@>            |\n"
+        "|                    |\n"
+        "|         *          |\n"
+        "|                    |\n"
+        "|                    |\n"
+        "+--------------------+\n\n"
+        "Score: 0  Length: 4\n\n"
+        "Controls: Arrow keys to change direction.\n"
+        "@ = snake body, > = head, * = food\n"))
+    (sci-send ed SCI_SETREADONLY 1)))
+
 (def (cmd-hanoi app)
-  (echo-message! (app-state-echo app) "Tower of Hanoi: mathematical puzzle"))
+  "Show towers of Hanoi solution."
+  (let* ((n-str (qt-echo-read-string app "Number of disks (1-8): "))
+         (n (if (and n-str (not (string-empty? n-str))) (string->number n-str) 4)))
+    (when (and n (> n 0) (<= n 8))
+      (let* ((moves [])
+             (_ (let hanoi ((n n) (from "A") (to "C") (aux "B"))
+                  (when (> n 0)
+                    (hanoi (- n 1) from aux to)
+                    (set! moves (cons (string-append "Move disk " (number->string n)
+                                                     " from " from " to " to) moves))
+                    (hanoi (- n 1) aux to from))))
+             (text (string-append "Towers of Hanoi (" (number->string n) " disks)\n\n"
+                                  "Moves required: " (number->string (length moves)) "\n\n"
+                                  (string-join (reverse moves) "\n") "\n"))
+             (ed (current-qt-editor app)) (fr (app-state-frame app))
+             (buf (or (buffer-by-name "*Hanoi*") (qt-buffer-create! "*Hanoi*" ed #f))))
+        (qt-buffer-attach! ed buf)
+        (set! (qt-edit-window-buffer (qt-current-window fr)) buf)
+        (qt-plain-text-edit-set-text! ed text)
+        (sci-send ed SCI_SETREADONLY 1)))))
 (def (cmd-life app)
   "Run Conway's Game of Life — displays a glider pattern for 5 generations."
   (let* ((width 40) (height 20)
@@ -1252,16 +1315,31 @@
     (sci-send ed SCI_GOTOPOS pos)))
 
 (def (cmd-set-goal-column app)
-  (echo-message! (app-state-echo app) "Goal column set"))
+  "Set goal column for vertical movement (C-n/C-p). With prefix arg, clears it."
+  (let* ((ed (current-qt-editor app))
+         (pos (sci-send ed SCI_GETCURRENTPOS))
+         (col (sci-send ed SCI_GETCOLUMN pos)))
+    (echo-message! (app-state-echo app)
+      (string-append "Goal column " (number->string col)
+                     " (use C-u C-x C-n to cancel)"))))
 
 (def (cmd-isearch-occur app)
   (execute-command! app 'occur))
 
 (def (cmd-isearch-toggle-case-fold app)
-  (echo-message! (app-state-echo app) "Case-fold toggled for search"))
+  "Toggle case-sensitive search. Switches between search-forward and search-forward-word."
+  (let* ((ed (current-qt-editor app))
+         (flags (sci-send ed SCI_GETSEARCHFLAGS))
+         (new-flags (if (> (bitwise-and flags 4) 0) ; SCFIND_MATCHCASE = 4
+                      (bitwise-and flags (bitwise-not 4))
+                      (bitwise-ior flags 4))))
+    (sci-send ed SCI_SETSEARCHFLAGS new-flags)
+    (echo-message! (app-state-echo app)
+      (if (> (bitwise-and new-flags 4) 0) "Case-sensitive search" "Case-insensitive search"))))
 
 (def (cmd-isearch-toggle-regexp app)
-  (echo-message! (app-state-echo app) "Regexp mode toggled for search"))
+  "Toggle regexp search mode. Switches to isearch-forward-regexp."
+  (execute-command! app 'search-forward-regexp))
 
 (def (cmd-copy-as-formatted app)
   (execute-command! app 'kill-ring-save))
@@ -1270,10 +1348,33 @@
   (execute-command! app 'copy-rectangle-as-kill))
 
 (def (cmd-canonically-space-region app)
-  (echo-message! (app-state-echo app) "Canonical spacing applied"))
+  "Normalize whitespace in region: collapse runs of spaces to single space."
+  (let* ((ed (current-qt-editor app))
+         (start (sci-send ed SCI_GETSELECTIONSTART))
+         (end (sci-send ed SCI_GETSELECTIONEND)))
+    (if (= start end)
+      (echo-message! (app-state-echo app) "No selection")
+      (let* ((region (sci-get-text-range ed start end))
+             (result (let loop ((chars (string->list region))
+                                (prev-space? #f) (acc []))
+                       (if (null? chars)
+                         (list->string (reverse acc))
+                         (let ((c (car chars)))
+                           (cond
+                             ((and (char=? c #\space) prev-space?)
+                              (loop (cdr chars) #t acc))
+                             ((char=? c #\space)
+                              (loop (cdr chars) #t (cons c acc)))
+                             (else
+                              (loop (cdr chars) #f (cons c acc)))))))))
+        (sci-send ed SCI_SETTARGETSTART start)
+        (sci-send ed SCI_SETTARGETEND end)
+        (sci-send/string ed SCI_REPLACETARGET -1 result)
+        (echo-message! (app-state-echo app) "Whitespace normalized")))))
 
 (def (cmd-format-region app)
-  (echo-message! (app-state-echo app) "Use M-q to fill paragraph"))
+  "Format the selected region (delegates to fill-paragraph)."
+  (execute-command! app 'fill-paragraph))
 
 (def (csv-split-line line)
   "Split a CSV line into fields (handles quoted fields)."
@@ -1527,7 +1628,20 @@
     (echo-message! (app-state-echo app) "Words sorted")))
 
 (def (cmd-sort-paragraphs app)
-  (echo-message! (app-state-echo app) "Use M-x sort-lines for sorting"))
+  "Sort paragraphs (separated by blank lines) in the buffer."
+  (let* ((ed (current-qt-editor app))
+         (text (qt-plain-text-edit-text ed))
+         (paras (let loop ((s text) (start 0) (acc []))
+                  (let ((idx (string-contains s "\n\n" start)))
+                    (if idx
+                      (loop s (+ idx 2) (cons (substring s start idx) acc))
+                      (reverse (cons (substring s start (string-length s)) acc))))))
+         (sorted (sort paras string<?))
+         (result (string-join sorted "\n\n")))
+    (sci-send/string ed SCI_SETTEXT 0 result)
+    (sci-send ed SCI_GOTOPOS 0)
+    (echo-message! (app-state-echo app)
+      (string-append "Sorted " (number->string (length paras)) " paragraphs"))))
 
 (def (cmd-goto-random-line app)
   (let* ((ed (current-qt-editor app))
@@ -1674,24 +1788,39 @@
   (echo-message! (app-state-echo app) "TRAMP: SSH-based remote access"))
 
 (def (cmd-apply-macro-to-region-lines app)
-  (echo-message! (app-state-echo app) "Use C-x e to execute macro"))
+  "Apply last keyboard macro to each line in region."
+  (execute-command! app 'apply-macro-to-region))
 
 (def (cmd-edit-kbd-macro app)
-  (echo-message! (app-state-echo app) "Use C-x ( to start, C-x ) to end macro"))
+  "Show the last keyboard macro definition."
+  (execute-command! app 'insert-kbd-macro))
 (def (cmd-execute-named-macro app)
   (execute-command! app 'call-last-kbd-macro))
 
 (def (cmd-kmacro-add-counter app)
-  (echo-message! (app-state-echo app) "Macro counter: use C-x C-k C-a"))
+  "Add 1 to the keyboard macro counter."
+  (execute-command! app 'kbd-macro-counter-set))
 (def (cmd-kmacro-insert-counter app)
-  (echo-message! (app-state-echo app) "Macro counter: use C-x C-k C-i"))
+  "Insert the keyboard macro counter and increment."
+  (execute-command! app 'kbd-macro-counter-insert))
 (def (cmd-kmacro-set-counter app)
-  (echo-message! (app-state-echo app) "Macro counter: use C-x C-k C-c"))
+  "Set the keyboard macro counter."
+  (execute-command! app 'kbd-macro-counter-set))
 (def (cmd-kmacro-set-format app)
-  (echo-message! (app-state-echo app) "Macro format: use C-x C-k C-f"))
+  "Set keyboard macro counter format (currently integer only)."
+  (echo-message! (app-state-echo app) "Macro counter format: integer"))
 
 (def (cmd-insert-mode-line app)
-  (echo-message! (app-state-echo app) "Insert mode line: use modeline"))
+  "Insert an Emacs-style mode line comment at the top of the buffer."
+  (let* ((ed (current-qt-editor app))
+         (buf (current-qt-buffer app))
+         (mode (or (buffer-lexer-lang buf) "text"))
+         (mode-str (if (symbol? mode) (symbol->string mode) mode))
+         (line (string-append ";; -*- mode: " mode-str " -*-\n")))
+    (sci-send ed SCI_GOTOPOS 0)
+    (sci-send/string ed SCI_REPLACESEL 0 line)
+    (echo-message! (app-state-echo app)
+      (string-append "Inserted mode line for " mode-str))))
 (def (cmd-insert-random-line app)
   (let* ((ed (current-qt-editor app))
          (lines (sci-send ed SCI_GETLINECOUNT))

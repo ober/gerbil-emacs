@@ -1225,6 +1225,10 @@
 (def (qt-update-visual-decorations! ed)
   "Update current-line highlight and brace matching on the given editor."
   (let* ((pos (qt-plain-text-edit-cursor-position ed))
+         (doc-len (sci-send ed SCI_GETLENGTH))
+         ;; Clamp position to document length — prevents crash when terminal
+         ;; output shrinks the document and cursor position is stale.
+         (pos (if (> pos doc-len) (begin (sci-send ed SCI_GOTOPOS doc-len) doc-len) pos))
          (line (qt-plain-text-edit-cursor-line ed))
          (text (qt-plain-text-edit-text ed)))
     ;; 1. Clear all extra selections

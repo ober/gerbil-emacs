@@ -319,13 +319,13 @@
     "The butterflies have set the universe in motion."))
 
 ;;; ========================================================================
-;;; Batch 7: Debug stubs
+;;; Batch 7: Debug-on-entry tracking
 ;;; ========================================================================
 
 (def *qt-debug-on-entry-list* [])
 
 (def (cmd-debug-on-entry app)
-  "Mark a function for debug-on-entry (stub)."
+  "Mark a function for debug-on-entry."
   (let ((name (qt-echo-read-string (app-state-echo app) "Debug on entry to: ")))
     (when (and name (not (string=? name "")))
       (let ((sym (string->symbol name)))
@@ -335,7 +335,7 @@
           (string-append "debug-on-entry: " name))))))
 
 (def (cmd-cancel-debug-on-entry app)
-  "Remove a function from debug-on-entry list (stub)."
+  "Remove a function from debug-on-entry list."
   (if (null? *qt-debug-on-entry-list*)
     (echo-message! (app-state-echo app) "No functions marked for debug-on-entry")
     (let ((name (qt-echo-read-string (app-state-echo app)

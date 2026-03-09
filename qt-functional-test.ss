@@ -31,6 +31,7 @@
                  qt-plain-text-edit-insert-text!
                  qt-plain-text-edit-selection-start
                  qt-plain-text-edit-selection-end
+                 qt-plain-text-edit-set-selection!
                  qt-scintilla-destroy!)
         (only-in :gemacs/core
                  new-app-state
@@ -73,7 +74,8 @@
                  qt-current-window
                  qt-frame-init!
                  qt-edit-window-buffer-set!
-                 qt-apply-editor-theme!)
+                 qt-apply-editor-theme!
+                 qt-current-buffer)
         (only-in :gemacs/qt/buffer
                  qt-buffer-create!
                  qt-buffer-attach!)
@@ -4888,6 +4890,66 @@
     (displayln "Group 47 complete")))
 
 ;;;============================================================================
+;;; Group 48: Vterm crash regression — Scintilla assertion cpMax <= pdoc->Length()
+;;;============================================================================
+
+(def (run-group-48-vterm-crash-regression)
+  (displayln "--- Group 48: vterm crash regression")
+  (let-values (((ed w app) (make-qt-test-app "vterm-crash")))
+    (qt-register-all-commands!)
+
+    ;; Simulate terminal PTY output replacing document text rapidly.
+    ;; The crash occurred when:
+    ;; 1. Document is long (cursor at high position)
+    ;; 2. set-text! replaces with shorter text
+    ;; 3. visual-decorations reads stale cursor position > new doc length
+    ;; 4. SCI_GETTEXTRANGE crashes with cpMax > pdoc->Length()
+
+    ;; Test 1: set-text! with shorter text clamps cursor
+    (set-qt-text! ed "This is a long document with lots of text for testing." 50)
+    (qt-plain-text-edit-set-text! ed "short")
+    (let ((pos (qt-plain-text-edit-cursor-position ed))
+          (len (sci-send ed SCI_GETLENGTH)))
+      (if (<= pos len)
+        (pass! "set-text! clamps cursor when document shrinks")
+        (fail! "set-text! clamps cursor when document shrinks" pos len)))
+
+    ;; Test 2: visual-decorations doesn't crash after text shrink
+    (set-qt-text! ed (make-string 1000 #\x) 999)
+    (qt-plain-text-edit-set-text! ed "tiny")
+    (with-catch
+      (lambda (e) (fail! "visual-decorations after text shrink"
+                    (with-output-to-string (lambda () (display-exception e))) "no crash"))
+      (lambda ()
+        (qt-update-visual-decorations! ed)
+        (pass! "visual-decorations after text shrink")))
+
+    ;; Test 3: set-selection with positions beyond document length (stale mark)
+    (set-qt-text! ed "Hi" 0)
+    (with-catch
+      (lambda (e) (fail! "set-selection with stale positions"
+                    (with-output-to-string (lambda () (display-exception e))) "no crash"))
+      (lambda ()
+        ;; Simulate stale mark at position 100 on a 2-char document
+        (qt-plain-text-edit-set-selection! ed 100 0)
+        (pass! "set-selection with stale positions")))
+
+    ;; Test 4: Rapid text replacement (simulates `top` output refresh at 50ms)
+    (with-catch
+      (lambda (e) (fail! "rapid text replacement"
+                    (with-output-to-string (lambda () (display-exception e))) "no crash"))
+      (lambda ()
+        (let loop ((i 0))
+          (when (< i 50)
+            (qt-plain-text-edit-set-text! ed (make-string (+ 100 (* i 10)) #\a))
+            (qt-update-visual-decorations! ed)
+            (loop (+ i 1))))
+        (pass! "rapid text replacement")))
+
+    (destroy-qt-test-app! ed w)
+    (displayln "Group 48 complete")))
+
+;;;============================================================================
 
 (def (main . args)
   (with-qt-app _app
@@ -4941,6 +5003,7 @@
     (run-group-45-rest-sql-denote)
     (run-group-46-gdb-debugger)
     (run-group-47-gptel-customize-packages)
+    (run-group-48-vterm-crash-regression)
 
     (displayln "---")
     (displayln "Results: " *passes* " passed, " *failures* " failed")

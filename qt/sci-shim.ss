@@ -145,8 +145,18 @@
   (qt-scintilla-text sci))
 
 (def (qt-plain-text-edit-set-text! sci text)
-  "Set entire text in QScintilla widget."
-  (qt-scintilla-set-text! sci text))
+  "Set entire text in QScintilla widget.
+   After replacing text, clamps cursor and anchor positions to the new document
+   length to prevent Scintilla assertion failures (cpMax <= pdoc->Length())
+   when downstream code queries text at the stale cursor position."
+  (qt-scintilla-set-text! sci text)
+  ;; Clamp cursor to new document length — prevents assertion crash when
+  ;; terminal PTY output shrinks the document and a key press follows.
+  (let ((new-len (sci-send sci SCI_GETLENGTH)))
+    (when (> (sci-send sci SCI_GETCURRENTPOS) new-len)
+      (sci-send sci SCI_GOTOPOS new-len))
+    (when (> (sci-send sci SCI_GETANCHOR) new-len)
+      (sci-send sci SCI_SETANCHOR new-len))))
 
 (def (qt-plain-text-edit-append! sci text)
   "Append text on a new line (matching QPlainTextEdit::appendPlainText behavior)."
