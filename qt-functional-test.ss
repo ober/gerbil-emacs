@@ -4808,9 +4808,9 @@
     (let ((cmd (find-command 'customize-group)))
       (cmd app)
       (let ((text (qt-plain-text-edit-text ed)))
-        (if (string-contains text "Editor Settings")
+        (if (string-contains text "Gemacs Customize")
           (pass! "customize-group shows settings")
-          (fail! "customize-group shows settings" text "contains Editor Settings"))))
+          (fail! "customize-group shows settings" text "contains Gemacs Customize"))))
 
     ;; customize-themes
     (if (find-command 'customize-themes) (pass! "customize-themes registered")
