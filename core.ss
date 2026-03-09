@@ -78,7 +78,7 @@
   safe-string-trim-both
 
   ;; Hooks
-  *post-buffer-attach-hook*
+  ;; *post-buffer-attach-hook* removed — now uses (add-hook! 'post-buffer-attach-hook ...)
   *hooks*
   add-hook!
   remove-hook!
@@ -1184,10 +1184,6 @@
 ;;; Hooks
 ;;;============================================================================
 
-;; Called after buffer-attach! with (editor buffer) arguments.
-;; Set by app-init! to restore syntax highlighting per buffer.
-(def *post-buffer-attach-hook* (lambda (editor buf) (void)))
-
 ;; General-purpose hook system (Emacs-style)
 ;; Each hook is a symbol key mapping to a list of thunks/procedures.
 (def *hooks* (make-hash-table))
@@ -1215,6 +1211,16 @@
                     (lambda (e) (void))  ; Don't let one hook failure stop others
                     (lambda () (apply fn args))))
                 fns))))
+
+;; Register all standard hooks with documentation
+(defhook! 'after-init-hook "Run after init file loaded and startup complete.")
+(defhook! 'before-save-hook "Run before saving a buffer to disk. Args: (app buf)")
+(defhook! 'after-save-hook "Run after saving a buffer to disk. Args: (app buf)")
+(defhook! 'find-file-hook "Run after opening a file into a buffer. Args: (app buf)")
+(defhook! 'kill-buffer-hook "Run before killing a buffer. Args: (app buf)")
+(defhook! 'after-change-major-mode-hook "Run after a buffer's major mode changes.")
+(defhook! 'buffer-list-update-hook "Run when the buffer list changes.")
+(defhook! 'post-buffer-attach-hook "Run after a buffer is attached to an editor. Args: (editor buf)")
 
 ;;;============================================================================
 ;;; Buffer structure and list

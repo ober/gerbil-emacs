@@ -45,7 +45,7 @@
   "Switch editor to display this buffer's document.
    Re-applies the document's read-only state after swap because QScintilla
    may have a widget-level readOnly flag that persists across document switches.
-   Calls *post-buffer-attach-hook* to handle image/text display toggling."
+   Runs post-buffer-attach-hook to handle image/text display toggling."
   (let ((doc (buffer-doc-pointer buf)))
     (sci-send editor SCI_SETDOCPOINTER 0 doc)
     (doc-editor-register! doc editor)
@@ -55,4 +55,4 @@
     (let ((ro (sci-send editor SCI_GETREADONLY)))
       (sci-send editor SCI_SETREADONLY ro))
     ;; Toggle image/editor display via hook (set up in qt/app.ss)
-    (*post-buffer-attach-hook* editor buf)))
+    (run-hooks! 'post-buffer-attach-hook editor buf)))

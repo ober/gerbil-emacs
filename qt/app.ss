@@ -406,7 +406,7 @@
       ;; set focus there — the Scintilla editor is hidden by QStackedWidget
       ;; so it can't receive key events.
       (let ((image-key-installed (make-hash-table-eq)))
-        (set! *post-buffer-attach-hook*
+        (add-hook! 'post-buffer-attach-hook
           (lambda (editor buf)
             (if (image-buffer? buf)
               (begin

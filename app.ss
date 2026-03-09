@@ -59,7 +59,7 @@
   (gsh-history-load!)
 
   ;; Install hook to restore per-buffer highlighting on every buffer switch
-  (set! *post-buffer-attach-hook*
+  (add-hook! 'post-buffer-attach-hook
     (lambda (editor buf)
       (let ((fp (buffer-file-path buf)))
         (when fp
@@ -121,6 +121,9 @@
 
     ;; Start IPC server for gemacs-client
     (start-ipc-server!)
+
+    ;; Run after-init-hook (parity with Qt layer)
+    (run-hooks! 'after-init-hook)
 
     app))
 

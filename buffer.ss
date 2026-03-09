@@ -56,6 +56,6 @@
 
 (def (buffer-attach! editor buf)
   "Switch editor to display this buffer's document.
-   Calls *post-buffer-attach-hook* to restore per-buffer settings (e.g. highlighting)."
+   Runs post-buffer-attach-hook to restore per-buffer settings (e.g. highlighting)."
   (send-message editor SCI_SETDOCPOINTER 0 (buffer-doc-pointer buf))
-  (*post-buffer-attach-hook* editor buf))
+  (run-hooks! 'post-buffer-attach-hook editor buf))

@@ -90,7 +90,7 @@ Move `*mode-keymaps*` to core so both TUI and Qt share the same mode keymap infr
 
 ## Phase 3: Comprehensive Hooks
 
-**Status**: Not started
+**Status**: COMPLETE
 
 ### What exists today
 - Hook system in core.ss: `*hooks*`, `add-hook!`, `remove-hook!`, `run-hooks!`
