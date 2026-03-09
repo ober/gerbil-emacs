@@ -307,9 +307,12 @@
                (loop (cdr wins))))))))))
 
 (def (qt-main . args)
-  ;; Disable Qt accessibility (AT-SPI) to prevent Scintilla assertion crash.
-  ;; The accessibility layer calls SCI_GETTEXTRANGE with stale positions when
-  ;; the document changes rapidly (e.g. terminal PTY output every 50ms).
+  ;; Disable IBus input method plugin to prevent Scintilla assertion crash.
+  ;; IBus queries Qt::ImSurroundingText via SCI_GETTEXTRANGE with stale positions
+  ;; when the document changes rapidly (e.g. terminal PTY output every 50ms).
+  ;; The "compose" module handles basic compose sequences without querying text.
+  (setenv "QT_IM_MODULE" "compose")
+  ;; Also disable accessibility (AT-SPI) as defense-in-depth.
   (setenv "QT_ACCESSIBILITY" "0")
   (with-qt-app qt-app
     ;; Initialize runtime error log (~/.gemacs-errors.log)
