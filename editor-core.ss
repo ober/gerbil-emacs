@@ -34,6 +34,7 @@
 ;;; Shared state (used across editor sub-modules)
 ;;;============================================================================
 (def *auto-pair-mode* #t)
+(def *auto-revert-mode* #f)
 
 ;;;============================================================================
 ;;; Pulse/flash highlight on jump (beacon-like)
@@ -242,7 +243,8 @@
 
 (def (check-file-modifications! app)
   "Check if any file-visiting buffers have been modified externally.
-   Warns in the echo area if a file changed on disk."
+   When auto-revert is enabled, automatically reload unmodified buffers.
+   Warns if the buffer has unsaved changes."
   (for-each
     (lambda (buf)
       (let ((path (buffer-file-path buf)))
@@ -250,10 +252,34 @@
           (let ((saved-mt (hash-get *buffer-mod-times* buf))
                 (current-mt (file-mod-time path)))
             (when (and saved-mt current-mt (> current-mt saved-mt))
-              ;; File changed on disk — update recorded time and warn
+              ;; File changed on disk — update recorded time
               (hash-put! *buffer-mod-times* buf current-mt)
-              (echo-message! (app-state-echo app)
-                (string-append (buffer-name buf) " changed on disk; revert with C-x C-r")))))))
+              (if *auto-revert-mode*
+                ;; Auto-revert: reload if buffer is not modified, warn otherwise
+                (let loop ((wins (frame-windows (app-state-frame app))))
+                  (if (pair? wins)
+                    (if (eq? (edit-window-buffer (car wins)) buf)
+                      (let ((ed (edit-window-editor (car wins))))
+                        (if (editor-get-modify? ed)
+                          ;; Buffer has unsaved changes — warn instead of reverting
+                          (echo-message! (app-state-echo app)
+                            (string-append (buffer-name buf)
+                              " changed on disk (buffer modified, not reverting)"))
+                          ;; Buffer is clean — auto-revert
+                          (let ((text (read-file-as-string path)))
+                            (when text
+                              (let ((pos (editor-get-current-pos ed)))
+                                (editor-set-text ed text)
+                                (editor-set-save-point ed)
+                                (editor-goto-pos ed (min pos (string-length text)))
+                                (echo-message! (app-state-echo app)
+                                  (string-append "Reverted " (buffer-name buf))))))))
+                      (loop (cdr wins)))
+                    ;; Buffer not visible in any window — skip
+                    (void)))
+                ;; Auto-revert off — just warn
+                (echo-message! (app-state-echo app)
+                  (string-append (buffer-name buf) " changed on disk; revert with C-x C-r"))))))))
     (buffer-list)))
 
 ;;;============================================================================

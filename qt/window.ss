@@ -238,6 +238,11 @@
   ;; Tab settings
   (sci-send ed SCI_SETTABWIDTH 4)
   (sci-send ed SCI_SETINDENT 4)
+  ;; Enable multiple selection and typing into all cursors
+  (sci-send ed 2563 1)  ; SCI_SETMULTIPLESELECTION
+  (sci-send ed 2565 1)  ; SCI_SETADDITIONALSELECTIONTYPING
+  (sci-send ed 2608 1)  ; SCI_SETADDITIONALCARETSVISIBLE
+  (sci-send ed 2567 1)  ; SCI_SETADDITIONALCARETSBLINK
   ;; Save-point signals for modified state tracking
   (qt-on-scintilla-save-point-reached! ed
     (lambda ()

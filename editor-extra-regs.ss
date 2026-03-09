@@ -80,7 +80,8 @@
         (only-in :gemacs/editor-extra-tools2 cmd-toggle-header-line)
         (only-in :gemacs/terminal terminal-buffer?)
         (only-in :gemacs/editor-extra-web
-                 *eww-current-url* eww-display-page eww-fetch-url))
+                 *eww-current-url* eww-display-page eww-fetch-url)
+        (only-in :gemacs/editor-extra-org *desktop-save-mode*))
 
 (def (register-parity-commands!)
   ;;; From editor-core.ss
@@ -1349,7 +1350,7 @@
     (if *dired-hide-details* "Details hidden" "Details shown")))
 
 ;;; --- Desktop save mode ---
-(def *desktop-save-mode* #f)
+;; *desktop-save-mode* imported from :gemacs/editor-extra-org
 (def (cmd-desktop-save-mode app)
   "Toggle desktop-save-mode (auto save/restore session)."
   (set! *desktop-save-mode* (not *desktop-save-mode*))

@@ -1880,7 +1880,7 @@
     (echo-message! echo "Opened line below")))
 
 ;; ── batch 43: session and completion framework toggles ──────────────
-(def *desktop-save-mode* #f)
+(def *desktop-save-mode* #t)
 (def *recentf-mode* #t)
 (def *savehist-mode* #t)
 (def *winner-mode* #t)

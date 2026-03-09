@@ -297,8 +297,11 @@
     (if *auto-revert-mode* "Auto-revert mode ON" "Auto-revert mode OFF")))
 
 (def (cmd-toggle-auto-revert-global app)
-  "Toggle global auto-revert mode (same as auto-revert for now)."
-  (cmd-toggle-auto-revert app))
+  "Toggle global auto-revert mode. Syncs both flags."
+  (set! *auto-revert-mode* (not *auto-revert-mode*))
+  (set! *global-auto-revert-mode* *auto-revert-mode*)
+  (echo-message! (app-state-echo app)
+    (if *auto-revert-mode* "Global auto-revert mode ON" "Global auto-revert mode OFF")))
 
 (def (cmd-auto-revert-tail-mode app)
   "Toggle auto-revert-tail-mode for the current buffer.
@@ -534,6 +537,62 @@ SPC = page down, DEL = page up, q = quit view-mode."
                          (qt-plain-text-edit-set-text! ed (string-append before "\n" after))
                          (qt-plain-text-edit-set-cursor-position! ed pos)))
                       (else (loop (- i 1))))))))))))))
+
+;;; ========================================================================
+;;; Aggressive indent — reindent current line after insert
+;;; ========================================================================
+
+(def (qt-aggressive-indent-line! ed)
+  "Reindent the current line based on paren/bracket depth of preceding lines.
+   Called after inserting closing delimiters or newline when aggressive-indent-mode is on."
+  (let* ((text (qt-plain-text-edit-text ed))
+         (len (string-length text))
+         (pos (min (qt-plain-text-edit-cursor-position ed) len)))
+    (when (> len 0)
+      (let* (;; Find current line start
+             (line-start (let loop ((i (- pos 1)))
+                           (cond ((< i 0) 0)
+                                 ((char=? (string-ref text i) #\newline) (+ i 1))
+                                 (else (loop (- i 1))))))
+             ;; Compute paren depth up to this line
+             (depth (let loop ((i 0) (d 0))
+                      (if (>= i line-start) d
+                        (case (string-ref text i)
+                          ((#\( #\[ #\{) (loop (+ i 1) (+ d 1)))
+                          ((#\) #\] #\}) (loop (+ i 1) (max 0 (- d 1))))
+                          (else (loop (+ i 1) d))))))
+             ;; Get current line content (trimmed)
+             (line-end (let loop ((i line-start))
+                         (cond ((>= i len) i)
+                               ((char=? (string-ref text i) #\newline) i)
+                               (else (loop (+ i 1))))))
+             (line-text (substring text line-start line-end))
+             (trimmed (string-trim line-text))
+             ;; Adjust depth for leading close-parens on this line
+             (close-first (let loop ((i 0) (d 0))
+                            (if (>= i (string-length trimmed)) d
+                              (case (string-ref trimmed i)
+                                ((#\) #\] #\}) (loop (+ i 1) (+ d 1)))
+                                (else d)))))
+             (target-depth (max 0 (- depth close-first)))
+             (target-indent (make-string (* target-depth 2) #\space))
+             ;; Current indentation
+             (current-indent (let loop ((i 0))
+                               (if (>= i (string-length line-text)) ""
+                                 (if (char-whitespace? (string-ref line-text i))
+                                   (loop (+ i 1))
+                                   (substring line-text 0 i))))))
+        ;; Only change if indentation differs
+        (unless (string=? current-indent target-indent)
+          (let ((new-line (string-append target-indent trimmed)))
+            ;; Replace line content
+            (sci-send ed SCI_SETTARGETSTART line-start)
+            (sci-send ed SCI_SETTARGETEND line-end)
+            (sci-send/string ed SCI_REPLACETARGET new-line -1)
+            ;; Place cursor at end of indentation + offset
+            (let ((cursor-offset (max 0 (- pos line-start (string-length current-indent)))))
+              (qt-plain-text-edit-set-cursor-position!
+                ed (+ line-start (string-length target-indent) cursor-offset)))))))))
 
 ;;; ========================================================================
 ;;; Delete trailing whitespace on save

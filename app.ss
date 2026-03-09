@@ -1,7 +1,7 @@
 ;;; -*- Gerbil -*-
 ;;; Main application and event loop for gemacs
 
-(export app-init! app-run! main)
+(export app-init! app-run! main tui-session-save!)
 
 (import :std/sugar
         :gerbil-scintilla/constants
@@ -26,7 +26,81 @@
         :gemacs/shell-history
         :gemacs/ipc
         :gemacs/helm-commands
-        (only-in :gemacs/editor-extra-editing tui-record-edit-position!))
+        (only-in :gemacs/editor-extra-editing tui-record-edit-position!)
+        (only-in :gemacs/editor-extra-org *desktop-save-mode*))
+
+;;;============================================================================
+;;; Session persistence for TUI layer (desktop-save-mode)
+;;;============================================================================
+
+(def *tui-session-path*
+  (path-expand ".gemacs-session" (user-info-home (user-info (user-name)))))
+
+(def (tui-session-save! app)
+  "Save current session (open file buffers) to disk."
+  (with-catch
+    (lambda (e) #f)
+    (lambda ()
+      (let* ((current-buf (current-buffer-from-app app))
+             (entries
+               (filter-map
+                 (lambda (buf)
+                   (let ((path (buffer-file-path buf)))
+                     (and path (cons path 0))))
+                 *buffer-list*)))
+        (call-with-output-file *tui-session-path*
+          (lambda (port)
+            (display (or (buffer-file-path current-buf) "") port)
+            (newline port)
+            (for-each
+              (lambda (entry)
+                (display (car entry) port)
+                (display "\t" port)
+                (display (number->string (cdr entry)) port)
+                (newline port))
+              entries)))))))
+
+(def (tui-session-restore! app)
+  "Restore session from disk: open saved file buffers."
+  (when (file-exists? *tui-session-path*)
+    (with-catch
+      (lambda (e) #f)
+      (lambda ()
+        (let* ((lines (call-with-input-file *tui-session-path*
+                        (lambda (port)
+                          (let loop ((acc []))
+                            (let ((line (read-line port)))
+                              (if (eof-object? line) (reverse acc)
+                                (loop (cons line acc))))))))
+               ;; First line is the current file path
+               (current-file (and (pair? lines)
+                                  (> (string-length (car lines)) 0)
+                                  (car lines)))
+               ;; Remaining lines are file\tposition entries
+               (file-lines (if (pair? lines) (cdr lines) [])))
+          ;; Open each file
+          (for-each
+            (lambda (line)
+              (let ((tab-pos (let scan ((i 0))
+                               (cond ((>= i (string-length line)) #f)
+                                     ((char=? (string-ref line i) #\tab) i)
+                                     (else (scan (+ i 1)))))))
+                (when tab-pos
+                  (let ((path (substring line 0 tab-pos)))
+                    (when (and (> (string-length path) 0) (file-exists? path))
+                      (open-file-in-app! app path))))))
+            file-lines)
+          ;; Switch to the buffer that was current when session was saved
+          (when current-file
+            (let loop ((bufs *buffer-list*))
+              (when (pair? bufs)
+                (if (equal? (buffer-file-path (car bufs)) current-file)
+                  (let* ((fr (app-state-frame app))
+                         (win (current-window fr))
+                         (ed (edit-window-editor win)))
+                    (set! (edit-window-buffer win) (car bufs))
+                    (buffer-attach! ed (car bufs)))
+                  (loop (cdr bufs)))))))))))
 
 ;;;============================================================================
 ;;; Application initialization
@@ -91,9 +165,10 @@
                   (editor-style-set-foreground ed STYLE_LINENUMBER #x808080)
                   (editor-style-set-background ed STYLE_LINENUMBER #x181818)
                   ;; Enable multiple selection + typing into all selections
-                  ;; SCI_SETMULTIPLESELECTION=2563, SCI_SETADDITIONALSELECTIONTYPING=2565
-                  (send-message ed 2563 1 0)
-                  (send-message ed 2565 1 0)))
+                  (send-message ed 2563 1 0)  ; SCI_SETMULTIPLESELECTION
+                  (send-message ed 2565 1 0)  ; SCI_SETADDITIONALSELECTIONTYPING
+                  (send-message ed 2608 1 0)  ; SCI_SETADDITIONALCARETSVISIBLE
+                  (send-message ed 2567 1 0))) ; SCI_SETADDITIONALCARETSBLINK
               (frame-windows fr))
 
     ;; Restore scratch buffer from persistent storage, or set default
@@ -114,6 +189,10 @@
             ";; This buffer is for Gerbil Scheme evaluation.\n\n"))))
       (editor-set-save-point ed)
       (editor-goto-pos ed 0))
+
+    ;; Restore session if desktop-save-mode is on and no files given
+    (when (and *desktop-save-mode* (null? files))
+      (tui-session-restore! app))
 
     ;; Open files from command line
     (for-each (lambda (file) (open-file-in-app! app file))
@@ -500,9 +579,10 @@
   (editor-style-set-foreground ed STYLE_BRACEBAD #xFF0000)    ; red for mismatch
   (editor-style-set-bold ed STYLE_BRACEBAD #t)
   ;; Enable multiple selection + typing into all selections
-  ;; SCI_SETMULTIPLESELECTION=2563, SCI_SETADDITIONALSELECTIONTYPING=2565
-  (send-message ed 2563 1 0)
-  (send-message ed 2565 1 0))
+  (send-message ed 2563 1 0)  ; SCI_SETMULTIPLESELECTION
+  (send-message ed 2565 1 0)  ; SCI_SETADDITIONALSELECTIONTYPING
+  (send-message ed 2608 1 0)  ; SCI_SETADDITIONALCARETSVISIBLE
+  (send-message ed 2567 1 0)) ; SCI_SETADDITIONALCARETSBLINK
 
 ;;;============================================================================
 ;;; Brace/paren matching

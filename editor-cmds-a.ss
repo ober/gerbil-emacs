@@ -1059,7 +1059,7 @@
           (echo-message! echo (string-append "Inserted " path)))
         (echo-error! echo (string-append "File not found: " path))))))
 
-(def *auto-revert-mode* #f)
+;; *auto-revert-mode* is defined in editor-core.ss (used by check-file-modifications!)
 (defvar! 'auto-revert-mode #f "Automatically revert buffers when files change on disk"
          setter: (lambda (v) (set! *auto-revert-mode* v))
          type: 'boolean group: 'files)

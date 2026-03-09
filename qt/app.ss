@@ -30,7 +30,8 @@
         :gemacs/qt/commands-lsp
         :gemacs/qt/menubar
         :gemacs/ipc
-        :gemacs/vtscreen)
+        :gemacs/vtscreen
+        (only-in :gemacs/editor-extra-web *aggressive-indent-mode*))
 
 ;;;============================================================================
 ;;; Qt Application
@@ -637,6 +638,12 @@
                                     (qt-plain-text-edit-insert-text! ed str)))))))
                           ;; Auto-fill: break line if past fill-column
                           (auto-fill-check! (qt-current-editor (app-state-frame app)))
+                          ;; Aggressive indent: reindent current line after closing delimiters
+                          (let ((si-ch (string-ref data 0)))
+                            (when (and *aggressive-indent-mode*
+                                       (memv si-ch '(#\) #\] #\} #\newline)))
+                              (qt-aggressive-indent-line!
+                               (qt-current-editor (app-state-frame app)))))
                           ;; Track edit position for goto-last-change
                           (qt-record-edit-position! app)
                           (set! (app-state-prefix-arg app) #f)
@@ -1038,9 +1045,9 @@
                 (qt-update-frame-title! app)
                 (qt-echo-draw! (app-state-echo app) echo-label))))))
 
-      ;; Restore session if no files given on command line
+      ;; Restore session if desktop-save-mode is on and no files given on command line
       ;; Files are read in parallel (async-read-file! in qt-open-file!)
-      (when (null? args)
+      (when (and *qt-desktop-save-mode* (null? args))
         (let-values (((current-file entries) (session-restore-files)))
           (for-each
             (lambda (entry)

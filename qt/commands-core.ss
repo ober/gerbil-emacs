@@ -327,7 +327,8 @@
     (append mru rest)))
 
 ;; File modification tracking for auto-revert
-(def *auto-revert-mode* #t)   ; enabled by default
+;; *auto-revert-mode* defined in editor-core.ss (shared)
+(def *global-auto-revert-mode* #f)
 (def *file-mtimes* (make-hash-table)) ; file-path -> mtime (seconds)
 (def *auto-revert-tail-buffers* (make-hash-table)) ; buffer-name -> #t for tail-follow mode
 

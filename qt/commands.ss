@@ -84,7 +84,10 @@
         *qt-quoted-insert-pending*
         qt-quoted-insert-handle!
         ;; Edit position tracking for goto-last-change
-        qt-record-edit-position!)
+        qt-record-edit-position!
+        *qt-desktop-save-mode*
+        ;; Aggressive indent
+        qt-aggressive-indent-line!)
 
 (import :std/sugar
         :std/sort
@@ -1051,7 +1054,7 @@
         (savehist-save!)
         (save-place-save!)
         (gsh-history-save!)
-        (session-save! app)
+        (when *qt-desktop-save-mode* (session-save! app))
         (set! (app-state-running app) #f)
         (qt-widget-close! (qt-frame-main-win fr)))
       ;; Prompt about unsaved buffers
@@ -1087,7 +1090,7 @@
            (scratch-save!)
            (save-place-save!)
            (gsh-history-save!)
-           (session-save! app)
+           (when *qt-desktop-save-mode* (session-save! app))
            (set! (app-state-running app) #f)
            (qt-widget-close! (qt-frame-main-win fr)))
           ((and answer (or (string=? answer "no") (string=? answer "n")))
@@ -1095,7 +1098,7 @@
            (scratch-save!)
            (save-place-save!)
            (gsh-history-save!)
-           (session-save! app)
+           (when *qt-desktop-save-mode* (session-save! app))
            (set! (app-state-running app) #f)
            (qt-widget-close! (qt-frame-main-win fr)))
           (else
@@ -2139,7 +2142,7 @@
 (def *qt-customizable-vars*
   [["tab-width" "Tab stop width" (lambda () *tab-width*) (lambda (v) (set! *tab-width* v))]
    ["indent-tabs-mode" "Use tabs" (lambda () *indent-tabs-mode*) (lambda (v) (set! *indent-tabs-mode* v))]
-   ["global-auto-revert-mode" "Auto-reload files" (lambda () *global-auto-revert-mode*) (lambda (v) (set! *global-auto-revert-mode* v))]
+   ["global-auto-revert-mode" "Auto-reload files" (lambda () *global-auto-revert-mode*) (lambda (v) (set! *global-auto-revert-mode* v) (set! *auto-revert-mode* v))]
    ["delete-trailing-whitespace-on-save" "Strip trailing whitespace" (lambda () *delete-trailing-whitespace-on-save*) (lambda (v) (set! *delete-trailing-whitespace-on-save* v))]])
 
 (def (cmd-customize app)

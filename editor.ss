@@ -29,7 +29,9 @@
   make-auto-save-path
   file-mod-time
   ;; Quoted insert
-  *quoted-insert-pending*)
+  *quoted-insert-pending*
+  ;; Auto-revert mode (shared with Qt layer)
+  *auto-revert-mode*)
 
 (import :gemacs/core
         :gemacs/editor-extra

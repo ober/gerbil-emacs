@@ -5,7 +5,8 @@
 (import :gemacs/editor
         :gemacs/window
         :gerbil-scintilla/tui
-        (only-in :gemacs/app app-init! app-run!)
+        (only-in :gemacs/app app-init! app-run! tui-session-save!)
+        (only-in :gemacs/editor-extra-org *desktop-save-mode*)
         (only-in :gemacs/ipc stop-ipc-server!))
 
 (include "manifest.ss")
@@ -28,6 +29,8 @@
        (try
          (app-run! app)
          (finally
+           ;; Save session if desktop-save-mode is enabled
+           (when *desktop-save-mode* (tui-session-save! app))
            (stop-ipc-server!)
            (frame-shutdown! (app-state-frame app))
            (tui-shutdown!)))))))

@@ -2406,7 +2406,7 @@
 
     ;; -- Batch 43 tests --
     (test-case "batch 43: mode toggles"
-      (check *desktop-save-mode* => #f)
+      (check *desktop-save-mode* => #t)
       (check *recentf-mode* => #t)
       (check *savehist-mode* => #t)
       (check *winner-mode* => #t)

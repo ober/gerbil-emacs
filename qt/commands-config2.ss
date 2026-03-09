@@ -971,12 +971,14 @@
 ;;; Global auto-revert mode
 ;;;============================================================================
 
-(def *global-auto-revert-mode* #f)
+;; *global-auto-revert-mode* is defined in commands-core.ss
 
 (def (cmd-global-auto-revert-mode app)
-  "Toggle global auto-revert mode for all file-visiting buffers."
+  "Toggle global auto-revert mode for all file-visiting buffers.
+   Syncs with the auto-revert-mode flag used by the file-watch timer."
   (let ((echo (app-state-echo app)))
     (set! *global-auto-revert-mode* (not *global-auto-revert-mode*))
+    (set! *auto-revert-mode* *global-auto-revert-mode*)
     (echo-message! echo
       (if *global-auto-revert-mode*
         "Global auto-revert mode enabled"

@@ -727,7 +727,7 @@
     (if *qt-dired-hide-details* "Details hidden" "Details shown")))
 
 ;;; --- Desktop save mode ---
-(def *qt-desktop-save-mode* #f)
+(def *qt-desktop-save-mode* #t)
 (def (cmd-desktop-save-mode app)
   "Toggle desktop-save-mode (auto save/restore session)."
   (set! *qt-desktop-save-mode* (not *qt-desktop-save-mode*))
