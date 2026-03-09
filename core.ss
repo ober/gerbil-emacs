@@ -1126,6 +1126,7 @@
   ;; Help describe key briefly (C-h c — already have C-h k)
   (keymap-bind! *help-map* "c" 'describe-key-briefly)
   (keymap-bind! *help-map* "d" 'describe-function)
+  (keymap-bind! *help-map* "m" 'describe-mode)
   (keymap-bind! *help-map* "v" 'describe-variable)
   (keymap-bind! *help-map* "i" 'info)
   (keymap-bind! *help-map* "l" 'view-lossage)
@@ -1558,6 +1559,7 @@
   (register-command-doc! 'describe-key "Show what command a key is bound to, with documentation.")
   (register-command-doc! 'describe-command "Describe a command by name, showing its keybinding and documentation.")
   (register-command-doc! 'describe-function "Describe a function/command by name.")
+  (register-command-doc! 'describe-mode "Show current major and minor modes.")
   (register-command-doc! 'list-bindings "Display all keybindings in a *Help* buffer.")
   (register-command-doc! 'keyboard-quit "Abort the current operation.")
   ;; Shell and REPL

@@ -128,7 +128,7 @@ Wire hooks into every major lifecycle event, matching Emacs conventions:
 
 ## Phase 4: Commands and UI
 
-**Status**: Not started
+**Status**: COMPLETE
 
 ### Commands to add (both TUI and Qt)
 
