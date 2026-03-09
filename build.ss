@@ -196,6 +196,8 @@
     "macros"
     ;; PCRE2 compatibility wrapper (no dependencies)
     "pregexp-compat"
+    ;; Customization system (no gemacs dependencies)
+    "customize"
     ;; Face system (no dependencies)
     "face"
     ;; Built-in themes (depends on face)

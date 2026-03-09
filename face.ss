@@ -7,7 +7,8 @@
 
 (export #t)
 (import :std/sugar
-        :gemacs/themes)
+        :gemacs/themes
+        :gemacs/customize)
 
 ;;; ============================================================================
 ;;; Face Data Structure
@@ -100,7 +101,13 @@
 
 ;; Global default font settings for all editors
 (def *default-font-family* "Monospace")
+(defvar! 'default-font-family "Monospace" "Default font family for all editors"
+         setter: (lambda (v) (set! *default-font-family* v))
+         type: 'string group: 'display)
 (def *default-font-size* 11)
+(defvar! 'default-font-size 11 "Default font size in points"
+         setter: (lambda (v) (set! *default-font-size* v))
+         type: 'integer type-args: '(6 . 72) group: 'display)
 
 (def (set-default-font! family size)
   "Set the default font family and size for all editors."

@@ -15,6 +15,7 @@
         :gerbil-scintilla/style
         :gerbil-scintilla/tui
         :gemacs/core
+        :gemacs/customize
         :gemacs/repl
         :gemacs/eshell
         :gemacs/shell
@@ -1059,6 +1060,9 @@
         (echo-error! echo (string-append "File not found: " path))))))
 
 (def *auto-revert-mode* #f)
+(defvar! 'auto-revert-mode #f "Automatically revert buffers when files change on disk"
+         setter: (lambda (v) (set! *auto-revert-mode* v))
+         type: 'boolean group: 'files)
 
 (def (cmd-toggle-auto-revert app)
   "Toggle auto-revert mode."
@@ -1448,6 +1452,9 @@
     (editor-goto-pos ed (+ pos (string-length sep)))))
 
 (def *global-hl-line* #t)
+(defvar! 'global-hl-line-mode #t "Highlight the current line"
+         setter: (lambda (v) (set! *global-hl-line* v))
+         type: 'boolean group: 'display)
 
 (def (cmd-toggle-global-hl-line app)
   "Toggle global caret line highlight."

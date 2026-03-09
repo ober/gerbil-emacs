@@ -179,6 +179,21 @@
   theme-nord
   theme-zenburn
 
+  ;; Customize system (from :gemacs/customize)
+  defvar!
+  custom-get
+  custom-set!
+  custom-reset!
+  custom-describe
+  custom-list-group
+  custom-list-all
+  custom-groups
+  custom-registered?
+  *custom-registry*
+  defhook!
+  hook-doc
+  hook-list-all
+
   ;; Paredit strict mode
   *paredit-strict-mode*
 
@@ -196,6 +211,7 @@
         :std/misc/rwlock
         :gerbil/runtime/init
         :gerbil/expander
+        :gemacs/customize
         :gemacs/face
         :gemacs/themes)
 
@@ -250,6 +266,9 @@
 (def *ctrl-c-l-map* (make-keymap))
 (def *ctrl-c-m-map* (make-keymap))
 (def *lsp-server-command* "gerbil-lsp")  ;; overridable via ~/.gemacs-init
+(defvar! 'lsp-server-command "gerbil-lsp" "Command to launch the LSP server"
+         setter: (lambda (v) (set! *lsp-server-command* v))
+         type: 'string group: 'lsp)
 (def *meta-g-map*   (make-keymap))
 (def *help-map*     (make-keymap))
 (def *meta-s-map*   (make-keymap))
@@ -1842,9 +1861,15 @@
 
 ;; Paredit strict mode — prevents deleting delimiters that would unbalance
 (def *paredit-strict-mode* #f)
+(defvar! 'paredit-strict-mode #f "Prevent deletion of unbalanced delimiters"
+         setter: (lambda (v) (set! *paredit-strict-mode* v))
+         type: 'boolean group: 'editing)
 
 ;; Helm mode flag (shared between TUI and Qt layers)
 (def *helm-mode* #f)
+(defvar! 'helm-mode #f "Use Helm-style incremental completion"
+         setter: (lambda (v) (set! *helm-mode* v))
+         type: 'boolean group: 'completion)
 
 ;; Maps char→char for input translation (e.g., swap brackets and parens)
 (def *key-translation-map* (make-hash-table))
@@ -1870,9 +1895,15 @@
 
 ;; Time window in milliseconds for second key of chord
 (def *chord-timeout* 200)
+(defvar! 'chord-timeout 200 "Milliseconds to wait for second key of a chord"
+         setter: (lambda (v) (set! *chord-timeout* v))
+         type: 'integer type-args: '(50 . 1000) group: 'keybindings)
 
 ;; Master toggle
 (def *chord-mode* #t)
+(defvar! 'chord-mode #t "Enable key-chord mode for two-key shortcuts"
+         setter: (lambda (v) (set! *chord-mode* v))
+         type: 'boolean group: 'keybindings)
 
 (def (key-chord-define-global two-char-str cmd)
   "Bind a 2-character chord to a command symbol.

@@ -756,42 +756,35 @@
 ;;;============================================================================
 
 (def (cmd-customize-group app)
-  "Show current editor settings grouped by category."
+  "Show all registered customizable variables grouped by category."
   (let* ((fr (app-state-frame app))
          (win (qt-current-window fr))
          (ed (qt-edit-window-editor win))
          (buf (qt-buffer-create! "*Customize*" ed #f))
-         ;; Gather toggle states
-         (toggle-entries (hash->list *qt-toggle-states*))
-         (text (string-append
-                 "Editor Settings\n"
-                 (make-string 60 #\=) "\n\n"
-                 "Active Toggles:\n"
-                 (if (null? toggle-entries) "  (none set)\n"
-                   (string-join
-                     (map (lambda (p)
-                            (string-append "  " (symbol->string (car p)) ": "
-                                          (if (cdr p) "on" "off")))
-                          toggle-entries)
-                     "\n"))
-                 "\n\nAvailable Commands:\n"
-                 "  M-x customize-variable    Set a custom variable\n"
-                 "  M-x customize-themes      Browse available themes\n"
-                 "  M-x load-theme            Activate a color theme\n"
-                 "  M-x disable-theme         Reset to default colors\n"
-                 "  M-x describe-bindings     Show all key bindings\n"
-                 "  M-x describe-mode         Describe current mode\n"
-                 "\nTheme Commands:\n"
-                 "  M-x load-theme            Load a named theme\n"
-                 "  M-x disable-theme         Reset all colors\n"
-                 "\nPackage Management:\n"
-                 "  M-x list-packages         List system packages\n"
-                 "  M-x package-install        Install a Gerbil package\n"
-                 "  M-x package-delete         Remove a Gerbil package\n"
-                 "  M-x package-refresh-contents  Update package list\n")))
+         (groups (custom-groups))
+         (lines ["Gemacs Customize"
+                 (make-string 60 #\=) ""]))
+    (for-each
+      (lambda (group)
+        (set! lines (append lines
+          (list (string-append "[" (symbol->string group) "]") "")))
+        (for-each
+          (lambda (var)
+            (let ((val (custom-get var))
+                  (entry (hash-get *custom-registry* var)))
+              (set! lines (append lines
+                (list (string-append "  " (symbol->string var) " = "
+                        (with-output-to-string (lambda () (write val)))
+                        "  ;; " (or (hash-get entry 'docstring) "")))))))
+          (custom-list-group group))
+        (set! lines (append lines (list ""))))
+      groups)
+    (set! lines (append lines
+      (list "Use M-x set-variable to change a setting."
+            "Use C-h v (describe-variable) for detailed info.")))
     (qt-buffer-attach! ed buf)
     (set! (qt-edit-window-buffer win) buf)
-    (qt-plain-text-edit-set-text! ed text)
+    (qt-plain-text-edit-set-text! ed (string-join lines "\n"))
     (sci-send ed SCI_SETREADONLY 1)
     (qt-plain-text-edit-set-cursor-position! ed 0)
     (echo-message! (app-state-echo app) "Customize group")))

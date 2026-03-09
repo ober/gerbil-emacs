@@ -89,7 +89,8 @@
 (import :std/sugar
         :std/sort
         :std/srfi/13
-        :gemacs/core)
+        :gemacs/core
+        :gemacs/customize)
 
 ;;;============================================================================
 ;;; Persistence file paths
@@ -505,6 +506,9 @@
 
 ;; Number of lines to keep visible above/below the cursor
 (def *scroll-margin* 3)
+(defvar! 'scroll-margin 3 "Lines of margin at top/bottom when scrolling"
+         setter: (lambda (v) (set! *scroll-margin* v))
+         type: 'integer type-args: '(0 . 20) group: 'display)
 
 ;;;============================================================================
 ;;; Persistent scratch buffer
@@ -707,18 +711,18 @@
                               ((string=? key "scroll-margin")
                                (let ((n (string->number val)))
                                  (when (and n (>= n 0) (<= n 20))
-                                   (set! *scroll-margin* n))))
+                                   (custom-set! 'scroll-margin n))))
                               ((string=? key "save-place")
-                               (set! *save-place-enabled*
+                               (custom-set! 'save-place
                                  (or (string=? val "true") (string=? val "1"))))
                               ((string=? key "delete-trailing-whitespace-on-save")
-                               (set! *delete-trailing-whitespace-on-save*
+                               (custom-set! 'delete-trailing-whitespace-on-save
                                  (or (string=? val "true") (string=? val "1"))))
                               ((string=? key "require-final-newline")
-                               (set! *require-final-newline*
+                               (custom-set! 'require-final-newline
                                  (or (string=? val "true") (string=? val "1"))))
                               ((string=? key "centered-cursor")
-                               (set! *centered-cursor-mode*
+                               (custom-set! 'centered-cursor
                                  (or (string=? val "true") (string=? val "1"))))
                               ;; Custom keybinding: bind KEY COMMAND
                               ;; e.g. "bind C-c a align-regexp"
@@ -762,18 +766,18 @@
                                                        (string-ref to-str 0)))))))
                               ;; Chord mode toggle: chord-mode true/false
                               ((string=? key "chord-mode")
-                               (set! *chord-mode*
+                               (custom-set! 'chord-mode
                                  (or (string=? val "true") (string=? val "1"))))
                               ;; Chord timeout: chord-timeout MILLIS
                               ((string=? key "chord-timeout")
                                (let ((n (string->number val)))
                                  (when (and n (> n 0) (<= n 2000))
-                                   (set! *chord-timeout* n))))
+                                   (custom-set! 'chord-timeout n))))
                               ;; LSP server command: lsp-server-command PATH
                               ;; e.g. "lsp-server-command /home/user/gerbil-lsp/.gerbil/bin/gerbil-lsp"
                               ((string=? key "lsp-server-command")
                                (when (> (string-length val) 0)
-                                 (set! *lsp-server-command* val)))
+                                 (custom-set! 'lsp-server-command val)))
                               ))))))
                   (loop))))))))))
 
@@ -782,6 +786,9 @@
 ;;;============================================================================
 
 (def *save-place-enabled* #t)
+(defvar! 'save-place #t "Remember cursor position in previously visited files"
+         setter: (lambda (v) (set! *save-place-enabled* v))
+         type: 'boolean group: 'files)
 (def *save-place-file* ".gemacs-places")
 (def *save-place-alist* (make-hash-table)) ;; file-path -> position
 (def *save-place-max* 500) ;; max entries to persist
@@ -841,10 +848,21 @@
 ;;;============================================================================
 
 (def *delete-trailing-whitespace-on-save* #t)
+(defvar! 'delete-trailing-whitespace-on-save #t
+         "Delete trailing whitespace when saving a file"
+         setter: (lambda (v) (set! *delete-trailing-whitespace-on-save* v))
+         type: 'boolean group: 'editing)
 (def *require-final-newline* #t)
+(defvar! 'require-final-newline #t
+         "Ensure files end with a newline when saving"
+         setter: (lambda (v) (set! *require-final-newline* v))
+         type: 'boolean group: 'editing)
 
 ;;;============================================================================
 ;;; Centered cursor mode
 ;;;============================================================================
 
 (def *centered-cursor-mode* #f)
+(defvar! 'centered-cursor #f "Keep cursor centered vertically in the window"
+         setter: (lambda (v) (set! *centered-cursor-mode* v))
+         type: 'boolean group: 'display)

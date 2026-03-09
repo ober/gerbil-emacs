@@ -692,22 +692,33 @@
                                (lambda (v) (set! *so-long-threshold* (or (string->number v) 10000)))))))
 
 (def (cmd-set-variable app)
-  "Set a variable to a value interactively with narrowing selection."
+  "Set a customizable variable interactively with type validation."
   (let* ((echo (app-state-echo app))
-         (var-names (sort (let ((acc [])) (hash-for-each (lambda (k v) (set! acc (cons k acc))) *user-variables*) acc) string<?))
-         (varname (qt-echo-read-with-narrowing app "Set variable:" var-names))
-         (entry (and varname (hash-get *user-variables* varname))))
-    (if entry
-      (let* ((cur ((car entry)))
-             (val (qt-echo-read-string echo
-                    (string-append varname " (current: "
-                                   (if cur (object->string cur) "nil")
-                                   "): "))))
-        (when (and val (> (string-length val) 0))
-          ((cdr entry) val)
-          (echo-message! echo (string-append varname " = " val))))
-      (when varname
-        (echo-error! echo (string-append "Unknown variable: " varname))))))
+         (var-names (sort (map symbol->string (custom-list-all)) string<?))
+         (varname (qt-echo-read-with-narrowing app "Set variable:" var-names)))
+    (when (and varname (> (string-length varname) 0))
+      (let ((sym (string->symbol varname)))
+        (if (not (custom-registered? sym))
+          (echo-error! echo (string-append "Unknown variable: " varname))
+          (let* ((cur (custom-get sym))
+                 (val (qt-echo-read-string echo
+                        (string-append varname " (current: "
+                                       (object->string cur) "): "))))
+            (when (and val (> (string-length val) 0))
+              (let ((parsed (cond
+                              ((string=? val "#t") #t)
+                              ((string=? val "#f") #f)
+                              ((string->number val) => values)
+                              (else val))))
+                (with-catch
+                  (lambda (e)
+                    (echo-error! echo
+                      (string-append "Error: "
+                        (with-output-to-string (lambda () (display-exception e))))))
+                  (lambda ()
+                    (custom-set! sym parsed)
+                    (echo-message! echo
+                      (string-append varname " = " (object->string parsed)))))))))))))
 
 (def (cmd-customize-variable app)
   "Show current value of a variable and optionally change it."

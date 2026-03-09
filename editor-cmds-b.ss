@@ -1895,59 +1895,69 @@
    ["flymake-mode" "Syntax checking" (lambda () *flymake-mode*) (lambda (v) (set! *flymake-mode* v))]])
 
 (def (cmd-customize app)
-  "Display a customization buffer for common settings."
+  "Display a customization buffer showing all registered variables by group."
   (let* ((echo (app-state-echo app))
          (fr (app-state-frame app))
          (ed (current-editor app))
          (win (current-window fr))
          (buf (buffer-create! "*Customize*" ed))
-         (lines []))
+         (groups (custom-groups))
+         (lines ["Gemacs Customize"
+                 "================" ""]))
     (buffer-attach! ed buf)
     (set! (edit-window-buffer win) buf)
     (for-each
-      (lambda (entry)
-        (let ((name (car entry))
-              (desc (cadr entry))
-              (getter (caddr entry)))
-          (set! lines (cons (string-append "  " name " = " (object->string (getter))
-                             "  ;; " desc) lines))))
-      *customizable-vars*)
-    (let ((text (string-append
-                  "Gemacs Customize\n"
-                  "================\n\n"
-                  "Current settings:\n\n"
-                  (string-join (reverse lines) "\n")
-                  "\n\nUse M-x set-variable to change a setting.\n")))
-      (editor-set-text ed text)
-      (editor-goto-pos ed 0)
-      (editor-set-read-only ed #t))))
+      (lambda (group)
+        (set! lines (append lines
+          (list (string-append "[" (symbol->string group) "]") "")))
+        (for-each
+          (lambda (var)
+            (let ((val (custom-get var))
+                  (entry (hash-get *custom-registry* var)))
+              (set! lines (append lines
+                (list (string-append "  " (symbol->string var) " = "
+                        (with-output-to-string (lambda () (write val)))
+                        "  ;; " (or (hash-get entry 'docstring) "")))))))
+          (custom-list-group group))
+        (set! lines (append lines (list ""))))
+      groups)
+    (set! lines (append lines
+      (list "Use M-x set-variable to change a setting."
+            "Use C-h v (describe-variable) for detailed info.")))
+    (editor-set-text ed (string-join lines "\n"))
+    (editor-goto-pos ed 0)
+    (editor-set-read-only ed #t)))
 
 (def (cmd-set-variable app)
-  "Set a customizable variable by name."
+  "Set a customizable variable by name, with type validation."
   (let* ((echo (app-state-echo app))
          (fr (app-state-frame app))
          (row (- (frame-height fr) 1))
          (width (frame-width fr))
-         (names (map car *customizable-vars*))
+         (names (map symbol->string (custom-list-all)))
          (name (echo-read-string-with-completion echo "Set variable: " names row width)))
     (when (and name (> (string-length name) 0))
-      (let ((entry (find (lambda (e) (string=? (car e) name)) *customizable-vars*)))
-        (if (not entry)
+      (let ((sym (string->symbol name)))
+        (if (not (custom-registered? sym))
           (echo-message! echo (string-append "Unknown variable: " name))
-          (let* ((getter (caddr entry))
-                 (current (getter))
+          (let* ((current (custom-get sym))
                  (val-str (echo-read-string echo
                             (string-append name " (" (object->string current) "): ") row width)))
             (when (and val-str (> (string-length val-str) 0))
-              (let* ((setter (cadddr entry))
-                     (val (cond
-                            ((string=? val-str "#t") #t)
-                            ((string=? val-str "#f") #f)
-                            ((string->number val-str) => values)
-                            (else val-str))))
-                (setter val)
-                (echo-message! echo
-                  (string-append name " = " (object->string val)))))))))))
+              (let ((val (cond
+                           ((string=? val-str "#t") #t)
+                           ((string=? val-str "#f") #f)
+                           ((string->number val-str) => values)
+                           (else val-str))))
+                (with-catch
+                  (lambda (e)
+                    (echo-error! echo
+                      (string-append "Error setting " name ": "
+                        (with-output-to-string (lambda () (display-exception e))))))
+                  (lambda ()
+                    (custom-set! sym val)
+                    (echo-message! echo
+                      (string-append name " = " (object->string val)))))))))))))
 
 ;;;============================================================================
 ;;; Process sentinels/filters
