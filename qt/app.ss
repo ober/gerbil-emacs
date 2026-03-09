@@ -307,6 +307,10 @@
                (loop (cdr wins))))))))))
 
 (def (qt-main . args)
+  ;; Disable Qt accessibility (AT-SPI) to prevent Scintilla assertion crash.
+  ;; The accessibility layer calls SCI_GETTEXTRANGE with stale positions when
+  ;; the document changes rapidly (e.g. terminal PTY output every 50ms).
+  (setenv "QT_ACCESSIBILITY" "0")
   (with-qt-app qt-app
     ;; Initialize runtime error log (~/.gemacs-errors.log)
     (init-gemacs-log!)
