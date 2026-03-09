@@ -146,8 +146,6 @@
 
 (def (qt-plain-text-edit-set-text! sci text)
   "Set entire text in QScintilla widget."
-  ;; Reset selection to origin before replacing — prevents stale positions
-  (sci-send sci SCI_SETSEL 0 0)
   (qt-scintilla-set-text! sci text))
 
 (def (qt-plain-text-edit-append! sci text)
