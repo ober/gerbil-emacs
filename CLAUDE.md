@@ -32,6 +32,29 @@ Org-mode `<s TAB` has regressed 5 times. Each time, the leaf-function tests in `
 3. **Key sequences**: Test via `(sim-key! app ev)` for single keys, or multiple `sim-key!` calls for multi-key sequences.
 4. **Command registration**: Always call `(register-all-commands!)` and `(setup-default-bindings!)` at the start of functional tests.
 
+## Crash Reproduction Tests: MANDATORY for User-Reported Crashes
+
+When a user reports a crash with a sequence of steps ("I did X, then Y, then Z, and it crashed"), you **MUST** create a functional test that reproduces the crash scenario before fixing it. The test must:
+
+1. **Simulate the crash conditions** — set up the state that triggers the crash (e.g., replace document text to create stale positions, call the function that reads stale state).
+2. **Verify the fix prevents the crash** — the test must pass after the fix and would have crashed/failed before.
+3. **Live in the functional test suite** — add to `qt-functional-test.ss` (Qt crashes) or `functional-test.ss` (TUI crashes) as a new numbered group.
+4. **Use `with-catch` for assertion/abort crashes** — wrap the crash-triggering call so the test reports FAIL instead of aborting the entire test suite.
+
+Example (from the vterm+top Scintilla assertion crash):
+```scheme
+;; Simulate terminal PTY output shrinking the document
+(set-qt-text! ed (make-string 1000 #\x) 999)
+(qt-plain-text-edit-set-text! ed "tiny")
+(with-catch
+  (lambda (e) (fail! "visual-decorations after text shrink" ...))
+  (lambda ()
+    (qt-update-visual-decorations! ed)
+    (pass! "visual-decorations after text shrink")))
+```
+
+This policy exists because crashes are high-severity regressions. A test that reproduces the exact crash scenario ensures it never regresses again.
+
 ## Build Verification: MANDATORY Before Commit or Push
 
 **NEVER commit or push code without completing ALL of the following steps.** Every `make` target must build successfully AND every resulting binary must run without error. If ANY step fails, fix it before committing. No exceptions.
