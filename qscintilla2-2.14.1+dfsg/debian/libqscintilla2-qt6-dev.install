@@ -1,0 +1,3 @@
+usr/include/${DEB_HOST_MULTIARCH}/qt6/
+usr/lib/${DEB_HOST_MULTIARCH}/qt6/mkspecs/features/qscintilla2.prf
+usr/lib/${DEB_HOST_MULTIARCH}/libqscintilla2_qt6.so

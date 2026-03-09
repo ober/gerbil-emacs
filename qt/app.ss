@@ -307,6 +307,11 @@
                (loop (cdr wins))))))))))
 
 (def (qt-main . args)
+  ;; Disable Qt accessibility (AT-SPI) to prevent Scintilla assertion crashes.
+  ;; The accessibility layer queries text ranges asynchronously, which can use
+  ;; stale positions when the document changes rapidly (e.g. terminal PTY output).
+  ;; This triggers: Assertion [cpMax <= pdoc->Length()] at Editor.cpp:6096
+  (setenv "QT_ACCESSIBILITY" "0")
   (with-qt-app qt-app
     ;; Initialize runtime error log (~/.gemacs-errors.log)
     (init-gemacs-log!)

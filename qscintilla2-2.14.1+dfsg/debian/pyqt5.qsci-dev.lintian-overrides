@@ -1,0 +1,3 @@
+# It installs files in /usr/lib/python3/dist-packages, but it is
+# not a Python module.
+pyqt5.qsci-dev: python-package-missing-depends-on-python

@@ -146,6 +146,8 @@
 
 (def (qt-plain-text-edit-set-text! sci text)
   "Set entire text in QScintilla widget."
+  ;; Reset selection to origin before replacing — prevents stale positions
+  (sci-send sci SCI_SETSEL 0 0)
   (qt-scintilla-set-text! sci text))
 
 (def (qt-plain-text-edit-append! sci text)
@@ -514,6 +516,11 @@
         (sci-send sci SCI_INDICSETSTYLE *indic-brace-match* INDIC_ROUNDBOX)
         (sci-send sci SCI_INDICSETFORE *indic-brace-match*
                   (rgb->sci bg-r bg-g bg-b))
-        (sci-send sci SCI_INDICATORFILLRANGE pos len)))
+        ;; Clamp to document length to prevent assertion failures
+        (let* ((doc-len (sci-send sci SCI_GETLENGTH))
+               (safe-pos (min pos doc-len))
+               (safe-len (min len (- doc-len safe-pos))))
+          (when (> safe-len 0)
+            (sci-send sci SCI_INDICATORFILLRANGE safe-pos safe-len)))))
     *pending-decorations*)
   (set! *pending-decorations* []))

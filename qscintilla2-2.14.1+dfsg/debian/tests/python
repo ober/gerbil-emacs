@@ -1,0 +1,10 @@
+#!/bin/sh
+
+set -e
+
+for py in $(py3versions -s); do
+  echo "testing $py"
+  $py -c "import PyQt5.Qsci"
+  echo "testing $py-dbg"
+  $py-dbg -c "import PyQt5.Qsci"
+done
