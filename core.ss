@@ -28,6 +28,14 @@
   *all-commands*
   setup-default-bindings!
 
+  ;; Mode keymaps
+  *mode-keymaps*
+  *buffer-name-mode-map*
+  mode-keymap-set!
+  mode-keymap-get
+  mode-keymap-lookup
+  setup-mode-keymaps!
+
   ;; App state
   (struct-out app-state)
   new-app-state
@@ -274,6 +282,155 @@
 (def *meta-s-map*   (make-keymap))
 (def *ctrl-x-4-map* (make-keymap))
 (def *ctrl-x-p-map* (make-keymap))
+
+;;;============================================================================
+;;; Mode keymaps — per-mode key bindings
+;;;============================================================================
+
+;; Maps mode-symbol -> keymap hash table
+(def *mode-keymaps* (make-hash-table))
+
+;; Maps buffer name patterns -> mode symbol for special buffers
+(def *buffer-name-mode-map*
+  (make-hash-table))
+
+(def (mode-keymap-set! mode-sym km)
+  "Register a keymap for a mode symbol."
+  (hash-put! *mode-keymaps* mode-sym km))
+
+(def (mode-keymap-get mode-sym)
+  "Get the keymap for a mode symbol, or #f."
+  (hash-get *mode-keymaps* mode-sym))
+
+(def (mode-keymap-lookup buf key-str)
+  "Look up KEY-STR in the buffer's mode keymap. Returns command symbol or #f.
+   Checks lexer-lang first, then buffer name for special buffers."
+  (let* ((lang (buffer-lexer-lang buf))
+         (km (or (hash-get *mode-keymaps* lang)
+                 (hash-get *buffer-name-mode-map* (buffer-name buf)))))
+    (and km (keymap-lookup km key-str))))
+
+(def (setup-mode-keymaps!)
+  "Initialize mode-specific keybindings for special buffer types."
+  ;; Buffer name -> mode mapping for special buffers
+  (for-each
+    (lambda (pair)
+      (hash-put! *buffer-name-mode-map* (car pair) (cdr pair)))
+    '(("*compilation*" . compilation) ("*Grep*" . grep) ("*Occur*" . occur)
+      ("*calendar*" . calendar) ("*eww*" . eww) ("*Magit*" . magit)
+      ("*Magit: Commit*" . magit-commit) ("*Magit Log*" . magit-log)
+      ("*Magit Commit*" . magit-commit-view) ("*Magit Stash*" . magit-stash)
+      ("*Magit Stash Diff*" . magit-stash-diff) ("*Org Capture*" . org-capture)
+      ("*IBBuffer*" . ibuffer)))
+
+  ;; Dired mode
+  (let ((km (make-keymap)))
+    (for-each (lambda (p) (keymap-bind! km (car p) (cdr p)))
+      '(("n" . next-line) ("p" . previous-line) ("g" . revert-buffer)
+        ("d" . dired-do-delete) ("R" . dired-do-rename) ("C" . dired-do-copy)
+        ("+" . dired-create-directory) ("q" . kill-buffer-cmd) ("^" . dired)
+        ("m" . dired-mark) ("u" . dired-unmark) ("U" . dired-unmark-all)
+        ("t" . dired-toggle-marks) ("D" . dired-do-delete-marked) ("x" . dired-do-delete-marked)))
+    (mode-keymap-set! 'dired km))
+
+  ;; Compilation mode
+  (let ((km (make-keymap)))
+    (for-each (lambda (p) (keymap-bind! km (car p) (cdr p)))
+      '(("n" . next-error) ("p" . previous-error) ("g" . recompile) ("q" . kill-buffer-cmd)))
+    (mode-keymap-set! 'compilation km))
+
+  ;; Grep results mode
+  (let ((km (make-keymap)))
+    (for-each (lambda (p) (keymap-bind! km (car p) (cdr p)))
+      '(("n" . next-grep-result) ("p" . previous-grep-result) ("q" . kill-buffer-cmd)))
+    (mode-keymap-set! 'grep km))
+
+  ;; Buffer list mode
+  (let ((km (make-keymap)))
+    (for-each (lambda (p) (keymap-bind! km (car p) (cdr p)))
+      '(("n" . next-line) ("p" . previous-line) ("q" . kill-buffer-cmd)))
+    (mode-keymap-set! 'buffer-list km))
+
+  ;; IBBuffer mode
+  (let ((km (make-keymap)))
+    (for-each (lambda (p) (keymap-bind! km (car p) (cdr p)))
+      '(("d" . ibuffer-mark-delete) ("s" . ibuffer-mark-save)
+        ("u" . ibuffer-unmark) ("x" . ibuffer-execute) ("RET" . ibuffer-goto-buffer)
+        ("/" . ibuffer-filter-name) ("S" . ibuffer-sort-name) ("z" . ibuffer-sort-size)
+        ("t" . ibuffer-toggle-marks) ("g" . ibuffer-refresh)
+        ("n" . next-line) ("p" . previous-line) ("q" . kill-buffer-cmd)))
+    (mode-keymap-set! 'ibuffer km))
+
+  ;; Occur mode
+  (let ((km (make-keymap)))
+    (for-each (lambda (p) (keymap-bind! km (car p) (cdr p)))
+      '(("n" . next-line) ("p" . previous-line) ("q" . kill-buffer-cmd)))
+    (mode-keymap-set! 'occur km))
+
+  ;; Calendar mode
+  (let ((km (make-keymap)))
+    (for-each (lambda (p) (keymap-bind! km (car p) (cdr p)))
+      '(("p" . calendar-prev-month) ("n" . calendar-next-month)
+        ("<" . calendar-prev-year) (">" . calendar-next-year)
+        ("." . calendar-today) ("q" . kill-buffer-cmd)))
+    (mode-keymap-set! 'calendar km))
+
+  ;; EWW browser mode
+  (let ((km (make-keymap)))
+    (for-each (lambda (p) (keymap-bind! km (car p) (cdr p)))
+      '(("g" . eww) ("l" . eww-back) ("r" . eww-reload) ("q" . kill-buffer-cmd)))
+    (mode-keymap-set! 'eww km))
+
+  ;; Magit mode
+  (let ((km (make-keymap)))
+    (for-each (lambda (p) (keymap-bind! km (car p) (cdr p)))
+      '(("s" . magit-stage) ("S" . magit-stage-all) ("u" . magit-unstage)
+        ("c" . magit-commit) ("a" . magit-amend) ("d" . magit-diff)
+        ("l" . magit-log) ("b" . magit-branch) ("B" . magit-blame)
+        ("f" . magit-fetch) ("F" . magit-pull) ("P" . magit-push)
+        ("r" . magit-rebase) ("m" . magit-merge) ("z" . magit-stash)
+        ("Z" . magit-stash-pop) ("x" . magit-cherry-pick) ("X" . magit-revert-commit)
+        ("w" . magit-worktree) ("k" . magit-checkout) ("g" . magit-status)
+        ("n" . next-line) ("p" . previous-line) ("q" . kill-buffer-cmd)))
+    (mode-keymap-set! 'magit km))
+
+  ;; Magit commit mode
+  (let ((km (make-keymap)))
+    (keymap-bind! km "C-c C-c" 'magit-commit-finalize)
+    (keymap-bind! km "C-c C-k" 'magit-commit-abort)
+    (mode-keymap-set! 'magit-commit km))
+
+  ;; Magit log mode
+  (let ((km (make-keymap)))
+    (for-each (lambda (p) (keymap-bind! km (car p) (cdr p)))
+      '(("RET" . magit-log-show-commit) ("n" . next-line) ("p" . previous-line) ("q" . kill-buffer-cmd)))
+    (mode-keymap-set! 'magit-log km))
+
+  ;; Magit commit/diff view (shared by stash-diff)
+  (let ((km (make-keymap)))
+    (for-each (lambda (p) (keymap-bind! km (car p) (cdr p)))
+      '(("n" . next-line) ("p" . previous-line) ("q" . kill-buffer-cmd)))
+    (mode-keymap-set! 'magit-commit-view km)
+    (mode-keymap-set! 'magit-stash-diff km))
+
+  ;; Magit stash list
+  (let ((km (make-keymap)))
+    (for-each (lambda (p) (keymap-bind! km (car p) (cdr p)))
+      '(("RET" . magit-stash-show) ("n" . next-line) ("p" . previous-line) ("q" . kill-buffer-cmd)))
+    (mode-keymap-set! 'magit-stash km))
+
+  ;; Image mode
+  (let ((km (make-keymap)))
+    (for-each (lambda (p) (keymap-bind! km (car p) (cdr p)))
+      '(("+" . image-zoom-in) ("=" . image-zoom-in) ("-" . image-zoom-out)
+        ("0" . image-zoom-fit) ("1" . image-zoom-reset) ("q" . kill-buffer-cmd)))
+    (mode-keymap-set! 'image km))
+
+  ;; Org capture mode
+  (let ((km (make-keymap)))
+    (keymap-bind! km "C-c C-c" 'org-capture-finalize)
+    (keymap-bind! km "C-c C-k" 'org-capture-abort)
+    (mode-keymap-set! 'org-capture km)))
 
 (def (make-initial-key-state)
   (make-key-state *global-keymap* []))

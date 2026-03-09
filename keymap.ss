@@ -107,9 +107,17 @@
 ;;; Feed a key event into the state machine.
 ;;; Returns: (values action data new-state)
 ;;;   action: 'command | 'prefix | 'self-insert | 'undefined
-(def (key-state-feed! state ev)
+;;; Feed a key event into the state machine.
+;;; Now checks mode-specific keymaps before the global keymap.
+;;; The optional current-buffer parameter enables mode keymap lookup.
+(def (key-state-feed! state ev (current-buffer #f))
   (let* ((key-str (key-event->string ev))
-         (binding (keymap-lookup (key-state-keymap state) key-str)))
+         ;; Check mode keymap first (only at top-level, not in prefix)
+         (mode-cmd (and current-buffer
+                        (null? (key-state-prefix-keys state))
+                        (mode-keymap-lookup current-buffer key-str)))
+         (binding (or mode-cmd
+                      (keymap-lookup (key-state-keymap state) key-str))))
     (cond
       ;; Sub-keymap -> enter prefix mode
       ((hash-table? binding)

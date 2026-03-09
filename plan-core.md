@@ -51,7 +51,7 @@ A centralized variable registry where every customizable setting has:
 
 ## Phase 2: Mode Keymaps in Core
 
-**Status**: Not started
+**Status**: COMPLETE
 
 ### What exists today
 - Qt side: `*mode-keymaps*` hash in `qt/commands-config.ss` with ~15 mode-specific keymaps (dired, magit, compilation, etc.)
