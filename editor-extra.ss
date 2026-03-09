@@ -1672,6 +1672,14 @@
   (register-command! 'helm-ag cmd-rgrep)
   ;; iedit
   (register-command! 'iedit-mode cmd-iedit-mode)
+  ;; Visual and whitespace commands (real Scintilla implementations)
+  (register-command! 'visual-line-mode cmd-visual-line-mode)
+  (register-command! 'toggle-truncate-lines cmd-toggle-truncate-lines)
+  (register-command! 'toggle-word-wrap cmd-visual-line-mode)
+  (register-command! 'whitespace-mode cmd-whitespace-mode)
+  (register-command! 'toggle-show-trailing-whitespace cmd-toggle-show-trailing-whitespace)
+  (register-command! 'delete-trailing-whitespace cmd-delete-trailing-whitespace)
+  (register-command! 'whitespace-cleanup cmd-delete-trailing-whitespace)
   ;; Batch 12: Emacs-standard aliases
   (register-batch12-aliases!)
   (register-batch12-extra-aliases!)

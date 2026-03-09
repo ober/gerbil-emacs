@@ -27,7 +27,48 @@
         :gemacs/ipc
         :gemacs/helm-commands
         (only-in :gemacs/editor-extra-editing tui-record-edit-position!)
-        (only-in :gemacs/editor-extra-org *desktop-save-mode*))
+        (only-in :gemacs/editor-extra-org *desktop-save-mode*)
+        (only-in :gemacs/persist *which-key-mode* *which-key-delay* which-key-summary))
+
+;;;============================================================================
+;;; Which-key delayed display state (TUI)
+;;;============================================================================
+
+;; Counter for delayed which-key display in the TUI poll loop.
+;; When a prefix key is pressed, *which-key-tui-countdown* is set to
+;; the number of poll ticks before showing hints. Each tick is ~50ms.
+(def *which-key-tui-countdown* 0)
+(def *which-key-tui-keymap* #f)
+(def *which-key-tui-prefix* #f)
+
+(def (which-key-tui-schedule! keymap prefix-str)
+  "Schedule which-key hints for TUI after *which-key-delay* seconds."
+  (set! *which-key-tui-keymap* keymap)
+  (set! *which-key-tui-prefix* prefix-str)
+  ;; Convert seconds to poll ticks (50ms per tick)
+  (set! *which-key-tui-countdown*
+    (max 1 (inexact->exact (ceiling (* *which-key-delay* 20))))))
+
+(def (which-key-tui-cancel!)
+  "Cancel any pending which-key display."
+  (set! *which-key-tui-countdown* 0)
+  (set! *which-key-tui-keymap* #f)
+  (set! *which-key-tui-prefix* #f))
+
+(def (which-key-tui-tick! app)
+  "Called each poll tick (~50ms). If countdown expires, show which-key hints."
+  (when (> *which-key-tui-countdown* 0)
+    (set! *which-key-tui-countdown* (- *which-key-tui-countdown* 1))
+    (when (= *which-key-tui-countdown* 0)
+      ;; Timer fired — show hints if still in prefix mode
+      (when (and *which-key-tui-keymap*
+                 (not (null? (key-state-prefix-keys (app-state-key-state app)))))
+        (let ((hints (which-key-summary *which-key-tui-keymap* 12)))
+          (when (> (string-length hints) 0)
+            (echo-message! (app-state-echo app)
+              (string-append *which-key-tui-prefix* "- " hints)))))
+      (set! *which-key-tui-keymap* #f)
+      (set! *which-key-tui-prefix* #f))))
 
 ;;;============================================================================
 ;;; Session persistence for TUI layer (desktop-save-mode)
@@ -522,6 +563,9 @@
       ;; Tick pulse highlight countdown
       (pulse-tick!)
 
+      ;; Tick which-key delayed display
+      (which-key-tui-tick! app)
+
       ;; Auto-save and external modification check (~30s at 50ms poll)
       (set! *auto-save-counter* (+ *auto-save-counter* 1))
       (when (>= *auto-save-counter* *auto-save-interval*)
@@ -758,6 +802,10 @@
                      (editor-insert-text ed pos (string (integer->char key)))
                      (echo-message! (app-state-echo app)
                        (string-append "Inserted control char: ^" (string (integer->char (+ key 64)))))))))))))
+      (begin
+    ;; Cancel which-key timer on any non-prefix action
+    (when (not (eq? action 'prefix))
+      (which-key-tui-cancel!))
     (case action
       ((command)
        ;; Record macro step (skip macro control commands themselves)
@@ -770,7 +818,7 @@
                  (app-state-macro-recording app))))
        (execute-command! app data))
       ((prefix)
-       ;; Show prefix in echo area with which-key hints
+       ;; Show prefix indicator in echo area; schedule which-key hints after delay
        (let* ((prefix-str (let loop ((keys (key-state-prefix-keys new-state))
                                      (acc ""))
                             (if (null? keys) acc
@@ -778,12 +826,16 @@
                                     (if (string=? acc "")
                                       (car keys)
                                       (string-append acc " " (car keys)))))))
-              (current-km (key-state-keymap new-state))
-              (hints (which-key-summary current-km 12))
-              (display-str (if (> (string-length hints) 0)
-                             (string-append prefix-str "- " hints)
-                             (string-append prefix-str "-"))))
-         (echo-message! (app-state-echo app) display-str)))
+              (current-km (key-state-keymap new-state)))
+         (if *which-key-mode*
+           ;; Which-key mode: show prefix now, schedule hints after delay
+           (begin
+             (echo-message! (app-state-echo app)
+               (string-append prefix-str "-"))
+             (which-key-tui-schedule! current-km prefix-str))
+           ;; Which-key off: just show the prefix indicator
+           (echo-message! (app-state-echo app)
+             (string-append prefix-str "-")))))
       ((self-insert)
        ;; Apply key translation (e.g., bracket/paren swap)
        (let ((translated (char->integer (key-translate-char (integer->char data)))))
@@ -802,7 +854,7 @@
              (set! (app-state-prefix-digit-mode? app) #f)))))
       ((undefined)
        (echo-error! (app-state-echo app)
-                    (string-append data " is undefined"))))))))  ;; extra paren closes unless + let
+                    (string-append data " is undefined"))))))))) ;; close case + begin + let-values + unless + let
   ) ;; close let repeat-handled
 
 (def (dispatch-key! app ev)

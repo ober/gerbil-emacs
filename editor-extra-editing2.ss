@@ -671,10 +671,9 @@
 
 (def (cmd-toggle-global-whitespace-mode app)
   "Toggle global-whitespace-mode (show all whitespace)."
-  (let ((echo (app-state-echo app)))
-    (set! *global-whitespace-mode* (not *global-whitespace-mode*))
-    (echo-message! echo (if *global-whitespace-mode*
-                          "Global whitespace mode ON" "Global whitespace mode OFF"))))
+  (set! *global-whitespace-mode* (not *global-whitespace-mode*))
+  (echo-message! (app-state-echo app)
+    (if *global-whitespace-mode* "Global whitespace mode ON" "Global whitespace mode OFF")))
 
 (def (cmd-toggle-hide-ifdef-mode app)
   "Toggle hide-ifdef-mode (hide #ifdef blocks)."
@@ -1127,4 +1126,68 @@
          (editor-goto-pos ed (+ i 1))
          (editor-scroll-caret ed))
         (else (loop (+ i 1)))))))
+
+;;; --- Visual line mode (word wrap) ---
+;; Scintilla constants: SCI_SETWRAPMODE=2268, SC_WRAP_NONE=0, SC_WRAP_WORD=1
+;; SCI_SETWRAPVISUALFLAGS=2460, SC_WRAPVISUALFLAG_END=1
+(def *visual-line-mode* #f)
+
+(def (cmd-visual-line-mode app)
+  "Toggle visual-line-mode (word wrap)."
+  (set! *visual-line-mode* (not *visual-line-mode*))
+  (let ((ed (current-editor app)))
+    (when ed
+      (send-message ed 2268 (if *visual-line-mode* 1 0) 0)  ; SCI_SETWRAPMODE
+      (send-message ed 2460 (if *visual-line-mode* 1 0) 0))) ; SCI_SETWRAPVISUALFLAGS
+  (echo-message! (app-state-echo app)
+    (if *visual-line-mode* "Visual line mode enabled (word wrap)" "Visual line mode disabled")))
+
+(def (cmd-toggle-truncate-lines app)
+  "Toggle line truncation (inverse of visual-line-mode)."
+  (cmd-visual-line-mode app))
+
+;;; --- Whitespace mode (real Scintilla implementation) ---
+;; Scintilla constants: SCI_SETVIEWWS=2021 (0=invisible, 1=always visible, 2=after indent)
+;; SCI_SETVIEWEOL=2356 (0=hide, 1=show)
+(def *whitespace-mode* #f)
+
+(def (cmd-whitespace-mode app)
+  "Toggle whitespace-mode (show spaces, tabs, EOL)."
+  (set! *whitespace-mode* (not *whitespace-mode*))
+  (let ((ed (current-editor app)))
+    (when ed
+      (send-message ed 2021 (if *whitespace-mode* 1 0) 0)   ; SCI_SETVIEWWS
+      (send-message ed 2356 (if *whitespace-mode* 1 0) 0)))  ; SCI_SETVIEWEOL
+  (echo-message! (app-state-echo app)
+    (if *whitespace-mode* "Whitespace mode enabled" "Whitespace mode disabled")))
+
+;;; --- Show trailing whitespace ---
+(def *show-trailing-whitespace* #f)
+
+(def (cmd-toggle-show-trailing-whitespace app)
+  "Toggle highlighting of trailing whitespace."
+  (set! *show-trailing-whitespace* (not *show-trailing-whitespace*))
+  (let ((ed (current-editor app)))
+    (when ed
+      ;; SCI_SETVIEWWS: 2=visible after indent only (shows trailing spaces)
+      (send-message ed 2021 (if *show-trailing-whitespace* 2 0) 0)))
+  (echo-message! (app-state-echo app)
+    (if *show-trailing-whitespace* "Showing trailing whitespace" "Hiding trailing whitespace")))
+
+;;; --- Delete trailing whitespace ---
+(def (cmd-delete-trailing-whitespace app)
+  "Delete trailing whitespace from all lines."
+  (let* ((ed (current-editor app))
+         (text (editor-get-text ed))
+         (lines (string-split text #\newline))
+         (cleaned (map (lambda (line)
+                        (string-trim-right line))
+                      lines))
+         (result (string-join cleaned "\n")))
+    (unless (string=? text result)
+      (let ((pos (editor-get-current-pos ed)))
+        (editor-set-text ed result)
+        (editor-goto-pos ed (min pos (string-length result)))
+        (editor-scroll-caret ed)))
+    (echo-message! (app-state-echo app) "Trailing whitespace deleted")))
 

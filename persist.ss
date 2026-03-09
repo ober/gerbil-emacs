@@ -42,6 +42,8 @@
   detect-major-mode
 
   ;; Which-key
+  *which-key-mode*
+  *which-key-delay*
   which-key-summary
 
   ;; Scroll margin
@@ -477,6 +479,18 @@
 ;;;============================================================================
 ;;; Which-key (prefix key hints)
 ;;;============================================================================
+
+;; When #t, show available keybindings after a prefix key + delay
+(def *which-key-mode* #t)
+(defvar! 'which-key-mode #t "Show available keybindings after prefix key delay"
+         setter: (lambda (v) (set! *which-key-mode* v))
+         type: 'boolean group: 'display)
+
+;; Delay in seconds before showing which-key hints (applies to both TUI and Qt)
+(def *which-key-delay* 0.5)
+(defvar! 'which-key-delay 0.5 "Seconds to wait before showing prefix key hints"
+         setter: (lambda (v) (set! *which-key-delay* v))
+         type: 'number group: 'display)
 
 (def (which-key-summary keymap (max-entries 20))
   "Generate a summary string of available keys in a keymap.

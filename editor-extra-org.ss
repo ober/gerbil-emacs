@@ -17,7 +17,8 @@
         :gemacs/modeline
         :gemacs/echo
         :gemacs/editor-extra-helpers
-        (only-in :gemacs/persist buffer-local-set!)
+        (only-in :gemacs/persist buffer-local-set!
+                 *which-key-mode* *which-key-delay*)
         (only-in :gemacs/org-parse org-heading-stars-of-line
                  make-org-timestamp org-timestamp-day org-heading-title)
         (only-in :gemacs/org-agenda
@@ -1403,8 +1404,7 @@
       (cmd-set-window-dedicated app))))
 
 ;;; --- Which-key mode: show available prefixed key bindings ---
-
-(def *which-key-mode* #f)
+;; *which-key-mode* is defined in persist.ss (default #t)
 
 (def (cmd-toggle-which-key-mode app)
   "Toggle which-key mode (show key completions after prefix)."

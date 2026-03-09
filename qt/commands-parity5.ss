@@ -40,7 +40,8 @@
         :gemacs/qt/commands-parity
         :gemacs/qt/commands-parity2
         :gemacs/qt/commands-parity3
-        :gemacs/qt/commands-parity4)
+        :gemacs/qt/commands-parity4
+        (only-in :gemacs/persist *which-key-mode* *which-key-delay*))
 
 ;;;============================================================================
 ;;; Mode toggle commands (63) — toggle via make-toggle-command
@@ -933,6 +934,7 @@
   (qt-register-parity5-stubs!)
   (qt-register-parity5-aliases!)
   (qt-register-parity5-moved-commands!)
+  (qt-register-visual-whitespace-commands!)
   ;; Functional commands
   (for-each
     (lambda (pair)
@@ -1041,6 +1043,18 @@
   (echo-message! (app-state-echo app) "Use org-mode tables (| column |)"))
 (def (cmd-which-key-describe-prefix app)
   (execute-command! app 'which-key-show))
+
+(def (cmd-toggle-which-key-mode app)
+  "Toggle which-key mode (show key completions after prefix)."
+  (set! *which-key-mode* (not *which-key-mode*))
+  (echo-message! (app-state-echo app)
+    (if *which-key-mode*
+      "Which-key mode enabled"
+      "Which-key mode disabled")))
+
+(def (cmd-which-key-mode app)
+  "Toggle which-key mode (show key completions after prefix)."
+  (cmd-toggle-which-key-mode app))
 (def (cmd-imenu-anywhere app)
   (execute-command! app 'imenu))
 (def (cmd-imenu-list app)
@@ -1128,6 +1142,8 @@
       (cons 'switch-to-buffer-other-window cmd-switch-to-buffer-other-window)
       (cons 'table-insert cmd-table-insert)
       (cons 'which-key-describe-prefix cmd-which-key-describe-prefix)
+      (cons 'toggle-which-key-mode cmd-toggle-which-key-mode)
+      (cons 'which-key-mode cmd-which-key-mode)
       (cons 'imenu-anywhere cmd-imenu-anywhere)
       (cons 'imenu-list cmd-imenu-list)
       (cons 'jinx-correct cmd-jinx-correct)
@@ -1146,3 +1162,99 @@
       (cons 'ibuffer-do-kill cmd-ibuffer-do-kill)
       (cons 'dired-delete-marked cmd-dired-delete-marked)
       (cons 'dirvish cmd-dirvish))))
+
+;;; ============================================================================
+;;; Visual line mode (word wrap) — real Scintilla implementation
+;;; ============================================================================
+
+;; SCI_SETWRAPMODE=2268, SC_WRAP_NONE=0, SC_WRAP_WORD=1
+;; SCI_SETWRAPVISUALFLAGS=2460, SC_WRAPVISUALFLAG_END=1
+(def *qt-visual-line-mode* #f)
+
+(def (cmd-qt-visual-line-mode app)
+  "Toggle visual-line-mode (word wrap) in Qt."
+  (set! *qt-visual-line-mode* (not *qt-visual-line-mode*))
+  (let ((ed (qt-current-editor app)))
+    (when ed
+      (sci-send ed 2268 (if *qt-visual-line-mode* 1 0) 0)
+      (sci-send ed 2460 (if *qt-visual-line-mode* 1 0) 0)))
+  (echo-message! (app-state-echo app)
+    (if *qt-visual-line-mode* "Visual line mode enabled (word wrap)" "Visual line mode disabled")))
+
+(def (cmd-qt-toggle-truncate-lines app)
+  "Toggle line truncation (inverse of visual-line-mode)."
+  (cmd-qt-visual-line-mode app))
+
+;;; ============================================================================
+;;; Whitespace mode — real Scintilla implementation
+;;; ============================================================================
+
+;; SCI_SETVIEWWS=2021 (0=invisible, 1=always, 2=after indent)
+;; SCI_SETVIEWEOL=2356 (0=hide, 1=show)
+(def *qt-whitespace-mode* #f)
+
+(def (cmd-qt-whitespace-mode app)
+  "Toggle whitespace-mode (show spaces, tabs, EOL)."
+  (set! *qt-whitespace-mode* (not *qt-whitespace-mode*))
+  (let ((ed (qt-current-editor app)))
+    (when ed
+      (sci-send ed 2021 (if *qt-whitespace-mode* 1 0) 0)
+      (sci-send ed 2356 (if *qt-whitespace-mode* 1 0) 0)))
+  (echo-message! (app-state-echo app)
+    (if *qt-whitespace-mode* "Whitespace mode enabled" "Whitespace mode disabled")))
+
+(def *qt-global-whitespace-mode* #f)
+
+(def (cmd-qt-global-whitespace-mode app)
+  "Toggle global-whitespace-mode."
+  (set! *qt-global-whitespace-mode* (not *qt-global-whitespace-mode*))
+  (set! *qt-whitespace-mode* *qt-global-whitespace-mode*)
+  (let ((ed (qt-current-editor app)))
+    (when ed
+      (sci-send ed 2021 (if *qt-whitespace-mode* 1 0) 0)
+      (sci-send ed 2356 (if *qt-whitespace-mode* 1 0) 0)))
+  (echo-message! (app-state-echo app)
+    (if *qt-global-whitespace-mode* "Global whitespace mode enabled" "Global whitespace mode disabled")))
+
+(def *qt-show-trailing-whitespace* #f)
+
+(def (cmd-qt-toggle-show-trailing-whitespace app)
+  "Toggle highlighting of trailing whitespace."
+  (set! *qt-show-trailing-whitespace* (not *qt-show-trailing-whitespace*))
+  (let ((ed (qt-current-editor app)))
+    (when ed
+      (sci-send ed 2021 (if *qt-show-trailing-whitespace* 2 0) 0)))
+  (echo-message! (app-state-echo app)
+    (if *qt-show-trailing-whitespace* "Showing trailing whitespace" "Hiding trailing whitespace")))
+
+(def (cmd-qt-delete-trailing-whitespace app)
+  "Delete trailing whitespace from all lines."
+  (let* ((ed (qt-current-editor app))
+         (text (qt-plain-text-edit-text ed))
+         (lines (string-split text #\newline))
+         (cleaned (map string-trim-right lines))
+         (result (string-join cleaned "\n")))
+    (unless (string=? text result)
+      (let ((pos (sci-send ed 2008 0 0))) ; SCI_GETCURRENTPOS
+        (qt-plain-text-edit-set-text! ed result)
+        (sci-send ed 2141 (min pos (string-length result)) 0) ; SCI_SETCURRENTPOS
+        (sci-send ed 2169 0 0)))  ; SCI_SCROLLCARET
+    (echo-message! (app-state-echo app) "Trailing whitespace deleted")))
+
+;;; ============================================================================
+;;; Register visual/whitespace commands
+;;; ============================================================================
+
+(def (qt-register-visual-whitespace-commands!)
+  "Register visual-line-mode and whitespace-mode commands."
+  (for-each
+    (lambda (pair) (register-command! (car pair) (cdr pair)))
+    (list
+      (cons 'visual-line-mode cmd-qt-visual-line-mode)
+      (cons 'toggle-truncate-lines cmd-qt-toggle-truncate-lines)
+      (cons 'toggle-word-wrap cmd-qt-visual-line-mode)
+      (cons 'whitespace-mode cmd-qt-whitespace-mode)
+      (cons 'global-whitespace-mode cmd-qt-global-whitespace-mode)
+      (cons 'toggle-show-trailing-whitespace cmd-qt-toggle-show-trailing-whitespace)
+      (cons 'delete-trailing-whitespace cmd-qt-delete-trailing-whitespace)
+      (cons 'whitespace-cleanup cmd-qt-delete-trailing-whitespace))))

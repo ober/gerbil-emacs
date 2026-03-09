@@ -152,6 +152,11 @@ Largest files: modes (~1851), lsp (~1802), search (~1778)
 
 - ~~**Stub cleanup + re-builder + doc/theme/mail upgrades**~~ — DONE: Upgraded re-builder from echo stub to real interactive regex builder with Scintilla match highlighting (INDIC_ROUNDBOX). Upgraded dash-at-point, devdocs-lookup, doom-themes, rmail, citar-insert-citation, facemenu-set-background from stubs to real. Cleaned up 37 parity3 stubs overridden by real implementations. Only 10 stubs remain across entire Qt codebase. 661 Qt tests
 
+- ~~**Auto-revert mode**~~ — DONE: auto-revert unmodified buffers when files change on disk, both TUI and Qt
+- ~~**Desktop save/restore**~~ — DONE: persist and restore session (open buffers, positions) across restarts
+- ~~**Multi-cursor typing**~~ — DONE: Scintilla multi-selection support for simultaneous typing at multiple cursors
+- ~~**Aggressive indent mode**~~ — DONE: auto-reindent on closing delimiters and newlines
+
 ### Aspirational
 - LSP in TUI
 - ~~DAP/debugger integration~~ — DONE: real GDB/MI interface (Qt), DAP protocol skeleton (TUI)

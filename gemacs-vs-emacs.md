@@ -1,7 +1,7 @@
 # Gemacs vs GNU Emacs — Feature Comparison
 
-> **Last updated:** 2026-03-07
-> **Gemacs version:** master (e003280)
+> **Last updated:** 2026-03-09
+> **Gemacs version:** master (52d2604)
 > **Compared against:** GNU Emacs 29.x / 30.x feature set
 > **Command parity:** 2168+ commands registered in both TUI and Qt layers (zero gap)
 
@@ -89,6 +89,7 @@
 | Auto-fill mode                 | :white_check_mark:  | Automatic line wrapping at fill-column          |
 | Electric pair mode             | :large_blue_circle: | Auto-pairing brackets/quotes, toggleable        |
 | Indent line / region           | :white_check_mark:  | TAB dispatches: indent, complete, or org-expand |
+| Aggressive indent mode         | :white_check_mark:  | Auto-reindent on closing delimiters and newlines |
 | Universal argument (`C-u`)     | :white_check_mark:  | Numeric prefix for repeat/modify commands       |
 | Digit arguments (`M-0`..`M-9`) | :white_check_mark:  |                                                 |
 | Negative argument (`M--`)      | :white_check_mark:  |                                                 |
@@ -369,7 +370,7 @@
 | Save as (`C-x C-w`) | :white_check_mark: | |
 | Save some buffers (`C-x s`) | :white_check_mark: | Prompts for each modified |
 | Revert buffer | :white_check_mark: | Reload from disk |
-| Auto-revert mode | :white_check_mark: | File watcher for external changes |
+| Auto-revert mode | :white_check_mark: | Auto-reverts unmodified buffers when files change on disk |
 | Auto-save mode | :white_check_mark: | 30s timer writes to `#file#`, per-buffer toggle, recover-file |
 | Backup files | :large_blue_circle: | Creates `file~` backup on first save, toggle with `M-x toggle-backup-files` |
 | Recent files (`C-x C-r`) | :white_check_mark: | |
@@ -382,8 +383,9 @@
 | Find file literally | :large_blue_circle: | Opens file with syntax highlighting disabled (SCLEX_NULL) |
 | File encoding detection | :large_blue_circle: | UTF-8 default; `set-buffer-file-coding-system` with 15 encodings, `revert-buffer-with-coding-system`, per-buffer encoding storage |
 | Line ending conversion | :white_check_mark: | Unix/DOS/Mac detection and conversion |
+| Desktop save/restore | :white_check_mark: | Persist and restore session (open buffers, positions) across restarts |
 
-**Summary:** File operations are comprehensive. Find, save, revert, auto-revert, recent files all work.
+**Summary:** File operations are comprehensive. Find, save, revert, auto-revert, recent files, desktop save/restore all work.
 
 ---
 
@@ -912,8 +914,9 @@
 | mc-rotate | :white_check_mark: | Rotate between cursors |
 | iedit (edit all occurrences) | :white_check_mark: | Rename symbol at point across buffer |
 | Symbol highlighting + edit | :white_check_mark: | `highlight-symbol` + iedit |
+| Multi-cursor typing | :white_check_mark: | Scintilla multi-selection support for simultaneous typing at all cursors |
 
-**Summary:** Full multiple cursors and iedit support in both TUI and Qt layers. Keybindings: `C-c m n`, `C-c m a`.
+**Summary:** Full multiple cursors and iedit support in both TUI and Qt layers. Multi-cursor typing via Scintilla multi-selection. Keybindings: `C-c m n`, `C-c m a`.
 
 ---
 

@@ -144,6 +144,7 @@
   register-default-repeat-maps!
   repeat-map-for-command
   repeat-map-lookup
+  repeat-map-hint
   clear-repeat-map!
 
   ;; Image buffer support
@@ -1477,7 +1478,9 @@
         (when (repeat-mode?)
           (let ((rmap (repeat-map-for-command name)))
             (if rmap
-              (active-repeat-map-set! rmap)
+              (begin
+                (active-repeat-map-set! rmap)
+                (echo-message! (app-state-echo app) (repeat-map-hint rmap)))
               (active-repeat-map-set! #f)))))
       (let ((buf-name (with-catch (lambda (e) "<unknown>")
                         (lambda ()
@@ -2099,7 +2102,7 @@
 (def *repeat-maps* (make-hash-table-eq))
 
 ;; Whether repeat-mode is enabled (boxed for cross-module mutation)
-(def *repeat-mode-box* (box #f))
+(def *repeat-mode-box* (box #t))
 (def (repeat-mode?) (unbox *repeat-mode-box*))
 (def (repeat-mode-set! v) (set-box! *repeat-mode-box* v))
 
@@ -2128,6 +2131,19 @@ Each command in the map is also associated back to this map."
   "Deactivate any active repeat map."
   (active-repeat-map-set! #f))
 
+(def (repeat-map-hint rmap)
+  "Build an echo-area hint string from a repeat map alist.
+E.g. \"(Repeat: o=other-window, 1=delete-other-windows)\""
+  (string-append "(Repeat: "
+    (let loop ((entries rmap) (acc ""))
+      (if (null? entries) acc
+        (let* ((e (car entries))
+               (item (string-append (car e) "=" (symbol->string (cdr e)))))
+          (loop (cdr entries)
+                (if (string=? acc "") item
+                  (string-append acc ", " item))))))
+    ")"))
+
 (def (repeat-map-lookup key-str)
   "Look up KEY-STR in the active repeat map. Returns command name or #f."
   (let ((amap (active-repeat-map)))
@@ -2141,21 +2157,22 @@ Each command in the map is also associated back to this map."
 
 (def (register-default-repeat-maps!)
   "Register the standard Emacs 28+ repeat maps."
-  ;; Window navigation: after C-x o, just press o to cycle windows
+  ;; Window navigation: after C-x o, press o to cycle, 0/1/2/3 to manage
   (register-repeat-map! 'other-window-repeat-map
-    '(("o" . other-window)))
+    '(("o" . other-window) ("0" . delete-window) ("1" . delete-other-windows)
+      ("2" . split-window-below) ("3" . split-window-right)))
   ;; Buffer cycling: after C-x <left>/<right>, press n/p to cycle
   (register-repeat-map! 'buffer-navigation-repeat-map
     '(("n" . next-buffer) ("p" . previous-buffer)))
   ;; Error navigation: after M-g n/p, press n/p to continue
   (register-repeat-map! 'next-error-repeat-map
     '(("n" . next-error) ("p" . previous-error)))
-  ;; Undo: after C-/, press u to keep undoing
+  ;; Undo: after C-/, press / to keep undoing
   (register-repeat-map! 'undo-repeat-map
-    '(("u" . undo)))
-  ;; Page navigation: after C-v/M-v, press v/V to keep scrolling
+    '(("/" . undo)))
+  ;; Page navigation: after C-x [ or C-x ], press [ or ] to continue
   (register-repeat-map! 'page-navigation-repeat-map
-    '(("v" . scroll-up) ("V" . scroll-down)))
+    '(("[" . backward-page) ("]" . forward-page)))
   ;; Window resize: after C-x ^/{/}, press key to keep resizing
   (register-repeat-map! 'window-size-repeat-map
     '(("^" . enlarge-window) ("{" . shrink-window-horizontally)

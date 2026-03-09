@@ -2233,7 +2233,7 @@
       (check (not (not (repeat-map-for-command 'other-window))) => #t)
       (check (not (not (repeat-map-for-command 'undo))) => #t)
       (check (not (not (repeat-map-for-command 'next-error))) => #t)
-      (check (not (not (repeat-map-for-command 'scroll-up))) => #t))
+      (check (not (not (repeat-map-for-command 'backward-page))) => #t))
 
     (test-case "repeat-mode: repeat-map-lookup finds entry"
       (active-repeat-map-set!
@@ -2251,7 +2251,7 @@
         (execute-command! app 'undo)
         ;; After undo (which has a repeat map), repeat map should be active
         (check (not (not (active-repeat-map))) => #t)
-        (check (repeat-map-lookup "u") => 'undo)
+        (check (repeat-map-lookup "/") => 'undo)
         ;; Command not in any repeat map deactivates it
         (execute-command! app 'forward-char)
         (check (active-repeat-map) => #f)

@@ -17,7 +17,8 @@
         :gemacs/modeline
         :gemacs/echo
         :gemacs/highlight
-        :gemacs/editor-extra-helpers)
+        :gemacs/editor-extra-helpers
+        (only-in :gemacs/persist *which-key-mode*))
 
 ;; --- Task #47: xref, ibuffer, which-key, markdown, auto-insert, and more ---
 
@@ -1835,9 +1836,10 @@
 (def (cmd-toggle-global-which-key app)
   "Toggle global which-key-mode (display available keybindings)."
   (let ((echo (app-state-echo app)))
-    (set! *global-which-key* (not *global-which-key*))
-    (echo-message! echo (if *global-which-key*
-                          "Global which-key ON" "Global which-key OFF"))))
+    (set! *which-key-mode* (not *which-key-mode*))
+    (set! *global-which-key* *which-key-mode*)
+    (echo-message! echo (if *which-key-mode*
+                          "Which-key mode enabled" "Which-key mode disabled"))))
 
 (def (cmd-toggle-global-hydra app)
   "Toggle global hydra-mode (sticky keybinding menus)."

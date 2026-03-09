@@ -18,7 +18,8 @@
         :gemacs/echo
         :gemacs/editor-extra-helpers
         :gemacs/editor-extra-vcs
-        :gemacs/editor-extra-media)
+        :gemacs/editor-extra-media
+        (only-in :gemacs/persist *which-key-mode*))
 
 ;; --- Task #49: elisp mode, scheme mode, regex builder, color picker, etc. ---
 
@@ -1390,9 +1391,11 @@
 
 ;; Which-key extras
 (def (cmd-which-key-mode app)
-  "Toggle which-key mode — shows available keybindings."
-  (let ((on (toggle-mode! 'which-key)))
-    (echo-message! (app-state-echo app) (if on "Which-key: on" "Which-key: off"))))
+  "Toggle which-key mode — shows available keybindings after prefix delay."
+  (set! *which-key-mode* (not *which-key-mode*))
+  (toggle-mode! 'which-key)  ;; keep mode registry in sync
+  (echo-message! (app-state-echo app)
+    (if *which-key-mode* "Which-key mode enabled" "Which-key mode disabled")))
 
 ;; Helpful — enhanced help system
 (def (cmd-helpful-callable app)

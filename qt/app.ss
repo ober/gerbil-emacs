@@ -11,7 +11,8 @@
         :gemacs/editor
         (only-in :gemacs/persist init-file-load!
                  detect-major-mode buffer-local-set!
-                 theme-settings-load! custom-faces-load!)
+                 theme-settings-load! custom-faces-load!
+                 *which-key-mode* *which-key-delay*)
         :gemacs/repl
         :gemacs/eshell
         :gemacs/shell
@@ -659,11 +660,13 @@
                                              (string-append acc " " (car keys))))))))
                             (echo-message! (app-state-echo app)
                                            (string-append prefix-str "-"))
-                            ;; Start which-key timer to show available bindings
-                            (set! *which-key-pending-keymap*
-                                  (key-state-keymap new-state))
-                            (set! *which-key-pending-prefix* prefix-str)
-                            (qt-timer-start! *which-key-timer* 500)))
+                            ;; Start which-key timer if mode is enabled
+                            (when *which-key-mode*
+                              (set! *which-key-pending-keymap*
+                                    (key-state-keymap new-state))
+                              (set! *which-key-pending-prefix* prefix-str)
+                              (qt-timer-start! *which-key-timer*
+                                (inexact->exact (round (* *which-key-delay* 1000)))))))
                          ((undefined)
                           (echo-error! (app-state-echo app)
                                        (string-append data " is undefined")))
