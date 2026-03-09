@@ -1733,9 +1733,7 @@
   (register-command! 'cape-file cmd-cape-file)
   (register-command! 'cape-history cmd-cape-history)
   (register-command! 'cape-keyword cmd-cape-keyword)
-  (register-command! 'copilot-mode cmd-copilot-mode)
-  (register-command! 'copilot-accept-completion cmd-copilot-accept-completion)
-  (register-command! 'copilot-next-completion cmd-copilot-next-completion)
+  ;; Copilot commands registered via qt-register-copilot-commands! from parity5
   (register-command! 'ai-inline-suggest cmd-ai-inline-suggest)
   (register-command! 'ai-code-explain cmd-ai-code-explain)
   (register-command! 'ai-code-refactor cmd-ai-code-refactor)
@@ -2424,20 +2422,7 @@
         (when (and choice (> (string-length choice) 0))
           (qt-plain-text-edit-insert-text! ed choice))))))
 
-(def *qt-copilot-mode* #f)
-(def (cmd-copilot-mode app)
-  "Toggle Copilot mode (Qt)."
-  (set! *qt-copilot-mode* (not *qt-copilot-mode*))
-  (echo-message! (app-state-echo app)
-    (if *qt-copilot-mode* "Copilot mode: on" "Copilot mode: off")))
-
-(def (cmd-copilot-accept-completion app)
-  "Accept Copilot suggestion (Qt)."
-  (echo-message! (app-state-echo app) "Copilot: no pending suggestion"))
-
-(def (cmd-copilot-next-completion app)
-  "Next Copilot suggestion (Qt)."
-  (echo-message! (app-state-echo app) "Copilot: no more suggestions"))
+;; Copilot stubs removed — real implementation in commands-parity5.ss
 
 (def *qt-ai-inline-mode* #f)
 (def (cmd-ai-inline-suggest app)
@@ -2665,13 +2650,8 @@
   (set! *qt-tree-sitter-hl* (not *qt-tree-sitter-hl*))
   (echo-message! (app-state-echo app) (if *qt-tree-sitter-hl* "Tree-sitter highlighting: on" "Tree-sitter highlighting: off")))
 
-(def (cmd-make-frame app)
-  "Create new frame (Qt)."
-  (echo-message! (app-state-echo app) "Multiple frames: single-window design"))
-
-(def (cmd-other-frame app)
-  "Switch to other frame (Qt)."
-  (echo-message! (app-state-echo app) "Only one frame available"))
+;; cmd-make-frame, cmd-other-frame, qt-frame-config-save, qt-frame-config-restore!
+;; all defined in commands-shell.ss (available via (export #t) chain)
 
 (def (cmd-tool-bar-mode app)
   "Toggle tool bar (Qt)."

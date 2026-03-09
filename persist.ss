@@ -85,6 +85,14 @@
   ;; Centered cursor mode
   *centered-cursor-mode*
 
+  ;; Copilot (AI inline completion)
+  *copilot-mode*
+  *copilot-api-key*
+  *copilot-model*
+  *copilot-api-url*
+  *copilot-suggestion*
+  *copilot-suggestion-pos*
+
   ;; Persistence paths
   persist-path)
 
@@ -880,3 +888,24 @@
 (defvar! 'centered-cursor #f "Keep cursor centered vertically in the window"
          setter: (lambda (v) (set! *centered-cursor-mode* v))
          type: 'boolean group: 'display)
+
+;;;============================================================================
+;;; Copilot (AI inline completion) settings
+;;;============================================================================
+
+(def *copilot-mode* #f)
+(defvar! 'copilot-mode #f "Enable AI inline code completion (requires OPENAI_API_KEY)"
+         setter: (lambda (v) (set! *copilot-mode* v))
+         type: 'boolean group: 'editing)
+
+(def *copilot-api-key* (getenv "OPENAI_API_KEY" ""))
+(def *copilot-model* "gpt-4o-mini")
+(defvar! 'copilot-model "gpt-4o-mini" "OpenAI model for code completion"
+         setter: (lambda (v) (set! *copilot-model* v))
+         type: 'string group: 'editing)
+
+(def *copilot-api-url* "https://api.openai.com/v1/chat/completions")
+
+;; Current pending suggestion and position where it was generated
+(def *copilot-suggestion* #f)   ;; string or #f
+(def *copilot-suggestion-pos* 0) ;; cursor position when suggestion was requested

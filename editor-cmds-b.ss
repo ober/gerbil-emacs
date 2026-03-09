@@ -1388,13 +1388,167 @@
   "Toggle end-of-line conversion mode."
   (echo-message! (app-state-echo app) "EOL: use convert-line-endings-unix/dos commands"))
 
+(def (tui-frame-config-save app)
+  "Capture the current frame's window configuration as a portable config.
+   Returns (list buffer-names current-buffer-name cursor-positions)."
+  (let* ((fr (app-state-frame app))
+         (wins (frame-windows fr))
+         (cur-idx (frame-current-idx fr))
+         (buf-names (map (lambda (win)
+                           (let ((buf (edit-window-buffer win)))
+                             (if buf (buffer-name buf) "*scratch*")))
+                         wins))
+         (cur-buf (let ((buf (edit-window-buffer (list-ref wins cur-idx))))
+                    (if buf (buffer-name buf) "*scratch*")))
+         (positions (map (lambda (win)
+                           (let ((buf (edit-window-buffer win))
+                                 (ed (edit-window-editor win)))
+                             (cons (if buf (buffer-name buf) "*scratch*")
+                                   (editor-get-current-pos ed))))
+                         wins)))
+    (list buf-names cur-buf positions)))
+
+(def (tui-frame-config-restore! app config)
+  "Restore a saved frame configuration in TUI mode."
+  (let* ((buf-names (car config))
+         (cur-buf-name (cadr config))
+         (positions (caddr config))
+         (fr (app-state-frame app))
+         (first-buf-name (if (pair? buf-names) (car buf-names) "*scratch*"))
+         (first-buf (or (buffer-by-name first-buf-name)
+                        (buffer-by-name "*scratch*"))))
+    ;; Collapse to single window
+    (let loop ()
+      (when (> (length (frame-windows fr)) 1)
+        (frame-delete-window! fr)
+        (loop)))
+    ;; Set the first buffer
+    (when first-buf
+      (let* ((win (current-window fr))
+             (ed (edit-window-editor win)))
+        (buffer-attach! ed first-buf)
+        (set! (edit-window-buffer win) first-buf)
+        (let ((pos-entry (assoc first-buf-name positions)))
+          (when pos-entry
+            (editor-goto-pos ed (cdr pos-entry))))))
+    ;; For each additional buffer, split and set
+    (when (> (length buf-names) 1)
+      (let loop ((rest (cdr buf-names)))
+        (when (pair? rest)
+          (let* ((bname (car rest))
+                 (buf (or (buffer-by-name bname) first-buf)))
+            (when buf
+              (let ((new-ed (frame-split! fr)))
+                (buffer-attach! new-ed buf)
+                (let ((new-win (current-window fr)))
+                  (set! (edit-window-buffer new-win) buf)
+                  (let ((pos-entry (assoc bname positions)))
+                    (when pos-entry
+                      (editor-goto-pos new-ed (cdr pos-entry))))))))
+          (loop (cdr rest)))))
+    ;; Switch to the correct current buffer
+    (let ((target-idx
+            (let loop ((wins (frame-windows fr)) (i 0))
+              (cond
+                ((null? wins) 0)
+                ((let ((buf (edit-window-buffer (car wins))))
+                   (and buf (string=? (buffer-name buf) cur-buf-name)))
+                 i)
+                (else (loop (cdr wins) (+ i 1)))))))
+      (set! (frame-current-idx fr) target-idx))))
+
 (def (cmd-make-frame app)
-  "Create a new frame (stub — single frame only)."
-  (echo-message! (app-state-echo app) "Multiple frames not supported"))
+  "Create a new virtual frame (C-x 5 2). Saves current window config
+   and starts a fresh frame with *scratch*."
+  (let ((config (tui-frame-config-save app)))
+    ;; Save current frame config at current slot
+    (if (null? *frame-list*)
+      (set! *frame-list* (list config))
+      (let loop ((lst *frame-list*) (i 0) (acc []))
+        (cond
+          ((null? lst)
+           (set! *frame-list* (append (reverse acc) (list config))))
+          ((= i *current-frame-idx*)
+           (set! *frame-list* (append (reverse acc) (list config) (cdr lst))))
+          (else (loop (cdr lst) (+ i 1) (cons (car lst) acc))))))
+    ;; Append new empty frame config
+    (set! *frame-list* (append *frame-list*
+                               (list (list '("*scratch*") "*scratch*" []))))
+    (set! *current-frame-idx* (- (length *frame-list*) 1))
+    ;; Reset live frame to scratch
+    (let* ((fr (app-state-frame app))
+           (scratch (or (buffer-by-name "*scratch*") (car (buffer-list)))))
+      (let loop ()
+        (when (> (length (frame-windows fr)) 1)
+          (frame-delete-window! fr)
+          (loop)))
+      (let* ((win (current-window fr))
+             (ed (edit-window-editor win)))
+        (buffer-attach! ed scratch)
+        (set! (edit-window-buffer win) scratch)
+        (editor-goto-pos ed 0)))
+    (echo-message! (app-state-echo app)
+      (string-append "Frame " (number->string (+ *current-frame-idx* 1))
+                     "/" (number->string (frame-count))))))
 
 (def (cmd-delete-frame app)
-  "Delete the current frame."
-  (echo-message! (app-state-echo app) "Cannot delete the only frame"))
+  "Delete the current virtual frame (C-x 5 0)."
+  (if (<= (frame-count) 1)
+    (echo-error! (app-state-echo app) "Cannot delete the only frame")
+    (begin
+      ;; Remove current frame from list
+      (set! *frame-list*
+            (let loop ((lst *frame-list*) (i 0) (acc []))
+              (cond
+                ((null? lst) (reverse acc))
+                ((= i *current-frame-idx*) (append (reverse acc) (cdr lst)))
+                (else (loop (cdr lst) (+ i 1) (cons (car lst) acc))))))
+      ;; Adjust index
+      (when (>= *current-frame-idx* (length *frame-list*))
+        (set! *current-frame-idx* (- (length *frame-list*) 1)))
+      ;; Restore the frame config at new current index
+      (tui-frame-config-restore! app (list-ref *frame-list* *current-frame-idx*))
+      (echo-message! (app-state-echo app)
+        (string-append "Frame deleted. Now frame "
+                       (number->string (+ *current-frame-idx* 1))
+                       "/" (number->string (frame-count)))))))
+
+(def (cmd-find-file-other-frame app)
+  "Open a file in a new virtual frame (C-x 5 f)."
+  (let* ((echo (app-state-echo app))
+         (fr (app-state-frame app))
+         (row (- (frame-height fr) 1))
+         (width (frame-width fr))
+         (buf (edit-window-buffer (current-window fr)))
+         (fp (and buf (buffer-file-path buf)))
+         (default-dir (if fp (path-directory fp) (current-directory)))
+         (filename (echo-read-file-with-completion echo "Find file (other frame): "
+                     row width default-dir)))
+    (when (and filename (> (string-length filename) 0))
+      (cmd-make-frame app)
+      (execute-command! app 'find-file))))
+
+(def (cmd-switch-to-buffer-other-frame app)
+  "Switch to a buffer in a new virtual frame (C-x 5 b)."
+  (let* ((echo (app-state-echo app))
+         (fr (app-state-frame app))
+         (row (- (frame-height fr) 1))
+         (width (frame-width fr))
+         (buf-names (map buffer-name (buffer-list)))
+         (choice (echo-read-string-with-completion echo "Buffer (other frame): "
+                   buf-names row width)))
+    (when (and choice (> (string-length choice) 0))
+      (let ((buf (buffer-by-name choice)))
+        (if (not buf)
+          (echo-error! echo (string-append "No buffer: " choice))
+          (begin
+            (cmd-make-frame app)
+            (let* ((fr2 (app-state-frame app))
+                   (win (current-window fr2))
+                   (ed (edit-window-editor win)))
+              (buffer-attach! ed buf)
+              (set! (edit-window-buffer win) buf)
+              (echo-message! echo (string-append "Buffer " choice " in new frame")))))))))
 
 (def (cmd-toggle-menu-bar app)
   "Toggle menu bar display — N/A in terminal."

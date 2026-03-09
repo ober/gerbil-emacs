@@ -24,6 +24,7 @@
   *lsp-server-command*
   *meta-s-map*
   *ctrl-x-4-map*
+  *ctrl-x-5-map*
   *ctrl-x-p-map*
   *all-commands*
   setup-default-bindings!
@@ -40,6 +41,11 @@
   (struct-out app-state)
   new-app-state
   get-prefix-arg
+
+  ;; Frame management state (virtual frames — save/restore window configs)
+  *frame-list*
+  *current-frame-idx*
+  frame-count
 
   ;; Command registry
   register-command!
@@ -282,6 +288,7 @@
 (def *help-map*     (make-keymap))
 (def *meta-s-map*   (make-keymap))
 (def *ctrl-x-4-map* (make-keymap))
+(def *ctrl-x-5-map* (make-keymap))
 (def *ctrl-x-p-map* (make-keymap))
 
 ;;;============================================================================
@@ -796,6 +803,14 @@
   (keymap-bind! *ctrl-x-map* "4" *ctrl-x-4-map*)
   (keymap-bind! *ctrl-x-4-map* "b" 'switch-buffer-other-window)
   (keymap-bind! *ctrl-x-4-map* "f" 'find-file-other-window)
+
+  ;; Frame commands (C-x 5 prefix)
+  (keymap-bind! *ctrl-x-map* "5" *ctrl-x-5-map*)
+  (keymap-bind! *ctrl-x-5-map* "2" 'make-frame-command)
+  (keymap-bind! *ctrl-x-5-map* "0" 'delete-frame)
+  (keymap-bind! *ctrl-x-5-map* "o" 'other-frame)
+  (keymap-bind! *ctrl-x-5-map* "f" 'find-file-other-frame)
+  (keymap-bind! *ctrl-x-5-map* "b" 'switch-to-buffer-other-frame)
 
   ;; Text transforms
   (keymap-bind! *ctrl-c-map* "t" 'tabify)
@@ -1346,6 +1361,25 @@
      ((list? arg) (car arg))
      ((eq? arg '-) -1)
      (else default))))
+
+;;;============================================================================
+;;; Frame management state — virtual frames
+;;;
+;;; In TUI mode, "frames" are virtual: switching frames means saving the
+;;; current window configuration and restoring another one.
+;;; A frame config is: (list buffer-names current-buffer-name cursor-positions)
+;;; The actual save/restore logic lives in editor-cmds-b.ss (TUI) and
+;;; qt/commands-parity5.ss (Qt) since it needs backend-specific imports.
+;;;============================================================================
+
+;; List of saved frame configs. Index 0 is the initial frame.
+;; The "live" frame is at *current-frame-idx* — saved when switching away.
+(def *frame-list* (list '(("*scratch*") "*scratch*" ())))
+(def *current-frame-idx* 0)
+
+(def (frame-count)
+  "Return the total number of frames."
+  (length *frame-list*))
 
 ;;;============================================================================
 ;;; Key lossage (last 300 keystrokes)

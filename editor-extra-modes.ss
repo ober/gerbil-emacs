@@ -1624,20 +1624,7 @@
       (echo-message! (app-state-echo app)
         (string-append "Devdocs: https://devdocs.io/#q=" query)))))
 
-;; Copilot — AI completion
-(def (cmd-copilot-mode app)
-  "Toggle copilot mode — AI-assisted code completion."
-  (let ((on (toggle-mode! 'copilot)))
-    (echo-message! (app-state-echo app)
-      (if on "Copilot mode: on" "Copilot mode: off"))))
-
-(def (cmd-copilot-accept-completion app)
-  "Accept copilot suggestion."
-  (echo-message! (app-state-echo app) "Copilot: no pending suggestion"))
-
-(def (cmd-copilot-next-completion app)
-  "Next copilot suggestion."
-  (echo-message! (app-state-echo app) "Copilot: no more suggestions"))
+;; Copilot — AI completion (real implementation in editor-extra-ai.ss)
 
 ;; ChatGPT / AI — uses curl to call API
 (def (cmd-gptel app)

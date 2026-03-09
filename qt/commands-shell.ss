@@ -867,11 +867,153 @@ SPC = page down, DEL = page up, q = quit view-mode."
   "Resize window width."
   (echo-message! (app-state-echo app) "Width resize not supported in vertical split"))
 
-;; cmd-make-frame defined in facade (qt/commands.ss)
+;;;============================================================================
+;;; Frame config save/restore (shared by all Qt frame commands)
+;;;============================================================================
+
+(def (qt-frame-config-save app)
+  "Capture the current Qt frame's window config as a portable config."
+  (let* ((fr (app-state-frame app))
+         (wins (qt-frame-windows fr))
+         (cur-idx (qt-frame-current-idx fr))
+         (buf-names (map (lambda (win)
+                           (let ((buf (qt-edit-window-buffer win)))
+                             (if buf (buffer-name buf) "*scratch*")))
+                         wins))
+         (cur-buf (let ((buf (qt-edit-window-buffer (list-ref wins cur-idx))))
+                    (if buf (buffer-name buf) "*scratch*")))
+         (positions (map (lambda (win)
+                           (let ((buf (qt-edit-window-buffer win))
+                                 (ed (qt-edit-window-editor win)))
+                             (cons (if buf (buffer-name buf) "*scratch*")
+                                   (sci-send ed SCI_GETCURRENTPOS 0 0))))
+                         wins)))
+    (list buf-names cur-buf positions)))
+
+(def (qt-frame-config-restore! app config)
+  "Restore a saved frame configuration in Qt mode."
+  (let* ((buf-names (car config))
+         (cur-buf-name (cadr config))
+         (positions (caddr config))
+         (fr (app-state-frame app))
+         (first-buf-name (if (pair? buf-names) (car buf-names) "*scratch*"))
+         (first-buf (or (buffer-by-name first-buf-name)
+                        (buffer-by-name "*scratch*"))))
+    ;; Collapse to single window
+    (let loop ()
+      (when (> (length (qt-frame-windows fr)) 1)
+        (qt-frame-delete-window! fr)
+        (loop)))
+    ;; Set the first buffer
+    (when first-buf
+      (let* ((win (qt-current-window fr))
+             (ed (qt-edit-window-editor win)))
+        (qt-buffer-attach! ed first-buf)
+        (set! (qt-edit-window-buffer win) first-buf)
+        (let ((pos-entry (assoc first-buf-name positions)))
+          (when pos-entry
+            (sci-send ed SCI_GOTOPOS (cdr pos-entry) 0)))))
+    ;; Split and set additional buffers
+    (when (> (length buf-names) 1)
+      (let loop ((rest (cdr buf-names)))
+        (when (pair? rest)
+          (let* ((bname (car rest))
+                 (buf (or (buffer-by-name bname) first-buf)))
+            (when buf
+              (let ((new-ed (qt-frame-split! fr)))
+                (qt-buffer-attach! new-ed buf)
+                (let ((new-win (qt-current-window fr)))
+                  (set! (qt-edit-window-buffer new-win) buf)
+                  (let ((pos-entry (assoc bname positions)))
+                    (when pos-entry
+                      (sci-send new-ed SCI_GOTOPOS (cdr pos-entry) 0)))))))
+          (loop (cdr rest)))))
+    ;; Switch to the correct current buffer
+    (let ((target-idx
+            (let loop ((wins (qt-frame-windows fr)) (i 0))
+              (cond
+                ((null? wins) 0)
+                ((let ((buf (qt-edit-window-buffer (car wins))))
+                   (and buf (string=? (buffer-name buf) cur-buf-name)))
+                 i)
+                (else (loop (cdr wins) (+ i 1)))))))
+      (set! (qt-frame-current-idx fr) target-idx))))
+
+(def (cmd-make-frame app)
+  "Create a new virtual frame (C-x 5 2)."
+  (let ((config (qt-frame-config-save app)))
+    ;; Save current frame config at current slot
+    (if (null? *frame-list*)
+      (set! *frame-list* (list config))
+      (let loop ((lst *frame-list*) (i 0) (acc []))
+        (cond
+          ((null? lst)
+           (set! *frame-list* (append (reverse acc) (list config))))
+          ((= i *current-frame-idx*)
+           (set! *frame-list* (append (reverse acc) (list config) (cdr lst))))
+          (else (loop (cdr lst) (+ i 1) (cons (car lst) acc))))))
+    ;; Append new empty frame config
+    (set! *frame-list* (append *frame-list*
+                               (list (list '("*scratch*") "*scratch*" []))))
+    (set! *current-frame-idx* (- (length *frame-list*) 1))
+    ;; Reset live frame to scratch
+    (let* ((fr (app-state-frame app))
+           (scratch (or (buffer-by-name "*scratch*") (car (buffer-list)))))
+      (let loop ()
+        (when (> (length (qt-frame-windows fr)) 1)
+          (qt-frame-delete-window! fr)
+          (loop)))
+      (let* ((win (qt-current-window fr))
+             (ed (qt-edit-window-editor win)))
+        (qt-buffer-attach! ed scratch)
+        (set! (qt-edit-window-buffer win) scratch)
+        (sci-send ed SCI_GOTOPOS 0 0)))
+    (echo-message! (app-state-echo app)
+      (string-append "Frame " (number->string (+ *current-frame-idx* 1))
+                     "/" (number->string (frame-count))))))
+
+(def (cmd-other-frame app)
+  "Switch to next virtual frame (C-x 5 o)."
+  (if (<= (frame-count) 1)
+    (echo-message! (app-state-echo app) "Only one frame")
+    (begin
+      ;; Save current frame config at current slot
+      (let ((config (qt-frame-config-save app)))
+        (let loop ((lst *frame-list*) (i 0) (acc []))
+          (cond
+            ((null? lst)
+             (set! *frame-list* (append (reverse acc) (list config))))
+            ((= i *current-frame-idx*)
+             (set! *frame-list* (append (reverse acc) (list config) (cdr lst))))
+            (else (loop (cdr lst) (+ i 1) (cons (car lst) acc))))))
+      ;; Cycle to next frame
+      (set! *current-frame-idx*
+            (modulo (+ *current-frame-idx* 1) (frame-count)))
+      ;; Restore that frame's config
+      (qt-frame-config-restore! app (list-ref *frame-list* *current-frame-idx*))
+      (echo-message! (app-state-echo app)
+        (string-append "Frame "
+                       (number->string (+ *current-frame-idx* 1))
+                       "/" (number->string (frame-count)))))))
 
 (def (cmd-delete-frame app)
-  "Delete a frame."
-  (echo-message! (app-state-echo app) "Only one frame in Qt backend"))
+  "Delete the current virtual frame (C-x 5 0)."
+  (if (<= (frame-count) 1)
+    (echo-error! (app-state-echo app) "Cannot delete the only frame")
+    (begin
+      (set! *frame-list*
+            (let loop ((lst *frame-list*) (i 0) (acc []))
+              (cond
+                ((null? lst) (reverse acc))
+                ((= i *current-frame-idx*) (append (reverse acc) (cdr lst)))
+                (else (loop (cdr lst) (+ i 1) (cons (car lst) acc))))))
+      (when (>= *current-frame-idx* (length *frame-list*))
+        (set! *current-frame-idx* (- (length *frame-list*) 1)))
+      (qt-frame-config-restore! app (list-ref *frame-list* *current-frame-idx*))
+      (echo-message! (app-state-echo app)
+        (string-append "Frame deleted. Now frame "
+                       (number->string (+ *current-frame-idx* 1))
+                       "/" (number->string (frame-count)))))))
 
 (def (cmd-suspend-frame app)
   "Suspend the frame."

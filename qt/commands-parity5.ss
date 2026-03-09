@@ -10,6 +10,10 @@
         :std/srfi/13
         :std/format
         :std/sort
+        (only-in :std/text/json
+          json-object->string read-json string->json-object)
+        (only-in :std/net/request
+          http-post request-status request-text request-close)
         :gemacs/core
         :gemacs/qt/sci-shim
         :gemacs/qt/buffer
@@ -41,7 +45,10 @@
         :gemacs/qt/commands-parity2
         :gemacs/qt/commands-parity3
         :gemacs/qt/commands-parity4
-        (only-in :gemacs/persist *which-key-mode* *which-key-delay*))
+        (only-in :gemacs/persist
+          *which-key-mode* *which-key-delay*
+          *copilot-mode* *copilot-api-key* *copilot-model*
+          *copilot-api-url* *copilot-suggestion* *copilot-suggestion-pos*))
 
 ;;;============================================================================
 ;;; Mode toggle commands (63) — toggle via make-toggle-command
@@ -935,6 +942,8 @@
   (qt-register-parity5-aliases!)
   (qt-register-parity5-moved-commands!)
   (qt-register-visual-whitespace-commands!)
+  (qt-register-copilot-commands!)
+  (qt-register-frame-commands!)
   ;; Functional commands
   (for-each
     (lambda (pair)
@@ -1258,3 +1267,225 @@
       (cons 'toggle-show-trailing-whitespace cmd-qt-toggle-show-trailing-whitespace)
       (cons 'delete-trailing-whitespace cmd-qt-delete-trailing-whitespace)
       (cons 'whitespace-cleanup cmd-qt-delete-trailing-whitespace))))
+
+;;;============================================================================
+;;; Copilot — AI inline code completion (Qt implementation)
+;;;============================================================================
+
+(def (qt-copilot-get-context ed max-chars)
+  "Get buffer text before cursor (up to max-chars) for completion context."
+  (let* ((pos (sci-send ed SCI_GETCURRENTPOS))
+         (text (qt-plain-text-edit-text ed))
+         (start (max 0 (- pos max-chars))))
+    (if (> pos 0)
+      (substring text start pos)
+      "")))
+
+(def (qt-copilot-get-suffix ed max-chars)
+  "Get buffer text after cursor (up to max-chars) for suffix context."
+  (let* ((pos (sci-send ed SCI_GETCURRENTPOS))
+         (text (qt-plain-text-edit-text ed))
+         (len (string-length text))
+         (end (min len (+ pos max-chars))))
+    (if (< pos len)
+      (substring text pos end)
+      "")))
+
+(def (qt-copilot-detect-language app)
+  "Detect programming language from the current buffer."
+  (let* ((buf (current-qt-buffer app))
+         (file (and buf (buffer-file-path buf))))
+    (if (and file (string? file))
+      (let ((ext (path-extension file)))
+        (cond
+          ((member ext '(".ss" ".scm" ".sld")) "Scheme")
+          ((member ext '(".py")) "Python")
+          ((member ext '(".rs")) "Rust")
+          ((member ext '(".go")) "Go")
+          ((member ext '(".c" ".h")) "C")
+          ((member ext '(".cpp" ".cc" ".hpp")) "C++")
+          ((member ext '(".js" ".jsx")) "JavaScript")
+          ((member ext '(".ts" ".tsx")) "TypeScript")
+          ((member ext '(".rb")) "Ruby")
+          ((member ext '(".lua")) "Lua")
+          ((member ext '(".sh" ".bash")) "Shell/Bash")
+          ((member ext '(".java")) "Java")
+          ((member ext '(".html" ".htm")) "HTML")
+          ((member ext '(".css")) "CSS")
+          ((member ext '(".sql")) "SQL")
+          (else "code")))
+      "code")))
+
+(def (qt-copilot-request prefix suffix language)
+  "Call OpenAI API for code completion. Returns suggestion string or #f."
+  (when (string=? *copilot-api-key* "")
+    (error "OPENAI_API_KEY not set"))
+  (let* ((system-prompt
+           (string-append
+             "You are a code completion engine for " language ". "
+             "Given the code context, provide ONLY the completion text that should "
+             "be inserted at the cursor position. Do NOT repeat the existing code. "
+             "Do NOT add explanations or markdown formatting. "
+             "Provide a short, natural continuation (1-3 lines max). "
+             "If no completion makes sense, respond with an empty string."))
+         (user-msg
+           (string-append
+             "Complete the code at the cursor position [CURSOR]:\n\n"
+             prefix "[CURSOR]" suffix))
+         (body (json-object->string
+                 (hash ("model" *copilot-model*)
+                       ("messages" [(hash ("role" "system")
+                                          ("content" system-prompt))
+                                    (hash ("role" "user")
+                                          ("content" user-msg))])
+                       ("max_tokens" 150)
+                       ("temperature" 0.2)
+                       ("stop" ["\n\n\n"]))))
+         (resp (http-post *copilot-api-url*
+                 data: body
+                 headers: [["Content-Type" . "application/json"]
+                           ["Authorization" . (string-append "Bearer " *copilot-api-key*)]])))
+    (if (= (request-status resp) 200)
+      (let* ((json-str (request-text resp))
+             (result (call-with-input-string json-str read-json))
+             (choices (hash-ref result "choices" []))
+             (first-choice (and (pair? choices) (car choices)))
+             (message (and first-choice (hash-ref first-choice "message" #f)))
+             (content (and message (hash-ref message "content" ""))))
+        (request-close resp)
+        (if (and content (string? content) (> (string-length (string-trim-both content)) 0))
+          (string-trim-both content)
+          #f))
+      (begin
+        (request-close resp)
+        #f))))
+
+(def (cmd-qt-copilot-mode app)
+  "Toggle copilot mode (Qt) — AI-assisted code completion."
+  (set! *copilot-mode* (not *copilot-mode*))
+  (unless *copilot-mode*
+    (set! *copilot-suggestion* #f)
+    ;; Cancel any active calltip
+    (let ((ed (current-qt-editor app)))
+      (when ed (sci-send ed SCI_CALLTIPCANCEL))))
+  (echo-message! (app-state-echo app)
+    (if *copilot-mode*
+      (if (string=? *copilot-api-key* "")
+        "Copilot mode: on (WARNING: OPENAI_API_KEY not set!)"
+        (string-append "Copilot mode: on (model: " *copilot-model* ")"))
+      "Copilot mode: off")))
+
+(def (cmd-qt-copilot-complete app)
+  "Request AI code completion at point (Qt). Shows suggestion as calltip."
+  (let* ((ed (current-qt-editor app))
+         (echo (app-state-echo app)))
+    (cond
+      ((not ed)
+       (echo-message! echo "Copilot: no active editor"))
+      ((string=? *copilot-api-key* "")
+       (echo-message! echo "Copilot: set OPENAI_API_KEY environment variable"))
+      (else
+       (echo-message! echo "Copilot: requesting completion...")
+       (with-catch
+         (lambda (e)
+           (set! *copilot-suggestion* #f)
+           (echo-message! echo
+             (string-append "Copilot error: "
+               (with-output-to-string (lambda () (display-exception e))))))
+         (lambda ()
+           (let* ((prefix (qt-copilot-get-context ed 2000))
+                  (suffix (qt-copilot-get-suffix ed 500))
+                  (language (qt-copilot-detect-language app))
+                  (suggestion (qt-copilot-request prefix suffix language)))
+             (if suggestion
+               (begin
+                 (set! *copilot-suggestion* suggestion)
+                 (set! *copilot-suggestion-pos* (sci-send ed SCI_GETCURRENTPOS))
+                 ;; Show as calltip at cursor position
+                 (sci-send ed SCI_CALLTIPSETBACK (rgb->sci 45 45 45))
+                 (sci-send ed SCI_CALLTIPSETFORE (rgb->sci 180 180 180))
+                 (sci-send/string ed SCI_CALLTIPSHOW suggestion
+                                  *copilot-suggestion-pos*)
+                 (echo-message! echo "Copilot: TAB to accept, C-g to dismiss"))
+               (begin
+                 (set! *copilot-suggestion* #f)
+                 (echo-message! echo "Copilot: no suggestion"))))))))))
+
+(def (cmd-qt-copilot-accept app)
+  "Accept the current copilot suggestion and insert it (Qt)."
+  (let* ((ed (current-qt-editor app))
+         (echo (app-state-echo app)))
+    (if (and ed *copilot-suggestion*)
+      (let ((suggestion *copilot-suggestion*))
+        (set! *copilot-suggestion* #f)
+        ;; Cancel the calltip
+        (sci-send ed SCI_CALLTIPCANCEL)
+        ;; Insert at current position
+        (sci-send/string ed SCI_REPLACESEL suggestion)
+        (echo-message! echo "Copilot: suggestion accepted"))
+      (echo-message! echo "Copilot: no pending suggestion"))))
+
+(def (cmd-qt-copilot-dismiss app)
+  "Dismiss the current copilot suggestion (Qt)."
+  (let* ((ed (current-qt-editor app))
+         (echo (app-state-echo app)))
+    (when (and ed *copilot-suggestion*)
+      (sci-send ed SCI_CALLTIPCANCEL))
+    (if *copilot-suggestion*
+      (begin
+        (set! *copilot-suggestion* #f)
+        (echo-message! echo "Copilot: suggestion dismissed"))
+      (echo-message! echo "Copilot: no pending suggestion"))))
+
+;;;============================================================================
+;;; Register Qt copilot commands
+;;;============================================================================
+
+(def (qt-register-copilot-commands!)
+  "Register Qt copilot commands."
+  (for-each
+    (lambda (pair) (register-command! (car pair) (cdr pair)))
+    (list
+      (cons 'copilot-mode cmd-qt-copilot-mode)
+      (cons 'copilot-complete cmd-qt-copilot-complete)
+      (cons 'copilot-accept cmd-qt-copilot-accept)
+      (cons 'copilot-dismiss cmd-qt-copilot-dismiss)
+      (cons 'copilot-accept-completion cmd-qt-copilot-accept)
+      (cons 'copilot-next-completion cmd-qt-copilot-complete))))
+
+;;;============================================================================
+;;; Qt frame commands — find-file/switch-buffer in other frame
+;;;============================================================================
+
+(def (cmd-find-file-other-frame app)
+  "Open a file in a new virtual frame (C-x 5 f)."
+  (let ((filename (qt-echo-read-string app "Find file (other frame): ")))
+    (when (and filename (> (string-length filename) 0))
+      (cmd-make-frame app)
+      (execute-command! app 'find-file))))
+
+(def (cmd-switch-to-buffer-other-frame app)
+  "Switch to a buffer in a new virtual frame (C-x 5 b)."
+  (let* ((buf-names (map buffer-name (buffer-list)))
+         (choice (qt-echo-read-string app "Buffer (other frame): ")))
+    (when (and choice (> (string-length choice) 0))
+      (let ((buf (buffer-by-name choice)))
+        (if (not buf)
+          (echo-error! (app-state-echo app) (string-append "No buffer: " choice))
+          (begin
+            (cmd-make-frame app)
+            (let* ((fr (app-state-frame app))
+                   (win (qt-current-window fr))
+                   (ed (qt-edit-window-editor win)))
+              (qt-buffer-attach! ed buf)
+              (set! (qt-edit-window-buffer win) buf)
+              (echo-message! (app-state-echo app)
+                (string-append "Buffer " choice " in new frame")))))))))
+
+(def (qt-register-frame-commands!)
+  "Register Qt frame management commands."
+  (for-each
+    (lambda (pair) (register-command! (car pair) (cdr pair)))
+    (list
+      (cons 'find-file-other-frame cmd-find-file-other-frame)
+      (cons 'switch-to-buffer-other-frame cmd-switch-to-buffer-other-frame))))

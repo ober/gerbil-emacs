@@ -807,10 +807,7 @@
   (org-babel-kill-all-sessions)
   (echo-message! (app-state-echo app) "All babel sessions killed"))
 
-;;; --- Other frame (stub) ---
-(def (cmd-other-frame app)
-  "Switch to next frame (stub — gemacs is single-frame)."
-  (echo-message! (app-state-echo app) "Only one frame"))
+;;; --- cmd-other-frame: real implementation in facade (qt/commands.ss) ---
 
 ;;; --- Winum mode (window numbering) ---
 (def *qt-winum-mode* #t)  ; enabled by default

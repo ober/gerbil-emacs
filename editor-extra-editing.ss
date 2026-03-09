@@ -29,6 +29,77 @@
 ;; TRAMP — remote file access via SSH
 (def *tramp-connections* '()) ; list of active SSH processes
 
+(def (tramp-path? path)
+  "Check if PATH is a tramp-style remote path (/ssh:host:path or /scp:host:path)."
+  (and (string? path)
+       (or (string-prefix? "/ssh:" path)
+           (string-prefix? "/scp:" path))))
+
+(def (tramp-parse-path path)
+  "Parse /ssh:host:path or /ssh:user@host:path into (values host remote-path).
+   The host part includes user@ if present."
+  (let* ((rest (cond
+                 ((string-prefix? "/ssh:" path) (substring path 5 (string-length path)))
+                 ((string-prefix? "/scp:" path) (substring path 5 (string-length path)))
+                 (else path)))
+         (colon-pos (string-index rest #\:)))
+    (if colon-pos
+      (values (substring rest 0 colon-pos)
+              (substring rest (+ colon-pos 1) (string-length rest)))
+      (values rest "/"))))
+
+(def (tramp-read-file host remote-path)
+  "Read a remote file via SSH cat into a string. Returns #f on failure."
+  (with-exception-catcher
+    (lambda (e) #f)
+    (lambda ()
+      (let* ((proc (open-process
+                     (list path: "/usr/bin/ssh"
+                           arguments: [host "cat" remote-path]
+                           stdout-redirection: #t
+                           stderr-redirection: #f
+                           stdin-redirection: #f
+                           pseudo-terminal: #f)))
+             (content (read-line proc #f))
+             (status (process-status proc)))
+        (close-port proc)
+        (if (= status 0) content #f)))))
+
+(def (tramp-write-file host remote-path content)
+  "Write content to a remote file via SSH. Returns #t on success, #f on failure."
+  (with-exception-catcher
+    (lambda (e) #f)
+    (lambda ()
+      (let* ((proc (open-process
+                     (list path: "/usr/bin/ssh"
+                           arguments: [host "cat" ">" remote-path]
+                           stdout-redirection: #t
+                           stderr-redirection: #f
+                           stdin-redirection: #t
+                           pseudo-terminal: #f))))
+        (display content proc)
+        (force-output proc)
+        (close-output-port proc)
+        (let ((status (process-status proc)))
+          (close-port proc)
+          (= status 0))))))
+
+(def (tramp-file-exists? host remote-path)
+  "Check if a remote file exists via SSH test -e. Returns #t/#f."
+  (with-exception-catcher
+    (lambda (e) #f)
+    (lambda ()
+      (let* ((proc (open-process
+                     (list path: "/usr/bin/ssh"
+                           arguments: [host "test" "-e" remote-path]
+                           stdout-redirection: #t
+                           stderr-redirection: #f
+                           stdin-redirection: #f
+                           pseudo-terminal: #f)))
+             (status (process-status proc)))
+        (close-port proc)
+        (= status 0)))))
+
 (def (cmd-tramp-cleanup-all-connections app)
   "Clean up all TRAMP (SSH) connections."
   (for-each
@@ -599,38 +670,56 @@
 
 ;; TRAMP-like remote editing via SSH
 (def (cmd-find-file-ssh app)
-  "Open file via SSH. Fetches remote file content using scp."
-  (let ((path (app-read-string app "SSH path (user@host:/path): ")))
+  "Open file via SSH. Prompts for /ssh:host:/path and fetches remote file content."
+  (let ((path (app-read-string app "Remote file (/ssh:host:/path): ")))
     (when (and path (not (string-empty? path)))
-      (let* ((echo (app-state-echo app)))
-        (echo-message! echo (string-append "Fetching: " path))
-        (with-exception-catcher
-          (lambda (e)
-            (echo-error! echo (string-append "SSH failed: "
-              (with-output-to-string (lambda () (display-exception e))))))
-          (lambda ()
-            (let* ((tmp-file (string-append "/tmp/gemacs-ssh-" (number->string (random-integer 99999))))
-                   (proc (open-process
-                           (list path: "scp"
-                                 arguments: (list path tmp-file)
-                                 stdin-redirection: #f stdout-redirection: #t
-                                 stderr-redirection: #t)))
-                   (output (read-line proc #f))
-                   (status (process-status proc)))
-              (if (and (= status 0) (file-exists? tmp-file))
-                (let* ((content (read-file-as-string tmp-file))
-                       (fr (app-state-frame app))
-                       (win (current-window fr))
-                       (ed (edit-window-editor win))
-                       (buf-name (string-append "[SSH] " path))
-                       (buf (buffer-create! buf-name ed)))
-                  (buffer-attach! ed buf)
-                  (set! (edit-window-buffer win) buf)
-                  (editor-set-text ed content)
-                  (editor-goto-pos ed 0)
-                  (delete-file tmp-file)
-                  (echo-message! echo (string-append "Opened: " path)))
-                (echo-error! echo (string-append "scp failed: " (or output "unknown error")))))))))))
+      ;; Auto-prepend /ssh: if user typed user@host:path without it
+      (let* ((path (if (tramp-path? path) path
+                     (if (string-index path #\:)
+                       (string-append "/ssh:" path)
+                       path)))
+             (echo (app-state-echo app)))
+        (if (not (tramp-path? path))
+          (echo-error! echo "Use /ssh:host:/path or user@host:/path syntax")
+          (tramp-open-remote-file! app path))))))
+
+(def (tramp-open-remote-file! app tramp-path)
+  "Open a remote file given a TRAMP-style path. Used by cmd-find-file and cmd-find-file-ssh."
+  (let ((echo (app-state-echo app)))
+    (let-values (((host remote-path) (tramp-parse-path tramp-path)))
+      (echo-message! echo (string-append "Fetching " host ":" remote-path "..."))
+      (let ((content (tramp-read-file host remote-path)))
+        (if (not content)
+          (echo-error! echo (string-append "Failed to fetch " remote-path " from " host))
+          (let* ((name (string-append (path-strip-directory remote-path) " [" host "]"))
+                 (fr (app-state-frame app))
+                 (win (current-window fr))
+                 (ed (edit-window-editor win))
+                 (buf (buffer-create! name ed)))
+            (buffer-attach! ed buf)
+            (set! (edit-window-buffer win) buf)
+            (editor-set-text ed content)
+            (editor-goto-pos ed 0)
+            (editor-set-save-point ed)
+            ;; Store TRAMP path so save knows where to write back
+            (set! (buffer-file-path buf) tramp-path)
+            (echo-message! echo (string-append "Loaded " remote-path " from " host))))))))
+
+(def (tramp-save-buffer! app ed buf)
+  "Save buffer content to remote host via SSH. Returns #t on success."
+  (let* ((echo (app-state-echo app))
+         (fpath (buffer-file-path buf)))
+    (let-values (((host remote-path) (tramp-parse-path fpath)))
+      (let ((text (editor-get-text ed)))
+        (echo-message! echo (string-append "Saving to " host ":" remote-path "..."))
+        (if (tramp-write-file host remote-path text)
+          (begin
+            (editor-set-save-point ed)
+            (echo-message! echo (string-append "Wrote " host ":" remote-path))
+            #t)
+          (begin
+            (echo-error! echo (string-append "Failed to save " remote-path " to " host))
+            #f))))))
 
 ;; Additional text manipulation
 (def (cmd-string-inflection-cycle app)

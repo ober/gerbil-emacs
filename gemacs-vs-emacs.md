@@ -355,8 +355,11 @@
 | Subword-mode | :white_check_mark: | CamelCase-aware word navigation: forward, backward, kill (TUI + Qt) |
 | Rainbow delimiters | :white_check_mark: | Color-coded parentheses/brackets via Scintilla indicators |
 | Pulse-on-jump | :white_check_mark: | Auto-flash landing line after >5-line jumps (INDIC_FULLBOX), toggleable |
+| Visual-line-mode | :white_check_mark: | Word wrap via Scintilla SCI_SETWRAPMODE (TUI + Qt) |
+| Whitespace-mode | :white_check_mark: | Show/hide whitespace and EOL markers via Scintilla (TUI + Qt) |
+| Which-key mode | :white_check_mark: | Shows available keybindings after prefix key delay (TUI + Qt) |
 
-**Summary:** Single-frame Qt application. No multi-frame support. Display features work well including fill-column indicator, URL highlighting, pulse-on-jump, and rainbow delimiters.
+**Summary:** Single-frame Qt application. No multi-frame support. Display features work well including fill-column indicator, URL highlighting, pulse-on-jump, visual-line-mode, whitespace display, and which-key hints.
 
 ---
 

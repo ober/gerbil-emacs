@@ -1007,7 +1007,7 @@
   (register-command! 'desktop-save-mode cmd-desktop-save-mode)
   (register-command! 'org-babel-execute-src-block cmd-org-babel-execute-src-block)
   (register-command! 'org-babel-tangle cmd-org-babel-tangle)
-  (register-command! 'other-frame cmd-other-frame)
+  ;; other-frame registered in facade (cmd-other-frame defined there)
   (register-command! 'register-to-point cmd-point-to-register)
   (register-command! 'winum-mode cmd-winum-mode)
   (register-command! 'help-with-tutorial cmd-help-with-tutorial)
@@ -1157,7 +1157,7 @@
   ;; Batch 8: window/help/rectangle/vc/coding aliases
   ;; Window/frame
   (register-command! 'delete-other-frames cmd-delete-other-windows)
-  (register-command! 'make-frame-command cmd-split-window-right)
+  (register-command! 'make-frame-command cmd-make-frame)
   (register-command! 'balance-windows-area cmd-balance-windows)
   (register-command! 'window-swap-states cmd-winner-undo)
   (register-command! 'windmove-swap-states-left cmd-windmove-left)
@@ -1168,12 +1168,10 @@
   (register-command! 'view-buffer cmd-list-buffers)
   (register-command! 'display-buffer cmd-list-buffers)
   (register-command! 'pop-to-buffer cmd-list-buffers)
-  (register-command! 'switch-to-buffer-other-frame cmd-find-file-other-window)
+  ;; switch-to-buffer-other-frame and find-file-other-frame registered in qt-register-frame-commands!
   ;; Text
   (register-command! 'sort-columns cmd-sort-lines)
   (register-command! 'align cmd-align-regexp)
-  ;; Navigation
-  (register-command! 'find-file-other-frame cmd-find-file-other-window)
   ;; Help/describe
   (register-command! 'describe-char cmd-what-cursor-position)
   (register-command! 'describe-syntax cmd-describe-mode)

@@ -901,6 +901,53 @@
     (when filename
       (when (> (string-length filename) 0)
         (let ((filename (expand-filename filename)))
+        ;; Check for TRAMP remote path (/ssh:host:path or /scp:host:path)
+        (if (or (string-prefix? "/ssh:" filename)
+                (string-prefix? "/scp:" filename))
+          ;; Remote file via SSH
+          (let* ((rest (if (string-prefix? "/ssh:" filename)
+                         (substring filename 5 (string-length filename))
+                         (substring filename 5 (string-length filename))))
+                 (colon-pos (string-index rest #\:))
+                 (host (if colon-pos (substring rest 0 colon-pos) rest))
+                 (remote-path (if colon-pos
+                                (substring rest (+ colon-pos 1) (string-length rest))
+                                "/")))
+            (echo-message! echo (string-append "Fetching " host ":" remote-path "..."))
+            (let ((content
+                    (with-exception-catcher
+                      (lambda (e) #f)
+                      (lambda ()
+                        (let* ((proc (open-process
+                                       (list path: "/usr/bin/ssh"
+                                             arguments: [host "cat" remote-path]
+                                             stdout-redirection: #t
+                                             stderr-redirection: #f
+                                             stdin-redirection: #f
+                                             pseudo-terminal: #f)))
+                               (data (read-line proc #f))
+                               (status (process-status proc)))
+                          (close-port proc)
+                          (if (= status 0) data #f))))))
+              (if (not content)
+                (echo-error! echo (string-append "Failed to fetch " remote-path " from " host))
+                (let* ((name (string-append (path-strip-directory remote-path) " [" host "]"))
+                       (ed (current-editor app))
+                       (buf (buffer-create! name ed)))
+                  (buffer-attach! ed buf)
+                  (set! (edit-window-buffer (current-window fr)) buf)
+                  (editor-set-text ed content)
+                  (editor-goto-pos ed 0)
+                  (editor-set-save-point ed)
+                  ;; Store TRAMP path for save-back
+                  (set! (buffer-file-path buf) filename)
+                  ;; Set up highlighting based on remote file extension
+                  (let ((lang (detect-file-language remote-path)))
+                    (when lang
+                      (setup-highlighting-for-file! ed remote-path)
+                      (send-message ed SCI_SETMARGINTYPEN 0 SC_MARGIN_NUMBER)
+                      (send-message ed SCI_SETMARGINWIDTHN 0 4)))
+                  (echo-message! echo (string-append "Loaded " remote-path " from " host))))))
         ;; Check if it's a directory
         (if (and (file-exists? filename)
                  (eq? 'directory (file-info-type (file-info filename))))
@@ -964,7 +1011,7 @@
                   (send-message ed SCI_SETMARGINWIDTHN 0 width))))
             ;; Run find-file-hook (parity with Qt layer)
             (run-hooks! 'find-file-hook app buf)
-            (echo-message! echo (string-append "Opened: " filename)))))))))
+            (echo-message! echo (string-append "Opened: " filename))))))))))
 
 (def (cmd-save-buffer app)
   (let* ((ed (current-editor app))
@@ -972,7 +1019,41 @@
          (echo (app-state-echo app))
          (path (buffer-file-path buf)))
     (if path
-      ;; Save to existing path
+      (if (or (string-prefix? "/ssh:" path)
+              (string-prefix? "/scp:" path))
+        ;; Save to remote host via SSH
+        (let* ((rest (if (string-prefix? "/ssh:" path)
+                       (substring path 5 (string-length path))
+                       (substring path 5 (string-length path))))
+               (colon-pos (string-index rest #\:))
+               (host (if colon-pos (substring rest 0 colon-pos) rest))
+               (remote-path (if colon-pos
+                              (substring rest (+ colon-pos 1) (string-length rest))
+                              "/")))
+          (let ((text (editor-get-text ed)))
+            (echo-message! echo (string-append "Saving to " host ":" remote-path "..."))
+            (let ((ok (with-exception-catcher
+                        (lambda (e) #f)
+                        (lambda ()
+                          (let* ((proc (open-process
+                                         (list path: "/usr/bin/ssh"
+                                               arguments: [host "cat" ">" remote-path]
+                                               stdout-redirection: #t
+                                               stderr-redirection: #f
+                                               stdin-redirection: #t
+                                               pseudo-terminal: #f))))
+                            (display text proc)
+                            (force-output proc)
+                            (close-output-port proc)
+                            (let ((status (process-status proc)))
+                              (close-port proc)
+                              (= status 0)))))))
+              (if ok
+                (begin
+                  (editor-set-save-point ed)
+                  (echo-message! echo (string-append "Wrote " host ":" remote-path)))
+                (echo-error! echo (string-append "Failed to save " remote-path " to " host))))))
+      ;; Save to existing local path
       (begin
         ;; Run before-save-hook (parity with Qt layer)
         (run-hooks! 'before-save-hook app buf)
@@ -1013,7 +1094,7 @@
               (delete-file auto-save-path)))
           (echo-message! echo (string-append "Wrote " path))
           ;; Run after-save-hook (parity with Qt layer)
-          (run-hooks! 'after-save-hook app buf)))
+          (run-hooks! 'after-save-hook app buf))))
       ;; No path: prompt for one
       (let* ((fr (app-state-frame app))
              (row (- (frame-height fr) 1))

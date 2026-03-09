@@ -156,9 +156,14 @@ Largest files: modes (~1851), lsp (~1802), search (~1778)
 - ~~**Desktop save/restore**~~ — DONE: persist and restore session (open buffers, positions) across restarts
 - ~~**Multi-cursor typing**~~ — DONE: Scintilla multi-selection support for simultaneous typing at multiple cursors
 - ~~**Aggressive indent mode**~~ — DONE: auto-reindent on closing delimiters and newlines
+- ~~**Which-key mode**~~ — DONE: shows available keybindings after prefix key delay (TUI countdown + Qt timer), toggleable
+- ~~**Visual-line-mode**~~ — DONE: toggle word wrap via Scintilla SCI_SETWRAPMODE, both TUI and Qt
+- ~~**Whitespace-mode / delete-trailing-whitespace**~~ — DONE: show/hide whitespace and EOL markers, strip trailing spaces
 
 ### Aspirational
 - LSP in TUI
 - ~~DAP/debugger integration~~ — DONE: real GDB/MI interface (Qt), DAP protocol skeleton (TUI)
-- Multi-frame support
+- ~~Multi-frame support~~ — IN PROGRESS: virtual frame management (C-x 5 prefix)
 - ~~Spell checking integration~~ — DONE: flyspell-mode, ispell-word, ispell-buffer, ispell-region, dictionary switching (both TUI and Qt)
+- TRAMP remote editing — IN PROGRESS: SSH-based file open/save
+- AI Copilot integration — IN PROGRESS: OpenAI API inline code completion

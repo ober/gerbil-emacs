@@ -8749,6 +8749,42 @@
         (check start => #f)
         (check end => #f)))
 
+    ;; -- Batch 50: which-key, repeat-mode, visual-line, whitespace --
+    (test-case "batch 50: which-key mode variables"
+      (check (boolean? *which-key-mode*) => #t)
+      ;; Toggle
+      (let ((orig *which-key-mode*))
+        (set! *which-key-mode* (not orig))
+        (check *which-key-mode* => (not orig))
+        (set! *which-key-mode* orig)))
+
+    (test-case "batch 50: repeat-mode infrastructure"
+      (check (repeat-mode?) => #t)
+      (check (hash-table? *repeat-maps*) => #t)
+      ;; Default maps registered
+      (register-default-repeat-maps!)
+      (check (> (hash-length *repeat-maps*) 0) => #t)
+      ;; Look up a command that should be in a repeat map
+      (let ((rm (repeat-map-for-command 'other-window)))
+        (check (not (not rm)) => #t)))
+
+    (test-case "batch 50: repeat-mode activation"
+      (register-default-repeat-maps!)
+      ;; Activate a repeat map
+      (active-repeat-map-set! 'window-nav)
+      (check (not (not (active-repeat-map))) => #t)
+      ;; Clear it
+      (clear-repeat-map!)
+      (check (active-repeat-map) => #f))
+
+    (test-case "command registration: batch 50 features"
+      (register-all-commands!)
+      (check (procedure? (find-command 'toggle-which-key-mode)) => #t)
+      (check (procedure? (find-command 'visual-line-mode)) => #t)
+      (check (procedure? (find-command 'whitespace-mode)) => #t)
+      (check (procedure? (find-command 'delete-trailing-whitespace)) => #t)
+      (check (procedure? (find-command 'toggle-repeat-mode)) => #t))
+
     ))
 
 ;; Run tests when executed directly

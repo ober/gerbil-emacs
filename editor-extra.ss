@@ -25,7 +25,8 @@
           cmd-dired-async-copy cmd-dired-async-move)
         (only-in :gemacs/editor-cmds-b
           cmd-customize cmd-set-variable
-          cmd-load-plugin cmd-list-plugins)
+          cmd-load-plugin cmd-list-plugins
+          cmd-find-file-other-frame cmd-switch-to-buffer-other-frame)
         :gemacs/editor-extra-helpers
         :gemacs/editor-extra-org
         :gemacs/editor-extra-web
@@ -37,7 +38,8 @@
         :gemacs/editor-extra-media
         :gemacs/editor-extra-modes
         :gemacs/editor-extra-final
-        :gemacs/editor-extra-regs)
+        :gemacs/editor-extra-regs
+        :gemacs/editor-extra-ai)
 
 ;;;============================================================================
 ;;; Register extra commands
@@ -681,6 +683,9 @@
   (register-command! 'devdocs-lookup cmd-devdocs-lookup)
   ;; AI
   (register-command! 'copilot-mode cmd-copilot-mode)
+  (register-command! 'copilot-complete cmd-copilot-complete)
+  (register-command! 'copilot-accept cmd-copilot-accept)
+  (register-command! 'copilot-dismiss cmd-copilot-dismiss)
   (register-command! 'copilot-accept-completion cmd-copilot-accept-completion)
   (register-command! 'copilot-next-completion cmd-copilot-next-completion)
   (register-command! 'gptel cmd-gptel)
@@ -1579,7 +1584,7 @@
   (register-command! 'view-buffer cmd-switch-to-buffer-other-window)
   (register-command! 'display-buffer cmd-switch-to-buffer-other-window)
   (register-command! 'pop-to-buffer cmd-switch-to-buffer-other-window)
-  (register-command! 'switch-to-buffer-other-frame cmd-switch-to-buffer-other-window)
+  (register-command! 'switch-to-buffer-other-frame cmd-switch-to-buffer-other-frame)
   ;; Help
   (register-command! 'list-faces-display cmd-list-faces-display)
   (register-command! 'list-colors-display cmd-list-faces-display)
@@ -1878,13 +1883,24 @@
 
 ;; --- Remote files ---
 (def (cmd-find-file-remote app)
-  "Open remote file via SSH."
-  (let ((path (app-read-string app "Remote path (/ssh:host:path): ")))
+  "Open a remote file via SSH/SCP. Use /ssh:host:/path or /scp:host:/path syntax."
+  (let ((path (app-read-string app "Remote file (/ssh:host:/path): ")))
     (when (and path (> (string-length path) 0))
-      (echo-message! (app-state-echo app) (string-append "Remote: " path " (use scp to fetch)")))))
+      ;; Auto-prepend /ssh: if user typed user@host:path
+      (let ((path (if (tramp-path? path) path
+                    (if (string-index path #\:)
+                      (string-append "/ssh:" path)
+                      path))))
+        (if (not (tramp-path? path))
+          (echo-error! (app-state-echo app) "Use /ssh:host:/path or user@host:/path syntax")
+          (tramp-open-remote-file! app path))))))
 (def (cmd-save-remote-buffer app)
-  "Save buffer to remote."
-  (echo-message! (app-state-echo app) "Remote save: use scp"))
+  "Save buffer back to remote host if it has a TRAMP-style path."
+  (let* ((buf (current-buffer-from-app app))
+         (fpath (and buf (buffer-file-path buf))))
+    (if (and fpath (tramp-path? fpath))
+      (tramp-save-buffer! app (current-editor app) buf)
+      (echo-error! (app-state-echo app) "Not a remote buffer"))))
 
 ;; --- Key config ---
 (def (cmd-global-set-key app)

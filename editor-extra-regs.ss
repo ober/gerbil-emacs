@@ -748,13 +748,13 @@
   ;; Batch 8: window/help/rectangle/vc/coding aliases
   ;; Window/frame (no real frames — alias to window equivalents)
   (register-command! 'delete-other-frames cmd-delete-other-windows)
-  (register-command! 'make-frame-command cmd-split-window-right)
+  (register-command! 'make-frame-command cmd-make-frame)
   (register-command! 'balance-windows-area cmd-balance-windows)
   ;; Text manipulation
   (register-command! 'sort-columns cmd-sort-lines)
   (register-command! 'align cmd-align-regexp)
   ;; Navigation
-  (register-command! 'find-file-other-frame cmd-find-file-other-window)
+  (register-command! 'find-file-other-frame cmd-find-file-other-frame)
   ;; Help/describe
   (register-command! 'describe-char cmd-what-cursor-position)
   (register-command! 'describe-syntax cmd-describe-mode)
@@ -1403,10 +1403,30 @@
   (org-babel-kill-all-sessions)
   (echo-message! (app-state-echo app) "All babel sessions killed"))
 
-;;; --- Other frame (stub) ---
+;;; --- Frame switching ---
 (def (cmd-other-frame app)
-  "Switch to next frame (stub — gemacs is single-frame)."
-  (echo-message! (app-state-echo app) "Only one frame"))
+  "Switch to next virtual frame (C-x 5 o)."
+  (if (<= (frame-count) 1)
+    (echo-message! (app-state-echo app) "Only one frame")
+    (begin
+      ;; Save current frame config at current slot
+      (let ((config (tui-frame-config-save app)))
+        (let loop ((lst *frame-list*) (i 0) (acc []))
+          (cond
+            ((null? lst)
+             (set! *frame-list* (append (reverse acc) (list config))))
+            ((= i *current-frame-idx*)
+             (set! *frame-list* (append (reverse acc) (list config) (cdr lst))))
+            (else (loop (cdr lst) (+ i 1) (cons (car lst) acc))))))
+      ;; Cycle to next frame
+      (set! *current-frame-idx*
+            (modulo (+ *current-frame-idx* 1) (frame-count)))
+      ;; Restore that frame's config
+      (tui-frame-config-restore! app (list-ref *frame-list* *current-frame-idx*))
+      (echo-message! (app-state-echo app)
+        (string-append "Frame "
+                       (number->string (+ *current-frame-idx* 1))
+                       "/" (number->string (frame-count)))))))
 
 ;;; --- Winum mode (stub) ---
 (def *winum-mode* #f)
