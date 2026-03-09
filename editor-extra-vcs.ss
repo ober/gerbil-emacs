@@ -660,43 +660,35 @@
 ;; Customization system (*custom-variables* in editor-extra-helpers)
 
 (def (cmd-customize-group app)
-  "Show current editor settings grouped by category."
+  "Show all registered customizable variables grouped by category."
   (let* ((fr (app-state-frame app))
          (win (current-window fr))
          (ed (edit-window-editor win))
          (buf (buffer-create! "*Customize*" ed))
-         (text (string-append
-                 "Editor Settings\n"
-                 (make-string 60 #\=) "\n\n"
-                 "Display:\n"
-                 "  line-numbers: " (if (mode-enabled? 'line-numbers) "on" "off") "\n"
-                 "  word-wrap: " (if (mode-enabled? 'word-wrap) "on" "off") "\n"
-                 "  whitespace: " (if (mode-enabled? 'whitespace) "on" "off") "\n\n"
-                 "Editing:\n"
-                 "  org-mode: " (if (mode-enabled? 'org-mode) "on" "off") "\n"
-                 "  overwrite-mode: " (if (mode-enabled? 'overwrite) "on" "off") "\n\n"
-                 "Mode Flags:\n"
-                 (let ((entries (hash->list *mode-flags*)))
-                   (if (null? entries) "  (none set)\n"
-                     (string-join
-                       (map (lambda (p)
-                              (string-append "  " (symbol->string (car p)) ": "
-                                            (if (cdr p) "on" "off")))
-                            entries)
-                       "\n")))
-                 "\n\nCustom Variables:\n"
-                 (let ((entries (hash->list *custom-variables*)))
-                   (if (null? entries) "  (none set)\n"
-                     (string-join
-                       (map (lambda (p)
-                              (string-append "  " (symbol->string (car p)) " = "
-                                            (with-output-to-string (lambda () (write (cdr p))))))
-                            entries)
-                       "\n")))
-                 "\n")))
+         (groups (custom-groups))
+         (lines ["Gemacs Customize"
+                 (make-string 60 #\=) ""]))
+    (for-each
+      (lambda (group)
+        (set! lines (append lines
+          (list (string-append "[" (symbol->string group) "]") "")))
+        (for-each
+          (lambda (var)
+            (let ((val (custom-get var))
+                  (entry (hash-get *custom-registry* var)))
+              (set! lines (append lines
+                (list (string-append "  " (symbol->string var) " = "
+                        (with-output-to-string (lambda () (write val)))
+                        "  ;; " (or (hash-get entry 'docstring) "")))))))
+          (custom-list-group group))
+        (set! lines (append lines (list ""))))
+      groups)
+    (set! lines (append lines
+      (list "Use M-x set-variable to change a setting."
+            "Use C-h v (describe-variable) for detailed info.")))
     (buffer-attach! ed buf)
     (set! (edit-window-buffer win) buf)
-    (editor-set-text ed text)
+    (editor-set-text ed (string-join lines "\n"))
     (editor-goto-pos ed 0)
     (editor-set-read-only ed #t)))
 

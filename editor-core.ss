@@ -936,6 +936,8 @@
                                     ((> lines 999) 5)
                                     (else 4))))
                   (send-message ed SCI_SETMARGINWIDTHN 0 width))))
+            ;; Run find-file-hook (parity with Qt layer)
+            (run-hooks! 'find-file-hook app buf)
             (echo-message! echo (string-append "Opened: " filename)))))))))
 
 (def (cmd-save-buffer app)
@@ -1093,6 +1095,8 @@
                                              (string=? answer "y"))))))
                 (echo-message! echo "Cancelled")
                 (begin
+                  ;; Run kill-buffer-hook (parity with Qt layer)
+                  (run-hooks! 'kill-buffer-hook app buf)
                   ;; Switch to another buffer if killing current
                   (when (eq? buf (current-buffer-from-app app))
                     (let ((other (let loop ((bs (buffer-list)))
@@ -1148,7 +1152,7 @@
     (setup-new-editor-defaults! new-ed)
     ;; Re-apply highlighting: SCI_STYLECLEARALL in setup erased the styles
     ;; that buffer-attach! applied inside frame-split!
-    (*post-buffer-attach-hook* new-ed cur-buf)))
+    (run-hooks! 'post-buffer-attach-hook new-ed cur-buf)))
 
 (def (cmd-split-window-right app)
   (let* ((fr (app-state-frame app))
@@ -1156,7 +1160,7 @@
          (new-ed (frame-split-right! fr)))
     (setup-new-editor-defaults! new-ed)
     ;; Re-apply highlighting: SCI_STYLECLEARALL in setup erased the styles
-    (*post-buffer-attach-hook* new-ed cur-buf)))
+    (run-hooks! 'post-buffer-attach-hook new-ed cur-buf)))
 
 (def (cmd-other-window app)
   (frame-other-window! (app-state-frame app)))

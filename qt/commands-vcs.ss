@@ -947,31 +947,24 @@
     (gemacs-var-entry "recenter-position" (lambda () *recenter-position-qt*) "Recentering position (center/top/bottom)")))
 
 (def (cmd-describe-variable app)
-  "Describe a variable — show its current value and documentation."
-  (let* ((vars (gemacs-describe-variables))
-         (names (map car vars))
+  "Describe a variable — show value, type, docstring, default from customize registry."
+  (let* ((names (map symbol->string (custom-list-all)))
          (selection (qt-echo-read-with-narrowing app "Describe variable:" names)))
     (when (and selection (> (string-length selection) 0))
-      (let ((entry (assoc selection vars)))
-        (if entry
-          (let* ((name (car entry))
-                 (thunk (cadr entry))
-                 (desc (caddr entry))
-                 (val (with-catch (lambda (e) "<error>") thunk))
-                 (val-str (with-output-to-string (lambda () (write val)))))
-            (let* ((ed (current-qt-editor app))
-                   (fr (app-state-frame app))
-                   (help-buf (or (buffer-by-name "*Help*")
-                                 (qt-buffer-create! "*Help*" ed #f))))
-              (qt-buffer-attach! ed help-buf)
-              (set! (qt-edit-window-buffer (qt-current-window fr)) help-buf)
-              (qt-plain-text-edit-set-text! ed
-                (string-append name "\n\n"
-                  "Value: " val-str "\n\n"
-                  "Documentation:\n  " desc "\n"))
-              (qt-text-document-set-modified! (buffer-doc-pointer help-buf) #f)
-              (qt-plain-text-edit-set-cursor-position! ed 0)))
-          (echo-error! (app-state-echo app) (string-append "Unknown variable: " selection)))))))
+      (let ((sym (string->symbol selection)))
+        (if (custom-registered? sym)
+          (let* ((desc (custom-describe sym))
+                 (ed (current-qt-editor app))
+                 (fr (app-state-frame app))
+                 (help-buf (or (buffer-by-name "*Help*")
+                               (qt-buffer-create! "*Help*" ed #f))))
+            (qt-buffer-attach! ed help-buf)
+            (set! (qt-edit-window-buffer (qt-current-window fr)) help-buf)
+            (qt-plain-text-edit-set-text! ed desc)
+            (qt-text-document-set-modified! (buffer-doc-pointer help-buf) #f)
+            (qt-plain-text-edit-set-cursor-position! ed 0))
+          (echo-error! (app-state-echo app)
+            (string-append "Unknown variable: " selection)))))))
 
 (def (cmd-describe-syntax app)
   "Describe syntax and style at point."

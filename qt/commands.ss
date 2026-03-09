@@ -23,8 +23,7 @@
         file-mtime-changed?
         *eldoc-mode*
         eldoc-display!
-        *mode-keymaps*
-        mode-keymap-lookup
+        ;; *mode-keymaps* and mode-keymap-lookup now come from core.ss
         *current-theme*
         *themes*
         theme-stylesheet

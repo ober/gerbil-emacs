@@ -41,8 +41,9 @@
   ;; Set terminal background to match editor dark theme
   (tui-set-clear-attrs! #x00d8d8d8 #x00181818)
 
-  ;; Set up keybindings and commands
+  ;; Set up keybindings, mode keymaps, and commands
   (setup-default-bindings!)
+  (setup-mode-keymaps!)
   (setup-command-docs!)
   (register-all-commands!)
   (register-helm-commands!)
@@ -58,7 +59,7 @@
   (gsh-history-load!)
 
   ;; Install hook to restore per-buffer highlighting on every buffer switch
-  (set! *post-buffer-attach-hook*
+  (add-hook! 'post-buffer-attach-hook
     (lambda (editor buf)
       (let ((fp (buffer-file-path buf)))
         (when fp
@@ -120,6 +121,9 @@
 
     ;; Start IPC server for gemacs-client
     (start-ipc-server!)
+
+    ;; Run after-init-hook (parity with Qt layer)
+    (run-hooks! 'after-init-hook)
 
     app))
 
@@ -643,7 +647,10 @@
                   (begin (clear-repeat-map!) #f))))))
     (unless repeat-handled
   (let-values (((action data new-state)
-                (key-state-feed! (app-state-key-state app) ev)))
+                (let ((cur-buf (with-catch (lambda (_) #f)
+                                 (lambda () (edit-window-buffer
+                                              (current-window (app-state-frame app)))))))
+                  (key-state-feed! (app-state-key-state app) ev cur-buf))))
     (set! (app-state-key-state app) new-state)
     ;; Quoted insert: insert next key literally (C-q)
     (if *quoted-insert-pending*

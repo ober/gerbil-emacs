@@ -28,6 +28,14 @@
   *all-commands*
   setup-default-bindings!
 
+  ;; Mode keymaps
+  *mode-keymaps*
+  *buffer-name-mode-map*
+  mode-keymap-set!
+  mode-keymap-get
+  mode-keymap-lookup
+  setup-mode-keymaps!
+
   ;; App state
   (struct-out app-state)
   new-app-state
@@ -70,7 +78,7 @@
   safe-string-trim-both
 
   ;; Hooks
-  *post-buffer-attach-hook*
+  ;; *post-buffer-attach-hook* removed — now uses (add-hook! 'post-buffer-attach-hook ...)
   *hooks*
   add-hook!
   remove-hook!
@@ -179,6 +187,21 @@
   theme-nord
   theme-zenburn
 
+  ;; Customize system (from :gemacs/customize)
+  defvar!
+  custom-get
+  custom-set!
+  custom-reset!
+  custom-describe
+  custom-list-group
+  custom-list-all
+  custom-groups
+  custom-registered?
+  *custom-registry*
+  defhook!
+  hook-doc
+  hook-list-all
+
   ;; Paredit strict mode
   *paredit-strict-mode*
 
@@ -196,6 +219,7 @@
         :std/misc/rwlock
         :gerbil/runtime/init
         :gerbil/expander
+        :gemacs/customize
         :gemacs/face
         :gemacs/themes)
 
@@ -250,11 +274,163 @@
 (def *ctrl-c-l-map* (make-keymap))
 (def *ctrl-c-m-map* (make-keymap))
 (def *lsp-server-command* "gerbil-lsp")  ;; overridable via ~/.gemacs-init
+(defvar! 'lsp-server-command "gerbil-lsp" "Command to launch the LSP server"
+         setter: (lambda (v) (set! *lsp-server-command* v))
+         type: 'string group: 'lsp)
 (def *meta-g-map*   (make-keymap))
 (def *help-map*     (make-keymap))
 (def *meta-s-map*   (make-keymap))
 (def *ctrl-x-4-map* (make-keymap))
 (def *ctrl-x-p-map* (make-keymap))
+
+;;;============================================================================
+;;; Mode keymaps — per-mode key bindings
+;;;============================================================================
+
+;; Maps mode-symbol -> keymap hash table
+(def *mode-keymaps* (make-hash-table))
+
+;; Maps buffer name patterns -> mode symbol for special buffers
+(def *buffer-name-mode-map*
+  (make-hash-table))
+
+(def (mode-keymap-set! mode-sym km)
+  "Register a keymap for a mode symbol."
+  (hash-put! *mode-keymaps* mode-sym km))
+
+(def (mode-keymap-get mode-sym)
+  "Get the keymap for a mode symbol, or #f."
+  (hash-get *mode-keymaps* mode-sym))
+
+(def (mode-keymap-lookup buf key-str)
+  "Look up KEY-STR in the buffer's mode keymap. Returns command symbol or #f.
+   Checks lexer-lang first, then buffer name for special buffers."
+  (let* ((lang (buffer-lexer-lang buf))
+         (km (or (hash-get *mode-keymaps* lang)
+                 (hash-get *buffer-name-mode-map* (buffer-name buf)))))
+    (and km (keymap-lookup km key-str))))
+
+(def (setup-mode-keymaps!)
+  "Initialize mode-specific keybindings for special buffer types."
+  ;; Buffer name -> mode mapping for special buffers
+  (for-each
+    (lambda (pair)
+      (hash-put! *buffer-name-mode-map* (car pair) (cdr pair)))
+    '(("*compilation*" . compilation) ("*Grep*" . grep) ("*Occur*" . occur)
+      ("*calendar*" . calendar) ("*eww*" . eww) ("*Magit*" . magit)
+      ("*Magit: Commit*" . magit-commit) ("*Magit Log*" . magit-log)
+      ("*Magit Commit*" . magit-commit-view) ("*Magit Stash*" . magit-stash)
+      ("*Magit Stash Diff*" . magit-stash-diff) ("*Org Capture*" . org-capture)
+      ("*IBBuffer*" . ibuffer)))
+
+  ;; Dired mode
+  (let ((km (make-keymap)))
+    (for-each (lambda (p) (keymap-bind! km (car p) (cdr p)))
+      '(("n" . next-line) ("p" . previous-line) ("g" . revert-buffer)
+        ("d" . dired-do-delete) ("R" . dired-do-rename) ("C" . dired-do-copy)
+        ("+" . dired-create-directory) ("q" . kill-buffer-cmd) ("^" . dired)
+        ("m" . dired-mark) ("u" . dired-unmark) ("U" . dired-unmark-all)
+        ("t" . dired-toggle-marks) ("D" . dired-do-delete-marked) ("x" . dired-do-delete-marked)))
+    (mode-keymap-set! 'dired km))
+
+  ;; Compilation mode
+  (let ((km (make-keymap)))
+    (for-each (lambda (p) (keymap-bind! km (car p) (cdr p)))
+      '(("n" . next-error) ("p" . previous-error) ("g" . recompile) ("q" . kill-buffer-cmd)))
+    (mode-keymap-set! 'compilation km))
+
+  ;; Grep results mode
+  (let ((km (make-keymap)))
+    (for-each (lambda (p) (keymap-bind! km (car p) (cdr p)))
+      '(("n" . next-grep-result) ("p" . previous-grep-result) ("q" . kill-buffer-cmd)))
+    (mode-keymap-set! 'grep km))
+
+  ;; Buffer list mode
+  (let ((km (make-keymap)))
+    (for-each (lambda (p) (keymap-bind! km (car p) (cdr p)))
+      '(("n" . next-line) ("p" . previous-line) ("q" . kill-buffer-cmd)))
+    (mode-keymap-set! 'buffer-list km))
+
+  ;; IBBuffer mode
+  (let ((km (make-keymap)))
+    (for-each (lambda (p) (keymap-bind! km (car p) (cdr p)))
+      '(("d" . ibuffer-mark-delete) ("s" . ibuffer-mark-save)
+        ("u" . ibuffer-unmark) ("x" . ibuffer-execute) ("RET" . ibuffer-goto-buffer)
+        ("/" . ibuffer-filter-name) ("S" . ibuffer-sort-name) ("z" . ibuffer-sort-size)
+        ("t" . ibuffer-toggle-marks) ("g" . ibuffer-refresh)
+        ("n" . next-line) ("p" . previous-line) ("q" . kill-buffer-cmd)))
+    (mode-keymap-set! 'ibuffer km))
+
+  ;; Occur mode
+  (let ((km (make-keymap)))
+    (for-each (lambda (p) (keymap-bind! km (car p) (cdr p)))
+      '(("n" . next-line) ("p" . previous-line) ("q" . kill-buffer-cmd)))
+    (mode-keymap-set! 'occur km))
+
+  ;; Calendar mode
+  (let ((km (make-keymap)))
+    (for-each (lambda (p) (keymap-bind! km (car p) (cdr p)))
+      '(("p" . calendar-prev-month) ("n" . calendar-next-month)
+        ("<" . calendar-prev-year) (">" . calendar-next-year)
+        ("." . calendar-today) ("q" . kill-buffer-cmd)))
+    (mode-keymap-set! 'calendar km))
+
+  ;; EWW browser mode
+  (let ((km (make-keymap)))
+    (for-each (lambda (p) (keymap-bind! km (car p) (cdr p)))
+      '(("g" . eww) ("l" . eww-back) ("r" . eww-reload) ("q" . kill-buffer-cmd)))
+    (mode-keymap-set! 'eww km))
+
+  ;; Magit mode
+  (let ((km (make-keymap)))
+    (for-each (lambda (p) (keymap-bind! km (car p) (cdr p)))
+      '(("s" . magit-stage) ("S" . magit-stage-all) ("u" . magit-unstage)
+        ("c" . magit-commit) ("a" . magit-amend) ("d" . magit-diff)
+        ("l" . magit-log) ("b" . magit-branch) ("B" . magit-blame)
+        ("f" . magit-fetch) ("F" . magit-pull) ("P" . magit-push)
+        ("r" . magit-rebase) ("m" . magit-merge) ("z" . magit-stash)
+        ("Z" . magit-stash-pop) ("x" . magit-cherry-pick) ("X" . magit-revert-commit)
+        ("w" . magit-worktree) ("k" . magit-checkout) ("g" . magit-status)
+        ("n" . next-line) ("p" . previous-line) ("q" . kill-buffer-cmd)))
+    (mode-keymap-set! 'magit km))
+
+  ;; Magit commit mode
+  (let ((km (make-keymap)))
+    (keymap-bind! km "C-c C-c" 'magit-commit-finalize)
+    (keymap-bind! km "C-c C-k" 'magit-commit-abort)
+    (mode-keymap-set! 'magit-commit km))
+
+  ;; Magit log mode
+  (let ((km (make-keymap)))
+    (for-each (lambda (p) (keymap-bind! km (car p) (cdr p)))
+      '(("RET" . magit-log-show-commit) ("n" . next-line) ("p" . previous-line) ("q" . kill-buffer-cmd)))
+    (mode-keymap-set! 'magit-log km))
+
+  ;; Magit commit/diff view (shared by stash-diff)
+  (let ((km (make-keymap)))
+    (for-each (lambda (p) (keymap-bind! km (car p) (cdr p)))
+      '(("n" . next-line) ("p" . previous-line) ("q" . kill-buffer-cmd)))
+    (mode-keymap-set! 'magit-commit-view km)
+    (mode-keymap-set! 'magit-stash-diff km))
+
+  ;; Magit stash list
+  (let ((km (make-keymap)))
+    (for-each (lambda (p) (keymap-bind! km (car p) (cdr p)))
+      '(("RET" . magit-stash-show) ("n" . next-line) ("p" . previous-line) ("q" . kill-buffer-cmd)))
+    (mode-keymap-set! 'magit-stash km))
+
+  ;; Image mode
+  (let ((km (make-keymap)))
+    (for-each (lambda (p) (keymap-bind! km (car p) (cdr p)))
+      '(("+" . image-zoom-in) ("=" . image-zoom-in) ("-" . image-zoom-out)
+        ("0" . image-zoom-fit) ("1" . image-zoom-reset) ("q" . kill-buffer-cmd)))
+    (mode-keymap-set! 'image km))
+
+  ;; Org capture mode
+  (let ((km (make-keymap)))
+    (keymap-bind! km "C-c C-c" 'org-capture-finalize)
+    (keymap-bind! km "C-c C-k" 'org-capture-abort)
+    (mode-keymap-set! 'org-capture km)))
 
 (def (make-initial-key-state)
   (make-key-state *global-keymap* []))
@@ -950,6 +1126,7 @@
   ;; Help describe key briefly (C-h c — already have C-h k)
   (keymap-bind! *help-map* "c" 'describe-key-briefly)
   (keymap-bind! *help-map* "d" 'describe-function)
+  (keymap-bind! *help-map* "m" 'describe-mode)
   (keymap-bind! *help-map* "v" 'describe-variable)
   (keymap-bind! *help-map* "i" 'info)
   (keymap-bind! *help-map* "l" 'view-lossage)
@@ -1008,10 +1185,6 @@
 ;;; Hooks
 ;;;============================================================================
 
-;; Called after buffer-attach! with (editor buffer) arguments.
-;; Set by app-init! to restore syntax highlighting per buffer.
-(def *post-buffer-attach-hook* (lambda (editor buf) (void)))
-
 ;; General-purpose hook system (Emacs-style)
 ;; Each hook is a symbol key mapping to a list of thunks/procedures.
 (def *hooks* (make-hash-table))
@@ -1039,6 +1212,16 @@
                     (lambda (e) (void))  ; Don't let one hook failure stop others
                     (lambda () (apply fn args))))
                 fns))))
+
+;; Register all standard hooks with documentation
+(defhook! 'after-init-hook "Run after init file loaded and startup complete.")
+(defhook! 'before-save-hook "Run before saving a buffer to disk. Args: (app buf)")
+(defhook! 'after-save-hook "Run after saving a buffer to disk. Args: (app buf)")
+(defhook! 'find-file-hook "Run after opening a file into a buffer. Args: (app buf)")
+(defhook! 'kill-buffer-hook "Run before killing a buffer. Args: (app buf)")
+(defhook! 'after-change-major-mode-hook "Run after a buffer's major mode changes.")
+(defhook! 'buffer-list-update-hook "Run when the buffer list changes.")
+(defhook! 'post-buffer-attach-hook "Run after a buffer is attached to an editor. Args: (editor buf)")
 
 ;;;============================================================================
 ;;; Buffer structure and list
@@ -1376,6 +1559,7 @@
   (register-command-doc! 'describe-key "Show what command a key is bound to, with documentation.")
   (register-command-doc! 'describe-command "Describe a command by name, showing its keybinding and documentation.")
   (register-command-doc! 'describe-function "Describe a function/command by name.")
+  (register-command-doc! 'describe-mode "Show current major and minor modes.")
   (register-command-doc! 'list-bindings "Display all keybindings in a *Help* buffer.")
   (register-command-doc! 'keyboard-quit "Abort the current operation.")
   ;; Shell and REPL
@@ -1842,9 +2026,15 @@
 
 ;; Paredit strict mode — prevents deleting delimiters that would unbalance
 (def *paredit-strict-mode* #f)
+(defvar! 'paredit-strict-mode #f "Prevent deletion of unbalanced delimiters"
+         setter: (lambda (v) (set! *paredit-strict-mode* v))
+         type: 'boolean group: 'editing)
 
 ;; Helm mode flag (shared between TUI and Qt layers)
 (def *helm-mode* #f)
+(defvar! 'helm-mode #f "Use Helm-style incremental completion"
+         setter: (lambda (v) (set! *helm-mode* v))
+         type: 'boolean group: 'completion)
 
 ;; Maps char→char for input translation (e.g., swap brackets and parens)
 (def *key-translation-map* (make-hash-table))
@@ -1870,9 +2060,15 @@
 
 ;; Time window in milliseconds for second key of chord
 (def *chord-timeout* 200)
+(defvar! 'chord-timeout 200 "Milliseconds to wait for second key of a chord"
+         setter: (lambda (v) (set! *chord-timeout* v))
+         type: 'integer type-args: '(50 . 1000) group: 'keybindings)
 
 ;; Master toggle
 (def *chord-mode* #t)
+(defvar! 'chord-mode #t "Enable key-chord mode for two-key shortcuts"
+         setter: (lambda (v) (set! *chord-mode* v))
+         type: 'boolean group: 'keybindings)
 
 (def (key-chord-define-global two-char-str cmd)
   "Bind a 2-character chord to a command symbol.
