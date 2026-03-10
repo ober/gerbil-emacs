@@ -1153,5 +1153,139 @@ Scheme/Gerbil/Lisp buffers. Also used by LSP for hover information."
                       (echo-message! echo "Command not found")))
                   (echo-message! echo "Unknown key"))))))))))
 
+;;;============================================================================
+;;; Terraform integration
+;;;============================================================================
+
+(def (cmd-terraform-mode app)
+  "Enable Terraform/HCL mode — sets properties highlighting for HCL files."
+  (let ((ed (current-qt-editor app)))
+    (sci-send ed SCI_SETLEXER SCLEX_PROPERTIES)
+    (echo-message! (app-state-echo app) "Terraform mode enabled (properties lexer)")))
+
+(def (cmd-terraform app)
+  "Run terraform command interactively."
+  (let* ((echo (app-state-echo app))
+         (args (qt-echo-read-string app "terraform: ")))
+    (when (and args (> (string-length args) 0))
+      (let ((output (with-catch
+                      (lambda (e) (string-append "Error: " (error-message e)))
+                      (lambda ()
+                        (let ((p (open-input-process
+                                   (list path: "terraform"
+                                         arguments: (string-split args #\space)
+                                         stderr-redirection: #t))))
+                          (let ((result (read-line p #f)))
+                            (close-port p)
+                            (or result "No output")))))))
+        (let* ((ed (current-qt-editor app))
+               (fr (app-state-frame app))
+               (buf (or (buffer-by-name "*Terraform*")
+                        (qt-buffer-create! "*Terraform*" ed #f))))
+          (qt-buffer-attach! ed buf)
+          (set! (qt-edit-window-buffer (qt-current-window fr)) buf)
+          (qt-plain-text-edit-set-text! ed
+            (string-append "$ terraform " args "\n\n" output "\n")))))))
+
+(def (cmd-terraform-plan app)
+  "Run terraform plan in the current directory."
+  (let* ((echo (app-state-echo app))
+         (buf (current-qt-buffer app))
+         (dir (let ((fp (buffer-file-path buf)))
+                (if fp (path-directory fp) "."))))
+    (echo-message! echo "Running terraform plan...")
+    (let ((output (with-catch
+                    (lambda (e) (string-append "Error: " (error-message e)))
+                    (lambda ()
+                      (let ((p (open-input-process
+                                 (list path: "terraform"
+                                       arguments: '("plan" "-no-color")
+                                       directory: dir
+                                       stderr-redirection: #t))))
+                        (let ((result (read-line p #f)))
+                          (close-port p)
+                          (or result "No output")))))))
+      (let* ((ed (current-qt-editor app))
+             (fr (app-state-frame app))
+             (obuf (or (buffer-by-name "*Terraform Plan*")
+                       (qt-buffer-create! "*Terraform Plan*" ed #f))))
+        (qt-buffer-attach! ed obuf)
+        (set! (qt-edit-window-buffer (qt-current-window fr)) obuf)
+        (qt-plain-text-edit-set-text! ed
+          (string-append "terraform plan\nDirectory: " dir "\n\n" output "\n"))))))
+
+;;;============================================================================
+;;; Docker Compose integration
+;;;============================================================================
+
+(def (cmd-docker-compose app)
+  "Run docker compose command interactively."
+  (let* ((echo (app-state-echo app))
+         (args (qt-echo-read-string app "docker compose: ")))
+    (when (and args (> (string-length args) 0))
+      (let ((output (with-catch
+                      (lambda (e) (string-append "Error: " (error-message e)))
+                      (lambda ()
+                        (let ((p (open-input-process
+                                   (list path: "docker"
+                                         arguments: (cons "compose" (string-split args #\space))
+                                         stderr-redirection: #t))))
+                          (let ((result (read-line p #f)))
+                            (close-port p)
+                            (or result "No output")))))))
+        (let* ((ed (current-qt-editor app))
+               (fr (app-state-frame app))
+               (buf (or (buffer-by-name "*Docker Compose*")
+                        (qt-buffer-create! "*Docker Compose*" ed #f))))
+          (qt-buffer-attach! ed buf)
+          (set! (qt-edit-window-buffer (qt-current-window fr)) buf)
+          (qt-plain-text-edit-set-text! ed
+            (string-append "$ docker compose " args "\n\n" output "\n")))))))
+
+(def (cmd-docker-compose-up app)
+  "Run docker compose up -d."
+  (let* ((echo (app-state-echo app))
+         (buf (current-qt-buffer app))
+         (dir (let ((fp (buffer-file-path buf)))
+                (if fp (path-directory fp) "."))))
+    (echo-message! echo "Running docker compose up...")
+    (let ((output (with-catch
+                    (lambda (e) (string-append "Error: " (error-message e)))
+                    (lambda ()
+                      (let ((p (open-input-process
+                                 (list path: "docker"
+                                       arguments: '("compose" "up" "-d")
+                                       directory: dir
+                                       stderr-redirection: #t))))
+                        (let ((result (read-line p #f)))
+                          (close-port p)
+                          (or result "No output")))))))
+      (let* ((ed (current-qt-editor app))
+             (fr (app-state-frame app))
+             (obuf (or (buffer-by-name "*Docker Compose*")
+                       (qt-buffer-create! "*Docker Compose*" ed #f))))
+        (qt-buffer-attach! ed obuf)
+        (set! (qt-edit-window-buffer (qt-current-window fr)) obuf)
+        (qt-plain-text-edit-set-text! ed
+          (string-append "docker compose up -d\nDirectory: " dir "\n\n" output "\n"))))))
+
+(def (cmd-docker-compose-down app)
+  "Run docker compose down."
+  (let* ((echo (app-state-echo app))
+         (buf (current-qt-buffer app))
+         (dir (let ((fp (buffer-file-path buf)))
+                (if fp (path-directory fp) "."))))
+    (let ((output (with-catch
+                    (lambda (e) (string-append "Error: " (error-message e)))
+                    (lambda ()
+                      (let ((p (open-input-process
+                                 (list path: "docker"
+                                       arguments: '("compose" "down")
+                                       directory: dir
+                                       stderr-redirection: #t))))
+                        (let ((result (read-line p #f)))
+                          (close-port p)
+                          (or result "No output")))))))
+      (echo-message! echo (string-append "docker compose down: " output)))))
 
 

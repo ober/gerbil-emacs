@@ -1439,6 +1439,115 @@
                 (echo-message! echo
                   (string-append "Renamed to " new-path))))))))))
 
+;;;============================================================================
+;;; Terraform integration
+;;;============================================================================
 
+(def (cmd-terraform-mode app)
+  "Enable Terraform/HCL mode — sets properties highlighting for HCL files."
+  (let ((ed (current-editor app)))
+    (send-message ed SCI_SETLEXER SCLEX_PROPERTIES)
+    (echo-message! (app-state-echo app) "Terraform mode enabled (properties lexer)")))
+
+(def (cmd-terraform app)
+  "Run terraform command interactively."
+  (let* ((echo (app-state-echo app))
+         (args (app-read-string app "terraform: ")))
+    (when (and args (> (string-length args) 0))
+      (let ((output (with-catch
+                      (lambda (e) (string-append "Error: " (error-message e)))
+                      (lambda ()
+                        (let ((p (open-input-process
+                                   (list path: "terraform"
+                                         arguments: (string-split args #\space)
+                                         stderr-redirection: #t))))
+                          (let ((result (read-line p #f)))
+                            (close-port p)
+                            (or result "No output")))))))
+        (open-output-buffer app "*Terraform*"
+          (string-append "$ terraform " args "\n\n" output "\n"))))))
+
+(def (cmd-terraform-plan app)
+  "Run terraform plan in the current directory."
+  (let* ((echo (app-state-echo app))
+         (buf (current-buffer-from-app app))
+         (dir (let ((fp (buffer-file-path buf)))
+                (if fp (path-directory fp) "."))))
+    (echo-message! echo "Running terraform plan...")
+    (let ((output (with-catch
+                    (lambda (e) (string-append "Error: " (error-message e)))
+                    (lambda ()
+                      (let ((p (open-input-process
+                                 (list path: "terraform"
+                                       arguments: '("plan" "-no-color")
+                                       directory: dir
+                                       stderr-redirection: #t))))
+                        (let ((result (read-line p #f)))
+                          (close-port p)
+                          (or result "No output")))))))
+      (open-output-buffer app "*Terraform Plan*"
+        (string-append "terraform plan\nDirectory: " dir "\n\n" output "\n")))))
+
+;;;============================================================================
+;;; Docker Compose integration
+;;;============================================================================
+
+(def (cmd-docker-compose app)
+  "Run docker compose command interactively."
+  (let* ((echo (app-state-echo app))
+         (args (app-read-string app "docker compose: ")))
+    (when (and args (> (string-length args) 0))
+      (let ((output (with-catch
+                      (lambda (e) (string-append "Error: " (error-message e)))
+                      (lambda ()
+                        (let ((p (open-input-process
+                                   (list path: "docker"
+                                         arguments: (cons "compose" (string-split args #\space))
+                                         stderr-redirection: #t))))
+                          (let ((result (read-line p #f)))
+                            (close-port p)
+                            (or result "No output")))))))
+        (open-output-buffer app "*Docker Compose*"
+          (string-append "$ docker compose " args "\n\n" output "\n"))))))
+
+(def (cmd-docker-compose-up app)
+  "Run docker compose up -d."
+  (let* ((echo (app-state-echo app))
+         (buf (current-buffer-from-app app))
+         (dir (let ((fp (buffer-file-path buf)))
+                (if fp (path-directory fp) "."))))
+    (echo-message! echo "Running docker compose up...")
+    (let ((output (with-catch
+                    (lambda (e) (string-append "Error: " (error-message e)))
+                    (lambda ()
+                      (let ((p (open-input-process
+                                 (list path: "docker"
+                                       arguments: '("compose" "up" "-d")
+                                       directory: dir
+                                       stderr-redirection: #t))))
+                        (let ((result (read-line p #f)))
+                          (close-port p)
+                          (or result "No output")))))))
+      (open-output-buffer app "*Docker Compose*"
+        (string-append "docker compose up -d\nDirectory: " dir "\n\n" output "\n")))))
+
+(def (cmd-docker-compose-down app)
+  "Run docker compose down."
+  (let* ((echo (app-state-echo app))
+         (buf (current-buffer-from-app app))
+         (dir (let ((fp (buffer-file-path buf)))
+                (if fp (path-directory fp) "."))))
+    (let ((output (with-catch
+                    (lambda (e) (string-append "Error: " (error-message e)))
+                    (lambda ()
+                      (let ((p (open-input-process
+                                 (list path: "docker"
+                                       arguments: '("compose" "down")
+                                       directory: dir
+                                       stderr-redirection: #t))))
+                        (let ((result (read-line p #f)))
+                          (close-port p)
+                          (or result "No output")))))))
+      (echo-message! echo (string-append "docker compose down: " output)))))
 
 
