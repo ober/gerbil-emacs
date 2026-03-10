@@ -33,6 +33,35 @@
 
 (def *avy-labels* "asdfjklghqwertyuiopzxcvbnm")
 
+;; Scintilla indicator index for avy jump targets (indices 8-31 are user-reserved)
+(def *avy-indicator* 20)
+
+(def (qt-avy-highlight-matches! ed positions)
+  "Highlight avy match positions using Scintilla INDIC_ROUNDBOX."
+  (let ((SCI_INDICSETSTYLE      2080)
+        (SCI_INDICSETFORE       2082)
+        (SCI_SETINDICATORCURRENT 2500)
+        (SCI_INDICATORFILLRANGE  2504)
+        (INDIC_ROUNDBOX 7))
+    ;; Configure indicator style and colour (Scintilla BGR: orange = 0x0088FF)
+    (sci-send ed SCI_INDICSETSTYLE *avy-indicator* INDIC_ROUNDBOX)
+    (sci-send ed SCI_INDICSETFORE *avy-indicator* #x0088FF)
+    (sci-send ed SCI_SETINDICATORCURRENT 0 *avy-indicator*)
+    (for-each
+      (lambda (pos)
+        (sci-send ed SCI_INDICATORFILLRANGE pos 1))
+      positions)))
+
+(def (qt-avy-clear-highlights! ed positions)
+  "Remove avy indicator highlights."
+  (let ((SCI_SETINDICATORCURRENT 2500)
+        (SCI_INDICATORCLEARRANGE 2505))
+    (sci-send ed SCI_SETINDICATORCURRENT 0 *avy-indicator*)
+    (for-each
+      (lambda (pos)
+        (sci-send ed SCI_INDICATORCLEARRANGE pos 1))
+      positions)))
+
 (def (avy-find-char-positions text ch start end)
   "Find all positions of CH in TEXT between START and END."
   (let ((len (min end (string-length text)))
@@ -102,11 +131,13 @@
            (qt-plain-text-edit-set-cursor-position! ed (car positions))
            (qt-plain-text-edit-ensure-cursor-visible! ed))
           (else
-           ;; Show candidates
+           ;; Show candidates and highlight in buffer
+           (qt-avy-highlight-matches! ed positions)
            (echo-message! (app-state-echo app)
              (avy-format-candidates text positions))
-           ;; Read label
+           ;; Read label, then always clear indicators
            (let ((label (qt-echo-read-string app "avy jump: ")))
+             (qt-avy-clear-highlights! ed positions)
              (when (and label (= (string-length label) 1))
                (let ((idx (let loop ((i 0))
                             (if (>= i (string-length *avy-labels*)) #f
@@ -131,9 +162,11 @@
       ((= (length positions) 0)
        (echo-error! (app-state-echo app) "No word starts found"))
       (else
+       (qt-avy-highlight-matches! ed positions)
        (echo-message! (app-state-echo app)
          (avy-format-candidates text positions))
        (let ((label (qt-echo-read-string app "avy word: ")))
+         (qt-avy-clear-highlights! ed positions)
          (when (and label (= (string-length label) 1))
            (let ((idx (let loop ((i 0))
                         (if (>= i (string-length *avy-labels*)) #f
@@ -184,8 +217,10 @@
                                    (string (string-ref *avy-labels* i))
                                    ":" (number->string line-num) " " preview)
                                  acc)))))))
+         (qt-avy-highlight-matches! ed positions)
          (echo-message! (app-state-echo app) labels-str)
          (let ((label (qt-echo-read-string app "avy line: ")))
+           (qt-avy-clear-highlights! ed positions)
            (when (and label (= (string-length label) 1))
              (let ((idx (let loop ((i 0))
                           (if (>= i (string-length *avy-labels*)) #f

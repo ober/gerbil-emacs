@@ -8,6 +8,7 @@
 (import :std/sugar
         :std/sort
         :std/srfi/13
+        :std/misc/process
         :gemacs/qt/sci-shim
         :gemacs/core
         :gemacs/async
@@ -1379,4 +1380,240 @@
         (set! (app-state-kill-ring app)
               (cons line-text (app-state-kill-ring app)))
         (echo-message! (app-state-echo app) "Line copied")))))
+
+;;;============================================================================
+;;; Occur edit mode — make *Occur* buffer editable, propagate back to source
+;;;============================================================================
+
+;; State: original "LINE-NUM: text" entries before editing
+(def *occur-edit-original-lines* (make-hash-table)) ; line-num -> original-text
+
+(def (cmd-occur-edit-mode app)
+  "Enable editing in *Occur* buffer. C-c C-c commits changes back to source buffer."
+  (let* ((buf  (current-qt-buffer app))
+         (echo (app-state-echo app)))
+    (if (not (string=? (buffer-name buf) "*Occur*"))
+      (echo-error! echo "Not in *Occur* buffer")
+      (begin
+        (let* ((ed   (current-qt-editor app))
+               (text (qt-plain-text-edit-text ed))
+               (lines (string-split text #\newline)))
+          ;; Snapshot match lines  (those starting with digit and containing ":")
+          (hash-clear! *occur-edit-original-lines*)
+          (for-each
+            (lambda (line)
+              (let ((colon (string-index line #\:)))
+                (when (and colon (> colon 0)
+                           (char-numeric? (string-ref line 0)))
+                  (let ((lnum (string->number (substring line 0 colon))))
+                    (when lnum
+                      (hash-put! *occur-edit-original-lines* lnum
+                        (if (< (+ colon 2) (string-length line))
+                          (substring line (+ colon 2) (string-length line))
+                          "")))))))
+            lines)
+          (sci-send ed SCI_SETREADONLY 0 0)
+          (echo-message! echo
+            "Occur edit ON — edit lines then C-c C-c to commit"))))))
+
+(def (cmd-occur-commit-edits app)
+  "Commit *Occur* edits back to source buffer. Only changed lines are updated."
+  (let* ((buf  (current-qt-buffer app))
+         (echo (app-state-echo app)))
+    (if (not (string=? (buffer-name buf) "*Occur*"))
+      (echo-error! echo "Not in *Occur* buffer")
+      (if (not *occur-source-buffer*)
+        (echo-error! echo "No occur source buffer")
+        (let* ((source (buffer-by-name *occur-source-buffer*))
+               (ed     (current-qt-editor app)))
+          (if (not source)
+            (echo-error! echo
+              (string-append "Source buffer '" *occur-source-buffer* "' not found"))
+            (let* ((occur-text (qt-plain-text-edit-text ed))
+                   (occur-lines (string-split occur-text #\newline))
+                   ;; Collect changes: (line-num . new-text)
+                   (changes
+                    (let loop ((ls occur-lines) (acc []))
+                      (if (null? ls) (reverse acc)
+                        (let* ((line (car ls))
+                               (colon (string-index line #\:)))
+                          (if (and colon (> colon 0)
+                                   (char-numeric? (string-ref line 0)))
+                            (let ((lnum (string->number (substring line 0 colon))))
+                              (if lnum
+                                (let* ((new-text (if (< (+ colon 2) (string-length line))
+                                                   (substring line (+ colon 2) (string-length line))
+                                                   ""))
+                                       (orig (hash-get *occur-edit-original-lines* lnum)))
+                                  (if (and orig (not (string=? new-text orig)))
+                                    (loop (cdr ls) (cons (cons lnum new-text) acc))
+                                    (loop (cdr ls) acc)))
+                                (loop (cdr ls) acc)))
+                            (loop (cdr ls) acc)))))))
+              (if (null? changes)
+                (begin
+                  (sci-send ed SCI_SETREADONLY 1 0)
+                  (echo-message! echo "No changes to commit"))
+                (begin
+                  ;; Apply changes to source buffer
+                  (qt-buffer-attach! ed source)
+                  (set! (qt-edit-window-buffer (qt-current-window (app-state-frame app))) source)
+                  (let* ((src-text (qt-plain-text-edit-text ed))
+                         (src-lines (list->vector (string-split src-text #\newline)))
+                         (n-lines (vector-length src-lines)))
+                    (for-each
+                      (lambda (change)
+                        (let ((lnum (car change)) (new-text (cdr change)))
+                          (when (and (> lnum 0) (<= lnum n-lines))
+                            (vector-set! src-lines (- lnum 1) new-text))))
+                      changes)
+                    (let ((new-src (string-join (vector->list src-lines) "\n")))
+                      (qt-plain-text-edit-set-text! ed new-src)))
+                  (echo-message! echo
+                    (string-append (number->string (length changes))
+                                   " change(s) applied to "
+                                   *occur-source-buffer*)))))))))))
+
+;;;============================================================================
+;;; wdired mode — edit filenames directly in dired buffer
+;;;============================================================================
+
+;; State: per-buffer snapshot of original dired lines for comparison
+(def *wdired-originals* (make-hash-table)) ; buffer-name -> vector of original lines
+
+(def (dired-line-filename str)
+  "Extract the filename from a dired listing line.
+Dired format: 'permissions  links owner group size  date  FILENAME'
+The filename is the last token after the 8th space-separated field."
+  ;; Count 8 fields (permissions, links, user, group, size, mon, day, time/year)
+  ;; then rest is filename
+  (let loop ((i 0) (fields 0) (in-ws #t))
+    (cond
+      ((>= i (string-length str)) #f)
+      ((char=? (string-ref str i) #\space)
+       (loop (+ i 1) fields #t))
+      (in-ws
+       (if (= fields 8)
+         ;; Rest of string is the filename
+         (substring str i (string-length str))
+         (loop (+ i 1) (+ fields 1) #f)))
+      (else (loop (+ i 1) fields #f)))))
+
+(def (dired-line-filename-start str)
+  "Return the character position where the filename starts in a dired line."
+  (let loop ((i 0) (fields 0) (in-ws #t))
+    (cond
+      ((>= i (string-length str)) #f)
+      ((char=? (string-ref str i) #\space)
+       (loop (+ i 1) fields #t))
+      (in-ws
+       (if (= fields 8)
+         i
+         (loop (+ i 1) (+ fields 1) #f)))
+      (else (loop (+ i 1) fields #f)))))
+
+(def (dired-line? str)
+  "Check if a line looks like a dired listing entry (starts with permission flags)."
+  (and (>= (string-length str) 10)
+       (or (char=? (string-ref str 0) #\-)
+           (char=? (string-ref str 0) #\d)
+           (char=? (string-ref str 0) #\l))
+       (or (char=? (string-ref str 1) #\r)
+           (char=? (string-ref str 1) #\-))))
+
+(def (cmd-wdired-mode app)
+  "Enable wdired mode: make filenames in dired buffer editable.
+  C-c C-c commits renames, C-c C-k aborts."
+  (let* ((buf  (current-qt-buffer app))
+         (echo (app-state-echo app))
+         (name (buffer-name buf)))
+    (if (not (or (string=? name "*Dired*")
+                 (string-prefix? "*dired:" name)))
+      (echo-error! echo "Not in a dired buffer")
+      (let* ((ed    (current-qt-editor app))
+             (text  (qt-plain-text-edit-text ed))
+             (lines (string-split text #\newline)))
+        ;; Snapshot original lines
+        (hash-put! *wdired-originals* name (list->vector lines))
+        (sci-send ed SCI_SETREADONLY 0 0)
+        (echo-message! echo
+          "wdired: edit filenames, C-c C-c to commit, C-c C-k to abort")))))
+
+(def (cmd-wdired-finish-edit app)
+  "Commit wdired renames: compare current filenames with originals and run mv."
+  (let* ((buf  (current-qt-buffer app))
+         (echo (app-state-echo app))
+         (name (buffer-name buf)))
+    (if (not (hash-get *wdired-originals* name))
+      (echo-error! echo "Not in wdired mode")
+      (let* ((ed       (current-qt-editor app))
+             (text     (qt-plain-text-edit-text ed))
+             (cur-lines  (string-split text #\newline))
+             (orig-vec (hash-get *wdired-originals* name))
+             (renames  []))
+        ;; Compare line by line
+        (let loop ((cur cur-lines) (i 0))
+          (when (and (not (null? cur)) (< i (vector-length orig-vec)))
+            (let* ((cur-line  (car cur))
+                   (orig-line (vector-ref orig-vec i)))
+              (when (and (dired-line? orig-line) (dired-line? cur-line))
+                (let ((old-name (dired-line-filename orig-line))
+                      (new-name (dired-line-filename cur-line)))
+                  (when (and old-name new-name (not (string=? old-name new-name)))
+                    (set! renames (cons (cons old-name new-name) renames)))))
+              (loop (cdr cur) (+ i 1)))))
+        (if (null? renames)
+          (begin
+            (hash-remove! *wdired-originals* name)
+            (sci-send ed SCI_SETREADONLY 1 0)
+            (echo-message! echo "wdired: no renames"))
+          (begin
+            ;; Get directory from dired buffer (first line shows directory)
+            (let* ((lines (string-split text #\newline))
+                   (dir-line (if (> (length lines) 0) (car lines) ""))
+                   (dir (if (string-prefix? "  " dir-line)
+                          (string-trim dir-line)
+                          ""))
+                   (ok-count 0)
+                   (err-count 0))
+              (for-each
+                (lambda (rename)
+                  (let* ((old-f (string-append dir "/" (car rename)))
+                         (new-f (string-append dir "/" (cdr rename)))
+                         (result (with-catch (lambda (e) #f)
+                                   (lambda ()
+                                     (run-process ["mv" "--" old-f new-f]
+                                       stdout-redirection: #f)
+                                     #t))))
+                    (if result
+                      (set! ok-count (+ ok-count 1))
+                      (set! err-count (+ err-count 1)))))
+                renames)
+              (hash-remove! *wdired-originals* name)
+              (sci-send ed SCI_SETREADONLY 1 0)
+              (echo-message! echo
+                (string-append "wdired: "
+                               (number->string ok-count) " rename(s), "
+                               (number->string err-count) " error(s)")))))))))
+
+(def (cmd-wdired-abort app)
+  "Abort wdired: restore original buffer contents."
+  (let* ((buf  (current-qt-buffer app))
+         (echo (app-state-echo app))
+         (name (buffer-name buf)))
+    (if (not (hash-get *wdired-originals* name))
+      (echo-error! echo "Not in wdired mode")
+      (let* ((ed    (current-qt-editor app))
+             (orig-vec (hash-get *wdired-originals* name))
+             (orig-text (string-join (vector->list orig-vec) "\n")))
+        (sci-send ed SCI_SETREADONLY 0 0)
+        (qt-plain-text-edit-set-text! ed orig-text)
+        (sci-send ed SCI_SETREADONLY 1 0)
+        (hash-remove! *wdired-originals* name)
+        (echo-message! echo "wdired: aborted")))))
+
+;; Alias for backward compat with commands-aliases.ss registration
+(def (cmd-wdired-finish app)
+  "Alias: commit wdired edits."
+  (cmd-wdired-finish-edit app))
 

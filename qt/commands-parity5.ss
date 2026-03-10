@@ -53,6 +53,53 @@
           *enriched-mode* *picture-mode*))
 
 ;;;============================================================================
+;;; Menu bar item table
+;;;============================================================================
+
+(def *menu-bar-items*
+  '(("File: Open file (C-x C-f)" . find-file)
+    ("File: Open recent" . recentf-open-files)
+    ("File: Save buffer (C-x C-s)" . save-buffer)
+    ("File: Save all buffers" . save-some-buffers)
+    ("File: Close buffer (C-x k)" . kill-buffer)
+    ("File: Revert buffer" . revert-buffer)
+    ("File: Dired (C-x d)" . dired)
+    ("File: Quit (C-x C-c)" . save-buffers-kill-emacs)
+    ("Edit: Undo (C-/)" . undo)
+    ("Edit: Cut region (C-w)" . kill-region)
+    ("Edit: Copy region (M-w)" . kill-ring-save)
+    ("Edit: Paste (C-y)" . yank)
+    ("Edit: Select all (C-x h)" . mark-whole-buffer)
+    ("Edit: Fill paragraph (M-q)" . fill-paragraph)
+    ("Edit: Sort lines" . sort-lines)
+    ("Edit: Delete trailing whitespace" . delete-trailing-whitespace)
+    ("Search: Find/replace (M-%)" . query-replace)
+    ("Search: Find regexp (C-M-%)" . query-replace-regexp)
+    ("Search: Grep project (M-s r)" . consult-ripgrep)
+    ("Search: Occur in buffer (M-s o)" . occur)
+    ("Search: Goto line (M-g g)" . goto-line)
+    ("View: Split horizontal (C-x 2)" . split-window-below)
+    ("View: Split vertical (C-x 3)" . split-window-right)
+    ("View: Delete window (C-x 0)" . delete-window)
+    ("View: Delete other windows (C-x 1)" . delete-other-windows)
+    ("View: Line numbers" . display-line-numbers-mode)
+    ("View: Word wrap" . visual-line-mode)
+    ("Tools: Execute command (M-x)" . execute-extended-command)
+    ("Tools: Terminal (M-x eshell)" . eshell)
+    ("Tools: Compile" . compile)
+    ("Tools: Magit" . magit)
+    ("Tools: Debugger (GDB)" . gdb)
+    ("Tools: Calculator" . calc)
+    ("Tools: Calendar" . calendar)
+    ("Tools: List packages" . list-packages)
+    ("Help: Describe function" . describe-function)
+    ("Help: Describe key (C-h k)" . describe-key)
+    ("Help: Describe variable (C-h v)" . describe-variable)
+    ("Help: Info reader (M-x info)" . info)
+    ("Help: Keybindings (C-h b)" . describe-bindings)
+    ("Help: Recent notifications" . notifications-list)))
+
+;;;============================================================================
 ;;; Mode toggle commands (63) — toggle via make-toggle-command
 ;;;============================================================================
 
@@ -125,19 +172,112 @@
       writeroom-mode)))
 
 ;;;============================================================================
-;;; Stub commands (5) — echo-only placeholders
+;;; Ediff show registry — show active and recent diff sessions
+;;;============================================================================
+
+(def (cmd-ediff-show-registry app)
+  "Show all active ediff sessions (*Ediff* buffers) in a registry buffer."
+  (let* ((bufs (buffer-list))
+         (ediff-bufs (filter (lambda (b)
+                               (let ((n (buffer-name b)))
+                                 (or (string-prefix? "*Ediff" n)
+                                     (string-prefix? "*Diff" n))))
+                             bufs))
+         (fr (app-state-frame app))
+         (ed (qt-current-editor fr)))
+    (if (null? ediff-bufs)
+      (let* ((buf (or (buffer-by-name "*Ediff Registry*")
+                      (qt-buffer-create! "*Ediff Registry*" ed #f)))
+             (text "Ediff Session Registry\n========================\n\n(No active ediff sessions)\n\nTip: use M-x ediff-files or M-x ediff-buffers to start a session.\n"))
+        (qt-buffer-attach! ed buf)
+        (set! (qt-edit-window-buffer (qt-current-window fr)) buf)
+        (qt-plain-text-edit-set-text! ed text)
+        (qt-text-document-set-modified! (buffer-doc-pointer buf) #f)
+        (qt-plain-text-edit-set-cursor-position! ed 0)
+        (echo-message! (app-state-echo app) "No active ediff sessions"))
+      (let* ((lines (map (lambda (b)
+                           (let ((name (buffer-name b))
+                                 (file (buffer-file-path b)))
+                             (string-append "  " name
+                               (if file (string-append "  [" file "]") ""))))
+                         ediff-bufs))
+             (content (string-join lines "\n"))
+             (text (string-append
+                     "Ediff Session Registry\n"
+                     "========================\n\n"
+                     "Active diff buffers (" (number->string (length ediff-bufs)) "):\n\n"
+                     content "\n\n"
+                     "Press RET in a session buffer to switch to it.\n"))
+             (buf (or (buffer-by-name "*Ediff Registry*")
+                      (qt-buffer-create! "*Ediff Registry*" ed #f))))
+        (qt-buffer-attach! ed buf)
+        (set! (qt-edit-window-buffer (qt-current-window fr)) buf)
+        (qt-plain-text-edit-set-text! ed text)
+        (qt-text-document-set-modified! (buffer-doc-pointer buf) #f)
+        (qt-plain-text-edit-set-cursor-position! ed 0)
+        (echo-message! (app-state-echo app)
+          (string-append (number->string (length ediff-bufs)) " ediff session(s)"))))))
+
+;;;============================================================================
+;;; Menu bar — Emacs-style menu bar with narrowing selection
+;;;============================================================================
+
+(def (cmd-menu-bar-open app)
+  "Open the menu bar — select menu item with narrowing, then execute command."
+  (let* ((labels (map car *menu-bar-items*))
+         (choice (qt-echo-read-string-with-completion app "Menu: " labels)))
+    (when choice
+      (let ((pair (find (lambda (p) (string=? (car p) choice)) *menu-bar-items*)))
+        (if pair
+          (execute-command! app (cdr pair))
+          (echo-message! (app-state-echo app)
+            (string-append "No command for: " choice)))))))
+
+;;;============================================================================
+;;; Notifications list — show recent echo-area messages
+;;;============================================================================
+
+(def (cmd-notifications-list app)
+  "Show recent editor notifications in *Notifications* buffer."
+  (let* ((log (notification-get-recent 50))
+         (fr (app-state-frame app))
+         (ed (qt-current-editor fr))
+         (count (length log))
+         (numbered (let loop ((msgs log) (n 1) (acc '()))
+                     (if (null? msgs)
+                       (reverse acc)
+                       (loop (cdr msgs) (+ n 1)
+                             (cons (string-append "  " (number->string n) ". "
+                                                  (car msgs))
+                                   acc)))))
+         (content (if (null? log)
+                    "  (No notifications yet)"
+                    (string-join numbered "\n")))
+         (text (string-append
+                 "Recent Notifications (" (number->string count) ")\n"
+                 "==============================\n\n"
+                 content "\n"))
+         (buf (or (buffer-by-name "*Notifications*")
+                  (qt-buffer-create! "*Notifications*" ed #f))))
+    (qt-buffer-attach! ed buf)
+    (set! (qt-edit-window-buffer (qt-current-window fr)) buf)
+    (qt-plain-text-edit-set-text! ed text)
+    (qt-text-document-set-modified! (buffer-doc-pointer buf) #f)
+    (qt-plain-text-edit-set-cursor-position! ed 0)
+    (echo-message! (app-state-echo app)
+      (string-append (number->string count) " notifications"))))
+
+;;;============================================================================
+;;; Stub commands (2) — echo-only placeholders
 ;;;============================================================================
 
 (def (qt-register-parity5-stubs!)
-  "Register 5 stub commands."
+  "Register 2 remaining stub commands."
   (for-each
     (lambda (pair)
       (register-command! (car pair) (make-stub-command (car pair) (cdr pair))))
     '((all-the-icons-install-fonts . "Install all-the-icons fonts")
-      (nerd-icons-install-fonts . "Install nerd-icons fonts")
-      (ediff-show-registry . "Show Ediff session registry")
-      (menu-bar-open . "Open menu bar")
-      (notifications-list . "List notifications"))))
+      (nerd-icons-install-fonts . "Install nerd-icons fonts"))))
 
 ;;;============================================================================
 ;;; Alias commands (22) — delegate to existing commands
@@ -1216,7 +1356,10 @@
       (cons 'ibuffer-delete cmd-ibuffer-delete)
       (cons 'ibuffer-do-kill cmd-ibuffer-do-kill)
       (cons 'dired-delete-marked cmd-dired-delete-marked)
-      (cons 'dirvish cmd-dirvish))))
+      (cons 'dirvish cmd-dirvish)
+      (cons 'ediff-show-registry cmd-ediff-show-registry)
+      (cons 'menu-bar-open cmd-menu-bar-open)
+      (cons 'notifications-list cmd-notifications-list))))
 
 ;;; ============================================================================
 ;;; Visual line mode (word wrap) — real Scintilla implementation

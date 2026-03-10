@@ -243,16 +243,22 @@ Largest files: modes (~1851), lsp (~1802), search (~1778)
 
 - ~~**Qt stub upgrades batch**~~ — DONE: mc-mark-previous-like-this (real backward SCI_ADDSELECTION), eww-forward (forward history stack), reopen-killed-buffer (killed buffer tracking + disk reopen), add-dir-local-variable (prompt + write .gemacs-config), add-file-local-variable (insert/extend -*- header)
 
+- ~~**Stub upgrades + notification log**~~ — DONE: `ediff-show-registry` (shows active *Ediff*/*Diff* buffers in registry buffer, both TUI and Qt), `menu-bar-open` (42-item narrowing menu popup across File/Edit/Search/View/Tools/Help), `notifications-list` (numbered *Notifications* buffer from ring buffer log), `server-start` upgraded (reads IPC server address from ~/.gemacs-server file), `inferior-lisp` Qt upgraded (delegates to eshell). Added `*notification-log*` ring buffer to core.ss — `echo-message!` and `echo-error!` now log all messages, `notification-get-recent` exposed. 677 Qt tests.
+
+- ~~**Calc arithmetic ops, describe-mode, abbrev auto-expand**~~ — DONE: 18 RPN calc math commands (calc-add/sub/mul/div/mod/pow/neg/abs/sqrt/log/exp/sin/cos/tan/floor/ceiling/round/clear) in both TUI and Qt; `describe-mode` enhanced to show all 18 active minor modes in *Help* buffer; abbrev auto-expansion wired to Qt self-insert (space/newline/comma/period/semicolon triggers lookup). 693 Qt tests.
+
+- ~~**String inflection, occur-edit mode, wdired**~~ — DONE (Batch 4): `string-inflection-cycle/snake-case/camelcase/upcase` cycle identifiers through snake→camel→PascalCase→UPPER→kebab with full tokenizer (handles all casing boundaries + UPPER_CASE detection); `occur-edit-mode` makes `*Occur*` buffer editable (snapshots lines, commits on C-c C-c to write changes back to source buffer); `wdired-mode/wdired-finish-edit/wdired-abort` enable filename renaming in dired buffers via `mv`. All 9 commands in both TUI and Qt. 706 Qt tests.
+
 ### Current Status
-- **668 Qt tests passing**, all TUI tests passing (vtscreen flaky but known)
-- **~2170+ registered commands** across TUI and Qt
-- **~635+ implemented features**
-- Remaining stubs: ~5 niche Qt stubs (all-the-icons-install-fonts, nerd-icons-install-fonts, ediff-show-registry, menu-bar-open, notifications-list)
+- **706 Qt tests passing**, all TUI tests passing (vtscreen flaky but known)
+- **~2179+ registered commands** across TUI and Qt
+- **~647+ implemented features**
+- Remaining stubs: 2 niche Qt stubs (all-the-icons-install-fonts, nerd-icons-install-fonts — informational only)
 - Remaining yellow circles in gemacs-vs-emacs.md: ~12 (mostly fundamental platform limitations: tree-sitter, EWW CSS/JS, screen reader, tab-line per-window)
 
 ### Next Steps (for continuation)
 - Continue upgrading remaining stubs per standing instruction
-- Potential features: server-start (socket server), inferior-lisp (proper Scheme REPL), dired improvements
+- Potential features: dired improvements (mark by regex, shell command on marked), more text transforms
 - Update gemacs-vs-emacs.md after each batch
 - Static build verification (`make static-qt`) periodically
 

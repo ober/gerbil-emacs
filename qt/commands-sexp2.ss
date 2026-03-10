@@ -635,3 +635,183 @@
                 ((string-contains new-line "[#C]") "Priority: C")
                 (else "Priority: none")))))))
 
+;;;============================================================================
+;;; String inflection — cycle naming conventions
+;;;============================================================================
+
+(def (inflection-split-to-tokens word)
+  "Split a word into lowercase tokens regardless of naming convention.
+  Handles: snake_case, UPPER_CASE, CamelCase, kebab-case."
+  ;; First normalise: replace _ and - with spaces
+  ;; Then split CamelCase on uppercase boundaries
+  (let loop ((chars (string->list word)) (cur "") (tokens []))
+    (cond
+      ((null? chars)
+       (if (> (string-length cur) 0)
+         (reverse (cons (string-downcase cur) tokens))
+         (reverse tokens)))
+      ((or (char=? (car chars) #\_) (char=? (car chars) #\-))
+       (if (> (string-length cur) 0)
+         (loop (cdr chars) "" (cons (string-downcase cur) tokens))
+         (loop (cdr chars) "" tokens)))
+      ((and (char-upper-case? (car chars))
+            (> (string-length cur) 0)
+            (char-lower-case? (string-ref cur (- (string-length cur) 1))))
+       ;; CamelCase boundary
+       (loop (cdr chars) (string (char-downcase (car chars)))
+             (cons (string-downcase cur) tokens)))
+      ((and (char-upper-case? (car chars))
+            (> (string-length cur) 0)
+            (char-upper-case? (string-ref cur (- (string-length cur) 1)))
+            (not (null? (cdr chars)))
+            (char-lower-case? (cadr chars)))
+       ;; UPPER boundary before lowercase (e.g. "HTMLParser" → "HTML" "Parser")
+       (loop (cdr chars) (string (char-downcase (car chars)))
+             (cons (string-downcase cur) tokens)))
+      (else
+       (loop (cdr chars) (string-append cur (string (char-downcase (car chars)))) tokens)))))
+
+(def (tokens->snake tokens)  (string-join tokens "_"))
+(def (tokens->upper tokens)  (string-upcase (string-join tokens "_")))
+(def (tokens->kebab tokens)  (string-join tokens "-"))
+(def (tokens->camel tokens)
+  (if (null? tokens) ""
+    (apply string-append
+           (car tokens)
+           (map (lambda (t)
+                  (if (= (string-length t) 0) ""
+                    (string-append (string (char-upcase (string-ref t 0)))
+                                   (substring t 1 (string-length t)))))
+                (cdr tokens)))))
+(def (tokens->pascal tokens)
+  (apply string-append
+         (map (lambda (t)
+                (if (= (string-length t) 0) ""
+                  (string-append (string (char-upcase (string-ref t 0)))
+                                 (substring t 1 (string-length t)))))
+              tokens)))
+
+(def (inflection-detect-style word)
+  "Detect current naming convention: snake, upper, camel, pascal, kebab."
+  (cond
+    ((string-contains word "_")
+     (if (string=? word (string-upcase word)) 'upper 'snake))
+    ((string-contains word "-") 'kebab)
+    ((and (> (string-length word) 0)
+          (char-upper-case? (string-ref word 0))) 'pascal)
+    ((let loop ((i 1))
+       (and (< i (string-length word))
+            (or (char-upper-case? (string-ref word i))
+                (loop (+ i 1)))))
+     'camel)
+    (else 'snake)))
+
+(def (inflection-next-style current)
+  "Cycle: snake → camelCase → PascalCase → UPPER_CASE → kebab-case → snake"
+  (case current
+    ((snake) 'camel)
+    ((camel) 'pascal)
+    ((pascal) 'upper)
+    ((upper) 'kebab)
+    ((kebab) 'snake)
+    (else 'camel)))
+
+(def (inflection-apply-style tokens style)
+  (case style
+    ((snake)  (tokens->snake tokens))
+    ((upper)  (tokens->upper tokens))
+    ((kebab)  (tokens->kebab tokens))
+    ((camel)  (tokens->camel tokens))
+    ((pascal) (tokens->pascal tokens))
+    (else     (tokens->snake tokens))))
+
+(def (qt-word-at-cursor-bounds ed)
+  "Return (start . end) of word under cursor, or #f."
+  (let* ((text (qt-plain-text-edit-text ed))
+         (pos  (qt-plain-text-edit-cursor-position ed))
+         (len  (string-length text))
+         (word-char? (lambda (c)
+                       (or (char-alphabetic? c) (char-numeric? c)
+                           (char=? c #\_) (char=? c #\-))))
+         (start (let loop ((i (min (max 0 (- pos 1)) (- len 1))))
+                  (cond ((< i 0) 0)
+                        ((word-char? (string-ref text i)) (loop (- i 1)))
+                        (else (+ i 1)))))
+         (end (let loop ((i pos))
+                (cond ((>= i len) i)
+                      ((word-char? (string-ref text i)) (loop (+ i 1)))
+                      (else i)))))
+    (if (< start end) (cons start end) #f)))
+
+(def (cmd-string-inflection-cycle app)
+  "Cycle the word at point through naming conventions:
+snake_case → camelCase → PascalCase → UPPER_CASE → kebab-case → snake_case."
+  (let* ((ed   (current-qt-editor app))
+         (echo (app-state-echo app))
+         (bounds (qt-word-at-cursor-bounds ed)))
+    (if (not bounds)
+      (echo-error! echo "No word at point")
+      (let* ((start (car bounds))
+             (end   (cdr bounds))
+             (text  (qt-plain-text-edit-text ed))
+             (word  (substring text start end))
+             (tokens (inflection-split-to-tokens word))
+             (style  (inflection-detect-style word))
+             (next   (inflection-next-style style))
+             (new-word (inflection-apply-style tokens next)))
+        (qt-plain-text-edit-set-selection! ed start end)
+        (qt-plain-text-edit-remove-selected-text! ed)
+        (qt-plain-text-edit-set-cursor-position! ed start)
+        (qt-plain-text-edit-insert-text! ed new-word)
+        (echo-message! echo
+          (string-append word " → " new-word
+                         " (" (symbol->string next) ")"))))))
+
+(def (cmd-string-inflection-snake-case app)
+  "Convert word at point to snake_case."
+  (let* ((ed (current-qt-editor app))
+         (echo (app-state-echo app))
+         (bounds (qt-word-at-cursor-bounds ed)))
+    (if (not bounds)
+      (echo-error! echo "No word at point")
+      (let* ((text (qt-plain-text-edit-text ed))
+             (word (substring text (car bounds) (cdr bounds)))
+             (new-word (tokens->snake (inflection-split-to-tokens word))))
+        (qt-plain-text-edit-set-selection! ed (car bounds) (cdr bounds))
+        (qt-plain-text-edit-remove-selected-text! ed)
+        (qt-plain-text-edit-set-cursor-position! ed (car bounds))
+        (qt-plain-text-edit-insert-text! ed new-word)
+        (echo-message! echo (string-append word " → " new-word))))))
+
+(def (cmd-string-inflection-camelcase app)
+  "Convert word at point to camelCase."
+  (let* ((ed (current-qt-editor app))
+         (echo (app-state-echo app))
+         (bounds (qt-word-at-cursor-bounds ed)))
+    (if (not bounds)
+      (echo-error! echo "No word at point")
+      (let* ((text (qt-plain-text-edit-text ed))
+             (word (substring text (car bounds) (cdr bounds)))
+             (new-word (tokens->camel (inflection-split-to-tokens word))))
+        (qt-plain-text-edit-set-selection! ed (car bounds) (cdr bounds))
+        (qt-plain-text-edit-remove-selected-text! ed)
+        (qt-plain-text-edit-set-cursor-position! ed (car bounds))
+        (qt-plain-text-edit-insert-text! ed new-word)
+        (echo-message! echo (string-append word " → " new-word))))))
+
+(def (cmd-string-inflection-upcase app)
+  "Convert word at point to UPPER_CASE."
+  (let* ((ed (current-qt-editor app))
+         (echo (app-state-echo app))
+         (bounds (qt-word-at-cursor-bounds ed)))
+    (if (not bounds)
+      (echo-error! echo "No word at point")
+      (let* ((text (qt-plain-text-edit-text ed))
+             (word (substring text (car bounds) (cdr bounds)))
+             (new-word (tokens->upper (inflection-split-to-tokens word))))
+        (qt-plain-text-edit-set-selection! ed (car bounds) (cdr bounds))
+        (qt-plain-text-edit-remove-selected-text! ed)
+        (qt-plain-text-edit-set-cursor-position! ed (car bounds))
+        (qt-plain-text-edit-insert-text! ed new-word)
+        (echo-message! echo (string-append word " → " new-word))))))
+

@@ -43,6 +43,7 @@ Uses SRFI-19 for timestamps (no subprocess)."
     ;; Store clock state
     (set! *org-clock-start* (org-parse-timestamp now-str))
     (set! *org-clock-heading* (string-trim (editor-get-line ed line-num)))
+    (set! *org-clock-marker* line-num)
     ;; Insert LOGBOOK drawer after current line
     (editor-insert-text ed line-end clock-text)
     (echo-message! echo (string-append "Clocked in: " now-str))))
@@ -91,6 +92,7 @@ Uses SRFI-19 for timestamps (no subprocess)."
         ;; Clear clock state
         (set! *org-clock-start* #f)
         (set! *org-clock-heading* #f)
+        (set! *org-clock-marker* #f)
         (echo-message! echo (string-append "Clocked out: " now-str " => " elapsed))))))
 
 (def (pad-elapsed str)
@@ -131,7 +133,20 @@ Uses SRFI-19 for timestamps (no subprocess)."
         ;; Clear state
         (set! *org-clock-start* #f)
         (set! *org-clock-heading* #f)
+        (set! *org-clock-marker* #f)
         (echo-message! echo "Clock cancelled")))))
+
+;;;============================================================================
+;;; Clock Goto
+;;;============================================================================
+
+(def (org-clock-goto ed echo)
+  "Jump to the currently clocked-in heading."
+  (if (not *org-clock-marker*)
+    (echo-message! echo "No clock is currently active")
+    (let ((pos (editor-position-from-line ed *org-clock-marker*)))
+      (editor-goto-pos ed pos)
+      (echo-message! echo (string-append "Clocked: " (or *org-clock-heading* "(unknown)"))))))
 
 ;;;============================================================================
 ;;; Clock Display (sum all CLOCK entries for current heading)

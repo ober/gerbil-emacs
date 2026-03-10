@@ -842,6 +842,10 @@
     (editor-goto-pos ed (+ pos (string-length (string-append "#+BEGIN_SRC" lang-str "\n"))))
     (echo-message! (app-state-echo app) "Source block inserted")))
 
+;; TUI-local org-clock state (parallel to org-clock.ss for TUI)
+(def *tui-org-clock-marker* #f)    ; line number where clock was started
+(def *tui-org-clock-heading* #f)   ; heading text for display
+
 (def (cmd-org-clock-in app)
   "Insert CLOCK-IN timestamp in :LOGBOOK: drawer."
   (let* ((fr (app-state-frame app))
@@ -864,8 +868,12 @@
                       (process-status p)
                       (or out "")))))))
     (when (not (string-empty? now))
-      (let ((clock-text (string-append "\n  :LOGBOOK:\n  CLOCK: " now "\n  :END:")))
+      (let ((clock-text (string-append "\n  :LOGBOOK:\n  CLOCK: " now "\n  :END:"))
+            (heading (string-trim (editor-get-line ed line-num))))
         (editor-insert-text ed line-end clock-text)
+        ;; Record marker for org-clock-goto
+        (set! *tui-org-clock-marker* line-num)
+        (set! *tui-org-clock-heading* heading)
         (echo-message! echo (string-append "Clocked in: " now))))))
 
 (def (cmd-org-clock-out app)
@@ -907,7 +915,56 @@
             (send-message ed SCI_SETTARGETSTART line-start 0)
             (send-message ed SCI_SETTARGETEND line-end 0)
             (send-message/string ed SCI_REPLACETARGET new-line)
+            ;; Clear clock marker on clock-out
+            (set! *tui-org-clock-marker* #f)
+            (set! *tui-org-clock-heading* #f)
             (echo-message! echo (string-append "Clocked out: " now))))))))
+
+(def (cmd-org-clock-cancel app)
+  "Cancel (remove) the open clock entry without closing it."
+  (let* ((fr (app-state-frame app))
+         (win (current-window fr))
+         (ed (edit-window-editor win))
+         (text (editor-get-text ed))
+         (echo (app-state-echo app))
+         (lines (string-split text #\newline))
+         ;; Find last open CLOCK entry
+         (clock-line
+           (let loop ((i (- (length lines) 1)))
+             (cond
+               ((< i 0) #f)
+               ((let ((l (list-ref lines i)))
+                  (and (string-contains l "CLOCK: [")
+                       (not (string-contains l "--"))))
+                i)
+               (else (loop (- i 1)))))))
+    (if (not clock-line)
+      (echo-message! echo "No open clock entry to cancel")
+      (begin
+        (let* ((line-start (editor-position-from-line ed clock-line))
+               (next-line-start
+                 (if (< (+ clock-line 1) (editor-get-line-count ed))
+                   (editor-position-from-line ed (+ clock-line 1))
+                   (editor-get-text-length ed))))
+          (send-message ed SCI_SETTARGETSTART line-start 0)
+          (send-message ed SCI_SETTARGETEND next-line-start 0)
+          (send-message/string ed SCI_REPLACETARGET ""))
+        (set! *tui-org-clock-marker* #f)
+        (set! *tui-org-clock-heading* #f)
+        (echo-message! echo "Clock cancelled")))))
+
+(def (cmd-org-clock-goto app)
+  "Jump to the currently clocked-in heading."
+  (let* ((fr (app-state-frame app))
+         (win (current-window fr))
+         (ed (edit-window-editor win))
+         (echo (app-state-echo app)))
+    (if (not *tui-org-clock-marker*)
+      (echo-message! echo "No clock is currently active")
+      (let ((pos (editor-position-from-line ed *tui-org-clock-marker*)))
+        (editor-goto-pos ed pos)
+        (echo-message! echo (string-append "Clocked: "
+                              (or *tui-org-clock-heading* "(unknown)")))))))
 
 ;;;============================================================================
 ;;; Org structure templates (<s TAB, <e TAB, etc.)

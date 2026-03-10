@@ -722,56 +722,7 @@
             (echo-error! echo (string-append "Failed to save " remote-path " to " host))
             #f))))))
 
-;; Additional text manipulation
-(def (cmd-string-inflection-cycle app)
-  "Cycle word between camelCase, snake_case, kebab-case."
-  (let* ((fr (app-state-frame app))
-         (win (current-window fr))
-         (ed (edit-window-editor win))
-         (pos (editor-get-current-pos ed)))
-    (let-values (((word-start word-end) (word-bounds-at ed pos)))
-      (when word-start
-      (let* ((len (- word-end word-start))
-             (word (substring (editor-get-text ed) word-start word-end))
-             (has-underscore (string-contains word "_"))
-             (has-dash (string-contains word "-"))
-             (has-upper (let loop ((i 0))
-                          (if (>= i (string-length word)) #f
-                            (if (char-upper-case? (string-ref word i)) #t
-                              (loop (+ i 1))))))
-             (new-word
-               (cond
-                 ;; snake_case -> kebab-case
-                 (has-underscore
-                  (list->string
-                    (map (lambda (c) (if (char=? c #\_) #\- c))
-                         (string->list word))))
-                 ;; kebab-case -> camelCase
-                 (has-dash
-                  (let loop ((chars (string->list word)) (capitalize #f) (acc []))
-                    (cond
-                      ((null? chars) (list->string (reverse acc)))
-                      ((char=? (car chars) #\-)
-                       (loop (cdr chars) #t acc))
-                      (capitalize
-                       (loop (cdr chars) #f (cons (char-upcase (car chars)) acc)))
-                      (else
-                       (loop (cdr chars) #f (cons (car chars) acc))))))
-                 ;; camelCase -> snake_case
-                 (has-upper
-                  (let loop ((chars (string->list word)) (acc []))
-                    (cond
-                      ((null? chars) (list->string (reverse acc)))
-                      ((and (char-upper-case? (car chars)) (not (null? acc)))
-                       (loop (cdr chars)
-                             (cons (char-downcase (car chars)) (cons #\_ acc))))
-                      (else
-                       (loop (cdr chars) (cons (char-downcase (car chars)) acc))))))
-                 ;; no case markers - do nothing
-                 (else word))))
-        (send-message ed SCI_SETTARGETSTART word-start 0)
-        (send-message ed SCI_SETTARGETEND word-end 0)
-        (send-message/string ed SCI_REPLACETARGET new-word))))))
+;; string-inflection commands moved to editor-extra-ai.ss (full suite with UPPER/pascal)
 
 ;; Ediff - file and region comparison using diff
 ;; Provides a simple diff view between two files or buffers

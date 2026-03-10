@@ -385,6 +385,60 @@
       (echo-message! (app-state-echo app)
         (string-append "Swapped: " (number->string b) " <-> " (number->string a))))))
 
+;;; TUI Calc arithmetic and math operations
+
+(def (tui-calc-show! app)
+  (let* ((echo (app-state-echo app))
+         (top5 (if (> (length *calc-stack*) 5) (take *calc-stack* 5) *calc-stack*)))
+    (if (null? top5)
+      (echo-message! echo "Stack: (empty)")
+      (echo-message! echo (string-append "Stack: "
+        (string-join (map (lambda (n)
+                            (let ((s (with-output-to-string (lambda () (display n)))))
+                              s))
+                          top5) " "))))))
+
+(def (tui-calc-binary-op! app label op-fn)
+  (let* ((echo (app-state-echo app)) (st *calc-stack*))
+    (if (< (length st) 2)
+      (echo-error! echo (string-append "calc-" label ": need 2 values"))
+      (let* ((b (car st)) (a (cadr st)) (rest (cddr st))
+             (result (with-catch (lambda (e) #f) (lambda () (op-fn a b)))))
+        (if result
+          (begin (set! *calc-stack* (cons result rest)) (tui-calc-show! app))
+          (echo-error! echo (string-append "calc-" label ": error")))))))
+
+(def (tui-calc-unary-op! app label op-fn)
+  (let* ((echo (app-state-echo app)) (st *calc-stack*))
+    (if (null? st)
+      (echo-error! echo (string-append "calc-" label ": stack empty"))
+      (let* ((a (car st)) (rest (cdr st))
+             (result (with-catch (lambda (e) #f) (lambda () (op-fn a)))))
+        (if result
+          (begin (set! *calc-stack* (cons result rest)) (tui-calc-show! app))
+          (echo-error! echo (string-append "calc-" label ": error")))))))
+
+(def (cmd-calc-add     app) (tui-calc-binary-op! app "+" +))
+(def (cmd-calc-sub     app) (tui-calc-binary-op! app "-" -))
+(def (cmd-calc-mul     app) (tui-calc-binary-op! app "*" *))
+(def (cmd-calc-div     app) (tui-calc-binary-op! app "/" /))
+(def (cmd-calc-mod     app) (tui-calc-binary-op! app "mod" modulo))
+(def (cmd-calc-pow     app) (tui-calc-binary-op! app "pow" expt))
+(def (cmd-calc-neg     app) (tui-calc-unary-op! app "neg" (lambda (a) (- a))))
+(def (cmd-calc-abs     app) (tui-calc-unary-op! app "abs" abs))
+(def (cmd-calc-sqrt    app) (tui-calc-unary-op! app "sqrt" sqrt))
+(def (cmd-calc-log     app) (tui-calc-unary-op! app "log" log))
+(def (cmd-calc-exp     app) (tui-calc-unary-op! app "exp" exp))
+(def (cmd-calc-sin     app) (tui-calc-unary-op! app "sin" sin))
+(def (cmd-calc-cos     app) (tui-calc-unary-op! app "cos" cos))
+(def (cmd-calc-tan     app) (tui-calc-unary-op! app "tan" tan))
+(def (cmd-calc-floor   app) (tui-calc-unary-op! app "floor" floor))
+(def (cmd-calc-ceiling app) (tui-calc-unary-op! app "ceiling" ceiling))
+(def (cmd-calc-round   app) (tui-calc-unary-op! app "round" round))
+(def (cmd-calc-clear   app)
+  (set! *calc-stack* '())
+  (echo-message! (app-state-echo app) "Stack: (empty — cleared)"))
+
 ;; Ace-jump / Avy navigation - quick cursor movement
 ;; Simplified implementation: searches for matches in visible text and jumps
 

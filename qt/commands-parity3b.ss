@@ -40,7 +40,8 @@
         :gemacs/qt/commands-config2
         :gemacs/qt/commands-parity
         :gemacs/qt/commands-parity2
-        :gemacs/qt/commands-parity3)
+        :gemacs/qt/commands-parity3
+        (only-in :gemacs/ipc *ipc-server-file*))
 
 ;;;============================================================================
 ;;; Simple functional commands (thin implementations)
@@ -378,9 +379,69 @@
       (set! *calc-stack* (cons b (cons a (cddr *calc-stack*))))
       (calc-show-stack! app))))
 
+;;; Calc arithmetic and math operations — RPN-style
+
+(def (calc-binary-op! app label op-fn)
+  "Pop 2 values (a=deeper, b=top), apply op-fn(a b), push result."
+  (let* ((echo (app-state-echo app))
+         (st *calc-stack*))
+    (if (< (length st) 2)
+      (echo-error! echo (string-append "calc-" label ": need 2 values"))
+      (let* ((b (car st)) (a (cadr st)) (rest (cddr st))
+             (result (with-catch (lambda (e) #f) (lambda () (op-fn a b)))))
+        (if result
+          (begin (set! *calc-stack* (cons result rest))
+                 (calc-show-stack! app))
+          (echo-error! echo (string-append "calc-" label ": arithmetic error")))))))
+
+(def (calc-unary-op! app label op-fn)
+  "Pop 1 value, apply unary op-fn(a), push result."
+  (let* ((echo (app-state-echo app))
+         (st *calc-stack*))
+    (if (null? st)
+      (echo-error! echo (string-append "calc-" label ": stack empty"))
+      (let* ((a (car st)) (rest (cdr st))
+             (result (with-catch (lambda (e) #f) (lambda () (op-fn a)))))
+        (if result
+          (begin (set! *calc-stack* (cons result rest))
+                 (calc-show-stack! app))
+          (echo-error! echo (string-append "calc-" label ": error")))))))
+
+(def (cmd-calc-add     app) "Pop 2, push sum."           (calc-binary-op! app "+" +))
+(def (cmd-calc-sub     app) "Pop 2, push difference."    (calc-binary-op! app "-" -))
+(def (cmd-calc-mul     app) "Pop 2, push product."       (calc-binary-op! app "*" *))
+(def (cmd-calc-div     app) "Pop 2, push quotient."      (calc-binary-op! app "/" /))
+(def (cmd-calc-mod     app) "Pop 2, push modulo."        (calc-binary-op! app "mod" modulo))
+(def (cmd-calc-pow     app) "Pop 2, push a^b."           (calc-binary-op! app "pow" expt))
+(def (cmd-calc-neg     app) "Pop 1, push negated."       (calc-unary-op! app "neg" (lambda (a) (- a))))
+(def (cmd-calc-abs     app) "Pop 1, push absolute value."(calc-unary-op! app "abs" abs))
+(def (cmd-calc-sqrt    app) "Pop 1, push square root."   (calc-unary-op! app "sqrt" sqrt))
+(def (cmd-calc-log     app) "Pop 1, push natural log."   (calc-unary-op! app "log" log))
+(def (cmd-calc-exp     app) "Pop 1, push e^a."           (calc-unary-op! app "exp" exp))
+(def (cmd-calc-sin     app) "Pop 1, push sin (radians)." (calc-unary-op! app "sin" sin))
+(def (cmd-calc-cos     app) "Pop 1, push cos (radians)." (calc-unary-op! app "cos" cos))
+(def (cmd-calc-tan     app) "Pop 1, push tan (radians)." (calc-unary-op! app "tan" tan))
+(def (cmd-calc-floor   app) "Pop 1, push floor."         (calc-unary-op! app "floor" floor))
+(def (cmd-calc-ceiling app) "Pop 1, push ceiling."       (calc-unary-op! app "ceiling" ceiling))
+(def (cmd-calc-round   app) "Pop 1, push round."         (calc-unary-op! app "round" round))
+(def (cmd-calc-clear   app) "Clear the entire calculator stack."
+  (set! *calc-stack* [])
+  (echo-message! (app-state-echo app) "Stack: (empty — cleared)"))
+
 ;; Server
 (def (cmd-server-start app)
-  (echo-message! (app-state-echo app) "Server: use gemacs <file> to open files"))
+  "Show IPC server status — gemacs-client opens files in this session."
+  (if (file-exists? *ipc-server-file*)
+    (let* ((addr (with-exception-catcher
+                   (lambda (e) "unknown")
+                   (lambda ()
+                     (call-with-input-file *ipc-server-file*
+                       (lambda (p) (read-line p))))))
+           (msg (string-append "Server running on " (or addr "unknown")
+                               " — use: gemacs-client <file>")))
+      (echo-message! (app-state-echo app) msg))
+    (echo-message! (app-state-echo app)
+      "No server running (start gemacs-qt to enable)")))
 (def (cmd-server-edit app)
   (execute-command! app 'find-file))
 (def (cmd-server-force-delete app)
@@ -620,7 +681,10 @@
                 (string-append "=> " (with-output-to-string (lambda () (display result))))))))))))
 
 (def (cmd-inferior-lisp app)
-  (echo-message! (app-state-echo app) "Use M-x eshell for a Lisp REPL"))
+  "Start inferior Lisp — opens Gerbil REPL in eshell."
+  (execute-command! app 'eshell)
+  (echo-message! (app-state-echo app)
+    "Eshell ready — type 'gxi' for Gerbil REPL or 'gambit' for Gambit"))
 
 ;; Misc editing commands
 (def (cmd-duplicate-and-comment app)
@@ -1833,6 +1897,24 @@
       (cons 'calc-pop cmd-calc-pop)
       (cons 'calc-dup cmd-calc-dup)
       (cons 'calc-swap cmd-calc-swap)
+      (cons 'calc-add cmd-calc-add)
+      (cons 'calc-sub cmd-calc-sub)
+      (cons 'calc-mul cmd-calc-mul)
+      (cons 'calc-div cmd-calc-div)
+      (cons 'calc-mod cmd-calc-mod)
+      (cons 'calc-pow cmd-calc-pow)
+      (cons 'calc-neg cmd-calc-neg)
+      (cons 'calc-abs cmd-calc-abs)
+      (cons 'calc-sqrt cmd-calc-sqrt)
+      (cons 'calc-log cmd-calc-log)
+      (cons 'calc-exp cmd-calc-exp)
+      (cons 'calc-sin cmd-calc-sin)
+      (cons 'calc-cos cmd-calc-cos)
+      (cons 'calc-tan cmd-calc-tan)
+      (cons 'calc-floor cmd-calc-floor)
+      (cons 'calc-ceiling cmd-calc-ceiling)
+      (cons 'calc-round cmd-calc-round)
+      (cons 'calc-clear cmd-calc-clear)
       (cons 'server-start cmd-server-start)
       (cons 'server-edit cmd-server-edit)
       (cons 'server-force-delete cmd-server-force-delete)

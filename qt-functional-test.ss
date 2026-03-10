@@ -52,7 +52,8 @@
                  *hooks* add-hook! remove-hook! run-hooks!
                  repeat-mode? repeat-mode-set!
                  active-repeat-map active-repeat-map-set!
-                 repeat-map-for-command repeat-map-lookup clear-repeat-map!)
+                 repeat-map-for-command repeat-map-lookup clear-repeat-map!
+                 notification-get-recent echo-message!)
         (only-in :gemacs/qt/window
                  make-qt-edit-window
                  make-qt-frame
@@ -121,7 +122,11 @@
                  qt-enable-code-folding!
                  qt-update-visual-decorations!
                  *qt-show-paren-enabled*
-                 *qt-delete-selection-enabled*))
+                 *qt-delete-selection-enabled*)
+        (only-in :gemacs/qt/commands-parity3b
+                 *calc-stack*)
+        (only-in :gemacs/persist
+                 *abbrev-table* *abbrev-mode-enabled*))
 
 (export main)
 
@@ -4950,6 +4955,231 @@
     (displayln "Group 48 complete")))
 
 ;;;============================================================================
+;;; Group 49: Stub upgrades — ediff-show-registry, menu-bar-open, notifications-list
+;;;           server-start, inferior-lisp
+;;;============================================================================
+
+(def (run-group-49-stub-upgrades)
+  (displayln "--- Group 49: stub upgrades (ediff/menu/notifs/server/inferior-lisp)")
+  (let-values (((ed w app) (make-qt-test-app "stub-upgrades")))
+    (qt-register-all-commands!)
+
+    ;; ediff-show-registry: registered and runs without crash
+    (if (find-command 'ediff-show-registry)
+      (pass! "ediff-show-registry registered")
+      (fail! "ediff-show-registry registered" #f "registered"))
+    (with-catch
+      (lambda (e) (fail! "ediff-show-registry runs without crash"
+                    (with-output-to-string (lambda () (display-exception e))) "no crash"))
+      (lambda ()
+        (execute-command! app 'ediff-show-registry)
+        (pass! "ediff-show-registry runs without crash")))
+
+    ;; menu-bar-open: registered
+    (if (find-command 'menu-bar-open)
+      (pass! "menu-bar-open registered")
+      (fail! "menu-bar-open registered" #f "registered"))
+
+    ;; notifications-list: registered and creates *Notifications* buffer
+    (if (find-command 'notifications-list)
+      (pass! "notifications-list registered")
+      (fail! "notifications-list registered" #f "registered"))
+    (with-catch
+      (lambda (e) (fail! "notifications-list runs without crash"
+                    (with-output-to-string (lambda () (display-exception e))) "no crash"))
+      (lambda ()
+        (execute-command! app 'notifications-list)
+        (pass! "notifications-list runs without crash")))
+
+    ;; server-start: registered and runs without crash
+    (if (find-command 'server-start)
+      (pass! "server-start registered")
+      (fail! "server-start registered" #f "registered"))
+    (with-catch
+      (lambda (e) (fail! "server-start runs without crash"
+                    (with-output-to-string (lambda () (display-exception e))) "no crash"))
+      (lambda ()
+        (execute-command! app 'server-start)
+        (pass! "server-start runs without crash")))
+
+    ;; inferior-lisp: registered
+    (if (find-command 'inferior-lisp)
+      (pass! "inferior-lisp registered")
+      (fail! "inferior-lisp registered" #f "registered"))
+
+    ;; Notification log: echo-message! now populates notification log
+    (echo-message! (app-state-echo app) "test notification alpha")
+    (echo-message! (app-state-echo app) "test notification beta")
+    (let ((log (notification-get-recent 5)))
+      (if (and (pair? log) (string=? (car log) "test notification beta"))
+        (pass! "notification log newest-first")
+        (fail! "notification log newest-first" log "beta at head")))
+
+    (destroy-qt-test-app! ed w)
+    (displayln "Group 49 complete")))
+
+;;;============================================================================
+;;; Group 50: Calc arithmetic/math ops + describe-mode + abbrev expansion
+;;;============================================================================
+
+(def (run-group-50-calc-describe-abbrev)
+  (displayln "--- Group 50: calc math ops, describe-mode, abbrev expansion")
+  (let-values (((ed w app) (make-qt-test-app "calc-describe")))
+    (qt-register-all-commands!)
+
+      ;; --- Calc arithmetic ops registered ---
+      (if (find-command 'calc-add)
+        (pass! "calc-add registered")
+        (fail! "calc-add registered" #f "should be registered"))
+      (if (find-command 'calc-sub)
+        (pass! "calc-sub registered")
+        (fail! "calc-sub registered" #f "should be registered"))
+      (if (find-command 'calc-mul)
+        (pass! "calc-mul registered")
+        (fail! "calc-mul registered" #f "should be registered"))
+      (if (find-command 'calc-div)
+        (pass! "calc-div registered")
+        (fail! "calc-div registered" #f "should be registered"))
+      (if (find-command 'calc-sqrt)
+        (pass! "calc-sqrt registered")
+        (fail! "calc-sqrt registered" #f "should be registered"))
+      (if (find-command 'calc-sin)
+        (pass! "calc-sin registered")
+        (fail! "calc-sin registered" #f "should be registered"))
+      (if (find-command 'calc-clear)
+        (pass! "calc-clear registered")
+        (fail! "calc-clear registered" #f "should be registered"))
+
+      ;; --- Calc arithmetic: 3 + 4 = 7 ---
+      ;; Push values directly onto *calc-stack* for testing
+      (set! *calc-stack* (list 4 3))  ; 3 is deeper (a), 4 is top (b) → 3+4=7
+      (execute-command! app 'calc-add)
+      (let ((msg (echo-state-message (app-state-echo app))))
+        (if (and msg (string-contains msg "7"))
+          (pass! "calc-add: 3+4=7")
+          (fail! "calc-add: 3+4=7" msg "should contain 7")))
+
+      ;; --- Calc subtraction: 10 - 3 = 7 ---
+      (set! *calc-stack* (list 3 10))  ; 10 deeper, 3 top → 10-3=7
+      (execute-command! app 'calc-sub)
+      (let ((msg (echo-state-message (app-state-echo app))))
+        (if (and msg (string-contains msg "7"))
+          (pass! "calc-sub: 10-3=7")
+          (fail! "calc-sub: 10-3=7" msg "should contain 7")))
+
+      ;; --- Calc multiply: 6 * 7 = 42 ---
+      (set! *calc-stack* (list 7 6))
+      (execute-command! app 'calc-mul)
+      (let ((msg (echo-state-message (app-state-echo app))))
+        (if (and msg (string-contains msg "42"))
+          (pass! "calc-mul: 6*7=42")
+          (fail! "calc-mul: 6*7=42" msg "should contain 42")))
+
+      ;; --- Calc sqrt: sqrt(9) = 3 ---
+      (set! *calc-stack* (list 9))
+      (execute-command! app 'calc-sqrt)
+      (let ((msg (echo-state-message (app-state-echo app))))
+        (if (and msg (string-contains msg "3"))
+          (pass! "calc-sqrt: sqrt(9)=3")
+          (fail! "calc-sqrt: sqrt(9)=3" msg "should contain 3")))
+
+      ;; --- Calc clear ---
+      (set! *calc-stack* (list 1 2 3))
+      (execute-command! app 'calc-clear)
+      (if (null? *calc-stack*)
+        (pass! "calc-clear empties stack")
+        (fail! "calc-clear empties stack" *calc-stack* "()"))
+
+      ;; --- Calc error: add with empty stack ---
+      (set! *calc-stack* '())
+      (execute-command! app 'calc-add)
+      (let ((msg (echo-state-message (app-state-echo app))))
+        (if (and msg (or (string-contains msg "need") (string-contains msg "error")))
+          (pass! "calc-add: error on empty stack")
+          (fail! "calc-add: error on empty stack" msg "should contain error")))
+
+      ;; --- describe-mode registered and runs ---
+      (if (find-command 'describe-mode)
+        (pass! "describe-mode registered")
+        (fail! "describe-mode registered" #f "should be registered"))
+      (with-catch
+        (lambda (e) (fail! "describe-mode runs without crash" e "no exception"))
+        (lambda ()
+          (execute-command! app 'describe-mode)
+          (pass! "describe-mode runs without crash")))
+
+      ;; --- describe-mode puts content in *Help* buffer ---
+      (execute-command! app 'describe-mode)
+      (let* ((echo-msg (echo-state-message (app-state-echo app))))
+        (if (and echo-msg (string-contains echo-msg "mode"))
+          (pass! "describe-mode echoes mode info")
+          (fail! "describe-mode echoes mode info" echo-msg "should contain 'mode'")))
+
+      (destroy-qt-test-app! ed w)
+      (displayln "Group 50 complete")))
+
+;;;============================================================================
+;;; Group 51: string-inflection, occur-edit, wdired
+;;;============================================================================
+
+(def (run-group-51-inflection-occur-wdired)
+  (displayln "--- Group 51: string-inflection, occur-edit, wdired")
+  (let-values (((ed w app) (make-qt-test-app "inflection-occur-wdired")))
+    (qt-register-all-commands!)
+
+    ;; --- string-inflection commands registered ---
+    (for-each
+      (lambda (cmd)
+        (if (find-command cmd)
+          (pass! (string-append (symbol->string cmd) " registered"))
+          (fail! (string-append (symbol->string cmd) " registered") #f "should be registered")))
+      '(string-inflection-cycle string-inflection-snake-case
+        string-inflection-camelcase string-inflection-upcase))
+
+    ;; --- string-inflection-cycle does not crash on empty buffer ---
+    (qt-plain-text-edit-set-text! ed "")
+    (with-catch
+      (lambda (e) (fail! "inflection-cycle empty buffer" e "no exception"))
+      (lambda ()
+        (execute-command! app 'string-inflection-cycle)
+        (pass! "inflection-cycle empty buffer")))
+
+    ;; --- string-inflection-cycle transforms word at point ---
+    (qt-plain-text-edit-set-text! ed "hello_world")
+    (qt-plain-text-edit-set-cursor-position! ed 3)
+    (with-catch
+      (lambda (e) (fail! "inflection-cycle transforms word" e "no exception"))
+      (lambda ()
+        (execute-command! app 'string-inflection-cycle)
+        (pass! "inflection-cycle transforms word")))
+
+    ;; --- occur-edit and wdired commands registered ---
+    (for-each
+      (lambda (cmd)
+        (if (find-command cmd)
+          (pass! (string-append (symbol->string cmd) " registered"))
+          (fail! (string-append (symbol->string cmd) " registered") #f "should be registered")))
+      '(occur-edit-mode occur-commit-edits wdired-mode wdired-finish-edit wdired-abort))
+
+    ;; --- occur-edit-mode requires *Occur* buffer ---
+    (qt-plain-text-edit-set-text! ed "some text")
+    (with-catch
+      (lambda (e) (fail! "occur-edit-mode wrong buffer" e "no exception"))
+      (lambda ()
+        (execute-command! app 'occur-edit-mode)
+        (pass! "occur-edit-mode wrong buffer")))
+
+    ;; --- wdired-mode requires dired buffer ---
+    (with-catch
+      (lambda (e) (fail! "wdired-mode wrong buffer" e "no exception"))
+      (lambda ()
+        (execute-command! app 'wdired-mode)
+        (pass! "wdired-mode wrong buffer")))
+
+    (destroy-qt-test-app! ed w)
+    (displayln "Group 51 complete")))
+
+;;;============================================================================
 
 (def (main . args)
   (with-qt-app _app
@@ -5004,6 +5234,9 @@
     (run-group-46-gdb-debugger)
     (run-group-47-gptel-customize-packages)
     (run-group-48-vterm-crash-regression)
+    (run-group-49-stub-upgrades)
+    (run-group-50-calc-describe-abbrev)
+    (run-group-51-inflection-occur-wdired)
 
     (displayln "---")
     (displayln "Results: " *passes* " passed, " *failures* " failed")

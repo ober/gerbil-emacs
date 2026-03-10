@@ -12,6 +12,10 @@
         :std/misc/string
         (only-in :std/misc/ports read-all-as-string)
         (only-in :gemacs/pregexp-compat pregexp pregexp-match)
+        (only-in :gemacs/persist
+                 *which-key-mode* *electric-pair-mode*
+                 *copilot-mode* *centered-cursor-mode*
+                 *abbrev-mode-enabled* *auto-fill-mode*)
         :gemacs/qt/sci-shim
         :gemacs/core
         :gemacs/editor
@@ -310,7 +314,9 @@
   (register-command! 'multi-occur cmd-multi-occur)
   (register-command! 'align-current cmd-align-current)
   (register-command! 'clear-rectangle cmd-clear-rectangle)
-  (register-command! 'describe-mode cmd-describe-mode)
+  (register-command! 'string-rectangle cmd-string-rectangle)
+  (register-command! 'open-rectangle cmd-open-rectangle)
+  (register-command! 'describe-mode cmd-describe-mode-full)
   (register-command! 'describe-face cmd-describe-face)
   (register-command! 'describe-function cmd-describe-function)
   (register-command! 'describe-variable cmd-describe-variable)
@@ -877,6 +883,8 @@
   (register-command! 'org-insert-src-block cmd-org-insert-src-block)
   (register-command! 'org-clock-in cmd-org-clock-in)
   (register-command! 'org-clock-out cmd-org-clock-out)
+  (register-command! 'org-clock-cancel cmd-org-clock-cancel)
+  (register-command! 'org-clock-goto cmd-org-clock-goto)
   (register-command! 'org-agenda cmd-org-agenda)
   (register-command! 'org-agenda-goto cmd-org-agenda-goto)
   (register-command! 'org-agenda-todo cmd-org-agenda-todo)
@@ -1193,12 +1201,12 @@
   (register-command! 'align cmd-align-regexp)
   ;; Help/describe
   (register-command! 'describe-char cmd-what-cursor-position)
-  (register-command! 'describe-syntax cmd-describe-mode)
-  (register-command! 'describe-categories cmd-describe-mode)
-  (register-command! 'describe-current-coding-system cmd-describe-mode)
-  (register-command! 'describe-input-method cmd-describe-mode)
-  (register-command! 'describe-language-environment cmd-describe-mode)
-  (register-command! 'describe-coding-system cmd-describe-mode)
+  (register-command! 'describe-syntax cmd-describe-mode-full)
+  (register-command! 'describe-categories cmd-describe-mode-full)
+  (register-command! 'describe-current-coding-system cmd-describe-mode-full)
+  (register-command! 'describe-input-method cmd-describe-mode-full)
+  (register-command! 'describe-language-environment cmd-describe-mode-full)
+  (register-command! 'describe-coding-system cmd-describe-mode-full)
   (register-command! 'command-history cmd-view-lossage)
   (register-command! 'list-command-history cmd-view-lossage)
   (register-command! 'apropos-value cmd-apropos-emacs)
@@ -1256,10 +1264,8 @@
   (register-command! 'org-capture-refile cmd-org-capture)
   (register-command! 'org-capture-abort cmd-org-capture-abort)
   (register-command! 'org-capture-kill cmd-org-capture-abort)
-  ;; Org clock
-  (register-command! 'org-clock-goto cmd-org-clock-in)
-  (register-command! 'org-clock-report cmd-org-clock-in)
-  (register-command! 'org-clock-cancel cmd-org-clock-in)
+  ;; Org clock (additional aliases — org-clock-report is a stub for now)
+  (register-command! 'org-clock-report cmd-org-clock-out)
   ;; Org agenda
   (register-command! 'org-agenda-list cmd-org-agenda)
   (register-command! 'org-agenda-day-view cmd-org-agenda)
@@ -1449,4 +1455,61 @@
                  (string-append "Key Translations:\n"
                                 (string-join lines "\n")))))
     (echo-message! (app-state-echo app) text)))
+
+;;;============================================================================
+;;; Enhanced describe-mode — shows major mode + all active minor modes
+;;;============================================================================
+
+(def (cmd-describe-mode-full app)
+  "Show current major mode and all active minor modes in a *Help* buffer."
+  (let* ((buf   (current-qt-buffer app))
+         (lang  (buffer-lexer-lang buf))
+         (ed    (current-qt-editor app))
+         (fr    (app-state-frame app))
+         (echo  (app-state-echo app))
+         (major (if lang (symbol->string lang) "fundamental-mode"))
+         ;; Check each minor mode flag — (label . test)
+         (checks
+          (list
+           (cons "abbrev-mode"           *abbrev-mode-enabled*)
+           (cons "auto-fill-mode"        *auto-fill-mode*)
+           (cons "which-key-mode"        *which-key-mode*)
+           (cons "electric-pair-mode"    *electric-pair-mode*)
+           (cons "show-paren-mode"       *qt-show-paren-enabled*)
+           (cons "delete-selection-mode" *qt-delete-selection-enabled*)
+           (cons "hl-line-mode"          *hl-line-mode*)
+           (cons "hl-todo-mode"          *hl-todo-mode*)
+           (cons "auto-highlight-symbol" *auto-highlight-symbol-mode*)
+           (cons "flycheck-mode"         *flycheck-mode*)
+           (cons "whitespace-mode"       *whitespace-mode-on*)
+           (cons "overwrite-mode"        *overwrite-mode*)
+           (cons "visual-line-mode"      *qt-visual-line-mode*)
+           (cons "subword-mode"          *qt-subword-mode*)
+           (cons "global-auto-revert"    *global-auto-revert-mode*)
+           (cons "lsp-mode"              *lsp-auto-complete-enabled*)
+           (cons "copilot-mode"          *copilot-mode*)
+           (cons "centered-cursor-mode"  *centered-cursor-mode*)))
+         (active-minors (filter-map
+                          (lambda (c)
+                            (and (cdr c) (string-append "  " (car c))))
+                          checks))
+         (text (string-append
+                 "Major mode: " major "\n\n"
+                 "Minor modes active:\n"
+                 (if (null? active-minors)
+                   "  (none)\n"
+                   (string-join active-minors "\n"))
+                 "\n\nKeys: M-x describe-bindings for full keymap\n"
+                 "      M-x describe-variable for variable values\n"
+                 "      M-x describe-function for command help\n"))
+         (help-buf (or (buffer-by-name "*Help*")
+                       (qt-buffer-create! "*Help*" ed #f))))
+    (qt-buffer-attach! ed help-buf)
+    (set! (qt-edit-window-buffer (qt-current-window fr)) help-buf)
+    (qt-plain-text-edit-set-text! ed text)
+    (qt-text-document-set-modified! (buffer-doc-pointer help-buf) #f)
+    (qt-plain-text-edit-set-cursor-position! ed 0)
+    (echo-message! echo (string-append "Major mode: " major
+                          " | " (number->string (length active-minors))
+                          " minor mode(s) active"))))
 

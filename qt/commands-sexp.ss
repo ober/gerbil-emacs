@@ -651,8 +651,18 @@
                           lines)))
     (map string-trim-both matches)))
 
+(def (hippie-try-kill-ring-expand app prefix)
+  "Try to complete with kill-ring entries that start with prefix."
+  (let ((kr (app-state-kill-ring app))
+        (plen (string-length prefix)))
+    (filter (lambda (entry)
+              (and (string? entry)
+                   (> (string-length entry) plen)
+                   (string=? prefix (substring entry 0 plen))))
+            (or kr []))))
+
 (def (cmd-hippie-expand app)
-  "Expand word at point using multiple strategies (dabbrev, file, line)."
+  "Expand word at point using multiple strategies (dabbrev, file, line, kill-ring)."
   (let* ((ed (current-qt-editor app))
          (prefix (get-word-prefix ed)))
     (if (string=? prefix "")
@@ -675,8 +685,6 @@
                (if (pair? files)
                  (let* ((pos (qt-plain-text-edit-cursor-position ed))
                         (match (car files))
-                        (dir (if (string-index prefix #\/)
-                               (path-directory prefix) ""))
                         (suffix (substring match (string-length (path-strip-directory prefix))
                                           (string-length match)))
                         (text (qt-plain-text-edit-text ed))
@@ -691,6 +699,25 @@
                  (begin
                    (set! *hippie-strategy-index* 2)
                    (loop 2)))))
+            ((2)
+             ;; Strategy 3: kill-ring prefix match
+             (let ((entries (hippie-try-kill-ring-expand app prefix)))
+               (if (pair? entries)
+                 (let* ((match (car entries))
+                        (pos (qt-plain-text-edit-cursor-position ed))
+                        (suffix (substring match (string-length prefix)
+                                          (string-length match)))
+                        (text (qt-plain-text-edit-text ed))
+                        (new-text (string-append
+                                    (substring text 0 pos) suffix
+                                    (substring text pos (string-length text)))))
+                   (qt-plain-text-edit-set-text! ed new-text)
+                   (qt-plain-text-edit-set-cursor-position! ed (+ pos (string-length suffix)))
+                   (set! *hippie-strategy-index* 3)
+                   (echo-message! (app-state-echo app) "Kill ring expansion"))
+                 (begin
+                   (set! *hippie-strategy-index* 3)
+                   (loop 3)))))
             (else
              ;; No more strategies
              (set! *hippie-strategy-index* 0)
@@ -1403,89 +1430,6 @@
       (if (= (car prev) (cdr prev))
         (qt-plain-text-edit-set-cursor-position! ed (car prev))
         (qt-plain-text-edit-set-selection! ed (car prev) (cdr prev))))))
-
-;;;============================================================================
-;;; String inflection (case conversion)
-;;;============================================================================
-
-(def (split-identifier word)
-  "Split an identifier into its component words, handling camelCase, snake_case, kebab-case."
-  (let ((len (string-length word)))
-    (if (= len 0) []
-      (let loop ((i 0) (start 0) (acc []))
-        (cond
-          ((>= i len)
-           (reverse (if (< start i) (cons (substring word start i) acc) acc)))
-          ;; Split on underscore or hyphen
-          ((or (char=? (string-ref word i) #\_) (char=? (string-ref word i) #\-))
-           (let ((part (if (< start i) (list (substring word start i)) [])))
-             (loop (+ i 1) (+ i 1) (append part acc))))
-          ;; Split on camelCase boundary (lowercase followed by uppercase)
-          ((and (> i start)
-                (char-upper-case? (string-ref word i))
-                (char-lower-case? (string-ref word (- i 1))))
-           (loop i i (cons (substring word start i) acc)))
-          (else (loop (+ i 1) start acc)))))))
-
-(def (to-snake-case parts)
-  (string-join (map string-downcase parts) "_"))
-
-(def (to-kebab-case parts)
-  (string-join (map string-downcase parts) "-"))
-
-(def (to-camel-case parts)
-  (if (null? parts) ""
-    (string-append
-      (string-downcase (car parts))
-      (apply string-append
-        (map (lambda (p)
-               (if (> (string-length p) 0)
-                 (string-append
-                   (string (char-upcase (string-ref p 0)))
-                   (string-downcase (substring p 1 (string-length p))))
-                 ""))
-             (cdr parts))))))
-
-(def (to-pascal-case parts)
-  (apply string-append
-    (map (lambda (p)
-           (if (> (string-length p) 0)
-             (string-append
-               (string (char-upcase (string-ref p 0)))
-               (string-downcase (substring p 1 (string-length p))))
-             ""))
-         parts)))
-
-(def (to-upper-case parts)
-  (string-join (map string-upcase parts) "_"))
-
-(def (cmd-string-inflection-cycle app)
-  "Cycle the identifier at point through: snake_case -> kebab-case -> camelCase -> PascalCase -> UPPER_CASE."
-  (let ((ed (current-qt-editor app)))
-    (let-values (((word start end) (word-at-point ed)))
-      (if (not word)
-        (echo-error! (app-state-echo app) "No word at point")
-        (let* ((parts (split-identifier word))
-               (snake (to-snake-case parts))
-               (kebab (to-kebab-case parts))
-               (camel (to-camel-case parts))
-               (pascal (to-pascal-case parts))
-               (upper (to-upper-case parts))
-               ;; Determine current form and pick next
-               (next (cond
-                       ((string=? word snake) kebab)
-                       ((string=? word kebab) camel)
-                       ((string=? word camel) pascal)
-                       ((string=? word pascal) upper)
-                       (else snake)))
-               (text (qt-plain-text-edit-text ed))
-               (new-text (string-append
-                           (substring text 0 start)
-                           next
-                           (substring text end (string-length text)))))
-          (qt-plain-text-edit-set-text! ed new-text)
-          (qt-plain-text-edit-set-cursor-position! ed start)
-          (echo-message! (app-state-echo app) (string-append word " -> " next)))))))
 
 ;;;============================================================================
 ;;; Number increment/decrement at point

@@ -447,62 +447,7 @@ SPC = page down, DEL = page up, q = quit view-mode."
       ;; Also load shared frequency-based history
       (mx-history-load!))))
 
-;;; ========================================================================
-;;; WDired — editable directory mode
-;;; ========================================================================
-
-(def *wdired-state* (make-hash-table)) ; buffer-name -> list of original filenames
-
-(def (cmd-wdired-mode app)
-  "Toggle writable dired mode. In wdired, edit filenames then C-c C-c to commit."
-  (let* ((buf (current-qt-buffer app))
-         (name (buffer-name buf))
-         (ed (current-qt-editor app)))
-    (cond
-      ;; Currently in wdired — commit changes
-      ((hash-get *wdired-state* name)
-       (let* ((originals (hash-get *wdired-state* name))
-              (text (qt-plain-text-edit-text ed))
-              (lines (string-split text #\newline))
-              (renamed 0)
-              (errors 0))
-         ;; Each line that starts with "  " is a filename
-         (let loop ((os originals) (ls lines))
-           (when (and (pair? os) (pair? ls))
-             (let ((orig (car os))
-                   (line (car ls)))
-               (when (and (> (string-length line) 2)
-                          (not (string=? orig line)))
-                 ;; Attempt rename
-                 (with-catch
-                   (lambda (e) (set! errors (+ errors 1)))
-                   (lambda ()
-                     (rename-file orig (string-trim line))
-                     (set! renamed (+ renamed 1)))))
-               (loop (cdr os) (cdr ls)))))
-         (hash-remove! *wdired-state* name)
-         (qt-plain-text-edit-set-read-only! ed #t)
-         (echo-message! (app-state-echo app)
-           (string-append "WDired: " (number->string renamed) " renamed"
-                          (if (> errors 0)
-                            (string-append ", " (number->string errors) " errors")
-                            "")))))
-      ;; Check if this is a dired-like buffer
-      ((or (string-prefix? "*Dired:" name)
-           (string-prefix? "*dired" name))
-       ;; Enter wdired mode — record original names
-       (let* ((text (qt-plain-text-edit-text ed))
-              (lines (string-split text #\newline)))
-         (hash-put! *wdired-state* name lines)
-         (qt-plain-text-edit-set-read-only! ed #f)
-         (echo-message! (app-state-echo app)
-           "WDired mode ON — edit filenames, then M-x wdired-finish to commit")))
-      (else
-        (echo-error! (app-state-echo app) "Not a dired buffer")))))
-
-(def (cmd-wdired-finish app)
-  "Finish wdired editing and rename files."
-  (cmd-wdired-mode app))
+;; wdired moved to qt/commands-edit2.ss (full implementation with mv + abort)
 
 ;;; ========================================================================
 ;;; Auto-fill mode — hard wrap at fill-column

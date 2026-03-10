@@ -674,8 +674,42 @@
 
 ;; Ediff session management
 (def (cmd-ediff-show-registry app)
-  "Show ediff session registry."
-  (echo-message! (app-state-echo app) "No active ediff sessions"))
+  "Show ediff session registry and recent notifications."
+  (let* ((fr (app-state-frame app))
+         (win (current-window fr))
+         (ed (edit-window-editor win))
+         (bufs (buffer-list))
+         (ediff-bufs (filter (lambda (b)
+                               (let ((n (buffer-name b)))
+                                 (or (string-prefix? "*Ediff" n)
+                                     (string-prefix? "*Diff" n))))
+                             bufs))
+         (log (notification-get-recent 20))
+         (ediff-section
+           (if (null? ediff-bufs)
+             "  (No active diff sessions)\n"
+             (string-join
+               (map (lambda (b) (string-append "  " (buffer-name b)))
+                    ediff-bufs)
+               "\n")))
+         (notif-section
+           (if (null? log)
+             "  (No recent notifications)\n"
+             (string-join
+               (map (lambda (msg) (string-append "  " msg)) (reverse log))
+               "\n")))
+         (text (string-append
+                 "Ediff Registry\n"
+                 "==============\n\n"
+                 "Active diff sessions:\n" ediff-section "\n\n"
+                 "Recent messages:\n" notif-section "\n"))
+         (buf (buffer-create! "*Ediff Registry*" ed)))
+    (buffer-attach! ed buf)
+    (set! (edit-window-buffer win) buf)
+    (editor-set-text ed text)
+    (editor-goto-pos ed 0)
+    (editor-set-read-only ed #t)
+    (echo-message! (app-state-echo app) "Ediff registry")))
 
 ;; ── batch 44: modern Emacs package toggles ──────────────────────────
 (def *consult-mode* #f)

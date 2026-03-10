@@ -64,6 +64,9 @@
   echo-message!
   echo-error!
   echo-clear!
+  notification-push!
+  notification-get-recent
+  *notification-log*
 
   ;; Buffer metadata (struct + list, no FFI)
   (struct-out buffer)
@@ -1187,14 +1190,36 @@
 (def (make-initial-echo-state)
   (make-echo-state #f #f))
 
+;; Notification log — ring buffer of recent messages
+(def *notification-log* '())
+(def *notification-log-count* 0)
+
+(def (notification-push! msg)
+  "Push a message onto the notification log (newest first, capped at 100)."
+  (when (and (string? msg) (> (string-length msg) 0))
+    (set! *notification-log* (cons msg *notification-log*))
+    (set! *notification-log-count* (+ *notification-log-count* 1))
+    ;; Trim every 50 extra to amortize the list-head cost
+    (when (> *notification-log-count* 150)
+      (set! *notification-log* (list-head *notification-log* 100))
+      (set! *notification-log-count* 100))))
+
+(def (notification-get-recent (n 50))
+  "Return the N most recent notifications (newest first)."
+  (if (<= (length *notification-log*) n)
+    *notification-log*
+    (list-head *notification-log* n)))
+
 (def (echo-message! echo msg)
   (set! (echo-state-message echo) msg)
-  (set! (echo-state-error? echo) #f))
+  (set! (echo-state-error? echo) #f)
+  (notification-push! msg))
 
 (def (echo-error! echo msg)
   (set! (echo-state-message echo) msg)
   (set! (echo-state-error? echo) #t)
-  (gemacs-log! "ERROR: " msg))
+  (gemacs-log! "ERROR: " msg)
+  (notification-push! (string-append "ERROR: " msg)))
 
 (def (echo-clear! echo)
   (set! (echo-state-message echo) #f)

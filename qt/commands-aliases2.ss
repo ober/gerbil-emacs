@@ -1622,5 +1622,15 @@
   (register-command! 'centaur-tabs-mode cmd-centaur-tabs-mode)
   (register-command! 'all-the-icons-dired-mode cmd-all-the-icons-dired-mode)
   (register-command! 'treemacs-icons-dired-mode cmd-treemacs-icons-dired-mode)
-  (register-command! 'nano-theme cmd-nano-theme))
+  (register-command! 'nano-theme cmd-nano-theme)
+  ;; Batch 8: string inflection, occur-edit, wdired
+  (register-command! 'string-inflection-cycle cmd-string-inflection-cycle)
+  (register-command! 'string-inflection-snake-case cmd-string-inflection-snake-case)
+  (register-command! 'string-inflection-camelcase cmd-string-inflection-camelcase)
+  (register-command! 'string-inflection-upcase cmd-string-inflection-upcase)
+  (register-command! 'occur-edit-mode cmd-occur-edit-mode)
+  (register-command! 'occur-commit-edits cmd-occur-commit-edits)
+  (register-command! 'wdired-mode cmd-wdired-mode)
+  (register-command! 'wdired-finish-edit cmd-wdired-finish-edit)
+  (register-command! 'wdired-abort cmd-wdired-abort))
 

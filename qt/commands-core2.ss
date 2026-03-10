@@ -697,6 +697,17 @@
     (qt-plain-text-edit-insert-text! ed template)
     (echo-message! (app-state-echo app) "Source block inserted")))
 
+;; Qt-local org-clock state for org-clock-goto
+(def *qt-org-clock-line* #f)     ; line number where clock was started
+(def *qt-org-clock-heading* #f)  ; heading text for display
+
+(def (qt-count-lines-before text pos)
+  "Count newlines before POS in TEXT (0-based line index)."
+  (let loop ((i 0) (n 0))
+    (if (>= i pos) n
+      (loop (+ i 1)
+            (if (char=? (string-ref text i) #\newline) (+ n 1) n)))))
+
 (def (cmd-org-clock-in app)
   "Insert CLOCK-IN timestamp in :LOGBOOK: drawer."
   (let* ((ed (current-qt-editor app))
@@ -706,6 +717,13 @@
                      (if (or (>= i (string-length text))
                              (char=? (string-ref text i) #\newline))
                        i (loop (+ i 1)))))
+         ;; Find heading line start to get heading text
+         (line-start (let loop ((i (- pos 1)))
+                       (if (or (< i 0) (char=? (string-ref text i) #\newline))
+                         (+ i 1) (loop (- i 1)))))
+         (heading-text (string-trim-both
+                         (substring text line-start line-end)))
+         (line-num (qt-count-lines-before text pos))
          (now (with-exception-catcher (lambda (e) "")
                 (lambda ()
                   (let ((p (open-process
@@ -720,6 +738,9 @@
                                       (substring text line-end (string-length text)))))
         (qt-plain-text-edit-set-text! ed new-text)
         (qt-plain-text-edit-set-cursor-position! ed (+ line-end 1))
+        ;; Record marker for org-clock-goto
+        (set! *qt-org-clock-line* line-num)
+        (set! *qt-org-clock-heading* heading-text)
         (echo-message! (app-state-echo app) (string-append "Clocked in: " now))))))
 
 (def (cmd-org-clock-out app)
@@ -755,4 +776,55 @@
                                 (loop (cdr ls) (+ i 1)
                                       (cons (if (= i clock-line) new-line (car ls)) acc))))))
             (qt-plain-text-edit-set-text! ed (string-join new-lines "\n"))
+            ;; Clear clock marker on clock-out
+            (set! *qt-org-clock-line* #f)
+            (set! *qt-org-clock-heading* #f)
             (echo-message! echo (string-append "Clocked out: " now))))))))
+
+(def (cmd-org-clock-cancel app)
+  "Cancel (remove) the open clock entry without closing it."
+  (let* ((ed (current-qt-editor app))
+         (text (qt-plain-text-edit-text ed))
+         (echo (app-state-echo app))
+         (lines (string-split text #\newline))
+         (clock-line
+           (let loop ((i (- (length lines) 1)))
+             (cond
+               ((< i 0) #f)
+               ((let ((l (list-ref lines i)))
+                  (and (string-contains l "CLOCK: [")
+                       (not (string-contains l "--"))))
+                i)
+               (else (loop (- i 1)))))))
+    (if (not clock-line)
+      (echo-message! echo "No open clock entry to cancel")
+      (let* ((new-lines (let loop ((ls lines) (i 0) (acc []))
+                          (if (null? ls) (reverse acc)
+                            (if (= i clock-line)
+                              (loop (cdr ls) (+ i 1) acc)
+                              (loop (cdr ls) (+ i 1) (cons (car ls) acc))))))
+             (new-text (string-join new-lines "\n")))
+        (qt-plain-text-edit-set-text! ed new-text)
+        (set! *qt-org-clock-line* #f)
+        (set! *qt-org-clock-heading* #f)
+        (echo-message! echo "Clock cancelled")))))
+
+(def (cmd-org-clock-goto app)
+  "Jump to the currently clocked-in heading."
+  (let* ((ed (current-qt-editor app))
+         (echo (app-state-echo app)))
+    (if (not *qt-org-clock-line*)
+      (echo-message! echo "No clock is currently active")
+      (let* ((text (qt-plain-text-edit-text ed))
+             ;; Find position of the clock line (0-based line number)
+             (pos (let loop ((i 0) (line 0))
+                    (cond
+                      ((= line *qt-org-clock-line*) i)
+                      ((>= i (string-length text)) i)
+                      ((char=? (string-ref text i) #\newline)
+                       (loop (+ i 1) (+ line 1)))
+                      (else (loop (+ i 1) line))))))
+        (qt-plain-text-edit-set-cursor-position! ed pos)
+        (qt-plain-text-edit-ensure-cursor-visible! ed)
+        (echo-message! echo (string-append "Clocked: "
+                              (or *qt-org-clock-heading* "(unknown)")))))))

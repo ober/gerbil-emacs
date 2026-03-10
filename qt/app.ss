@@ -12,7 +12,8 @@
         (only-in :gemacs/persist init-file-load!
                  detect-major-mode buffer-local-set!
                  theme-settings-load! custom-faces-load!
-                 *which-key-mode* *which-key-delay*)
+                 *which-key-mode* *which-key-delay*
+                 *abbrev-mode-enabled* *abbrev-table*)
         :gemacs/repl
         :gemacs/eshell
         :gemacs/shell
@@ -639,6 +640,35 @@
                                     (qt-plain-text-edit-insert-text! ed str)))))))
                           ;; Auto-fill: break line if past fill-column
                           (auto-fill-check! (qt-current-editor (app-state-frame app)))
+                          ;; Abbrev auto-expansion: when word separator typed,
+                          ;; check if preceding word is a defined abbreviation
+                          (when (and *abbrev-mode-enabled*
+                                     (let ((c (string-ref data 0)))
+                                       (or (char=? c #\space) (char=? c #\newline)
+                                           (char=? c #\,) (char=? c #\.) (char=? c #\;))))
+                            (let* ((aed (qt-current-editor (app-state-frame app)))
+                                   (pos (qt-plain-text-edit-cursor-position aed))
+                                   (text (qt-plain-text-edit-text aed))
+                                   (sep-pos (- pos 1))
+                                   (word-end sep-pos)
+                                   (word-start
+                                     (let loop ((i (- sep-pos 1)))
+                                       (if (< i 0) 0
+                                         (let ((c (string-ref text i)))
+                                           (if (or (char-alphabetic? c) (char-numeric? c)
+                                                   (char=? c #\-) (char=? c #\_))
+                                             (loop (- i 1))
+                                             (+ i 1))))))
+                                   (word (if (> word-end word-start)
+                                           (substring text word-start word-end)
+                                           "")))
+                              (let ((expansion (hash-get *abbrev-table* word)))
+                                (when expansion
+                                  (qt-plain-text-edit-set-selection! aed word-start word-end)
+                                  (qt-plain-text-edit-remove-selected-text! aed)
+                                  (qt-plain-text-edit-insert-text! aed expansion)
+                                  (echo-message! (app-state-echo app)
+                                    (string-append "\"" word "\" → \"" expansion "\""))))))
                           ;; Aggressive indent: reindent current line after closing delimiters
                           (let ((si-ch (string-ref data 0)))
                             (when (and *aggressive-indent-mode*

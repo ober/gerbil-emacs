@@ -1163,19 +1163,36 @@ Returns (path . line) or #f. Handles file:line format."
   ;; Also record in shared frequency-based history
   (mx-history-add! name))
 
+(def *mx-recent-pinned-count* 5)  ; how many recent commands to pin at top
+
 (def (cmd-execute-extended-command app)
   (let* ((all-names (sort (map symbol->string (hash-keys *all-commands*)) string<?))
-         ;; Put recent commands first, then rest alphabetically
+         ;; Pinned: top N recent commands with checkmark prefix (✓ = U+2713)
+         (check-prefix (string (integer->char #x2713) #\space))
+         (pinned-names (let loop ((h *mx-command-history*) (n 0) (acc []))
+                         (if (or (null? h) (>= n *mx-recent-pinned-count*))
+                           (reverse acc)
+                           (loop (cdr h) (+ n 1)
+                                 (cons (string-append check-prefix (car h)) acc)))))
+         ;; Build set of raw recent names for deduplication
          (recent-set (let loop ((h *mx-command-history*) (s (make-hash-table)))
                        (if (null? h) s
                          (begin (hash-put! s (car h) #t)
                                 (loop (cdr h) s)))))
+         ;; All commands alphabetically, minus those pinned at top
          (non-recent (filter (lambda (n) (not (hash-get recent-set n))) all-names))
-         (ordered (append *mx-command-history* non-recent))
+         ;; Final order: pinned (with checkmark) + recent (plain) + rest
+         (ordered (append pinned-names *mx-command-history* non-recent))
          (input (qt-echo-read-with-narrowing app "M-x" ordered)))
     (when (and input (> (string-length input) 0))
-      (qt-mx-history-add! input)
-      (execute-command! app (string->symbol input)))))
+      ;; Strip checkmark prefix if user selected a pinned entry
+      (let* ((plen (string-length check-prefix))
+             (raw (if (and (>= (string-length input) plen)
+                           (string=? (substring input 0 plen) check-prefix))
+                    (substring input plen (string-length input))
+                    input)))
+        (qt-mx-history-add! raw)
+        (execute-command! app (string->symbol raw))))))
 
 (def (cmd-helm-buffers-list app)
   "Fuzzy buffer switcher — like helm-buffers-list."
