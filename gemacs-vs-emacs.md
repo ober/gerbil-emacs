@@ -1,7 +1,7 @@
 # Gemacs vs GNU Emacs — Feature Comparison
 
-> **Last updated:** 2026-03-10
-> **Gemacs version:** master (43af695)
+> **Last updated:** 2026-03-09
+> **Gemacs version:** master (eb00fa2)
 > **Compared against:** GNU Emacs 29.x / 30.x feature set
 > **Command parity:** 2168+ commands registered in both TUI and Qt layers (zero gap)
 
@@ -1187,6 +1187,54 @@ No remaining Tier 1 gaps. All core editing, completion, and navigation features 
 6. **Custom tool builder**: Wrote 28 custom Elisp modes. Will want to write equivalent Gerbil modes — needs a good extension API.
 
 7. **No Paredit**: Despite being a Lisp user, doesn't use paredit/smartparens. Gemacs's paredit is a bonus.
+
+---
+
+## Recently Added Popular Package Support (2026-03-09)
+
+| Package | Status | Notes |
+|---------|--------|-------|
+| Swiper / Counsel / Ivy | :white_check_mark: | Wrappers to built-in occur, M-x, rgrep, recentf, bookmarks |
+| God mode | :white_check_mark: | Ctrl-free command execution toggle |
+| Beacon mode | :white_check_mark: | Cursor flash on large movements |
+| Volatile highlights | :white_check_mark: | Flash edited regions toggle |
+| Smartparens | :white_check_mark: | Delegates to paredit/auto-pair |
+| Dimmer | :white_check_mark: | Dim non-active windows toggle |
+| Nyan mode | :white_check_mark: | Fun position indicator toggle |
+| Centered cursor | :white_check_mark: | Keep cursor vertically centered |
+| Format-all | :white_check_mark: | Real formatter integration (black, prettier, gofmt, rustfmt, clang-format, jq, shfmt) |
+| Visual regexp | :white_check_mark: | Delegates to query-replace-regexp |
+| Anzu | :white_check_mark: | Search match count toggle |
+| Popwin | :white_check_mark: | Popup window management |
+| Easy-kill | :white_check_mark: | Copy word at point without moving |
+| Crux extras | :white_check_mark: | open-with, duplicate-line, swap-windows, cleanup-buffer |
+| Hydra | :white_check_mark: | Interactive popup menus (zoom, window) |
+| Deadgrep | :white_check_mark: | Enhanced grep (delegates to rgrep) |
+| Hideshow (hs-minor-mode) | :white_check_mark: | Code folding commands |
+| Prescient | :white_check_mark: | Completion sorting by frequency |
+| GCMH | :white_check_mark: | Adaptive GC threshold toggle |
+| Ligature mode | :white_check_mark: | Font ligature display toggle |
+| Mixed-pitch / variable-pitch | :white_check_mark: | Proportional font mode |
+| Eldoc-box | :white_check_mark: | Eldoc in popup mode |
+| Color-rg | :white_check_mark: | Colored ripgrep (delegates to rgrep) |
+| Ctrlf / phi-search | :white_check_mark: | Alternative isearch wrappers |
+| Toc-org | :white_check_mark: | Auto-generate org TOC with heading extraction |
+| Org-super-agenda | :white_check_mark: | Enhanced agenda grouping toggle |
+| Nov.el (EPUB reader) | :white_check_mark: | Real EPUB text extraction via unzip pipeline |
+| LSP-UI | :white_check_mark: | Mode toggle, doc-show, peek-find-definitions/references |
+| Emojify | :white_check_mark: | Emoji mode + insert-by-name (10 built-in) |
+| Ef-themes / modus-themes | :white_check_mark: | Theme pack selection and toggle |
+| Circadian / auto-dark | :white_check_mark: | Time-based and OS-based theme switching |
+| Breadcrumb / sideline | :white_check_mark: | Code context and side info display |
+| Flycheck-inline | :white_check_mark: | Inline error display toggle |
+| Zone / fireplace | :white_check_mark: | Screen saver and decorative fireplace |
+| DAP-UI | :white_check_mark: | Debugger UI panels toggle |
+| Poly-mode | :white_check_mark: | Multiple major modes toggle |
+| Company-box | :white_check_mark: | Fancy completion popup toggle |
+| Impatient mode | :white_check_mark: | Live HTML preview toggle |
+| Mood-line / powerline | :white_check_mark: | Modeline theme toggles |
+| Centaur-tabs | :white_check_mark: | Tab bar for buffer groups toggle |
+| use-package / straight | :white_check_mark: | Informational stubs (all packages built-in) |
 
 ---
 
