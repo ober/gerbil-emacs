@@ -268,6 +268,7 @@
     "editor-extra-final"
     "editor-extra-regs"
     "editor-extra-ai"
+    "editor-extra-regs2"
     "editor-extra"
     ;; editor sub-modules (must compile before facade)
     "editor-core"
