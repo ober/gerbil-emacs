@@ -224,6 +224,13 @@ Largest files: modes (~1851), lsp (~1802), search (~1778)
 - ~~**All-the-icons-dired / treemacs-icons**~~ — DONE: icon display in dired
 - ~~**Nano-theme**~~ — DONE: nano-emacs theme selection
 
+- ~~**CUA mode real keybinding swap**~~ — DONE: C-c=copy, C-v=paste, C-z=undo with save/restore of original bindings
+- ~~**Debug-on-entry with Gambit trace**~~ — DONE: real trace/untrace integration, symbol tracking (both TUI and Qt)
+- ~~**DevOps commands upgrade**~~ — DONE: ansible-mode/kubernetes-mode with real YAML lexer, ansible-playbook syntax-check, kubectl interactive, terraform-mode/terraform/terraform-plan, docker-compose/up/down (both TUI and Qt)
+- ~~**Snippet disk persistence**~~ — DONE: snippet-define! persists to ~/.gemacs-snippets/<lang>/<trigger>, yas aliases point to real commands
+- ~~**AI commands real API**~~ — DONE: ai-code-explain/refactor use real OpenAI API with JSON parsing (both TUI and Qt)
+- ~~**EMMS/perspectives/org-roam real**~~ — DONE: EMMS mpv playback, persp-mode buffer groups, org-roam grep-based note search
+
 ### Aspirational
 - LSP in TUI
 - ~~DAP/debugger integration~~ — DONE: real GDB/MI interface (Qt), DAP protocol skeleton (TUI)

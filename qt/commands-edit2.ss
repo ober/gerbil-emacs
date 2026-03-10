@@ -405,8 +405,33 @@
                 (set! (app-state-dabbrev-state app)
                   (list (car state) (cdr matches)
                         last-pos (string-length suffix))))))
-          ;; Fresh expansion
-          (let* ((all-words (collect-buffer-words text))
+          ;; Fresh expansion — search current buffer, then file-backed buffers on disk
+          (let* ((current-words (collect-buffer-words text))
+                 (other-words
+                   (let ((seen (make-hash-table)))
+                     (for-each (lambda (w) (hash-put! seen w #t)) current-words)
+                     ;; Also collect words from other buffers' files on disk
+                     (let loop ((bufs (buffer-list)) (acc []))
+                       (if (null? bufs) acc
+                         (let* ((b (car bufs))
+                                (fp (buffer-file-path b)))
+                           (if (not fp)
+                             (loop (cdr bufs) acc)
+                             (let ((file-text (with-catch (lambda (e) #f)
+                                                (lambda ()
+                                                  (and (file-exists? fp)
+                                                       (call-with-input-file fp
+                                                         (lambda (p) (read-line p #f))))))))
+                               (if (not file-text)
+                                 (loop (cdr bufs) acc)
+                                 (let ((words (collect-buffer-words file-text)))
+                                   (loop (cdr bufs)
+                                     (append acc
+                                       (filter (lambda (w)
+                                                 (and (not (hash-get seen w))
+                                                      (begin (hash-put! seen w #t) #t)))
+                                               words))))))))))))
+                 (all-words (append current-words other-words))
                  (matches (filter (lambda (w)
                                     (and (> (string-length w) (string-length prefix))
                                          (string-prefix? prefix w)

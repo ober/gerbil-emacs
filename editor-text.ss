@@ -626,8 +626,50 @@
             (dedup (cdr ws) seen acc)
             (dedup (cdr ws) (cons (car ws) seen) (cons (car ws) acc))))))))
 
+(def (collect-dabbrev-from-other-buffers prefix seen)
+  "Collect words matching PREFIX from other open buffers' files on disk.
+   SEEN is a list of already-found words to skip duplicates."
+  (let ((results []))
+    (for-each
+      (lambda (buf)
+        (let ((fp (buffer-file-path buf)))
+          (when fp
+            (with-catch
+              (lambda (e) (void))
+              (lambda ()
+                (when (file-exists? fp)
+                  (let* ((file-text (call-with-input-file fp
+                                      (lambda (p) (read-line p #f))))
+                         (plen (string-length prefix))
+                         (tlen (string-length file-text)))
+                    (let loop ((i 0))
+                      (when (< i tlen)
+                        (if (or (char-alphabetic? (string-ref file-text i))
+                                (eqv? (string-ref file-text i) #\_)
+                                (eqv? (string-ref file-text i) #\-))
+                          (let find-end ((j (+ i 1)))
+                            (if (or (>= j tlen)
+                                    (not (or (char-alphabetic? (string-ref file-text j))
+                                             (char-numeric? (string-ref file-text j))
+                                             (eqv? (string-ref file-text j) #\_)
+                                             (eqv? (string-ref file-text j) #\-)
+                                             (eqv? (string-ref file-text j) #\?)
+                                             (eqv? (string-ref file-text j) #\!))))
+                              (begin
+                                (let ((word (substring file-text i j)))
+                                  (when (and (> (string-length word) plen)
+                                             (string=? (substring word 0 plen) prefix)
+                                             (not (member word seen))
+                                             (not (member word results)))
+                                    (set! results (cons word results))))
+                                (loop j))
+                              (find-end (+ j 1))))
+                          (loop (+ i 1))))))))))))
+      (buffer-list))
+    results))
+
 (def (cmd-dabbrev-expand app)
-  "Expand word before point using other words in buffer."
+  "Expand word before point using words from current and other buffers."
   (let* ((ed (current-editor app))
          (pos (editor-get-current-pos ed))
          (text (editor-get-text ed))
@@ -669,7 +711,9 @@
                  (prefix (substring text prefix-start pos)))
             (if (= (string-length prefix) 0)
               (echo-message! echo "No prefix to expand")
-              (let ((matches (collect-dabbrev-matches text prefix pos)))
+              (let* ((local-matches (collect-dabbrev-matches text prefix pos))
+                      (other-matches (collect-dabbrev-from-other-buffers prefix local-matches))
+                      (matches (append local-matches other-matches)))
                 (if (null? matches)
                   (echo-message! echo "No expansion found")
                   (let* ((first-match (car matches))

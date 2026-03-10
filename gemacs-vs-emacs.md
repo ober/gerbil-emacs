@@ -602,7 +602,7 @@
 | Symbol completion | :white_check_mark: | Buffer words + LSP merged on Tab |
 | LSP completion | :white_check_mark: | Auto-complete on idle + C-M-i + Tab merge |
 | Snippet completion | :large_blue_circle: | TAB expands snippet triggers; `M-x snippet-insert` for browsing |
-| Copilot/AI completion | :yellow_circle: | Mode toggle + accept/next/inline commands — needs API key |
+| Copilot/AI completion | :large_blue_circle: | Real OpenAI API integration, copilot-complete/accept/dismiss |
 
 **Summary:** Full completion framework: QCompleter popup with buffer words + LSP merged, auto-triggers on idle. Cape backends (dabbrev, file, history, keyword), Copilot mode toggle with accept/next. AI inline suggestions and code explain/refactor scaffolded.
 
@@ -1099,14 +1099,15 @@ No remaining Tier 1 gaps. All core editing, completion, and navigation features 
 | Feature | Status | Notes |
 |---------|--------|-------|
 | Docker mode | :white_check_mark: | `docker`, `docker-containers`, `docker-images`, `dockerfile-mode` |
-| Terraform mode | :large_blue_circle: | Syntax highlighting via C lexer (`.tf`, `.tfvars`, `.hcl`) |
-| Ansible mode | :white_check_mark: | `ansible-mode` (YAML highlighting) |
-| Systemd unit files | :white_check_mark: | `systemd-mode` |
+| Docker Compose | :white_check_mark: | `docker-compose`, `docker-compose-up`, `docker-compose-down` |
+| Terraform mode | :white_check_mark: | `terraform-mode` (HCL lexer), `terraform`, `terraform-plan` |
+| Ansible mode | :white_check_mark: | `ansible-mode` (YAML lexer), `ansible-playbook` (syntax-check) |
+| Systemd unit files | :white_check_mark: | `systemd-mode` (properties lexer) |
 | YAML mode | :large_blue_circle: | Syntax highlighting via Scintilla |
-| Kubernetes / k8s | :white_check_mark: | `kubernetes-mode` (YAML highlighting) |
-| SSH management | :white_check_mark: | `ssh-config-mode` for config editing |
+| Kubernetes / k8s | :white_check_mark: | `kubernetes-mode` (YAML lexer), `kubectl` (interactive CLI) |
+| SSH management | :white_check_mark: | `ssh-config-mode` (properties lexer) |
 
-**Summary:** Terraform/HCL has syntax highlighting. YAML mode works. Docker uses bash lexer. Missing dedicated Ansible, Kubernetes, and Docker modes.
+**Summary:** Full DevOps CLI integration: Docker (info/containers/images/compose up/down), Terraform (plan/interactive), Ansible (playbook syntax-check), Kubernetes (kubectl), all with output buffers. Both TUI and Qt.
 
 ---
 
