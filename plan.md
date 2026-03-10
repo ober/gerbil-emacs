@@ -224,6 +224,7 @@ Largest files: modes (~1851), lsp (~1802), search (~1778)
 - ~~**All-the-icons-dired / treemacs-icons**~~ — DONE: icon display in dired
 - ~~**Nano-theme**~~ — DONE: nano-emacs theme selection
 
+- ~~**Cross-buffer dabbrev expansion**~~ — DONE: M-/ (dabbrev-expand) now searches all open buffers' files on disk, not just current buffer (both TUI and Qt)
 - ~~**CUA mode real keybinding swap**~~ — DONE: C-c=copy, C-v=paste, C-z=undo with save/restore of original bindings
 - ~~**Debug-on-entry with Gambit trace**~~ — DONE: real trace/untrace integration, symbol tracking (both TUI and Qt)
 - ~~**DevOps commands upgrade**~~ — DONE: ansible-mode/kubernetes-mode with real YAML lexer, ansible-playbook syntax-check, kubectl interactive, terraform-mode/terraform/terraform-plan, docker-compose/up/down (both TUI and Qt)
