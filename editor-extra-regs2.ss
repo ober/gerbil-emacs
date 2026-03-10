@@ -27,6 +27,7 @@
           cmd-load-plugin cmd-list-plugins
           cmd-find-file-other-frame cmd-switch-to-buffer-other-frame)
         :gemacs/editor-extra-helpers
+        (only-in :gemacs/terminal terminal-buffer?)
         :gemacs/editor-extra-org
         :gemacs/editor-extra-web
         :gemacs/editor-extra-vcs
@@ -999,14 +1000,37 @@
     (open-output-buffer app "*Snippets*" (get-output-string out))))
 
 ;;; Parity batch 11: GUI-specific, LSP, and multi-cursor stubs
-(def (cmd-calendar-today app) "Calendar today."
-  (with-exception-catcher (lambda (e) (echo-message! (app-state-echo app) "Today"))
-    (lambda () (let* ((p (open-process (list path: "date" arguments: '("+%Y-%m-%d") stdin-redirection: #f stdout-redirection: #t stderr-redirection: #t)))
-                      (out (read-line p))) (process-status p) (echo-message! (app-state-echo app) (string-append "Today: " (or out "?")))))))
-(def (cmd-calendar-next-month app) "Next month." (echo-message! (app-state-echo app) "Calendar: next month"))
-(def (cmd-calendar-prev-month app) "Prev month." (echo-message! (app-state-echo app) "Calendar: prev month"))
-(def (cmd-calendar-next-year app) "Next year." (echo-message! (app-state-echo app) "Calendar: next year"))
-(def (cmd-calendar-prev-year app) "Prev year." (echo-message! (app-state-echo app) "Calendar: prev year"))
+;; --- Calendar navigation (state + rendering in editor-extra-org.ss) ---
+(def (cmd-calendar-today app) "Go to current month in calendar."
+  (set! *tui-calendar-year* (tui-current-year))
+  (set! *tui-calendar-month* (tui-current-month))
+  (cmd-calendar app))
+
+(def (cmd-calendar-next-month app) "Go to next month in calendar."
+  (when (not *tui-calendar-year*) (cmd-calendar-today app))
+  (set! *tui-calendar-month* (+ *tui-calendar-month* 1))
+  (when (> *tui-calendar-month* 12)
+    (set! *tui-calendar-month* 1)
+    (set! *tui-calendar-year* (+ *tui-calendar-year* 1)))
+  (cmd-calendar app))
+
+(def (cmd-calendar-prev-month app) "Go to previous month in calendar."
+  (when (not *tui-calendar-year*) (cmd-calendar-today app))
+  (set! *tui-calendar-month* (- *tui-calendar-month* 1))
+  (when (< *tui-calendar-month* 1)
+    (set! *tui-calendar-month* 12)
+    (set! *tui-calendar-year* (- *tui-calendar-year* 1)))
+  (cmd-calendar app))
+
+(def (cmd-calendar-next-year app) "Go to next year in calendar."
+  (when (not *tui-calendar-year*) (cmd-calendar-today app))
+  (set! *tui-calendar-year* (+ *tui-calendar-year* 1))
+  (cmd-calendar app))
+
+(def (cmd-calendar-prev-year app) "Go to previous year in calendar."
+  (when (not *tui-calendar-year*) (cmd-calendar-today app))
+  (set! *tui-calendar-year* (- *tui-calendar-year* 1))
+  (cmd-calendar app))
 (def (cmd-helm-buffers-list app) "Helm buffers." (echo-message! (app-state-echo app) "Use M-x list-buffers"))
 (def (cmd-image-zoom-in app) "Zoom in." (echo-message! (app-state-echo app) "Image zoom not available in TUI"))
 (def (cmd-image-zoom-out app) "Zoom out." (echo-message! (app-state-echo app) "Image zoom not available in TUI"))
@@ -1014,8 +1038,34 @@
 (def (cmd-image-zoom-reset app) "Zoom reset." (echo-message! (app-state-echo app) "Image zoom not available in TUI"))
 (def (cmd-set-font-size app) "Set font size." (echo-message! (app-state-echo app) "Font size: use terminal settings"))
 (def (cmd-set-frame-font app) "Set frame font." (echo-message! (app-state-echo app) "Font: use terminal settings"))
-(def (cmd-vterm-copy-mode app) "Vterm copy." (echo-message! (app-state-echo app) "Vterm: use terminal copy"))
-(def (cmd-vterm-copy-done app) "Vterm copy done." (echo-message! (app-state-echo app) "Vterm: copy done"))
+;; --- Vterm copy mode ---
+(def *tui-terminal-copy-mode* (make-hash-table))
+
+(def (cmd-vterm-copy-mode app)
+  "Toggle terminal copy mode — makes terminal buffer read-only for text selection."
+  (let* ((buf (current-buffer-from-app app))
+         (ed (current-editor app))
+         (echo (app-state-echo app)))
+    (if (terminal-buffer? buf)
+      (let ((in-copy (hash-get *tui-terminal-copy-mode* buf)))
+        (if in-copy
+          (begin (hash-put! *tui-terminal-copy-mode* buf #f)
+                 (editor-set-read-only ed #f)
+                 (echo-message! echo "Terminal copy mode OFF"))
+          (begin (hash-put! *tui-terminal-copy-mode* buf #t)
+                 (editor-set-read-only ed #t)
+                 (echo-message! echo "Terminal copy mode ON — select text, C-w/M-w to copy"))))
+      (echo-message! echo "Not in a terminal buffer"))))
+
+(def (cmd-vterm-copy-done app)
+  "Exit terminal copy mode and resume terminal."
+  (let* ((buf (current-buffer-from-app app))
+         (ed (current-editor app))
+         (echo (app-state-echo app)))
+    (when (and (terminal-buffer? buf) (hash-get *tui-terminal-copy-mode* buf))
+      (hash-put! *tui-terminal-copy-mode* buf #f)
+      (editor-set-read-only ed #f)
+      (echo-message! echo "Terminal copy mode OFF"))))
 (def (cmd-mc-mark-next app) "Mark next." (echo-message! (app-state-echo app) "Multiple cursors not available in TUI"))
 (def (cmd-mc-mark-all app) "Mark all." (echo-message! (app-state-echo app) "Multiple cursors not available in TUI"))
 (def (cmd-mc-skip-and-mark-next app) "Skip and mark next." (echo-message! (app-state-echo app) "Multiple cursors not available in TUI"))

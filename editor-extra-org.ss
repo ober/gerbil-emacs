@@ -998,7 +998,10 @@
       ;; Not a template pattern
       (echo-message! echo "No template at point"))))
 
-;; Calendar/diary
+;; Calendar/diary — state for navigation
+(def *tui-calendar-year* #f)
+(def *tui-calendar-month* #f)
+
 (def *tui-us-holidays*
   '((1  1  "New Year's Day")
     (1  15 "Martin Luther King Jr. Day")
@@ -1046,36 +1049,41 @@
         (if (eof-object? line) 2026 (or (string->number (string-trim line)) 2026))))))
 
 (def (cmd-calendar app)
-  "Show calendar with holidays and org items."
-  (let* ((cal-text (with-exception-catcher
+  "Show calendar with holidays and org items. Uses *tui-calendar-year/month* for navigation."
+  (when (not *tui-calendar-year*)
+    (set! *tui-calendar-year* (tui-current-year))
+    (set! *tui-calendar-month* (tui-current-month)))
+  (let* ((year *tui-calendar-year*)
+         (month *tui-calendar-month*)
+         (cal-text (with-exception-catcher
                      (lambda (e) "Calendar not available")
                      (lambda ()
                        (let ((p (open-process
                                   (list path: "cal"
-                                        arguments: '()
+                                        arguments: (list "-3" (number->string month) (number->string year))
                                         stdin-redirection: #f stdout-redirection: #t
                                         stderr-redirection: #t))))
                          (let ((out (read-line p #f)))
                            (process-status p)
                            (or out ""))))))
-         (year (tui-current-year))
-         (month (tui-current-month))
          (hols (tui-holidays-for-month month))
          (hol-text (if (null? hols) ""
                      (string-append "\nHolidays:\n"
                        (string-join
                          (map (lambda (h)
-                                (string-append "  " (number->string (car h)) " — " (cdr h)))
+                                (string-append "  " (number->string (car h)) " - " (cdr h)))
                               hols)
                          "\n") "\n")))
          (org-text (tui-calendar-org-footer year month)))
     (let* ((fr (app-state-frame app))
            (win (current-window fr))
            (ed (edit-window-editor win))
-           (buf (buffer-create! "*Calendar*" ed)))
+           (buf (or (buffer-by-name "*Calendar*") (buffer-create! "*Calendar*" ed))))
       (buffer-attach! ed buf)
       (set! (edit-window-buffer win) buf)
-      (editor-set-text ed (string-append "Calendar\n\n" cal-text hol-text org-text "\n"))
+      (editor-set-text ed (string-append cal-text hol-text org-text
+        "\n\nNavigation: M-x calendar-prev/next-month, calendar-prev/next-year, calendar-today\n"))
+      (editor-goto-pos ed 0)
       (editor-set-read-only ed #t))))
 
 (def (cmd-diary-view-entries app)
