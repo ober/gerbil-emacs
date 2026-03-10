@@ -244,13 +244,78 @@
                       (loop (cdr ls) (if start (cons (list start cnt "change") acc) acc)))
                     (loop (cdr ls) acc)))))))))))
 
+;; Scintilla marker numbers for git-gutter fringe
+(def *gutter-marker-add* 20)
+(def *gutter-marker-mod* 21)
+(def *gutter-marker-del* 22)
+(def *gutter-margin-num* 3)  ;; margin 3 (after fold margin 2)
+(def *qt-git-gutter-active* #f)
+
+(def (qt-git-gutter-setup-margin! ed)
+  "Set up margin 3 as a symbol margin for git-gutter markers."
+  ;; SC_MARGIN_SYMBOL = 1
+  (sci-send ed SCI_SETMARGINTYPEN *gutter-margin-num* 1)
+  (sci-send ed SCI_SETMARGINWIDTHN *gutter-margin-num* 4)
+  ;; Mask: markers 20-22 → bits (+ (expt 2 20) (expt 2 21) (expt 2 22)) = #x700000
+  (sci-send ed SCI_SETMARGINMASKN *gutter-margin-num* #x700000)
+  (sci-send ed SCI_SETMARGINSENSITIVEN *gutter-margin-num* 0)
+  ;; Define markers as SC_MARK_FULLRECT = 26 (full-width colored block)
+  (sci-send ed SCI_MARKERDEFINE *gutter-marker-add* 26)
+  (sci-send ed SCI_MARKERDEFINE *gutter-marker-mod* 26)
+  (sci-send ed SCI_MARKERDEFINE *gutter-marker-del* 26)
+  ;; Colors: green for added, blue for modified, red for deleted
+  (sci-send ed SCI_MARKERSETBACK *gutter-marker-add* #x40C040)  ;; green
+  (sci-send ed SCI_MARKERSETBACK *gutter-marker-mod* #x4080FF)  ;; blue
+  (sci-send ed SCI_MARKERSETBACK *gutter-marker-del* #xFF4040)) ;; red
+
+(def (qt-git-gutter-clear-markers! ed)
+  "Remove all git-gutter markers."
+  (sci-send ed SCI_MARKERDELETEALL *gutter-marker-add* 0)
+  (sci-send ed SCI_MARKERDELETEALL *gutter-marker-mod* 0)
+  (sci-send ed SCI_MARKERDELETEALL *gutter-marker-del* 0))
+
+(def (qt-git-gutter-apply-markers! ed hunks)
+  "Apply git-gutter margin markers for diff hunks."
+  (qt-git-gutter-clear-markers! ed)
+  (for-each
+    (lambda (hunk)
+      (let* ((start (car hunk))
+             (count (cadr hunk))
+             (line0 (max 0 (- start 1))))  ;; Scintilla lines are 0-based
+        (if (= count 0)
+          ;; Deletion: mark the line before where content was deleted
+          (sci-send ed SCI_MARKERADD line0 *gutter-marker-del*)
+          ;; Addition/modification: mark each affected line
+          (let loop ((i 0))
+            (when (< i count)
+              (sci-send ed SCI_MARKERADD (+ line0 i) *gutter-marker-mod*)
+              (loop (+ i 1)))))))
+    hunks))
+
 (def (cmd-git-gutter-mode app)
-  "Refresh git diff hunks for current buffer."
-  (let* ((buf (current-qt-buffer app)) (path (buffer-file-path buf)) (name (buffer-name buf)))
-    (if (not path) (echo-error! (app-state-echo app) "Buffer has no file")
-      (let ((hunks (qt-parse-git-hunks path)))
-        (hash-put! *qt-git-hunks* name hunks) (hash-put! *qt-git-hunk-idx* name 0)
-        (echo-message! (app-state-echo app) (string-append (number->string (length hunks)) " hunk(s)"))))))
+  "Toggle git-gutter fringe markers showing diff status."
+  (let* ((ed (current-qt-editor app))
+         (buf (current-qt-buffer app))
+         (path (buffer-file-path buf))
+         (name (buffer-name buf)))
+    (if (not path)
+      (echo-error! (app-state-echo app) "Buffer has no file")
+      (if *qt-git-gutter-active*
+        ;; Turn off: clear markers and hide margin
+        (begin
+          (qt-git-gutter-clear-markers! ed)
+          (sci-send ed SCI_SETMARGINWIDTHN *gutter-margin-num* 0)
+          (set! *qt-git-gutter-active* #f)
+          (echo-message! (app-state-echo app) "Git gutter OFF"))
+        ;; Turn on: parse hunks, setup margin, apply markers
+        (let ((hunks (qt-parse-git-hunks path)))
+          (hash-put! *qt-git-hunks* name hunks)
+          (hash-put! *qt-git-hunk-idx* name 0)
+          (qt-git-gutter-setup-margin! ed)
+          (qt-git-gutter-apply-markers! ed hunks)
+          (set! *qt-git-gutter-active* #t)
+          (echo-message! (app-state-echo app)
+            (string-append "Git gutter ON: " (number->string (length hunks)) " hunk(s)")))))))
 
 (def (cmd-git-gutter-next-hunk app)
   "Jump to next git diff hunk."

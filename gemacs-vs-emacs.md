@@ -348,7 +348,7 @@
 | Mode line (status bar) | :white_check_mark: | Shows mode, file, position, modified status |
 | Tab bar | :green_circle: | Qt visual buffer tab bar + workspace tabs (both layers) |
 | Header line | :white_check_mark: | Toggle header line display (file path breadcrumb) |
-| Fringe indicators | :yellow_circle: | Line numbers; no bitmap fringes |
+| Fringe indicators | :large_blue_circle: | Git-gutter fringe markers (green=add, blue=mod, red=del) via Scintilla margin, both TUI + Qt |
 | Display tables | :white_check_mark: | `set-display-table-entry` / `describe-display-table` |
 | Fill-column indicator | :white_check_mark: | Visual vertical line via Scintilla edge mode (TUI + Qt) |
 | Goto-address-mode | :white_check_mark: | URL detection and highlighting with Scintilla indicators (TUI + Qt) |
@@ -982,7 +982,7 @@
 | Long line handling | :white_check_mark: | So-long mode, truncate lines |
 | Incremental display | :white_check_mark: | Scintilla viewport rendering |
 | Background process | :large_blue_circle: | LSP reader thread |
-| Garbage collection tuning | :yellow_circle: | Gerbil/Gambit GC |
+| Garbage collection tuning | :large_blue_circle: | Gerbil/Gambit GC; `memory-usage` shows detailed stats (heap, GC count, timing, allocation) in *Memory* buffer |
 | Native compilation | :white_check_mark: | `native-compile-file` runs `gxc -S` on current file; `native-compile-async` via compilation buffer |
 
 **Summary:** Good performance characteristics thanks to Scintilla's native text handling.

@@ -1088,9 +1088,77 @@
                 (echo-message! echo
                   (string-append (number->string (length hunks)) " hunk(s) changed"))))))))))
 
+(def *tui-git-gutter-active* #f)
+(def *tui-gutter-marker-add* 20)
+(def *tui-gutter-marker-mod* 21)
+(def *tui-gutter-marker-del* 22)
+(def *tui-gutter-margin-num* 3)
+
+(def (tui-git-gutter-setup-margin! ed)
+  "Set up margin 3 as a symbol margin for git-gutter markers."
+  ;; SC_MARGIN_SYMBOL = 1
+  (send-message ed SCI_SETMARGINTYPEN *tui-gutter-margin-num* 1)
+  (send-message ed SCI_SETMARGINWIDTHN *tui-gutter-margin-num* 4)
+  ;; Mask: markers 20-22 → bits #x700000
+  (send-message ed SCI_SETMARGINMASKN *tui-gutter-margin-num* #x700000)
+  ;; Define markers as SC_MARK_FULLRECT = 26
+  (send-message ed SCI_MARKERDEFINE *tui-gutter-marker-add* 26)
+  (send-message ed SCI_MARKERDEFINE *tui-gutter-marker-mod* 26)
+  (send-message ed SCI_MARKERDEFINE *tui-gutter-marker-del* 26)
+  ;; Colors: green for added, blue for modified, red for deleted
+  (send-message ed SCI_MARKERSETBACK *tui-gutter-marker-add* #x40C040)
+  (send-message ed SCI_MARKERSETBACK *tui-gutter-marker-mod* #x4080FF)
+  (send-message ed SCI_MARKERSETBACK *tui-gutter-marker-del* #xFF4040))
+
+(def (tui-git-gutter-clear-markers! ed)
+  "Remove all git-gutter markers."
+  (send-message ed SCI_MARKERDELETEALL *tui-gutter-marker-add* 0)
+  (send-message ed SCI_MARKERDELETEALL *tui-gutter-marker-mod* 0)
+  (send-message ed SCI_MARKERDELETEALL *tui-gutter-marker-del* 0))
+
+(def (tui-git-gutter-apply-markers! ed hunks)
+  "Apply git-gutter margin markers for diff hunks."
+  (tui-git-gutter-clear-markers! ed)
+  (for-each
+    (lambda (hunk)
+      (let* ((start (car hunk))
+             (count (cadr hunk))
+             (line0 (max 0 (- start 1))))  ;; Scintilla lines are 0-based
+        (if (= count 0)
+          (send-message ed SCI_MARKERADD line0 *tui-gutter-marker-del*)
+          (let loop ((i 0))
+            (when (< i count)
+              (send-message ed SCI_MARKERADD (+ line0 i) *tui-gutter-marker-mod*)
+              (loop (+ i 1)))))))
+    hunks))
+
 (def (cmd-git-gutter-mode app)
-  "Refresh git diff status for current buffer."
-  (git-gutter-refresh! app))
+  "Toggle git-gutter fringe markers showing diff status."
+  (let* ((fr (app-state-frame app))
+         (win (current-window fr))
+         (ed (edit-window-editor win))
+         (buf (edit-window-buffer win))
+         (file-path (and buf (buffer-file-path buf)))
+         (buf-name (and buf (buffer-name buf)))
+         (echo (app-state-echo app)))
+    (if (not file-path)
+      (echo-error! echo "Buffer has no file")
+      (if *tui-git-gutter-active*
+        ;; Turn off
+        (begin
+          (tui-git-gutter-clear-markers! ed)
+          (send-message ed SCI_SETMARGINWIDTHN *tui-gutter-margin-num* 0)
+          (set! *tui-git-gutter-active* #f)
+          (echo-message! echo "Git gutter OFF"))
+        ;; Turn on
+        (begin
+          (git-gutter-refresh! app)
+          (let ((hunks (or (hash-get *git-gutter-hunks* buf-name) '())))
+            (tui-git-gutter-setup-margin! ed)
+            (tui-git-gutter-apply-markers! ed hunks)
+            (set! *tui-git-gutter-active* #t)
+            (echo-message! echo
+              (string-append "Git gutter ON: " (number->string (length hunks)) " hunk(s)"))))))))
 
 (def (cmd-git-gutter-next-hunk app)
   "Jump to next git diff hunk."
