@@ -82,7 +82,7 @@
              (ed (current-editor app))
              (pos (editor-get-current-pos ed)))
         (hash-put! (app-state-bookmarks app) name
-                   (cons (buffer-name buf) pos))
+                   (list (buffer-name buf) (buffer-file-path buf) pos))
         (echo-message! echo (string-append "Bookmark \"" name "\" set"))))))
 
 (def (cmd-bookmark-jump app)
@@ -91,13 +91,23 @@
          (fr (app-state-frame app))
          (row (- (frame-height fr) 1))
          (width (frame-width fr))
-         (name (echo-read-string echo "Jump to bookmark: " row width)))
+         (bm-names (sort (hash-keys (app-state-bookmarks app)) string<?))
+         (name (echo-read-string-with-completion echo "Jump to bookmark: " bm-names row width)))
     (when (and name (> (string-length name) 0))
       (let ((bm (hash-get (app-state-bookmarks app) name)))
         (if bm
-          (let* ((buf-name (car bm))
-                 (pos (cdr bm))
-                 (buf (buffer-by-name buf-name)))
+          (let* ((buf-name (if (list? bm) (car bm) (car bm)))
+                 (fpath (if (list? bm) (cadr bm) #f))
+                 (pos (if (list? bm) (caddr bm) (cdr bm)))
+                 (buf (or (buffer-by-name buf-name)
+                          ;; Try to find buffer by file path
+                          (and fpath
+                               (let loop ((bufs (buffer-list)))
+                                 (if (null? bufs) #f
+                                   (let ((b (car bufs)))
+                                     (if (and (buffer-file-path b)
+                                              (string=? (buffer-file-path b) fpath))
+                                       b (loop (cdr bufs))))))))))
             (if buf
               (let ((ed (current-editor app)))
                 (buffer-attach! ed buf)
@@ -105,7 +115,7 @@
                 (editor-goto-pos ed pos)
                 (editor-scroll-caret ed)
                 (echo-message! echo (string-append "Jumped to \"" name "\"")))
-              (echo-error! echo (string-append "Buffer gone: " buf-name))))
+              (echo-error! echo (string-append "Buffer gone: " (or fpath buf-name)))))
           (echo-error! echo (string-append "No bookmark: " name)))))))
 
 (def (cmd-bookmark-list app)
@@ -116,11 +126,14 @@
          (entries '()))
     (hash-for-each
       (lambda (name val)
-        (set! entries
-          (cons (string-append "  " name "\t"
-                               (car val) ":"
-                               (number->string (cdr val)))
-                entries)))
+        (let* ((buf-name (if (list? val) (car val) (car val)))
+               (fpath (if (list? val) (cadr val) #f))
+               (pos (if (list? val) (caddr val) (cdr val))))
+          (set! entries
+            (cons (string-append "  " name "\t"
+                                 (or fpath buf-name) " pos "
+                                 (number->string pos))
+                  entries))))
       bms)
     (let* ((sorted (sort entries string<?))
            (text (if (null? sorted)

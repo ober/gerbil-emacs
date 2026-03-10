@@ -1059,7 +1059,7 @@
 
 (def (cmd-widen-all app)
   "Widen all narrowed buffers."
-  (echo-message! (app-state-echo app) "Widen all (use M-x widen)"))
+  (cmd-widen app))
 
 (def (cmd-reindent-buffer app)
   "Re-indent the entire buffer."

@@ -712,10 +712,11 @@
 ;;; Narrow to region / widen
 ;;;============================================================================
 
-;; Store narrowing state per buffer
+;; Store narrowing state per buffer: (start-line . end-line) of visible region
 (def *narrow-state* (make-hash-table))
 
 (def (cmd-narrow-to-region app)
+  "Hide all lines outside the current selection using SCI_HIDELINES."
   (let* ((ed (current-qt-editor app))
          (buf (current-qt-buffer app))
          (mark (buffer-mark buf)))
@@ -723,33 +724,40 @@
       (let* ((pos (qt-plain-text-edit-cursor-position ed))
              (start (min mark pos))
              (end (max mark pos))
-             (text (qt-plain-text-edit-text ed))
-             (region (substring text start end)))
-        ;; Save full text and narrow bounds
-        (hash-put! *narrow-state* buf (list text start end))
-        ;; Show only the region
-        (qt-plain-text-edit-set-text! ed region)
-        (qt-plain-text-edit-set-cursor-position! ed 0)
+             (start-line (sci-send ed SCI_LINEFROMPOSITION start))
+             (end-line (sci-send ed SCI_LINEFROMPOSITION end))
+             (total (sci-send ed SCI_GETLINECOUNT)))
+        ;; First show all lines (in case already narrowed)
+        (sci-send ed SCI_SHOWLINES 0 (- total 1))
+        ;; Hide lines before the selection
+        (when (> start-line 0)
+          (let loop ((i 0))
+            (when (< i start-line)
+              (sci-send ed SCI_HIDELINES i i)
+              (loop (+ i 1)))))
+        ;; Hide lines after the selection
+        (when (< end-line (- total 1))
+          (let loop ((i (+ end-line 1)))
+            (when (< i total)
+              (sci-send ed SCI_HIDELINES i i)
+              (loop (+ i 1)))))
+        ;; Save narrowing bounds
+        (hash-put! *narrow-state* buf (cons start-line end-line))
         (set! (buffer-mark buf) #f)
-        (echo-message! (app-state-echo app) "Narrowed"))
+        (echo-message! (app-state-echo app)
+          (string-append "Narrowed to lines "
+                         (number->string (+ start-line 1)) "-"
+                         (number->string (+ end-line 1)))))
       (echo-error! (app-state-echo app) "No mark set"))))
 
 (def (cmd-widen app)
-  (let* ((buf (current-qt-buffer app))
-         (state (hash-get *narrow-state* buf)))
-    (if state
-      (let* ((ed (current-qt-editor app))
-             (full-text (car state))
-             (start (cadr state))
-             ;; Get the current narrowed text (may have been edited)
-             (narrow-text (qt-plain-text-edit-text ed))
-             ;; Replace the narrowed region with the edited version
-             (new-text (string-append
-                         (substring full-text 0 start)
-                         narrow-text
-                         (substring full-text (caddr state) (string-length full-text)))))
-        (qt-plain-text-edit-set-text! ed new-text)
-        (qt-plain-text-edit-set-cursor-position! ed start)
+  "Show all lines, undoing any narrowing."
+  (let* ((ed (current-qt-editor app))
+         (buf (current-qt-buffer app))
+         (total (sci-send ed SCI_GETLINECOUNT)))
+    (sci-send ed SCI_SHOWLINES 0 (- total 1))
+    (if (hash-get *narrow-state* buf)
+      (begin
         (hash-remove! *narrow-state* buf)
         (echo-message! (app-state-echo app) "Widened"))
       (echo-message! (app-state-echo app) "Buffer is not narrowed"))))

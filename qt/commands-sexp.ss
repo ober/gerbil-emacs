@@ -912,6 +912,7 @@
                     (qt-plain-text-edit-set-text! ed (or output "No differences"))
                     (qt-text-document-set-modified! (buffer-doc-pointer diff-buf) #f)
                     (qt-plain-text-edit-set-cursor-position! ed 0)
+                    (when output (qt-highlight-diff! ed))
                     ;; Clean up temp files
                     (with-catch void (lambda () (delete-file tmp-a)))
                     (with-catch void (lambda () (delete-file tmp-b)))

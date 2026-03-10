@@ -17,6 +17,7 @@
         :gemacs/window
         :gemacs/modeline
         :gemacs/echo
+        :gemacs/highlight
         :gemacs/editor-extra-helpers)
 
 ;; Artist mode — simple ASCII drawing
@@ -809,6 +810,7 @@
                     (buffer-attach! ed buf)
                     (set! (edit-window-buffer win) buf)
                     (editor-set-text ed text)
+                    (when output (setup-diff-highlighting! ed))
                     (editor-goto-pos ed 0)
                     (editor-set-read-only ed #t)))))))))))
 
@@ -860,6 +862,7 @@
                       (buffer-attach! ed buf)
                       (set! (edit-window-buffer win) buf)
                       (editor-set-text ed diff-text)
+                      (when output (setup-diff-highlighting! ed))
                       (editor-goto-pos ed 0)
                       (editor-set-read-only ed #t))))))))))))
 

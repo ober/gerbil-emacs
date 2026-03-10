@@ -1805,14 +1805,27 @@
 (def (cmd-insert-register-content app)
   "Insert the content of a register at point."
   (let* ((echo (app-state-echo app))
-         (ed (current-editor app))
-         (regs (app-state-registers app)))
-    (echo-message! echo "Insert register: ")
-    ;; In a real implementation this would read a key;
-    ;; for now show info about available registers
-    (let ((count (hash-length regs)))
-      (echo-message! echo
-        (string-append (number->string count) " registers defined")))))
+         (fr (app-state-frame app))
+         (row (- (frame-height fr) 1))
+         (width (frame-width fr))
+         (input (echo-read-string echo "Insert register: " row width)))
+    (when (and input (> (string-length input) 0))
+      (let* ((reg-char (string-ref input 0))
+             (val (hash-get (app-state-registers app) reg-char)))
+        (cond
+          ((not val)
+           (echo-error! echo
+             (string-append "Register " (string reg-char) " is empty")))
+          ((string? val)
+           (let ((ed (current-editor app)))
+             (editor-replace-selection ed val)
+             (echo-message! echo
+               (string-append "Inserted from register " (string reg-char)))))
+          ((pair? val)
+           (echo-message! echo "Register contains a position, not text"))
+          (else
+           (echo-error! echo
+             (string-append "Register " (string reg-char) " is empty"))))))))
 
 (def (cmd-insert-date-iso app)
   "Insert the current date in ISO 8601 format (YYYY-MM-DD) at point."

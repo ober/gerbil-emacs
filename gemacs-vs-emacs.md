@@ -1,7 +1,7 @@
 # Gemacs vs GNU Emacs — Feature Comparison
 
-> **Last updated:** 2026-03-09
-> **Gemacs version:** master (52d2604)
+> **Last updated:** 2026-03-10
+> **Gemacs version:** master (43af695)
 > **Compared against:** GNU Emacs 29.x / 30.x feature set
 > **Command parity:** 2168+ commands registered in both TUI and Qt layers (zero gap)
 
@@ -338,7 +338,7 @@
 | Feature | Status | Notes |
 |---------|--------|-------|
 | Single frame (Qt window) | :white_check_mark: | |
-| Multiple frames | :yellow_circle: | Single-window design; `make-frame`/`other-frame` registered |
+| Multiple frames | :large_blue_circle: | Virtual frame management: `make-frame`/`delete-frame`/`other-frame`/`suspend-frame`, frame count tracking |
 | Fullscreen toggle | :large_blue_circle: | Real toggle via window-state detection (fullscreen ↔ normal) |
 | Font size (zoom) | :white_check_mark: | `C-=`, `C--`, `C-x C-0` |
 | Font family selection | :large_blue_circle: | Configurable |
@@ -449,7 +449,7 @@
 | Diff-hl (gutter marks) | :large_blue_circle: | Git diff gutter indicators |
 | Wgrep on grep results | :white_check_mark: | Edit and save back |
 | Magit keymap | :white_check_mark: | 20 bindings: s/S/u/c/d/l/g/n/p/q/b/B/f/F/P/r/m/z/Z/k |
-| VC generic backend | :large_blue_circle: | Git backend: `vc-annotate`, `vc-diff`, `vc-log-file`, `vc-revert`, `vc-dir` |
+| VC generic backend | :white_check_mark: | Git backend: real `vc-annotate` (blame), `vc-diff-head`, `vc-log-file` (--follow), `vc-stash`/`vc-stash-pop`, `vc-revert`, `vc-dir` |
 
 **Summary:** Magit has been significantly enhanced. The status buffer shows **inline diffs** per file. **Hunk-level staging/unstaging** works via `git apply --cached`. Branch operations (checkout, merge, rebase) use the **narrowing framework** for interactive selection. 20+ single-key bindings in the magit keymap. **Commit composition** uses a dedicated `*Magit: Commit*` buffer with diff preview and `C-c C-c`/`C-c C-k` keybindings. **Interactive log** shows date/author/subject with graph; pressing Enter shows the full commit diff with highlighting. Forge integration provides PR/issue listing and creation via `gh` CLI.
 

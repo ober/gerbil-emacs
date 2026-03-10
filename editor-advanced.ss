@@ -992,7 +992,9 @@
                       (buffer-attach! ed diff-buf)
                       (set! (edit-window-buffer (current-window fr)) diff-buf)
                       (if (and (string? output) (> (string-length output) 0))
-                        (editor-set-text ed output)
+                        (begin
+                          (editor-set-text ed output)
+                          (setup-diff-highlighting! ed))
                         (editor-set-text ed "(no differences)\n"))
                       (editor-set-save-point ed)
                       (editor-goto-pos ed 0)

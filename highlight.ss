@@ -10,7 +10,8 @@
         detect-language-from-shebang
         gerbil-file-extension?
         register-custom-highlighter!
-        *custom-highlighters*)
+        *custom-highlighters*
+        setup-diff-highlighting!)
 
 (import :std/sugar
         :std/srfi/13

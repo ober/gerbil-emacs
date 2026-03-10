@@ -1038,6 +1038,7 @@ modified so the next save uses the new encoding."
                 (qt-plain-text-edit-set-text! ed (or output "No differences"))
                 (qt-text-document-set-modified! (buffer-doc-pointer diff-buf) #f)
                 (qt-plain-text-edit-set-cursor-position! ed 0)
+                (when output (qt-highlight-diff! ed))
                 (echo-message! (app-state-echo app) "Diff complete")))))))))
 
 ;;;============================================================================
