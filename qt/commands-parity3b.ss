@@ -388,7 +388,21 @@
 
 ;; EWW extras
 (def (cmd-eww-forward app)
-  (echo-message! (app-state-echo app) "EWW: use M-x eww to browse"))
+  "Go forward in eww browsing history."
+  (if (null? *eww-forward-history*)
+    (echo-message! (app-state-echo app) "No forward page")
+    (let ((url (car *eww-forward-history*)))
+      (set! *eww-forward-history* (cdr *eww-forward-history*))
+      (set! *eww-history* (cons url *eww-history*))
+      (set! *eww-current-url* url)
+      (echo-message! (app-state-echo app) (string-append "Fetching " url "..."))
+      (let ((html (eww-fetch-url url)))
+        (when html
+          (let* ((text (eww-html-to-text html))
+                 (ed (current-qt-editor app)))
+            (qt-plain-text-edit-set-text! ed
+              (string-append "URL: " url "\n\n" text))
+            (qt-plain-text-edit-set-cursor-position! ed 0)))))))
 (def (cmd-eww-download app)
   (echo-message! (app-state-echo app) "EWW: use M-x eww to browse"))
 (def (cmd-eww-copy-page-url app)
@@ -528,7 +542,28 @@
 (def (cmd-mc-mark-next-like-this app)
   (cmd-mc-add-next app))
 (def (cmd-mc-mark-previous-like-this app)
-  (echo-message! (app-state-echo app) "Use mc-add-next for multi-cursor"))
+  "Add previous occurrence of selected text as a multi-cursor selection."
+  (let* ((ed (current-qt-editor app))
+         (sel-start (sci-send ed SCI_GETSELECTIONSTART))
+         (sel-end (sci-send ed SCI_GETSELECTIONEND))
+         (sel-len (- sel-end sel-start)))
+    (if (<= sel-len 0)
+      (echo-message! (app-state-echo app) "Select text first")
+      (let* ((text (qt-plain-text-edit-text ed))
+             (sel-text (substring text sel-start sel-end))
+             ;; Search backward from selection start
+             (found (let loop ((i (- sel-start 1)))
+                      (cond
+                        ((< i 0) #f)
+                        ((and (<= (+ i sel-len) (string-length text))
+                              (string=? (substring text i (+ i sel-len)) sel-text))
+                         i)
+                        (else (loop (- i 1)))))))
+        (if (not found)
+          (echo-message! (app-state-echo app) "No previous occurrence")
+          (begin
+            (sci-send ed SCI_ADDSELECTION found (+ found sel-len))
+            (echo-message! (app-state-echo app) "Added previous occurrence")))))))
 (def (cmd-mc-mark-all-like-this app)
   (cmd-mc-add-all app))
 (def (cmd-mc-skip-and-add-next app)
@@ -1439,8 +1474,50 @@
 (def (cmd-rename-symbol app)
   (execute-command! app 'query-replace))
 
+;; Killed buffer tracking for reopen
+(def *qt-killed-buffers* '())
+(def *qt-max-killed-buffers* 20)
+
+(def (qt-remember-killed-buffer! buf)
+  "Record a buffer before killing for potential reopening."
+  (let ((name (buffer-name buf))
+        (file-path (buffer-file-path buf)))
+    (when file-path  ; only remember file-backed buffers
+      (set! *qt-killed-buffers*
+        (let ((new (cons (list name file-path) *qt-killed-buffers*)))
+          (if (> (length new) *qt-max-killed-buffers*)
+            (let loop ((ls new) (n 0) (acc []))
+              (if (or (null? ls) (>= n *qt-max-killed-buffers*))
+                (reverse acc)
+                (loop (cdr ls) (+ n 1) (cons (car ls) acc))))
+            new))))))
+
 (def (cmd-reopen-killed-buffer app)
-  (echo-message! (app-state-echo app) "Use M-x recentf for recently closed files"))
+  "Reopen the most recently killed file-backed buffer."
+  (if (null? *qt-killed-buffers*)
+    (echo-message! (app-state-echo app) "No killed buffers to reopen")
+    (let* ((entry (car *qt-killed-buffers*))
+           (name (car entry))
+           (file-path (cadr entry))
+           (ed (current-qt-editor app))
+           (fr (app-state-frame app)))
+      (set! *qt-killed-buffers* (cdr *qt-killed-buffers*))
+      (if (and file-path (file-exists? file-path))
+        ;; File still exists — open it fresh
+        (let* ((buf-name (path-strip-directory file-path))
+               (buf (qt-buffer-create! buf-name ed file-path)))
+          (qt-buffer-attach! ed buf)
+          (set! (qt-edit-window-buffer (qt-current-window fr)) buf)
+          (let ((content (with-catch (lambda (e) "")
+                           (lambda () (read-file-string file-path)))))
+            (qt-plain-text-edit-set-text! ed content)
+            (qt-text-document-set-modified! (buffer-doc-pointer buf) #f)
+            (qt-plain-text-edit-set-cursor-position! ed 0))
+          (echo-message! (app-state-echo app)
+            (string-append "Reopened: " file-path)))
+        ;; File gone
+        (echo-message! (app-state-echo app)
+          (string-append "File deleted: " (or file-path name)))))))
 
 (def (cmd-save-persistent-scratch app)
   (execute-command! app 'scratch-save))
@@ -1451,9 +1528,56 @@
   (execute-command! app 'hippie-expand))
 
 (def (cmd-add-dir-local-variable app)
-  (echo-message! (app-state-echo app) "Edit .gemacs-config for dir-locals"))
+  "Prompt for variable and value, append to .gemacs-config in project root."
+  (let* ((buf (current-qt-buffer app))
+         (fp (and buf (buffer-file-path buf)))
+         (dir (if fp (path-directory fp) (current-directory)))
+         (config-path (path-expand ".gemacs-config" dir))
+         (var (qt-echo-read-string app "Dir-local variable: ")))
+    (when (and var (> (string-length var) 0))
+      (let ((val (qt-echo-read-string app (string-append var " = "))))
+        (when (and val (> (string-length val) 0))
+          (let ((line (string-append var " = " val "\n")))
+            (with-catch
+              (lambda (e)
+                (echo-error! (app-state-echo app)
+                  (string-append "Error writing " config-path)))
+              (lambda ()
+                (with-output-to-file [path: config-path append: #t]
+                  (lambda () (display line)))
+                (echo-message! (app-state-echo app)
+                  (string-append "Added to " config-path ": " var " = " val))))))))))
+
 (def (cmd-add-file-local-variable app)
-  (echo-message! (app-state-echo app) "Add file-local variables in file header"))
+  "Insert a file-local variable comment at the top of the current file."
+  (let* ((ed (current-qt-editor app))
+         (var (qt-echo-read-string app "File-local variable: ")))
+    (when (and var (> (string-length var) 0))
+      (let ((val (qt-echo-read-string app (string-append var " : "))))
+        (when (and val (> (string-length val) 0))
+          ;; Insert as first-line local variable comment
+          (let* ((text (qt-plain-text-edit-text ed))
+                 (header (string-append ";; -*- " var ": " val " -*-\n"))
+                 ;; If first line is already a local vars line, append to it
+                 (first-nl (string-index text #\newline))
+                 (first-line (if first-nl (substring text 0 first-nl) text)))
+            (if (and (string-prefix? ";; -*- " first-line)
+                     (string-suffix? "-*-" first-line))
+              ;; Extend existing header
+              (let* ((existing (substring first-line 6
+                                 (- (string-length first-line) 4)))
+                     (new-header (string-append ";; -*- " existing "; "
+                                   var ": " val " -*-")))
+                (qt-plain-text-edit-set-text! ed
+                  (string-append new-header
+                    (if first-nl (substring text first-nl (string-length text)) "")))
+                (qt-plain-text-edit-set-cursor-position! ed 0))
+              ;; Insert new header at top
+              (begin
+                (qt-plain-text-edit-set-text! ed (string-append header text))
+                (qt-plain-text-edit-set-cursor-position! ed 0)))
+            (echo-message! (app-state-echo app)
+              (string-append "Added: " var ": " val))))))))
 
 ;; org-set-tags already in commands-parity.ss
 

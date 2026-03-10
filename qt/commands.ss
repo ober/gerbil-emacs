@@ -571,6 +571,8 @@
                     (qt-buffer-attach! ed other)
                     (set! (qt-edit-window-buffer (qt-current-window fr))
                           other))))
+              ;; Remember buffer before killing (for reopen-killed-buffer)
+              (qt-remember-killed-buffer! buf)
               ;; Run kill-buffer-hook before cleanup
               (run-hooks! 'kill-buffer-hook app buf)
               ;; Clean up syntax highlighter if applicable

@@ -146,6 +146,7 @@
 
 ;; --- EWW-style web browser (litehtml-powered) ---
 (def *eww-history* [])
+(def *eww-forward-history* [])  ; forward stack for eww-forward
 (def *eww-current-url* #f)
 (def *qt-eww-lh-context* #f)
 
@@ -345,6 +346,8 @@
   (if (or (null? *eww-history*) (null? (cdr *eww-history*)))
     (echo-message! (app-state-echo app) "No previous page")
     (begin
+      ;; Push current URL to forward stack before going back
+      (set! *eww-forward-history* (cons (car *eww-history*) *eww-forward-history*))
       (set! *eww-history* (cdr *eww-history*))
       (let ((url (car *eww-history*)))
         (set! *eww-current-url* url)
