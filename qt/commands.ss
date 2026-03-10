@@ -108,7 +108,9 @@
                  save-place-save! save-place-load!
                  save-place-remember! save-place-restore
                  *save-place-enabled* *require-final-newline*
-                 *centered-cursor-mode*)
+                 *centered-cursor-mode*
+                 *fill-column* *auto-fill-mode*
+                 *delete-trailing-whitespace-on-save*)
         :gemacs/repl
         :gemacs/eshell
         :gemacs/shell

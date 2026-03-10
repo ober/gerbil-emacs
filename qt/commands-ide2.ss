@@ -11,6 +11,7 @@
         :std/misc/completion
         :gemacs/qt/sci-shim
         :gemacs/core
+        (only-in :gemacs/persist *fill-column*)
         :gemacs/editor
         :gemacs/qt/buffer
         :gemacs/qt/window

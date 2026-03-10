@@ -85,6 +85,20 @@
   ;; Centered cursor mode
   *centered-cursor-mode*
 
+  ;; Auto-fill mode
+  *auto-fill-mode*
+  *fill-column*
+
+  ;; Abbrev mode
+  *abbrev-table*
+  *abbrev-mode-enabled*
+
+  ;; Enriched mode
+  *enriched-mode*
+
+  ;; Picture mode
+  *picture-mode*
+
   ;; Copilot (AI inline completion)
   *copilot-mode*
   *copilot-api-key*
@@ -888,6 +902,48 @@
 (defvar! 'centered-cursor #f "Keep cursor centered vertically in the window"
          setter: (lambda (v) (set! *centered-cursor-mode* v))
          type: 'boolean group: 'display)
+
+;;;============================================================================
+;;; Auto-fill mode
+;;;============================================================================
+
+(def *auto-fill-mode* #f)
+(defvar! 'auto-fill-mode #f "Automatically break lines at fill-column"
+         setter: (lambda (v) (set! *auto-fill-mode* v))
+         type: 'boolean group: 'editing)
+
+(def *fill-column* 80)
+(defvar! 'fill-column 80 "Column at which auto-fill wraps text"
+         setter: (lambda (v) (set! *fill-column* v))
+         type: 'integer type-args: '(20 . 200) group: 'editing)
+
+;;;============================================================================
+;;; Abbrev mode
+;;;============================================================================
+
+(def *abbrev-table* (make-hash-table))
+(def *abbrev-mode-enabled* #t)
+(defvar! 'abbrev-mode #t "Enable abbreviation expansion"
+         setter: (lambda (v) (set! *abbrev-mode-enabled* v))
+         type: 'boolean group: 'editing)
+
+;;;============================================================================
+;;; Enriched text mode
+;;;============================================================================
+
+(def *enriched-mode* #f)
+(defvar! 'enriched-mode #f "Enable basic text formatting (bold/italic)"
+         setter: (lambda (v) (set! *enriched-mode* v))
+         type: 'boolean group: 'editing)
+
+;;;============================================================================
+;;; Picture mode
+;;;============================================================================
+
+(def *picture-mode* #f)
+(defvar! 'picture-mode #f "Overwrite mode with directional cursor drawing"
+         setter: (lambda (v) (set! *picture-mode* v))
+         type: 'boolean group: 'editing)
 
 ;;;============================================================================
 ;;; Copilot (AI inline completion) settings

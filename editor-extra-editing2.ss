@@ -19,7 +19,9 @@
         :gemacs/modeline
         :gemacs/echo
         :gemacs/editor-extra-helpers
-        :gemacs/editor-extra-editing)
+        :gemacs/editor-extra-editing
+        (only-in :gemacs/persist
+          *enriched-mode* *picture-mode*))
 
 ;;;============================================================================
 ;;; Real multi-selection commands (using Scintilla multi-selection API)
@@ -1190,4 +1192,63 @@
         (editor-goto-pos ed (min pos (string-length result)))
         (editor-scroll-caret ed)))
     (echo-message! (app-state-echo app) "Trailing whitespace deleted")))
+
+;;;============================================================================
+;;; Enriched text mode (basic)
+;;;============================================================================
+
+;; *enriched-mode* is defined in persist.ss
+
+(def (cmd-enriched-mode app)
+  "Toggle enriched text mode for basic formatting support."
+  (set! *enriched-mode* (not *enriched-mode*))
+  (echo-message! (app-state-echo app)
+    (if *enriched-mode* "Enriched mode enabled" "Enriched mode disabled")))
+
+(def (cmd-facemenu-set-bold app)
+  "Apply bold styling to selected text (Scintilla style)."
+  (let* ((ed (current-editor app))
+         (start (send-message ed SCI_GETSELECTIONSTART 0 0))
+         (end   (send-message ed SCI_GETSELECTIONEND 0 0)))
+    (if (= start end)
+      (echo-message! (app-state-echo app) "No selection — select text first")
+      (begin
+        ;; Style 1 = bold text style
+        (send-message ed SCI_STYLESETBOLD 1 1)
+        (send-message ed 2032 start 0)  ;; SCI_STARTSTYLING
+        (send-message ed 2033 (- end start) 1)  ;; SCI_SETSTYLING
+        (echo-message! (app-state-echo app) "Bold applied")))))
+
+(def (cmd-facemenu-set-italic app)
+  "Apply italic styling to selected text (Scintilla style)."
+  (let* ((ed (current-editor app))
+         (start (send-message ed SCI_GETSELECTIONSTART 0 0))
+         (end   (send-message ed SCI_GETSELECTIONEND 0 0)))
+    (if (= start end)
+      (echo-message! (app-state-echo app) "No selection — select text first")
+      (begin
+        ;; Style 2 = italic text style
+        (send-message ed SCI_STYLESETITALIC 2 1)
+        (send-message ed 2032 start 0)  ;; SCI_STARTSTYLING
+        (send-message ed 2033 (- end start) 2)  ;; SCI_SETSTYLING
+        (echo-message! (app-state-echo app) "Italic applied")))))
+
+;;;============================================================================
+;;; Picture mode (overwrite with cursor movement)
+;;;============================================================================
+
+;; *picture-mode* is defined in persist.ss
+
+(def (cmd-picture-mode app)
+  "Toggle picture mode — overwrite mode with directional drawing.
+   In picture mode, characters overwrite instead of inserting,
+   and spaces fill as you move the cursor."
+  (set! *picture-mode* (not *picture-mode*))
+  (let ((ed (current-editor app)))
+    ;; Enable/disable overwrite mode in Scintilla
+    (send-message ed 2186 (if *picture-mode* 1 0) 0)  ;; SCI_SETOVERTYPE
+    (echo-message! (app-state-echo app)
+      (if *picture-mode*
+        "Picture mode ON (overwrite, use arrows to draw)"
+        "Picture mode OFF"))))
 

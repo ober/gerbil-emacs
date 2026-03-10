@@ -8785,6 +8785,19 @@
       (check (procedure? (find-command 'delete-trailing-whitespace)) => #t)
       (check (procedure? (find-command 'toggle-repeat-mode)) => #t))
 
+    ;; -- Batch 51: AI copilot, multi-frame, TRAMP --
+    (test-case "batch 51: frame management"
+      (check (>= (length *frame-list*) 1) => #t))
+
+    (test-case "command registration: batch 51 features"
+      (register-all-commands!)
+      ;; Frame commands
+      (check (procedure? (find-command 'make-frame)) => #t)
+      (check (procedure? (find-command 'delete-frame)) => #t)
+      (check (procedure? (find-command 'other-frame)) => #t)
+      ;; TRAMP commands
+      (check (procedure? (find-command 'find-file-ssh)) => #t))
+
     ))
 
 ;; Run tests when executed directly

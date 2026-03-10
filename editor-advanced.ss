@@ -25,6 +25,7 @@
         :gemacs/modeline
         :gemacs/echo
         :gemacs/highlight
+        :gemacs/persist
         :gemacs/editor-core
         :gemacs/editor-ui
         :gemacs/editor-text)
@@ -1218,7 +1219,7 @@
 ;;; Auto-fill mode toggle
 ;;;============================================================================
 
-(def *auto-fill-mode* #f)
+;; moved to persist.ss
 
 (def (cmd-toggle-auto-fill app)
   "Toggle auto-fill mode (line wrap at fill-column)."
@@ -1459,7 +1460,7 @@
 ;;; Set fill column
 ;;;============================================================================
 
-(def *fill-column* 80)
+;; moved to persist.ss
 
 (def (cmd-set-fill-column app)
   "Set the fill column for line wrapping and centering."

@@ -11,7 +11,10 @@
         :gemacs/qt/sci-shim
         :gemacs/core
         (only-in :gemacs/persist theme-settings-save! theme-settings-load!
-                 mx-history-save! mx-history-load!)
+                 mx-history-save! mx-history-load!
+                 *auto-fill-mode* *fill-column*
+                 *abbrev-table* *abbrev-mode-enabled*
+                 *delete-trailing-whitespace-on-save*)
         :gemacs/editor
         :gemacs/repl
         :gemacs/eshell
@@ -598,7 +601,7 @@ SPC = page down, DEL = page up, q = quit view-mode."
 ;;; Delete trailing whitespace on save
 ;;; ========================================================================
 
-(def *delete-trailing-whitespace-on-save* #t)
+;; *delete-trailing-whitespace-on-save* imported from persist.ss
 
 (def (cmd-toggle-delete-trailing-whitespace-on-save app)
   "Toggle automatic deletion of trailing whitespace when saving."
@@ -1653,8 +1656,7 @@ SPC = page down, DEL = page up, q = quit view-mode."
                  (string-append "Dictionary: " choice)))))))
 
 ;; --- Abbreviations ---
-(def *abbrev-mode* #f)
-(def *abbrev-table* (make-hash-table))  ;; abbrev -> expansion
+;; *abbrev-table* and *abbrev-mode-enabled* are defined in persist.ss
 (def *abbrevs-path*
   (path-expand ".gemacs-abbrevs" (user-info-home (user-info (user-name)))))
 
@@ -1691,10 +1693,10 @@ SPC = page down, DEL = page up, q = quit view-mode."
 
 (def (cmd-abbrev-mode app)
   "Toggle abbreviation mode."
-  (set! *abbrev-mode* (not *abbrev-mode*))
-  (when *abbrev-mode* (abbrevs-load!))
+  (set! *abbrev-mode-enabled* (not *abbrev-mode-enabled*))
+  (when *abbrev-mode-enabled* (abbrevs-load!))
   (echo-message! (app-state-echo app)
-    (if *abbrev-mode* "Abbrev mode enabled" "Abbrev mode disabled")))
+    (if *abbrev-mode-enabled* "Abbrev mode enabled" "Abbrev mode disabled")))
 
 (def (cmd-define-abbrev app)
   "Define a new abbreviation interactively."

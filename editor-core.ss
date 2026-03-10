@@ -438,8 +438,44 @@
             (let* ((pos (editor-get-current-pos ed))
                    (str (make-string n (integer->char ch))))
               (editor-insert-text ed pos str)
-              (editor-goto-pos ed (+ pos n))))))))))
+              (editor-goto-pos ed (+ pos n)))))
+         ;; Auto-fill: break line if past fill-column
+         (tui-auto-fill-after-insert! app ed))))))
 
+
+;;;============================================================================
+;;; Auto-fill check for TUI self-insert
+;;;============================================================================
+
+(def (tui-auto-fill-after-insert! app ed)
+  "If auto-fill-mode is on and current line exceeds fill-column, break at word boundary."
+  (when *auto-fill-mode*
+    (let ((buf (current-buffer-from-app app)))
+      (when (and buf
+                 (not (dired-buffer? buf))
+                 (not (shell-buffer? buf))
+                 (not (terminal-buffer? buf))
+                 (not (repl-buffer? buf)))
+        (let* ((text (editor-get-text ed))
+               (len (string-length text))
+               (pos (min (editor-get-current-pos ed) len)))
+          (when (and (> pos 0) (> len 0))
+            (let* ((line-start (let loop ((i (- pos 1)))
+                                 (cond ((< i 0) 0)
+                                       ((char=? (string-ref text i) #\newline) (+ i 1))
+                                       (else (loop (- i 1))))))
+                   (col (- pos line-start)))
+              (when (> col *fill-column*)
+                (let ((break-end (min (+ line-start *fill-column*) (- len 1))))
+                  (let loop ((i break-end))
+                    (cond
+                      ((<= i line-start) #f)
+                      ((char=? (string-ref text i) #\space)
+                       ;; Replace space with newline
+                       (editor-set-selection ed i (+ i 1))
+                       (editor-replace-selection ed "\n")
+                       (editor-goto-pos ed pos))
+                      (else (loop (- i 1))))))))))))))
 
 ;;;============================================================================
 ;;; Navigation commands

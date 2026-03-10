@@ -1337,10 +1337,7 @@
         (editor-set-text ed result)))))
 
 ;; --- Abbrev mode ---
-;; Global abbreviation table
-
-(def *abbrev-table* (make-hash-table)) ; abbrev -> expansion
-(def *abbrev-mode-enabled* #t)
+;; *abbrev-table* and *abbrev-mode-enabled* are defined in persist.ss
 
 (def (cmd-abbrev-mode app)
   "Toggle abbrev mode."

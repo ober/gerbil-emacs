@@ -1069,7 +1069,7 @@
   (register-command! 'move-to-window-line-top-bottom cmd-move-to-window-line)
   (register-command! 'binary-overwrite-mode cmd-toggle-overwrite-mode)
   (register-command! 'text-mode cmd-text-mode)
-  (register-command! 'enriched-mode cmd-text-mode)
+  ;; enriched-mode registered in qt-register-parity5-enriched-commands!
   (register-command! 'conf-mode cmd-text-mode)
   (register-command! 'nxml-mode cmd-text-mode)
   (register-command! 'sh-mode cmd-shell-script-mode)

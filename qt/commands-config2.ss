@@ -9,6 +9,7 @@
         :std/srfi/13
         :gemacs/qt/sci-shim
         :gemacs/core
+        (only-in :gemacs/persist *fill-column*)
         :gemacs/async
         :gemacs/editor
         :gemacs/qt/buffer

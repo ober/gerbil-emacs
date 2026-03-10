@@ -10,6 +10,7 @@
         :std/text/base64
         :gemacs/qt/sci-shim
         :gemacs/core
+        (only-in :gemacs/persist *auto-fill-mode* *fill-column*)
         :gemacs/editor
         :gemacs/repl
         :gemacs/eshell
@@ -299,8 +300,7 @@
   (echo-message! (app-state-echo app)
     (if *overwrite-mode* "Overwrite mode ON" "Overwrite mode OFF")))
 
-(def *auto-fill-mode* #f)
-(def *fill-column* 80)
+;; *auto-fill-mode* and *fill-column* are defined in persist.ss
 (def *fill-column-indicator* #f)
 
 (def (cmd-toggle-auto-fill app)

@@ -11,6 +11,7 @@
         :gerbil-litehtml/html
         :gemacs/qt/sci-shim
         :gemacs/core
+        (only-in :gemacs/persist *abbrev-table*)
         :gemacs/async
         :gemacs/editor
         :gemacs/repl
