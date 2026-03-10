@@ -1723,10 +1723,23 @@
 (def *tui-nyan-mode* #f)
 
 (def (cmd-nyan-mode app)
-  "Toggle nyan-mode — show nyan cat position indicator in modeline."
+  "Toggle nyan-mode — show ASCII progress bar position indicator."
   (set! *tui-nyan-mode* (not *tui-nyan-mode*))
-  (echo-message! (app-state-echo app)
-    (if *tui-nyan-mode* "Nyan mode enabled =^.^=" "Nyan mode disabled")))
+  (when *tui-nyan-mode*
+    (let* ((fr (app-state-frame app))
+           (win (current-window fr))
+           (ed (edit-window-editor win))
+           (pos (editor-get-current-pos ed))
+           (len (max 1 (editor-get-text-length ed)))
+           (pct (min 100 (quotient (* pos 100) len)))
+           (bar-len 20)
+           (filled (quotient (* pct bar-len) 100))
+           (empty (- bar-len filled))
+           (bar (string-append "[" (make-string filled #\=) "=^.^="
+                               (make-string empty #\-) "] " (number->string pct) "%")))
+      (echo-message! (app-state-echo app) bar)))
+  (when (not *tui-nyan-mode*)
+    (echo-message! (app-state-echo app) "Nyan mode disabled")))
 
 ;;;============================================================================
 ;;; Centered cursor mode

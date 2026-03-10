@@ -652,10 +652,27 @@
 (def *qt-nyan-mode* #f)
 
 (def (cmd-nyan-mode app)
-  "Toggle nyan-mode — show nyan cat position indicator in modeline."
+  "Toggle nyan-mode — show position with ASCII progress bar."
   (set! *qt-nyan-mode* (not *qt-nyan-mode*))
+  (when *qt-nyan-mode*
+    (qt-nyan-show-position! app))
   (echo-message! (app-state-echo app)
     (if *qt-nyan-mode* "Nyan mode enabled =^.^=" "Nyan mode disabled")))
+
+(def (qt-nyan-show-position! app)
+  "Show nyan-cat position indicator in echo area."
+  (let* ((ed (current-qt-editor app))
+         (pos (qt-plain-text-edit-cursor-position ed))
+         (len (max 1 (string-length (qt-plain-text-edit-text ed))))
+         (pct (min 100 (quotient (* pos 100) len)))
+         (bar-len 20)
+         (filled (quotient (* pct bar-len) 100))
+         (empty (- bar-len filled))
+         (bar (string-append
+                "[" (make-string filled #\=) "=^.^="
+                (make-string empty #\-) "] "
+                (number->string pct) "%")))
+    (echo-message! (app-state-echo app) bar)))
 
 ;;; ============================================================================
 ;;; Centered cursor mode
@@ -987,13 +1004,47 @@
 ;;; Benchmark-init / esup — startup profiling
 ;;; ============================================================================
 
+(def (fmt-bytes-short b)
+  "Format byte count for display."
+  (cond
+    ((>= b (* 1024 1024)) (string-append (number->string (quotient b (* 1024 1024))) " MB"))
+    ((>= b 1024) (string-append (number->string (quotient b 1024)) " KB"))
+    (else (string-append (number->string (inexact->exact (floor b))) " B"))))
+
 (def (cmd-benchmark-init-show-durations app)
-  "Show startup module load times."
-  (echo-message! (app-state-echo app) "Gemacs startup: compiled Gerbil, no per-module timing"))
+  "Show Gambit runtime statistics — heap, GC, CPU time."
+  (let* ((ps (##process-statistics))
+         (user-cpu (f64vector-ref ps 0))
+         (sys-cpu (f64vector-ref ps 1))
+         (real-time (f64vector-ref ps 2))
+         (gc-real (f64vector-ref ps 5))
+         (num-gcs (inexact->exact (floor (f64vector-ref ps 6))))
+         (heap-size (f64vector-ref ps 7))
+         (live-heap (f64vector-ref ps 17))
+         (alloc-total (f64vector-ref ps 15))
+         (out (string-append
+                "=== Gemacs Runtime Statistics ===\n\n"
+                "Heap size:       " (fmt-bytes-short (inexact->exact (floor heap-size))) "\n"
+                "Live after GC:   " (fmt-bytes-short (inexact->exact (floor live-heap))) "\n"
+                "Total allocated: " (fmt-bytes-short (inexact->exact (floor alloc-total))) "\n"
+                "GC runs:         " (number->string num-gcs) "\n"
+                "GC time:         " (number->string (inexact->exact (floor (* gc-real 1000)))) " ms\n"
+                "CPU time:        " (number->string (inexact->exact (floor (* user-cpu 1000)))) " ms user, "
+                                     (number->string (inexact->exact (floor (* sys-cpu 1000)))) " ms sys\n"
+                "Wall time:       " (number->string (inexact->exact (floor (* real-time 1000)))) " ms\n"
+                "Gambit:          " (##system-version-string) "\n"
+                "Platform:        " (##system-type-string) "\n"))
+         (fr (app-state-frame app))
+         (ed (current-qt-editor app))
+         (buf (or (buffer-by-name "*Runtime Stats*")
+                  (qt-buffer-create! "*Runtime Stats*" ed #f))))
+    (qt-buffer-attach! ed buf)
+    (set! (qt-edit-window-buffer (qt-current-window fr)) buf)
+    (qt-plain-text-edit-set-text! ed out)))
 
 (def (cmd-esup app)
-  "Startup profiler — N/A for compiled binary."
-  (echo-message! (app-state-echo app) "Gemacs: compiled binary, no Elisp init profiling"))
+  "Startup profiler — show Gambit GC and heap info."
+  (cmd-benchmark-init-show-durations app))
 
 ;;; ============================================================================
 ;;; GCMH — GC tuning
@@ -1002,10 +1053,16 @@
 (def *qt-gcmh-mode* #f)
 
 (def (cmd-gcmh-mode app)
-  "Toggle GCMH mode — adaptive GC threshold."
+  "Toggle GCMH mode — set Gambit GC live percent higher for fewer pauses."
   (set! *qt-gcmh-mode* (not *qt-gcmh-mode*))
-  (echo-message! (app-state-echo app)
-    (if *qt-gcmh-mode* "GCMH mode enabled (GC tuning)" "GCMH mode disabled")))
+  (if *qt-gcmh-mode*
+    (begin
+      (##set-live-percent! 90)  ;; Defer GC until 90% full (default ~50%)
+      (echo-message! (app-state-echo app)
+        (string-append "GCMH: live-percent set to 90% (was " (number->string (##get-live-percent)) "%)")))
+    (begin
+      (##set-live-percent! 50)  ;; Restore default
+      (echo-message! (app-state-echo app) "GCMH disabled: live-percent restored to 50%"))))
 
 ;;; ============================================================================
 ;;; Ligature — font ligatures
@@ -1229,14 +1286,27 @@
 (def *qt-circadian-mode* #f)
 
 (def (cmd-circadian-mode app)
-  "Toggle circadian mode — time-based themes."
+  "Toggle circadian mode — apply dark theme at night, light during day."
   (set! *qt-circadian-mode* (not *qt-circadian-mode*))
+  (when *qt-circadian-mode*
+    (cmd-circadian-apply app))
   (echo-message! (app-state-echo app)
-    (if *qt-circadian-mode* "Circadian mode enabled" "Circadian mode disabled")))
+    (if *qt-circadian-mode* "Circadian mode enabled (auto light/dark)" "Circadian mode disabled")))
+
+(def (cmd-circadian-apply app)
+  "Apply theme based on time of day: light 7am-7pm, dark otherwise."
+  (let* ((now (current-time))
+         (secs (time->seconds now))
+         (hour (modulo (quotient (inexact->exact (floor secs)) 3600) 24))
+         (is-day (and (>= hour 7) (< hour 19)))
+         (theme-cmd (find-command (if is-day 'load-theme-light 'load-theme-dark))))
+    (when theme-cmd (theme-cmd app))
+    (echo-message! (app-state-echo app)
+      (string-append "Circadian: " (if is-day "light" "dark") " theme applied (hour " (number->string hour) ")"))))
 
 (def (cmd-auto-dark-mode app)
-  "Toggle auto-dark mode."
-  (echo-message! (app-state-echo app) "Use M-x customize-themes to switch manually"))
+  "Apply dark/light theme based on time of day."
+  (cmd-circadian-apply app))
 
 ;;; ============================================================================
 ;;; Breadcrumb / sideline / flycheck-inline

@@ -1488,13 +1488,40 @@
 ;;; Benchmark-init / esup — startup profiling
 ;;;============================================================================
 
+(def (tui-fmt-bytes b)
+  (cond
+    ((>= b (* 1024 1024)) (string-append (number->string (quotient b (* 1024 1024))) " MB"))
+    ((>= b 1024) (string-append (number->string (quotient b 1024)) " KB"))
+    (else (string-append (number->string (inexact->exact (floor b))) " B"))))
+
 (def (cmd-benchmark-init-show-durations app)
-  "Show startup module load times."
-  (echo-message! (app-state-echo app) "Gemacs startup: compiled Gerbil, no per-module timing available"))
+  "Show Gambit runtime statistics — heap, GC, CPU time."
+  (let* ((ps (##process-statistics))
+         (user-cpu (f64vector-ref ps 0))
+         (sys-cpu (f64vector-ref ps 1))
+         (real-time (f64vector-ref ps 2))
+         (gc-real (f64vector-ref ps 5))
+         (num-gcs (inexact->exact (floor (f64vector-ref ps 6))))
+         (heap-size (f64vector-ref ps 7))
+         (live-heap (f64vector-ref ps 17))
+         (alloc-total (f64vector-ref ps 15))
+         (out (string-append
+                "=== Gemacs Runtime Statistics ===\n\n"
+                "Heap size:       " (tui-fmt-bytes (inexact->exact (floor heap-size))) "\n"
+                "Live after GC:   " (tui-fmt-bytes (inexact->exact (floor live-heap))) "\n"
+                "Total allocated: " (tui-fmt-bytes (inexact->exact (floor alloc-total))) "\n"
+                "GC runs:         " (number->string num-gcs) "\n"
+                "GC time:         " (number->string (inexact->exact (floor (* gc-real 1000)))) " ms\n"
+                "CPU time:        " (number->string (inexact->exact (floor (* user-cpu 1000)))) " ms user, "
+                                     (number->string (inexact->exact (floor (* sys-cpu 1000)))) " ms sys\n"
+                "Wall time:       " (number->string (inexact->exact (floor (* real-time 1000)))) " ms\n"
+                "Gambit:          " (##system-version-string) "\n"
+                "Platform:        " (##system-type-string) "\n")))
+    (open-output-buffer app "*Runtime Stats*" out)))
 
 (def (cmd-esup app)
-  "Emacs startup profiler — show init load times."
-  (echo-message! (app-state-echo app) "Gemacs: compiled binary, no Elisp init profiling"))
+  "Startup profiler — show Gambit runtime stats."
+  (cmd-benchmark-init-show-durations app))
 
 ;;;============================================================================
 ;;; GCMH — GC tuning mode
@@ -1503,10 +1530,15 @@
 (def *tui-gcmh-mode* #f)
 
 (def (cmd-gcmh-mode app)
-  "Toggle GCMH mode — adaptive GC threshold."
+  "Toggle GCMH mode — set Gambit GC live percent higher for fewer pauses."
   (set! *tui-gcmh-mode* (not *tui-gcmh-mode*))
-  (echo-message! (app-state-echo app)
-    (if *tui-gcmh-mode* "GCMH mode enabled (GC tuning)" "GCMH mode disabled")))
+  (if *tui-gcmh-mode*
+    (begin
+      (##set-live-percent! 90)
+      (echo-message! (app-state-echo app) "GCMH: live-percent set to 90% (fewer GC pauses)"))
+    (begin
+      (##set-live-percent! 50)
+      (echo-message! (app-state-echo app) "GCMH disabled: live-percent restored to 50%"))))
 
 ;;;============================================================================
 ;;; Ligature — font ligature display
@@ -1765,14 +1797,27 @@
 (def *tui-circadian-mode* #f)
 
 (def (cmd-circadian-mode app)
-  "Toggle circadian mode — time-based theme switching."
+  "Toggle circadian mode — apply dark/light theme by time of day."
   (set! *tui-circadian-mode* (not *tui-circadian-mode*))
+  (when *tui-circadian-mode*
+    (tui-circadian-apply! app))
   (echo-message! (app-state-echo app)
-    (if *tui-circadian-mode* "Circadian mode enabled (time-based themes)" "Circadian mode disabled")))
+    (if *tui-circadian-mode* "Circadian mode enabled (auto light/dark)" "Circadian mode disabled")))
+
+(def (tui-circadian-apply! app)
+  "Apply light/dark theme based on time of day (light 7am-7pm)."
+  (let* ((now (current-time))
+         (secs (time->seconds now))
+         (hour (modulo (quotient (inexact->exact (floor secs)) 3600) 24))
+         (is-day (and (>= hour 7) (< hour 19)))
+         (theme-cmd (find-command (if is-day 'load-theme-light 'load-theme-dark))))
+    (when theme-cmd (theme-cmd app))
+    (echo-message! (app-state-echo app)
+      (string-append "Circadian: " (if is-day "light" "dark") " (hour " (number->string hour) ")"))))
 
 (def (cmd-auto-dark-mode app)
-  "Toggle auto-dark mode — OS dark mode detection."
-  (echo-message! (app-state-echo app) "Auto-dark: use M-x load-theme to switch manually"))
+  "Apply dark/light theme based on time of day."
+  (tui-circadian-apply! app))
 
 ;;;============================================================================
 ;;; Breadcrumb — header line with code context
