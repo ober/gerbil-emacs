@@ -6,6 +6,10 @@
 (import :std/sugar
         :std/sort
         :std/srfi/13
+        (only-in :std/text/json
+          json-object->string read-json string->json-object)
+        (only-in :std/net/request
+          http-post request-status request-text request-close)
         :gerbil-scintilla/constants
         :gerbil-scintilla/scintilla
         :gerbil-scintilla/tui
@@ -14,7 +18,10 @@
         :gemacs/buffer
         :gemacs/window
         :gemacs/modeline
-        :gemacs/echo)
+        :gemacs/echo
+        (only-in :gemacs/persist
+          *copilot-mode* *copilot-api-key* *copilot-model*
+          *copilot-api-url* *copilot-suggestion* *copilot-suggestion-pos*))
 
 ;;;============================================================================
 ;;; Helpers
@@ -1423,35 +1430,104 @@
     (echo-message! (app-state-echo app)
       (if on "AI inline suggestions: on" "AI inline suggestions: off"))))
 
+(def (tui-ai-detect-language app)
+  "Detect language from buffer file extension."
+  (let* ((buf (current-buffer-from-app app))
+         (file (and buf (buffer-file-path buf))))
+    (if (and file (string? file))
+      (let ((ext (path-extension file)))
+        (cond
+          ((member ext '(".ss" ".scm" ".sld")) "Scheme")
+          ((member ext '(".py")) "Python")
+          ((member ext '(".rs")) "Rust")
+          ((member ext '(".go")) "Go")
+          ((member ext '(".c" ".h")) "C")
+          ((member ext '(".cpp" ".cc" ".hpp")) "C++")
+          ((member ext '(".js" ".jsx")) "JavaScript")
+          ((member ext '(".ts" ".tsx")) "TypeScript")
+          ((member ext '(".sh" ".bash")) "Shell/Bash")
+          (else "code")))
+      "code")))
+
+(def (tui-ai-request prompt code language)
+  "Call AI API. Returns response string or #f."
+  (when (string=? *copilot-api-key* "")
+    (error "Set OPENAI_API_KEY: M-x copilot-mode"))
+  (let* ((body (json-object->string
+                 (hash ("model" *copilot-model*)
+                       ("messages" [(hash ("role" "system")
+                                          ("content" (string-append
+                                            "You are a code assistant for " language ". " prompt)))
+                                    (hash ("role" "user")
+                                          ("content" code))])
+                       ("max_tokens" 1000)
+                       ("temperature" 0.3))))
+         (resp (http-post *copilot-api-url*
+                 data: body
+                 headers: [["Content-Type" . "application/json"]
+                           ["Authorization" . (string-append "Bearer " *copilot-api-key*)]])))
+    (if (= (request-status resp) 200)
+      (let* ((json-str (request-text resp))
+             (result (call-with-input-string json-str read-json))
+             (choices (hash-ref result "choices" []))
+             (first-choice (and (pair? choices) (car choices)))
+             (message (and first-choice (hash-ref first-choice "message" #f)))
+             (content (and message (hash-ref message "content" ""))))
+        (request-close resp)
+        (or content ""))
+      (begin (request-close resp) #f))))
+
 (def (cmd-ai-code-explain app)
   "Explain code at point or region using AI."
   (let* ((echo (app-state-echo app))
          (fr (app-state-frame app))
          (win (current-window fr))
-         (buf (edit-window-buffer win))
-         (ext (let ((fp (buffer-file-path buf))) (if fp (path-extension fp) "unknown"))))
-    (open-output-buffer app "*AI Explain*"
-      (string-append "Code Explanation\n"
-        (make-string 40 #\=) "\n\n"
-        "Language: " ext "\n"
-        "Buffer: " (buffer-name buf) "\n\n"
-        "Note: Connect to an AI provider (OpenAI/Anthropic) for real explanations\n"
-        "Configure with: M-x set-variable ai-api-key <key>\n"))))
+         (ed (edit-window-editor win))
+         (text (editor-get-text ed))
+         (lang (tui-ai-detect-language app)))
+    (if (string=? *copilot-api-key* "")
+      (echo-message! echo "Set OPENAI_API_KEY first (M-x copilot-mode)")
+      (begin
+        (echo-message! echo "AI: requesting explanation...")
+        (with-catch
+          (lambda (e)
+            (echo-message! echo (string-append "AI error: "
+              (with-output-to-string (lambda () (display-exception e))))))
+          (lambda ()
+            (let ((response (tui-ai-request
+                              "Explain this code clearly and concisely."
+                              text lang)))
+              (if response
+                (open-output-buffer app "*AI Explain*"
+                  (string-append "Code Explanation (" lang ")\n"
+                    (make-string 50 #\=) "\n\n" response "\n"))
+                (echo-message! echo "AI: no response received")))))))))
 
 (def (cmd-ai-code-refactor app)
   "Suggest refactoring for code at point or region using AI."
   (let* ((echo (app-state-echo app))
          (fr (app-state-frame app))
          (win (current-window fr))
-         (buf (edit-window-buffer win))
-         (ext (let ((fp (buffer-file-path buf))) (if fp (path-extension fp) "unknown"))))
-    (open-output-buffer app "*AI Refactor*"
-      (string-append "Refactoring Suggestions\n"
-        (make-string 40 #\=) "\n\n"
-        "Language: " ext "\n"
-        "Buffer: " (buffer-name buf) "\n\n"
-        "Note: Connect to an AI provider for real refactoring suggestions\n"
-        "Configure with: M-x set-variable ai-api-key <key>\n"))))
+         (ed (edit-window-editor win))
+         (text (editor-get-text ed))
+         (lang (tui-ai-detect-language app)))
+    (if (string=? *copilot-api-key* "")
+      (echo-message! echo "Set OPENAI_API_KEY first (M-x copilot-mode)")
+      (begin
+        (echo-message! echo "AI: requesting refactoring suggestions...")
+        (with-catch
+          (lambda (e)
+            (echo-message! echo (string-append "AI error: "
+              (with-output-to-string (lambda () (display-exception e))))))
+          (lambda ()
+            (let ((response (tui-ai-request
+                              "Suggest refactoring improvements. Show refactored code with explanations."
+                              text lang)))
+              (if response
+                (open-output-buffer app "*AI Refactor*"
+                  (string-append "Refactoring Suggestions (" lang ")\n"
+                    (make-string 50 #\=) "\n\n" response "\n"))
+                (echo-message! echo "AI: no response received")))))))))
 
 ;; TRAMP/Remote editing
 

@@ -94,6 +94,10 @@
         :std/srfi/13
         :std/misc/string
         :std/text/base64
+        (only-in :std/text/json
+          json-object->string read-json string->json-object)
+        (only-in :std/net/request
+          http-post request-status request-text request-close)
         :gemacs/async
         :gemacs/qt/sci-shim
         :gemacs/core
@@ -110,7 +114,9 @@
                  *save-place-enabled* *require-final-newline*
                  *centered-cursor-mode*
                  *fill-column* *auto-fill-mode*
-                 *delete-trailing-whitespace-on-save*)
+                 *delete-trailing-whitespace-on-save*
+                 *copilot-mode* *copilot-api-key* *copilot-model*
+                 *copilot-api-url* *copilot-suggestion* *copilot-suggestion-pos*)
         :gemacs/repl
         :gemacs/eshell
         :gemacs/shell
@@ -2434,32 +2440,105 @@
   (echo-message! (app-state-echo app)
     (if *qt-ai-inline-mode* "AI inline suggestions: on" "AI inline suggestions: off")))
 
+(def (qt-ai-request prompt code language)
+  "Call AI API with a prompt about the given code. Returns response or #f."
+  (when (string=? *copilot-api-key* "")
+    (error "Set OPENAI_API_KEY: M-x copilot-mode"))
+  (let* ((body (json-object->string
+                 (hash ("model" *copilot-model*)
+                       ("messages" [(hash ("role" "system")
+                                          ("content" (string-append
+                                            "You are a code assistant for " language ". " prompt)))
+                                    (hash ("role" "user")
+                                          ("content" code))])
+                       ("max_tokens" 1000)
+                       ("temperature" 0.3))))
+         (resp (http-post *copilot-api-url*
+                 data: body
+                 headers: [["Content-Type" . "application/json"]
+                           ["Authorization" . (string-append "Bearer " *copilot-api-key*)]])))
+    (if (= (request-status resp) 200)
+      (let* ((json-str (request-text resp))
+             (result (call-with-input-string json-str read-json))
+             (choices (hash-ref result "choices" []))
+             (first-choice (and (pair? choices) (car choices)))
+             (message (and first-choice (hash-ref first-choice "message" #f)))
+             (content (and message (hash-ref message "content" ""))))
+        (request-close resp)
+        (or content ""))
+      (begin (request-close resp) #f))))
+
 (def (cmd-ai-code-explain app)
-  "Explain code at point or region (Qt)."
+  "Explain code at point or selected region using AI."
   (let* ((echo (app-state-echo app))
          (ed (current-qt-editor app))
          (buf (current-qt-buffer app))
-         (text (qt-plain-text-edit-text ed))
-         (ext (let ((fp (buffer-file-path buf))) (if fp (path-extension fp) ""))))
-    (let ((buf2 (qt-buffer-create! "*AI Explain*" ed)))
-      (qt-buffer-attach! ed buf2)
-      (qt-plain-text-edit-set-text! ed
-        (string-append "Code Explanation\n"
-          (make-string 40 #\=) "\n\n"
-          "Language: " ext "\n"
-          "Note: Connect to an AI provider for real explanations\n")))))
+         (start (sci-send ed SCI_GETSELECTIONSTART))
+         (end (sci-send ed SCI_GETSELECTIONEND))
+         (code (if (= start end)
+                 (qt-plain-text-edit-text ed)  ; whole buffer
+                 (let ((text (qt-plain-text-edit-text ed)))
+                   (substring text start (min end (string-length text))))))
+         (lang (qt-copilot-detect-language app)))
+    (if (string=? *copilot-api-key* "")
+      (echo-message! echo "Set OPENAI_API_KEY first (M-x copilot-mode)")
+      (begin
+        (echo-message! echo "AI: requesting explanation...")
+        (with-catch
+          (lambda (e)
+            (echo-message! echo (string-append "AI error: "
+              (with-output-to-string (lambda () (display-exception e))))))
+          (lambda ()
+            (let ((response (qt-ai-request
+                              "Explain this code clearly and concisely. Use markdown formatting."
+                              code lang)))
+              (if response
+                (let* ((fr (app-state-frame app))
+                       (win (qt-current-window fr))
+                       (buf2 (qt-buffer-create! "*AI Explain*" ed #f)))
+                  (qt-buffer-attach! ed buf2)
+                  (set! (qt-edit-window-buffer win) buf2)
+                  (qt-plain-text-edit-set-text! ed
+                    (string-append "Code Explanation (" lang ")\n"
+                      (make-string 50 #\=) "\n\n" response "\n"))
+                  (sci-send ed SCI_SETREADONLY 1))
+                (echo-message! echo "AI: no response received")))))))))
 
 (def (cmd-ai-code-refactor app)
-  "Suggest refactoring (Qt)."
+  "Suggest refactoring for code at point or selected region using AI."
   (let* ((echo (app-state-echo app))
-         (ed (current-qt-editor app)))
-    (let ((buf (qt-buffer-create! "*AI Refactor*" ed)))
-      (qt-buffer-attach! ed buf)
-      (qt-plain-text-edit-set-text! ed
-        (string-append "Refactoring Suggestions\n"
-          (make-string 40 #\=) "\n\n"
-          "Note: Connect to an AI provider for real refactoring\n"
-          "Configure with: M-x set-variable ai-api-key <key>\n")))))
+         (ed (current-qt-editor app))
+         (buf (current-qt-buffer app))
+         (start (sci-send ed SCI_GETSELECTIONSTART))
+         (end (sci-send ed SCI_GETSELECTIONEND))
+         (code (if (= start end)
+                 (qt-plain-text-edit-text ed)
+                 (let ((text (qt-plain-text-edit-text ed)))
+                   (substring text start (min end (string-length text))))))
+         (lang (qt-copilot-detect-language app)))
+    (if (string=? *copilot-api-key* "")
+      (echo-message! echo "Set OPENAI_API_KEY first (M-x copilot-mode)")
+      (begin
+        (echo-message! echo "AI: requesting refactoring suggestions...")
+        (with-catch
+          (lambda (e)
+            (echo-message! echo (string-append "AI error: "
+              (with-output-to-string (lambda () (display-exception e))))))
+          (lambda ()
+            (let ((response (qt-ai-request
+                              "Suggest refactoring improvements. Show the refactored code with explanations."
+                              code lang)))
+              (if response
+                (let* ((fr (app-state-frame app))
+                       (win (qt-current-window fr))
+                       (buf2 (qt-buffer-create! "*AI Refactor*" ed #f)))
+                  (qt-buffer-attach! ed buf2)
+                  (set! (qt-edit-window-buffer win) buf2)
+                  (qt-plain-text-edit-set-text! ed
+                    (string-append "Refactoring Suggestions (" lang ")\n"
+                      (make-string 50 #\=) "\n\n" response "\n"))
+                  (sci-send ed SCI_SETREADONLY 1))
+                (echo-message! echo "AI: no response received")))))))))
 
 (def *qt-tramp-connections* (make-hash-table))
 
