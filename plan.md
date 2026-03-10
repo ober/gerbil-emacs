@@ -232,8 +232,15 @@ Largest files: modes (~1851), lsp (~1802), search (~1778)
 - ~~**AI commands real API**~~ — DONE: ai-code-explain/refactor use real OpenAI API with JSON parsing (both TUI and Qt)
 - ~~**EMMS/perspectives/org-roam real**~~ — DONE: EMMS mpv playback, persp-mode buffer groups, org-roam grep-based note search
 
+- ~~**Git-gutter fringe markers**~~ — DONE: real Scintilla margin markers (green=add, blue=mod, red=del) in both TUI and Qt, toggle via M-x git-gutter-mode
+- ~~**Qt GUD commands real GDB/MI**~~ — DONE: persistent GDB process with MI2 protocol for gud-break/cont/next/step/remove
+- ~~**Qt memory-usage detailed report**~~ — DONE: *Memory* buffer with GC stats, heap, timing, allocation (matching TUI)
+- ~~**TUI LSP delegation**~~ — DONE: LSP commands delegate to ctags/grep/formatter backends instead of showing "not available"
+- ~~**Stub delegation batch**~~ — DONE: counsel-find-file→find-file, crux-indent-defun→indent-region, run-scheme/slime/sly→repl, themes→customize-themes, multi-vterm→shell, flycheck-prev-error→previous-error, helm-buffers-list→list-buffers, helpful-key→describe-key
+- ~~**EOL conversion cycling**~~ — DONE: real SCI_SETEOLMODE cycling (LF→CRLF→CR) in Qt
+
 ### Aspirational
-- LSP in TUI
+- LSP in TUI (currently delegates to ctags/grep/formatter; full LSP protocol not yet implemented)
 - ~~DAP/debugger integration~~ — DONE: real GDB/MI interface in both Qt and TUI (spawn, breakpoints, step, continue, REPL)
 - ~~Multi-frame support~~ — DONE: virtual frame management (C-x 5 prefix), make-frame/delete-frame/other-frame
 - ~~Spell checking integration~~ — DONE: flyspell-mode, ispell-word, ispell-buffer, ispell-region, dictionary switching (both TUI and Qt)
