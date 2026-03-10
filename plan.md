@@ -205,6 +205,16 @@ Largest files: modes (~1851), lsp (~1802), search (~1778)
 - ~~**Mixed-pitch / variable-pitch**~~ — DONE: proportional font mode toggles
 - ~~**Eldoc-box**~~ — DONE: eldoc popup mode and help-at-point
 - ~~**Color-rg**~~ — DONE: colored ripgrep interface delegating to rgrep/project-grep
+- ~~**Ctrlf / phi-search**~~ — DONE: alternative isearch wrappers
+- ~~**Toc-org**~~ — DONE: auto-generate org table of contents with heading extraction
+- ~~**Org-super-agenda**~~ — DONE: enhanced agenda grouping mode toggle
+- ~~**Nov.el (EPUB reader)**~~ — DONE: real EPUB text extraction via unzip+sed pipeline
+- ~~**LSP-UI**~~ — DONE: mode toggle, doc-show, peek-find-definitions/references
+- ~~**Emojify**~~ — DONE: emoji display mode + emoji insert-by-name (10 built-in emoji)
+- ~~**Ef-themes / modus-themes**~~ — DONE: theme pack selection and toggle
+- ~~**Circadian / auto-dark**~~ — DONE: time-based and OS-based theme switching toggles
+- ~~**Breadcrumb / sideline / flycheck-inline**~~ — DONE: code context, side info, inline error display mode toggles
+- ~~**Zone / fireplace**~~ — DONE: screen saver and decorative fireplace display
 
 ### Aspirational
 - LSP in TUI

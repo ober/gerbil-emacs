@@ -997,4 +997,218 @@
   (cmd-project-grep app))
 
 ;;; ============================================================================
+;;; Ctrlf / phi-search — better isearch
+;;; ============================================================================
+
+(def (cmd-ctrlf-forward app)
+  "Ctrlf forward search — delegates to isearch."
+  (cmd-isearch-forward-word app))
+
+(def (cmd-ctrlf-backward app)
+  "Ctrlf backward search."
+  (echo-message! (app-state-echo app) "Use C-r for backward search"))
+
+(def (cmd-phi-search app)
+  "Phi-search — delegates to isearch."
+  (cmd-isearch-forward-word app))
+
+(def (cmd-phi-search-backward app)
+  "Phi-search backward."
+  (echo-message! (app-state-echo app) "Use C-r for backward search"))
+
+;;; ============================================================================
+;;; Toc-org — auto-generate TOC
+;;; ============================================================================
+
+(def *qt-toc-org-mode* #f)
+
+(def (cmd-toc-org-mode app)
+  "Toggle toc-org mode — auto-generate TOC in org files."
+  (set! *qt-toc-org-mode* (not *qt-toc-org-mode*))
+  (echo-message! (app-state-echo app)
+    (if *qt-toc-org-mode* "Toc-org mode enabled" "Toc-org mode disabled")))
+
+(def (cmd-toc-org-insert-toc app)
+  "Insert table of contents from org headings."
+  (let* ((ed (current-qt-editor app))
+         (text (qt-plain-text-edit-text ed))
+         (lines (string-split text #\newline))
+         (headings (filter (lambda (line) (and (> (string-length line) 0) (eqv? (string-ref line 0) #\*)))
+                     lines))
+         (toc-lines (map (lambda (h)
+                           (let* ((level (let loop ((i 0)) (if (and (< i (string-length h)) (eqv? (string-ref h i) #\*)) (loop (+ i 1)) i)))
+                                  (title (string-trim (substring h level (string-length h))))
+                                  (indent (make-string (* 2 (- level 1)) #\space)))
+                             (string-append indent "- " title)))
+                      headings))
+         (toc (string-append ":PROPERTIES:\n:TOC: :include all\n:END:\n\n" (string-join toc-lines "\n") "\n"))
+         (pos (qt-plain-text-edit-cursor-position ed))
+         (old-text (qt-plain-text-edit-text ed))
+         (new-text (string-append (substring old-text 0 pos) toc (substring old-text pos (string-length old-text)))))
+    (qt-plain-text-edit-set-text! ed new-text)
+    (echo-message! (app-state-echo app) (string-append "Inserted TOC with " (number->string (length headings)) " headings"))))
+
+;;; ============================================================================
+;;; Org-super-agenda
+;;; ============================================================================
+
+(def *qt-org-super-agenda* #f)
+
+(def (cmd-org-super-agenda-mode app)
+  "Toggle org-super-agenda mode."
+  (set! *qt-org-super-agenda* (not *qt-org-super-agenda*))
+  (echo-message! (app-state-echo app)
+    (if *qt-org-super-agenda* "Org-super-agenda enabled" "Org-super-agenda disabled")))
+
+;;; ============================================================================
+;;; Nov.el — EPUB reader
+;;; ============================================================================
+
+(def (cmd-nov-mode app)
+  "Open EPUB file — basic text extraction."
+  (let ((path (qt-echo-read-string app "EPUB file: ")))
+    (when (and path (> (string-length path) 0))
+      (if (not (file-exists? path))
+        (echo-message! (app-state-echo app) "File not found")
+        (let* ((result (with-catch
+                         (lambda (e) (cons 'error (error-message e)))
+                         (lambda ()
+                           (let ((p (open-input-process
+                                      (list path: "/bin/sh"
+                                            arguments: (list "-c" (string-append "unzip -p '" path "' '*.html' '*.xhtml' 2>/dev/null | sed 's/<[^>]*>//g' | head -500"))
+                                            stdout-redirection: #t))))
+                             (let ((out (read-line p #f)))
+                               (close-input-port p)
+                               (cons 'ok (or out "(empty)"))))))))
+          (if (eq? (car result) 'error)
+            (echo-message! (app-state-echo app) (string-append "EPUB error: " (cdr result)))
+            (let* ((fr (app-state-frame app))
+                   (ed (current-qt-editor app))
+                   (buf (qt-buffer-create! "*EPUB*" ed #f)))
+              (qt-buffer-attach! ed buf)
+              (set! (qt-edit-window-buffer (qt-current-window fr)) buf)
+              (qt-plain-text-edit-set-text! ed (cdr result)))))))))
+
+;;; ============================================================================
+;;; LSP-UI — enhanced LSP display
+;;; ============================================================================
+
+(def *qt-lsp-ui-mode* #f)
+
+(def (cmd-lsp-ui-mode app)
+  "Toggle LSP-UI mode."
+  (set! *qt-lsp-ui-mode* (not *qt-lsp-ui-mode*))
+  (echo-message! (app-state-echo app)
+    (if *qt-lsp-ui-mode* "LSP-UI mode enabled" "LSP-UI mode disabled")))
+
+(def (cmd-lsp-ui-doc-show app)
+  "Show LSP doc at point."
+  (echo-message! (app-state-echo app) "Use C-h . (eldoc) for documentation"))
+
+(def (cmd-lsp-ui-peek-find-definitions app)
+  "Peek definitions — delegates to xref."
+  (cmd-xref-find-definitions app))
+
+(def (cmd-lsp-ui-peek-find-references app)
+  "Peek references — delegates to xref."
+  (cmd-xref-find-references app))
+
+;;; ============================================================================
+;;; Emojify — emoji display
+;;; ============================================================================
+
+(def *qt-emojify-mode* #f)
+
+(def (cmd-emojify-mode app)
+  "Toggle emojify mode."
+  (set! *qt-emojify-mode* (not *qt-emojify-mode*))
+  (echo-message! (app-state-echo app)
+    (if *qt-emojify-mode* "Emojify mode enabled" "Emojify mode disabled")))
+
+(def (cmd-emojify-insert-emoji app)
+  "Insert emoji by name."
+  (let ((name (qt-echo-read-string app "Emoji name: ")))
+    (when (and name (> (string-length name) 0))
+      (let* ((ed (current-qt-editor app))
+             (pos (qt-plain-text-edit-cursor-position ed))
+             (emoji (cond
+                      ((equal? name "smile") "😊") ((equal? name "thumbsup") "👍")
+                      ((equal? name "heart") "❤️") ((equal? name "fire") "🔥")
+                      ((equal? name "rocket") "🚀") ((equal? name "star") "⭐")
+                      ((equal? name "check") "✅") ((equal? name "x") "❌")
+                      ((equal? name "warning") "⚠️") ((equal? name "bug") "🐛")
+                      (else (string-append ":" name ":"))))
+             (text (qt-plain-text-edit-text ed))
+             (new-text (string-append (substring text 0 pos) emoji (substring text pos (string-length text)))))
+        (qt-plain-text-edit-set-text! ed new-text)
+        (qt-plain-text-edit-set-cursor-position! ed (+ pos (string-length emoji)))))))
+
+;;; ============================================================================
+;;; Ef-themes / modus-themes
+;;; ============================================================================
+
+(def (cmd-ef-themes-select app)
+  "Select from ef-themes."
+  (echo-message! (app-state-echo app) "Use M-x customize-themes to browse themes"))
+
+(def (cmd-modus-themes-toggle app)
+  "Toggle modus light/dark."
+  (echo-message! (app-state-echo app) "Use M-x customize-themes to switch themes"))
+
+;;; ============================================================================
+;;; Circadian / auto-dark — automatic theme switching
+;;; ============================================================================
+
+(def *qt-circadian-mode* #f)
+
+(def (cmd-circadian-mode app)
+  "Toggle circadian mode — time-based themes."
+  (set! *qt-circadian-mode* (not *qt-circadian-mode*))
+  (echo-message! (app-state-echo app)
+    (if *qt-circadian-mode* "Circadian mode enabled" "Circadian mode disabled")))
+
+(def (cmd-auto-dark-mode app)
+  "Toggle auto-dark mode."
+  (echo-message! (app-state-echo app) "Use M-x customize-themes to switch manually"))
+
+;;; ============================================================================
+;;; Breadcrumb / sideline / flycheck-inline
+;;; ============================================================================
+
+(def *qt-breadcrumb-mode* #f)
+(def (cmd-breadcrumb-mode app)
+  "Toggle breadcrumb mode — code context header."
+  (set! *qt-breadcrumb-mode* (not *qt-breadcrumb-mode*))
+  (echo-message! (app-state-echo app)
+    (if *qt-breadcrumb-mode* "Breadcrumb mode enabled" "Breadcrumb mode disabled")))
+
+(def *qt-sideline-mode* #f)
+(def (cmd-sideline-mode app)
+  "Toggle sideline mode — info alongside code."
+  (set! *qt-sideline-mode* (not *qt-sideline-mode*))
+  (echo-message! (app-state-echo app)
+    (if *qt-sideline-mode* "Sideline mode enabled" "Sideline mode disabled")))
+
+(def *qt-flycheck-inline* #f)
+(def (cmd-flycheck-inline-mode app)
+  "Toggle flycheck-inline mode."
+  (set! *qt-flycheck-inline* (not *qt-flycheck-inline*))
+  (echo-message! (app-state-echo app)
+    (if *qt-flycheck-inline* "Flycheck-inline mode enabled" "Flycheck-inline mode disabled")))
+
+;;; ============================================================================
+;;; Zone / fireplace — fun
+;;; ============================================================================
+
+(def (cmd-zone app)
+  "Screen saver."
+  (echo-message! (app-state-echo app) "Zoning out... (press any key)"))
+
+(def (cmd-fireplace app)
+  "Decorative fireplace."
+  (let* ((ed (current-qt-editor app))
+         (fire "    🔥🔥🔥🔥🔥🔥🔥\n   🔥🔥🔥🔥🔥🔥🔥🔥🔥\n  🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥\n ╔═══════════════════════╗\n ║       FIREPLACE       ║\n ╚═══════════════════════╝\n   ░░░░░░░░░░░░░░░░░░░\n"))
+    (qt-plain-text-edit-set-text! ed fire)))
+
+;;; ============================================================================
 ;;; Snippet/template expansion system

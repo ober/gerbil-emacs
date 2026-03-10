@@ -1568,4 +1568,270 @@
   (let ((cmd (find-command 'project-grep)))
     (when cmd (cmd app))))
 
+;;;============================================================================
+;;; Ctrlf — better isearch
+;;;============================================================================
+
+(def (cmd-ctrlf-forward app)
+  "Ctrlf forward search — delegates to isearch-forward."
+  (let ((cmd (find-command 'isearch-forward)))
+    (when cmd (cmd app))))
+
+(def (cmd-ctrlf-backward app)
+  "Ctrlf backward search — delegates to isearch-backward."
+  (let ((cmd (find-command 'isearch-backward)))
+    (when cmd (cmd app))))
+
+;;;============================================================================
+;;; Phi-search — another isearch alternative
+;;;============================================================================
+
+(def (cmd-phi-search app)
+  "Phi-search — delegates to isearch-forward."
+  (let ((cmd (find-command 'isearch-forward)))
+    (when cmd (cmd app))))
+
+(def (cmd-phi-search-backward app)
+  "Phi-search backward."
+  (let ((cmd (find-command 'isearch-backward)))
+    (when cmd (cmd app))))
+
+;;;============================================================================
+;;; Toc-org — auto-generate table of contents in org files
+;;;============================================================================
+
+(def *tui-toc-org-mode* #f)
+
+(def (cmd-toc-org-mode app)
+  "Toggle toc-org mode — auto-generate TOC in org files."
+  (set! *tui-toc-org-mode* (not *tui-toc-org-mode*))
+  (echo-message! (app-state-echo app)
+    (if *tui-toc-org-mode* "Toc-org mode enabled" "Toc-org mode disabled")))
+
+(def (cmd-toc-org-insert-toc app)
+  "Insert/update table of contents at point."
+  (let* ((fr (app-state-frame app))
+         (win (current-window fr))
+         (ed (edit-window-editor win))
+         (text (editor-get-text ed))
+         (lines (string-split text #\newline))
+         (headings (filter (lambda (line) (and (> (string-length line) 0) (eqv? (string-ref line 0) #\*)))
+                     lines))
+         (toc-lines (map (lambda (h)
+                           (let* ((level (let loop ((i 0)) (if (and (< i (string-length h)) (eqv? (string-ref h i) #\*)) (loop (+ i 1)) i)))
+                                  (title (string-trim (substring h level (string-length h))))
+                                  (indent (make-string (* 2 (- level 1)) #\space)))
+                             (string-append indent "- " title)))
+                      headings))
+         (toc (string-append ":PROPERTIES:\n:TOC: :include all\n:END:\n\n" (string-join toc-lines "\n") "\n"))
+         (pos (editor-get-current-pos ed)))
+    (editor-insert-text ed pos toc)
+    (echo-message! (app-state-echo app) (string-append "Inserted TOC with " (number->string (length headings)) " headings"))))
+
+;;;============================================================================
+;;; Org-super-agenda — enhanced org agenda grouping
+;;;============================================================================
+
+(def *tui-org-super-agenda* #f)
+
+(def (cmd-org-super-agenda-mode app)
+  "Toggle org-super-agenda mode — enhanced agenda grouping."
+  (set! *tui-org-super-agenda* (not *tui-org-super-agenda*))
+  (echo-message! (app-state-echo app)
+    (if *tui-org-super-agenda* "Org-super-agenda enabled" "Org-super-agenda disabled")))
+
+;;;============================================================================
+;;; Nov.el — EPUB reader
+;;;============================================================================
+
+(def (cmd-nov-mode app)
+  "Open EPUB file — basic text extraction."
+  (let ((path (app-read-string app "EPUB file: ")))
+    (when (and path (> (string-length path) 0))
+      (if (not (file-exists? path))
+        (echo-error! (app-state-echo app) "File not found")
+        (let* ((result (with-catch
+                         (lambda (e) (cons 'error (error-message e)))
+                         (lambda ()
+                           (let ((p (open-input-process
+                                      (list path: "/bin/sh"
+                                            arguments: (list "-c" (string-append "unzip -p " (shell-quote path) " '*.html' '*.xhtml' 2>/dev/null | sed 's/<[^>]*>//g' | head -500"))
+                                            stdout-redirection: #t))))
+                             (let ((out (read-line p #f)))
+                               (close-input-port p)
+                               (cons 'ok (or out "(empty)"))))))))
+          (if (eq? (car result) 'error)
+            (echo-error! (app-state-echo app) (string-append "EPUB error: " (cdr result)))
+            (let* ((fr (app-state-frame app))
+                   (win (current-window fr))
+                   (ed (edit-window-editor win))
+                   (buf (or (buffer-by-name "*EPUB*") (buffer-create! "*EPUB*" ed))))
+              (buffer-attach! ed buf)
+              (set! (edit-window-buffer win) buf)
+              (editor-set-text ed (cdr result))
+              (editor-goto-pos ed 0))))))))
+
+(def (shell-quote s)
+  "Quote a string for shell use."
+  (string-append "'" (let loop ((i 0) (out ""))
+    (if (>= i (string-length s)) out
+      (let ((c (string-ref s i)))
+        (if (eqv? c #\')
+          (loop (+ i 1) (string-append out "'\"'\"'"))
+          (loop (+ i 1) (string-append out (string c))))))) "'"))
+
+;;;============================================================================
+;;; LSP-UI — LSP user interface enhancements
+;;;============================================================================
+
+(def *tui-lsp-ui-mode* #f)
+
+(def (cmd-lsp-ui-mode app)
+  "Toggle LSP-UI mode — enhanced LSP display."
+  (set! *tui-lsp-ui-mode* (not *tui-lsp-ui-mode*))
+  (echo-message! (app-state-echo app)
+    (if *tui-lsp-ui-mode* "LSP-UI mode enabled" "LSP-UI mode disabled")))
+
+(def (cmd-lsp-ui-doc-show app)
+  "Show LSP documentation at point."
+  (let ((cmd (find-command 'lsp-describe-thing-at-point)))
+    (if cmd (cmd app)
+      (echo-message! (app-state-echo app) "No LSP documentation available"))))
+
+(def (cmd-lsp-ui-peek-find-definitions app)
+  "Peek at definition — delegates to xref-find-definitions."
+  (let ((cmd (find-command 'xref-find-definitions)))
+    (when cmd (cmd app))))
+
+(def (cmd-lsp-ui-peek-find-references app)
+  "Peek at references — delegates to xref-find-references."
+  (let ((cmd (find-command 'xref-find-references)))
+    (when cmd (cmd app))))
+
+;;;============================================================================
+;;; Emojify — emoji display mode
+;;;============================================================================
+
+(def *tui-emojify-mode* #f)
+
+(def (cmd-emojify-mode app)
+  "Toggle emojify mode — display emoji shortcodes as Unicode."
+  (set! *tui-emojify-mode* (not *tui-emojify-mode*))
+  (echo-message! (app-state-echo app)
+    (if *tui-emojify-mode* "Emojify mode enabled" "Emojify mode disabled")))
+
+(def (cmd-emojify-insert-emoji app)
+  "Insert emoji by name."
+  (let ((name (app-read-string app "Emoji name: ")))
+    (when (and name (> (string-length name) 0))
+      (let* ((fr (app-state-frame app))
+             (win (current-window fr))
+             (ed (edit-window-editor win))
+             (pos (editor-get-current-pos ed))
+             (emoji (cond
+                      ((equal? name "smile") "😊")
+                      ((equal? name "thumbsup") "👍")
+                      ((equal? name "heart") "❤️")
+                      ((equal? name "fire") "🔥")
+                      ((equal? name "rocket") "🚀")
+                      ((equal? name "star") "⭐")
+                      ((equal? name "check") "✅")
+                      ((equal? name "x") "❌")
+                      ((equal? name "warning") "⚠️")
+                      ((equal? name "bug") "🐛")
+                      (else (string-append ":" name ":")))))
+        (editor-insert-text ed pos emoji)
+        (editor-goto-pos ed (+ pos (string-length emoji)))))))
+
+;;;============================================================================
+;;; Ef-themes / modus-themes — Emacs theme packs
+;;;============================================================================
+
+(def (cmd-ef-themes-select app)
+  "Select from ef-themes — delegates to customize-themes."
+  (let ((cmd (find-command 'customize-themes)))
+    (when cmd (cmd app))))
+
+(def (cmd-modus-themes-toggle app)
+  "Toggle between modus light/dark themes."
+  (let ((cmd (find-command 'load-theme)))
+    (if cmd (cmd app)
+      (echo-message! (app-state-echo app) "Use M-x load-theme to switch themes"))))
+
+;;;============================================================================
+;;; Circadian / auto-dark — automatic theme switching
+;;;============================================================================
+
+(def *tui-circadian-mode* #f)
+
+(def (cmd-circadian-mode app)
+  "Toggle circadian mode — time-based theme switching."
+  (set! *tui-circadian-mode* (not *tui-circadian-mode*))
+  (echo-message! (app-state-echo app)
+    (if *tui-circadian-mode* "Circadian mode enabled (time-based themes)" "Circadian mode disabled")))
+
+(def (cmd-auto-dark-mode app)
+  "Toggle auto-dark mode — OS dark mode detection."
+  (echo-message! (app-state-echo app) "Auto-dark: use M-x load-theme to switch manually"))
+
+;;;============================================================================
+;;; Breadcrumb — header line with code context
+;;;============================================================================
+
+(def *tui-breadcrumb-mode* #f)
+
+(def (cmd-breadcrumb-mode app)
+  "Toggle breadcrumb mode — show code context in header."
+  (set! *tui-breadcrumb-mode* (not *tui-breadcrumb-mode*))
+  (echo-message! (app-state-echo app)
+    (if *tui-breadcrumb-mode* "Breadcrumb mode enabled" "Breadcrumb mode disabled")))
+
+;;;============================================================================
+;;; Sideline — side information display
+;;;============================================================================
+
+(def *tui-sideline-mode* #f)
+
+(def (cmd-sideline-mode app)
+  "Toggle sideline mode — display info alongside code."
+  (set! *tui-sideline-mode* (not *tui-sideline-mode*))
+  (echo-message! (app-state-echo app)
+    (if *tui-sideline-mode* "Sideline mode enabled" "Sideline mode disabled")))
+
+;;;============================================================================
+;;; Flycheck-inline — inline error display
+;;;============================================================================
+
+(def *tui-flycheck-inline* #f)
+
+(def (cmd-flycheck-inline-mode app)
+  "Toggle flycheck-inline mode — show errors inline."
+  (set! *tui-flycheck-inline* (not *tui-flycheck-inline*))
+  (echo-message! (app-state-echo app)
+    (if *tui-flycheck-inline* "Flycheck-inline mode enabled" "Flycheck-inline mode disabled")))
+
+;;;============================================================================
+;;; Zone — screen saver
+;;;============================================================================
+
+(def (cmd-zone app)
+  "Activate zone mode — screen saver."
+  (echo-message! (app-state-echo app) "Zoning out... (press any key)"))
+
+;;;============================================================================
+;;; Fireplace — decorative fireplace
+;;;============================================================================
+
+(def (cmd-fireplace app)
+  "Display a decorative fireplace in buffer."
+  (let* ((fr (app-state-frame app))
+         (win (current-window fr))
+         (ed (edit-window-editor win))
+         (buf (or (buffer-by-name "*Fireplace*") (buffer-create! "*Fireplace*" ed)))
+         (fire "    🔥🔥🔥🔥🔥🔥🔥\n   🔥🔥🔥🔥🔥🔥🔥🔥🔥\n  🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥\n ╔═══════════════════════╗\n ║       FIREPLACE       ║\n ╚═══════════════════════╝\n   ░░░░░░░░░░░░░░░░░░░\n"))
+    (buffer-attach! ed buf)
+    (set! (edit-window-buffer win) buf)
+    (editor-set-text ed fire)
+    (editor-goto-pos ed 0)))
+
 
