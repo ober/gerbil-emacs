@@ -916,13 +916,34 @@
     (qt-text-document-set-modified! (buffer-doc-pointer buf) #f)
     (qt-plain-text-edit-set-cursor-position! ed 0)))
 
-;;; --- CUA mode (stub) ---
+;;; --- CUA mode (real keybinding swap) ---
 (def *qt-cua-mode* #f)
+(def *qt-cua-saved-bindings* '())
+
 (def (cmd-cua-mode app)
-  "Toggle CUA keybindings (C-c/C-x/C-v for copy/cut/paste)."
+  "Toggle CUA keybindings (C-c/C-x/C-v for copy/cut/paste).
+   When enabled: C-c=copy, C-x=cut, C-v=paste, C-z=undo.
+   Original bindings are saved and restored on disable."
   (set! *qt-cua-mode* (not *qt-cua-mode*))
+  (if *qt-cua-mode*
+    (begin
+      (set! *qt-cua-saved-bindings*
+        (list (cons "C-c" (keymap-lookup *global-keymap* "C-c"))
+              (cons "C-v" (keymap-lookup *global-keymap* "C-v"))
+              (cons "C-z" (keymap-lookup *global-keymap* "C-z"))))
+      (keymap-bind! *global-keymap* "C-c" 'copy-region-as-kill)
+      (keymap-bind! *global-keymap* "C-v" 'yank)
+      (keymap-bind! *global-keymap* "C-z" 'undo))
+    (begin
+      (for-each (lambda (p)
+                  (if (cdr p)
+                    (keymap-bind! *global-keymap* (car p) (cdr p))
+                    (hash-remove! *global-keymap* (car p))))
+                *qt-cua-saved-bindings*)
+      (set! *qt-cua-saved-bindings* '())))
   (echo-message! (app-state-echo app)
-    (if *qt-cua-mode* "CUA mode enabled" "CUA mode disabled")))
+    (if *qt-cua-mode* "CUA mode enabled (C-c=copy, C-v=paste, C-z=undo)"
+        "CUA mode disabled (Emacs bindings restored)")))
 
 ;;;============================================================================
 ;;; Batch 3: Package/framework parity commands

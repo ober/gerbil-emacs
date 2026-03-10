@@ -1730,8 +1730,10 @@
   (register-command! 'lsp-set-server cmd-lsp-set-server)
   (register-command! 'lsp-list-servers cmd-lsp-list-servers)
   (register-command! 'ansible-mode cmd-ansible-mode)
+  (register-command! 'ansible-playbook cmd-ansible-playbook)
   (register-command! 'systemd-mode cmd-systemd-mode)
   (register-command! 'kubernetes-mode cmd-kubernetes-mode)
+  (register-command! 'kubectl cmd-kubectl)
   (register-command! 'ssh-config-mode cmd-ssh-config-mode)
   (register-command! 'helm-occur cmd-helm-occur)
   (register-command! 'helm-dash cmd-helm-dash)
@@ -2315,16 +2317,78 @@
           (string-join (map (lambda (p) (string-append (car p) ": " (cdr p))) entries) ", "))))))
 
 (def (cmd-ansible-mode app)
-  (echo-message! (app-state-echo app) "Ansible mode enabled (YAML highlighting)"))
+  "Enable Ansible YAML mode — sets YAML highlighting."
+  (let ((ed (current-qt-editor app)))
+    (sci-send ed SCI_SETLEXER SCLEX_YAML)
+    (echo-message! (app-state-echo app) "Ansible mode enabled (YAML lexer)")))
+
+(def (cmd-ansible-playbook app)
+  "Run ansible-playbook --syntax-check on the current file."
+  (let* ((buf (current-qt-buffer app))
+         (fp (buffer-file-path buf))
+         (echo (app-state-echo app)))
+    (if (not fp)
+      (echo-message! echo "Buffer has no file")
+      (let ((output (with-catch
+                      (lambda (e) (string-append "Error: " (error-message e)))
+                      (lambda ()
+                        (let ((p (open-input-process
+                                   (list path: "ansible-playbook"
+                                         arguments: (list "--syntax-check" fp)
+                                         stderr-redirection: #t))))
+                          (let ((result (read-line p #f)))
+                            (close-port p)
+                            (or result "No output")))))))
+        (let* ((ed (current-qt-editor app))
+               (fr (app-state-frame app))
+               (obuf (or (buffer-by-name "*Ansible*")
+                         (qt-buffer-create! "*Ansible*" ed #f))))
+          (qt-buffer-attach! ed obuf)
+          (set! (qt-edit-window-buffer (qt-current-window fr)) obuf)
+          (qt-plain-text-edit-set-text! ed
+            (string-append "ansible-playbook --syntax-check " fp "\n\n" output "\n")))))))
 
 (def (cmd-systemd-mode app)
-  (echo-message! (app-state-echo app) "Systemd unit file mode enabled"))
+  "Enable systemd unit file mode — conf-style highlighting."
+  (let ((ed (current-qt-editor app)))
+    (sci-send ed SCI_SETLEXER SCLEX_PROPERTIES)
+    (echo-message! (app-state-echo app) "Systemd mode enabled (properties lexer)")))
 
 (def (cmd-kubernetes-mode app)
-  (echo-message! (app-state-echo app) "Kubernetes mode enabled (YAML highlighting)"))
+  "Enable Kubernetes manifest mode — YAML highlighting."
+  (let ((ed (current-qt-editor app)))
+    (sci-send ed SCI_SETLEXER SCLEX_YAML)
+    (echo-message! (app-state-echo app) "Kubernetes mode enabled (YAML lexer)")))
+
+(def (cmd-kubectl app)
+  "Run kubectl command interactively."
+  (let* ((echo (app-state-echo app))
+         (args (qt-echo-read-string app "kubectl: ")))
+    (when (and args (> (string-length args) 0))
+      (let ((output (with-catch
+                      (lambda (e) (string-append "Error: " (error-message e)))
+                      (lambda ()
+                        (let ((p (open-input-process
+                                   (list path: "kubectl"
+                                         arguments: (string-split args #\space)
+                                         stderr-redirection: #t))))
+                          (let ((result (read-line p #f)))
+                            (close-port p)
+                            (or result "No output")))))))
+        (let* ((ed (current-qt-editor app))
+               (fr (app-state-frame app))
+               (obuf (or (buffer-by-name "*Kubectl*")
+                         (qt-buffer-create! "*Kubectl*" ed #f))))
+          (qt-buffer-attach! ed obuf)
+          (set! (qt-edit-window-buffer (qt-current-window fr)) obuf)
+          (qt-plain-text-edit-set-text! ed
+            (string-append "$ kubectl " args "\n\n" output "\n")))))))
 
 (def (cmd-ssh-config-mode app)
-  (echo-message! (app-state-echo app) "SSH config mode enabled"))
+  "Enable SSH config file mode — conf-style highlighting."
+  (let ((ed (current-qt-editor app)))
+    (sci-send ed SCI_SETLEXER SCLEX_PROPERTIES)
+    (echo-message! (app-state-echo app) "SSH config mode enabled (properties lexer)")))
 
 (def (cmd-helm-occur app)
   "Helm-style occur (Qt)."

@@ -1304,20 +1304,68 @@
 ;;;============================================================================
 
 (def (cmd-ansible-mode app)
-  "Enable Ansible YAML mode for playbooks."
-  (echo-message! (app-state-echo app) "Ansible mode enabled (YAML highlighting)"))
+  "Enable Ansible YAML mode — sets YAML highlighting and provides ansible commands."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app)))
+    ;; Set YAML highlighting
+    (send-message ed SCI_SETLEXER SCLEX_YAML)
+    (echo-message! echo "Ansible mode enabled (YAML lexer)")))
+
+(def (cmd-ansible-playbook app)
+  "Run ansible-playbook on the current file."
+  (let* ((buf (current-buffer-from-app app))
+         (fp (buffer-file-path buf))
+         (echo (app-state-echo app)))
+    (if (not fp)
+      (echo-message! echo "Buffer has no file")
+      (let ((output (with-catch
+                      (lambda (e) (string-append "Error: " (error-message e)))
+                      (lambda ()
+                        (let ((p (open-input-process
+                                   (list path: "ansible-playbook"
+                                         arguments: (list "--syntax-check" fp)
+                                         stderr-redirection: #t))))
+                          (let ((result (read-line p #f)))
+                            (close-port p)
+                            (or result "No output")))))))
+        (open-output-buffer app "*Ansible*"
+          (string-append "ansible-playbook --syntax-check " fp "\n\n" output "\n"))))))
 
 (def (cmd-systemd-mode app)
-  "Enable systemd unit file mode."
-  (echo-message! (app-state-echo app) "Systemd unit file mode enabled"))
+  "Enable systemd unit file mode — conf-style highlighting."
+  (let ((ed (current-editor app)))
+    (send-message ed SCI_SETLEXER SCLEX_PROPERTIES)
+    (echo-message! (app-state-echo app) "Systemd mode enabled (properties lexer)")))
 
 (def (cmd-kubernetes-mode app)
-  "Enable Kubernetes manifest mode."
-  (echo-message! (app-state-echo app) "Kubernetes mode enabled (YAML highlighting)"))
+  "Enable Kubernetes manifest mode — YAML highlighting with kubectl integration."
+  (let ((ed (current-editor app)))
+    (send-message ed SCI_SETLEXER SCLEX_YAML)
+    (echo-message! (app-state-echo app) "Kubernetes mode enabled (YAML lexer)")))
+
+(def (cmd-kubectl app)
+  "Run kubectl command interactively."
+  (let* ((echo (app-state-echo app))
+         (args (app-read-string app "kubectl: ")))
+    (when (and args (> (string-length args) 0))
+      (let ((output (with-catch
+                      (lambda (e) (string-append "Error: " (error-message e)))
+                      (lambda ()
+                        (let ((p (open-input-process
+                                   (list path: "kubectl"
+                                         arguments: (string-split args #\space)
+                                         stderr-redirection: #t))))
+                          (let ((result (read-line p #f)))
+                            (close-port p)
+                            (or result "No output")))))))
+        (open-output-buffer app "*Kubectl*"
+          (string-append "$ kubectl " args "\n\n" output "\n"))))))
 
 (def (cmd-ssh-config-mode app)
-  "Enable SSH config file mode."
-  (echo-message! (app-state-echo app) "SSH config mode enabled"))
+  "Enable SSH config file mode — conf-style highlighting."
+  (let ((ed (current-editor app)))
+    (send-message ed SCI_SETLEXER SCLEX_PROPERTIES)
+    (echo-message! (app-state-echo app) "SSH config mode enabled (properties lexer)")))
 
 ;;;============================================================================
 ;;; Helm-style occur and dash documentation

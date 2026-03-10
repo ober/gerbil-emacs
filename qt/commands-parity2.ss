@@ -325,20 +325,26 @@
 (def *qt-debug-on-entry-list* [])
 
 (def (cmd-debug-on-entry app)
-  "Mark a function for debug-on-entry."
-  (let ((name (qt-echo-read-string (app-state-echo app) "Debug on entry to: ")))
+  "Mark a function for debug-on-entry — wraps with Gambit trace."
+  (let ((name (qt-echo-read-string app "Debug on entry to: ")))
     (when (and name (not (string=? name "")))
       (let ((sym (string->symbol name)))
         (unless (member sym *qt-debug-on-entry-list*)
           (set! *qt-debug-on-entry-list* (cons sym *qt-debug-on-entry-list*)))
-        (echo-message! (app-state-echo app)
-          (string-append "debug-on-entry: " name))))))
+        (with-catch
+          (lambda (e)
+            (echo-message! (app-state-echo app)
+              (string-append "debug-on-entry: " name " (tracked, trace not available)")))
+          (lambda ()
+            (eval `(trace ,sym))
+            (echo-message! (app-state-echo app)
+              (string-append "debug-on-entry: tracing " name))))))))
 
 (def (cmd-cancel-debug-on-entry app)
   "Remove a function from debug-on-entry list."
   (if (null? *qt-debug-on-entry-list*)
     (echo-message! (app-state-echo app) "No functions marked for debug-on-entry")
-    (let ((name (qt-echo-read-string (app-state-echo app)
+    (let ((name (qt-echo-read-string app
                   (string-append "Cancel debug on entry to ["
                     (symbol->string (car *qt-debug-on-entry-list*)) "]: "))))
       (let ((sym (if (or (not name) (string=? name ""))
@@ -346,6 +352,7 @@
                    (string->symbol name))))
         (set! *qt-debug-on-entry-list*
           (filter (lambda (s) (not (eq? s sym))) *qt-debug-on-entry-list*))
+        (with-catch (lambda (e) (void)) (lambda () (eval `(untrace ,sym))))
         (echo-message! (app-state-echo app)
           (string-append "Cancelled debug-on-entry for " (symbol->string sym)))))))
 

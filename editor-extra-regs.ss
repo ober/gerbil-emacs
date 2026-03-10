@@ -1495,13 +1495,37 @@
     "  M-x term           Terminal\n")))
     (open-output-buffer app "*Tutorial*" text)))
 
-;;; --- CUA mode (stub) ---
+;;; --- CUA mode (real keybinding swap) ---
 (def *cua-mode* #f)
+(def *cua-saved-bindings* '()) ;; saved (key . original-value) pairs
+
 (def (cmd-cua-mode app)
-  "Toggle CUA keybindings (C-c/C-x/C-v for copy/cut/paste)."
+  "Toggle CUA keybindings (C-c/C-x/C-v for copy/cut/paste).
+   When enabled: C-c=copy, C-x=cut, C-v=paste, C-z=undo.
+   Original bindings are saved and restored on disable."
   (set! *cua-mode* (not *cua-mode*))
+  (if *cua-mode*
+    (begin
+      ;; Save current bindings
+      (set! *cua-saved-bindings*
+        (list (cons "C-c" (keymap-lookup *global-keymap* "C-c"))
+              (cons "C-v" (keymap-lookup *global-keymap* "C-v"))
+              (cons "C-z" (keymap-lookup *global-keymap* "C-z"))))
+      ;; Install CUA bindings (C-x stays as prefix map)
+      (keymap-bind! *global-keymap* "C-c" 'copy-region-as-kill)
+      (keymap-bind! *global-keymap* "C-v" 'yank)
+      (keymap-bind! *global-keymap* "C-z" 'undo))
+    (begin
+      ;; Restore original bindings
+      (for-each (lambda (p)
+                  (if (cdr p)
+                    (keymap-bind! *global-keymap* (car p) (cdr p))
+                    (hash-remove! *global-keymap* (car p))))
+                *cua-saved-bindings*)
+      (set! *cua-saved-bindings* '())))
   (echo-message! (app-state-echo app)
-    (if *cua-mode* "CUA mode enabled" "CUA mode disabled")))
+    (if *cua-mode* "CUA mode enabled (C-c=copy, C-v=paste, C-z=undo)"
+        "CUA mode disabled (Emacs bindings restored)")))
 
 ;;; --- Org archive subtree ---
 (def (cmd-org-archive-subtree app)
@@ -1827,13 +1851,42 @@
 ;;; Batch 7: debug stubs
 ;;;============================================================================
 
+(def *debug-on-entry-list* '()) ;; list of symbol names being traced
+
 (def (cmd-debug-on-entry app)
-  "Set debug-on-entry for a function (stub)."
-  (echo-message! (app-state-echo app) "debug-on-entry: not yet implemented"))
+  "Set debug-on-entry for a function — wraps it with trace output.
+   Prompts for function name. When called, prints args and return value."
+  (let ((name (app-read-string app "Debug on entry to: ")))
+    (when (and name (not (string=? name "")))
+      (let ((sym (string->symbol name)))
+        (unless (member sym *debug-on-entry-list*)
+          (set! *debug-on-entry-list* (cons sym *debug-on-entry-list*))
+          ;; Try to install trace via Gambit's trace
+          (with-catch
+            (lambda (e)
+              (echo-message! (app-state-echo app)
+                (string-append "debug-on-entry: " name " (tracked, trace not available for this symbol)")))
+            (lambda ()
+              (eval `(trace ,sym))
+              (echo-message! (app-state-echo app)
+                (string-append "debug-on-entry: tracing " name)))))))))
 
 (def (cmd-cancel-debug-on-entry app)
-  "Cancel debug-on-entry (stub)."
-  (echo-message! (app-state-echo app) "cancel-debug-on-entry: not yet implemented"))
+  "Cancel debug-on-entry — remove trace from a function."
+  (if (null? *debug-on-entry-list*)
+    (echo-message! (app-state-echo app) "No functions being debugged")
+    (let ((name (app-read-string app
+                  (string-append "Cancel debug on entry to ("
+                    (string-join (map symbol->string *debug-on-entry-list*) ", ")
+                    "): "))))
+      (when (and name (not (string=? name "")))
+        (let ((sym (string->symbol name)))
+          (set! *debug-on-entry-list* (remove (lambda (s) (eq? s sym)) *debug-on-entry-list*))
+          (with-catch
+            (lambda (e) (void))
+            (lambda () (eval `(untrace ,sym))))
+          (echo-message! (app-state-echo app)
+            (string-append "Cancelled debug-on-entry for " name)))))))
 
 ;;;============================================================================
 ;;; Batch 12: Emacs-standard alias registrations (editor-cmds chain scope)

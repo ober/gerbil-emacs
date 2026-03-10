@@ -1,7 +1,7 @@
 # Gemacs vs GNU Emacs — Feature Comparison
 
-> **Last updated:** 2026-03-09
-> **Gemacs version:** master (eb00fa2)
+> **Last updated:** 2026-03-10
+> **Gemacs version:** master (5583330)
 > **Compared against:** GNU Emacs 29.x / 30.x feature set
 > **Command parity:** 2168+ commands registered in both TUI and Qt layers (zero gap)
 
@@ -952,7 +952,7 @@
 | Rename tabs | :green_circle: | `tab-rename` (both layers) |
 | Move tabs | :green_circle: | `tab-move` with prefix arg direction (both layers) |
 | Tab-line (per-window) | :yellow_circle: | Qt has visual buffer tab bar; no per-window tab line |
-| Workspace/perspective | :green_circle: | Workspace tabs save/restore window buffer state per tab |
+| Workspace/perspective | :white_check_mark: | Workspace tabs + real persp-mode buffer groups with switch/add/remove |
 | Named workspaces | :green_circle: | Tabs have names, renameable via `tab-rename` |
 
 **Summary:** Full workspace tab system with create/close/switch/rename/move. Qt has visual buffer tab bar (clickable buttons). Both layers save/restore window buffer configurations per workspace tab. Emacs aliases (`tab-bar-new-tab`, `tab-bar-close-tab`, `tab-bar-switch-to-tab`) registered.
@@ -1055,13 +1055,13 @@ No remaining Tier 1 gaps. All core editing, completion, and navigation features 
 
 | Feature | Status | Notes |
 |---------|--------|-------|
-| Copilot (code completion) | :yellow_circle: | Mode toggle, accept/next commands — needs API connection |
+| Copilot (code completion) | :large_blue_circle: | Mode toggle, accept/next commands, real OpenAI API integration |
 | GPTel / LLM chat | :white_check_mark: | `M-x claude-chat` — streaming chat via `claude -p` |
 | Claude shell / chat | :white_check_mark: | `*AI Chat*` buffer with `--continue` for context |
-| Inline AI suggestions | :yellow_circle: | `ai-inline-suggest` mode toggle — needs API provider |
-| Code explanation / refactor via AI | :yellow_circle: | `ai-code-explain`, `ai-code-refactor` commands — needs API key |
+| Inline AI suggestions | :large_blue_circle: | `ai-inline-suggest` mode toggle with API provider |
+| Code explanation / refactor via AI | :white_check_mark: | `ai-code-explain`, `ai-code-refactor` — real OpenAI API calls (both TUI and Qt) |
 
-**Summary:** Claude CLI chat integration works — `M-x claude-chat` opens a chat buffer, Enter sends prompts, responses stream in real-time. Uses `--continue` for conversation context. Both TUI and Qt.
+**Summary:** Full AI integration — Claude CLI chat (streaming), OpenAI API for code explain/refactor (real HTTP requests with JSON parsing), copilot completion mode. Set `OPENAI_API_KEY` env var or `M-x copilot-mode` to configure. Both TUI and Qt.
 
 ---
 
@@ -1156,7 +1156,7 @@ No remaining Tier 1 gaps. All core editing, completion, and navigation features 
 | **Magit + Forge** (staging, commit, PR review)          | Daily driver     | :white_check_mark: Works     | None — hunk staging, inline diffs, forge PR/issue |
 | **Multi-vterm** (multiple terminals, copy mode)         | Heavy use        | :white_check_mark: Works     | None — term-list/next/prev + copy mode   |
 | **Eglot / LSP** (completion, hover, goto-def, refs)     | Working          | :white_check_mark: Works     | None — full UI wiring with keybindings   |
-| **Copilot / AI** (gptel, claude-shell, copilot)         | Active           | :yellow_circle: Commands scaffolded | **Low** — needs API keys for real AI    |
+| **Copilot / AI** (gptel, claude-shell, copilot)         | Active           | :white_check_mark: Works     | **None** — real OpenAI API integration + Claude chat |
 | **Corfu** (completion-at-point popup)                   | Active           | :white_check_mark: Popup     | **None** — Scintilla native autocomplete popup + LSP completion |
 | **Org tables + export**                                 | Heavy use        | :white_check_mark: Works     | None                                     |
 | **Org folding + TODO**                                  | Heavy use        | :white_check_mark: Works     | None                                     |
@@ -1209,9 +1209,9 @@ No remaining Tier 1 gaps. All core editing, completion, and navigation features 
 | Easy-kill | :white_check_mark: | Copy word at point without moving |
 | Crux extras | :white_check_mark: | open-with, duplicate-line, swap-windows, cleanup-buffer |
 | Hydra | :white_check_mark: | Interactive popup menus (zoom, window) |
-| Deadgrep | :white_check_mark: | Enhanced grep (delegates to rgrep) |
-| Hideshow (hs-minor-mode) | :white_check_mark: | Code folding commands |
-| Prescient | :white_check_mark: | Completion sorting by frequency |
+| Deadgrep | :white_check_mark: | Real `rg`/`grep` search with results buffer and fallback |
+| Hideshow (hs-minor-mode) | :white_check_mark: | Real Scintilla folding (SCI_TOGGLEFOLD/FOLDALL) |
+| Prescient | :white_check_mark: | Real frequency tracking and sorted completions |
 | GCMH | :white_check_mark: | Adaptive GC threshold toggle |
 | Ligature mode | :white_check_mark: | Font ligature display toggle |
 | Mixed-pitch / variable-pitch | :white_check_mark: | Proportional font mode |
@@ -1235,6 +1235,10 @@ No remaining Tier 1 gaps. All core editing, completion, and navigation features 
 | Mood-line / powerline | :white_check_mark: | Modeline theme toggles |
 | Centaur-tabs | :white_check_mark: | Tab bar for buffer groups toggle |
 | use-package / straight | :white_check_mark: | Informational stubs (all packages built-in) |
+| EMMS (music player) | :white_check_mark: | Real mpv playback, playlist management, play file/directory |
+| Perspectives (persp-mode) | :white_check_mark: | Real buffer group management, switch/add/remove perspectives |
+| Org-roam | :white_check_mark: | Real grep-based note search in ~/notes/, node find/insert with backlinks |
+| Sort-columns / sort-regexp-fields | :white_check_mark: | Real column-range and regex-based line sorting |
 
 ---
 
