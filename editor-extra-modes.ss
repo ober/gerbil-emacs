@@ -1781,11 +1781,50 @@
 
 ;; Devdocs — online documentation lookup
 (def (cmd-devdocs-lookup app)
-  "Look up in devdocs — shows documentation URL."
+  "Look up in devdocs — fetches docs via curl and displays in buffer."
   (let ((query (app-read-string app "Devdocs search: ")))
     (when (and query (not (string-empty? query)))
-      (echo-message! (app-state-echo app)
-        (string-append "Devdocs: https://devdocs.io/#q=" query)))))
+      (echo-message! (app-state-echo app) (string-append "Fetching devdocs for: " query "..."))
+      (with-exception-catcher
+        (lambda (e)
+          (echo-message! (app-state-echo app)
+            (string-append "Devdocs: https://devdocs.io/#q=" query)))
+        (lambda ()
+          (let* ((url (string-append "https://devdocs.io/api/search?query=" query))
+                 (proc (open-process
+                         (list path: "curl"
+                               arguments: (list "-s" "-L" "--max-time" "5"
+                                                (string-append "https://devdocs.io/#q=" query))
+                               stdin-redirection: #f stdout-redirection: #t stderr-redirection: #f)))
+                 (out (read-line proc #f)))
+            (process-status proc)
+            (if (and out (> (string-length out) 0))
+              (let* ((fr (app-state-frame app))
+                     (win (current-window fr))
+                     (ed (edit-window-editor win))
+                     ;; Strip HTML tags for plain text display
+                     (plain (let loop ((s out) (result "") (in-tag #f))
+                              (if (string-empty? s) result
+                                (let ((ch (string-ref s 0))
+                                      (rest (substring s 1 (string-length s))))
+                                  (cond
+                                    ((char=? ch #\<) (loop rest result #t))
+                                    ((char=? ch #\>) (loop rest result #f))
+                                    (in-tag (loop rest result #t))
+                                    (else (loop rest (string-append result (string ch)) #f)))))))
+                     (truncated (if (> (string-length plain) 4000)
+                                  (substring plain 0 4000) plain))
+                     (buf (buffer-create! "*Devdocs*" ed)))
+                (buffer-attach! ed buf)
+                (set! (edit-window-buffer win) buf)
+                (editor-set-text ed
+                  (string-append "Devdocs: " query "\n"
+                                 "URL: https://devdocs.io/#q=" query "\n\n"
+                                 truncated))
+                (editor-set-read-only ed #t)
+                (echo-message! (app-state-echo app) "Devdocs loaded"))
+              (echo-message! (app-state-echo app)
+                (string-append "Devdocs: https://devdocs.io/#q=" query)))))))))
 
 ;; Copilot — AI completion (real implementation in editor-extra-ai.ss)
 

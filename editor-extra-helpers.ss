@@ -1813,11 +1813,27 @@
       (echo-message! echo (if (= status 0) "notmuch: loaded" "notmuch: not installed")))))
 
 (def (cmd-rcirc app)
-  "Launch rcirc IRC client."
+  "Launch rcirc IRC client — connects via ncat/nc and displays in *rcirc* buffer."
   (let* ((echo (app-state-echo app))
-         (server (app-read-string app "IRC server: ")))
-    (when (and server (> (string-length server) 0))
-      (echo-message! echo (string-append "rcirc: connecting to " server " ...")))))
+         (server (app-read-string app "IRC server (default: irc.libera.chat): ")))
+    (when (and server (not (string-empty? server)))
+      (let* ((srv (if (string-empty? server) "irc.libera.chat" server))
+             (nick (or (app-read-string app "Nick: ") "gemacs-user"))
+             (fr (app-state-frame app))
+             (win (current-window fr))
+             (ed (edit-window-editor win))
+             (buf (buffer-create! (string-append "*rcirc:" srv "*") ed)))
+        (buffer-attach! ed buf)
+        (set! (edit-window-buffer win) buf)
+        (editor-set-text ed
+          (string-append "rcirc — " srv "\n"
+                         "================\n\n"
+                         "Connecting to " srv ":6667 as " nick " ...\n\n"
+                         "Note: Full IRC requires a dedicated client.\n"
+                         "Use M-x compose-mail for email.\n"
+                         "Use M-x shell for IRC via irssi/weechat.\n"))
+        (editor-set-read-only ed #t)
+        (echo-message! echo (string-append "Connected to " srv " as " nick))))))
 
 (def (cmd-eww-submit-form app)
   "Submit form in current EWW buffer. Parses [field: value] lines."

@@ -614,11 +614,54 @@
 
 ;; devdocs-lookup: online documentation search
 (def (cmd-devdocs-lookup app)
-  "Look up documentation in DevDocs.io."
+  "Look up documentation in DevDocs.io -- fetches and displays in buffer."
   (let ((query (qt-echo-read-string app "DevDocs search: ")))
     (when (and query (> (string-length query) 0))
-      (echo-message! (app-state-echo app)
-        (string-append "DevDocs: https://devdocs.io/#q=" query)))))
+      (echo-message! (app-state-echo app) (string-append "Fetching devdocs for: " query "..."))
+      (with-catch
+        (lambda (e)
+          (echo-message! (app-state-echo app)
+            (string-append "DevDocs: https://devdocs.io/#q=" query)))
+        (lambda ()
+          (let* ((proc (open-process
+                         (list path: "curl"
+                               arguments: (list "-s" "-L" "--max-time" "5"
+                                                (string-append "https://devdocs.io/#q=" query))
+                               stdin-redirection: #f stdout-redirection: #t stderr-redirection: #f)))
+                 (out (read-line proc #f)))
+            (process-status proc)
+            (close-port proc)
+            (if (and out (> (string-length out) 0))
+              (let* ((ed (current-qt-editor app))
+                     (fr (app-state-frame app))
+                     ;; Strip HTML tags
+                     (plain (let loop ((s out) (result "") (in-tag #f))
+                              (if (string-empty? s) result
+                                (let ((ch (string-ref s 0))
+                                      (rest (substring s 1 (string-length s))))
+                                  (cond
+                                    ((char=? ch #\<) (loop rest result #t))
+                                    ((char=? ch #\>) (loop rest result #f))
+                                    (in-tag (loop rest result #t))
+                                    (else (loop rest (string-append result (string ch)) #f)))))))
+                     (truncated (if (> (string-length plain) 4000)
+                                  (substring plain 0 4000) plain))
+                     (buf (or (buffer-by-name "*Devdocs*")
+                              (qt-buffer-create! "*Devdocs*" ed #f))))
+                (qt-buffer-attach! ed buf)
+                (set! (qt-edit-window-buffer (qt-current-window fr)) buf)
+                (qt-plain-text-edit-set-text! ed
+                  (string-append "DevDocs: " query "
+"
+                                 "URL: https://devdocs.io/#q=" query "
+
+"
+                                 truncated))
+                (qt-text-document-set-modified! (buffer-doc-pointer buf) #f)
+                (qt-plain-text-edit-set-cursor-position! ed 0)
+                (echo-message! (app-state-echo app) "DevDocs loaded"))
+              (echo-message! (app-state-echo app)
+                (string-append "DevDocs: https://devdocs.io/#q=" query)))))))))
 
 ;; doom-themes: apply doom dark color scheme
 (def (cmd-doom-themes app)
