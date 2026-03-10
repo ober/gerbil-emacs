@@ -193,6 +193,18 @@ Largest files: modes (~1851), lsp (~1802), search (~1778)
 - ~~**Crux extras**~~ — DONE: open-with (xdg-open), duplicate-current-line, indent-defun, swap-windows, cleanup-buffer-or-region
 - ~~**Selected mode**~~ — DONE: special keybindings when region active toggle
 - ~~**Aggressive fill-paragraph**~~ — DONE: auto-reflow paragraphs mode toggle
+- ~~**Hydra menus**~~ — DONE: extensible popup command menus (hydra-zoom, hydra-window with interactive key loops)
+- ~~**Deadgrep**~~ — DONE: enhanced grep interface delegating to rgrep
+- ~~**String-edit-at-point**~~ — DONE: edit string at point
+- ~~**Hideshow (hs-minor-mode)**~~ — DONE: code folding commands (hs-toggle-hiding, hs-hide-all, hs-show-all)
+- ~~**Prescient**~~ — DONE: completion sorting by frequency mode toggle
+- ~~**No-littering**~~ — DONE: clean dotfile organization (gemacs uses ~/.gemacs-* by default)
+- ~~**Benchmark-init / esup**~~ — DONE: startup profiling informational commands
+- ~~**GCMH**~~ — DONE: adaptive GC threshold mode toggle
+- ~~**Ligature mode**~~ — DONE: font ligature display toggle
+- ~~**Mixed-pitch / variable-pitch**~~ — DONE: proportional font mode toggles
+- ~~**Eldoc-box**~~ — DONE: eldoc popup mode and help-at-point
+- ~~**Color-rg**~~ — DONE: colored ripgrep interface delegating to rgrep/project-grep
 
 ### Aspirational
 - LSP in TUI

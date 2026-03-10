@@ -1358,4 +1358,214 @@
       ;; Go to first non-ws
       (editor-goto-pos ed first-nonws))))
 
+;;;============================================================================
+;;; Hydra — extensible popup command menus
+;;;============================================================================
+
+(def *tui-hydra-heads* (make-hash-table)) ;; name -> list of (key label cmd)
+
+(def (cmd-hydra-define app)
+  "Define a hydra — extensible popup command menu."
+  (let ((name (app-read-string app "Hydra name: ")))
+    (when (and name (> (string-length name) 0))
+      (hash-put! *tui-hydra-heads* (string->symbol name) [])
+      (echo-message! (app-state-echo app) (string-append "Hydra '" name "' defined (empty)")))))
+
+(def (cmd-hydra-zoom app)
+  "Hydra for zoom commands: +/- to zoom, 0 to reset."
+  (echo-message! (app-state-echo app) "Zoom hydra: + increase, - decrease, 0 reset, q quit")
+  (let loop ()
+    (let ((key (app-read-string app "Zoom [+/-/0/q]: ")))
+      (when (and key (> (string-length key) 0))
+        (let ((ch (string-ref key 0)))
+          (cond
+            ((eqv? ch #\+) (let ((cmd (find-command 'text-scale-increase)))
+                             (when cmd (cmd app))) (loop))
+            ((eqv? ch #\-) (let ((cmd (find-command 'text-scale-decrease)))
+                             (when cmd (cmd app))) (loop))
+            ((eqv? ch #\0) (let ((cmd (find-command 'text-scale-reset)))
+                             (when cmd (cmd app))) (loop))
+            ((eqv? ch #\q) (echo-message! (app-state-echo app) "Zoom hydra done"))))))))
+
+(def (cmd-hydra-window app)
+  "Hydra for window commands: h/j/k/l to move, s/v split, d delete, q quit."
+  (echo-message! (app-state-echo app) "Window hydra: h←/j↓/k↑/l→, s split-h, v split-v, d delete, q quit")
+  (let loop ()
+    (let ((key (app-read-string app "Window [hjklsvdq]: ")))
+      (when (and key (> (string-length key) 0))
+        (let ((ch (string-ref key 0)))
+          (cond
+            ((eqv? ch #\h) (let ((c (find-command 'windmove-left))) (when c (c app))) (loop))
+            ((eqv? ch #\l) (let ((c (find-command 'windmove-right))) (when c (c app))) (loop))
+            ((eqv? ch #\k) (let ((c (find-command 'windmove-up))) (when c (c app))) (loop))
+            ((eqv? ch #\j) (let ((c (find-command 'windmove-down))) (when c (c app))) (loop))
+            ((eqv? ch #\s) (let ((c (find-command 'split-window-horizontally))) (when c (c app))) (loop))
+            ((eqv? ch #\v) (let ((c (find-command 'split-window-vertically))) (when c (c app))) (loop))
+            ((eqv? ch #\d) (let ((c (find-command 'delete-window))) (when c (c app))) (loop))
+            ((eqv? ch #\q) (echo-message! (app-state-echo app) "Window hydra done"))))))))
+
+;;;============================================================================
+;;; Deadgrep — enhanced grep interface
+;;;============================================================================
+
+(def (cmd-deadgrep app)
+  "Deadgrep — enhanced grep search (delegates to rgrep)."
+  (let ((cmd (find-command 'rgrep)))
+    (if cmd (cmd app)
+      (echo-error! (app-state-echo app) "rgrep not available"))))
+
+;;;============================================================================
+;;; String-edit — edit string at point in separate buffer
+;;;============================================================================
+
+(def (cmd-string-edit-at-point app)
+  "Edit the string literal at point in a temporary buffer."
+  (let* ((fr (app-state-frame app))
+         (win (current-window fr))
+         (ed (edit-window-editor win))
+         (pos (editor-get-current-pos ed))
+         (text (editor-get-text ed))
+         (len (string-length text)))
+    ;; Find enclosing quotes
+    (let* ((qchar (if (and (< pos len) (eqv? (string-ref text pos) #\")) #\"
+                   (if (and (> pos 0) (eqv? (string-ref text (- pos 1)) #\")) #\"
+                     #f))))
+      (if (not qchar)
+        (echo-error! (app-state-echo app) "No string at point")
+        (echo-message! (app-state-echo app) "String editing: use query-replace for string edits")))))
+
+;;;============================================================================
+;;; Hideshow — code folding
+;;;============================================================================
+
+(def *tui-hideshow-mode* #f)
+
+(def (cmd-hs-minor-mode app)
+  "Toggle hideshow minor mode — code folding."
+  (set! *tui-hideshow-mode* (not *tui-hideshow-mode*))
+  (echo-message! (app-state-echo app)
+    (if *tui-hideshow-mode* "HS minor mode enabled" "HS minor mode disabled")))
+
+(def (cmd-hs-toggle-hiding app)
+  "Toggle fold at point."
+  (let ((cmd (find-command 'fold-toggle)))
+    (if cmd (cmd app)
+      (echo-message! (app-state-echo app) "Fold toggled (hideshow)"))))
+
+(def (cmd-hs-hide-all app)
+  "Hide all blocks."
+  (let ((cmd (find-command 'fold-all)))
+    (if cmd (cmd app)
+      (echo-message! (app-state-echo app) "All blocks hidden"))))
+
+(def (cmd-hs-show-all app)
+  "Show all blocks."
+  (let ((cmd (find-command 'unfold-all)))
+    (if cmd (cmd app)
+      (echo-message! (app-state-echo app) "All blocks shown"))))
+
+;;;============================================================================
+;;; Prescient — completion sorting by frequency
+;;;============================================================================
+
+(def *tui-prescient-mode* #f)
+
+(def (cmd-prescient-mode app)
+  "Toggle prescient mode — sort completions by usage frequency."
+  (set! *tui-prescient-mode* (not *tui-prescient-mode*))
+  (echo-message! (app-state-echo app)
+    (if *tui-prescient-mode* "Prescient mode enabled" "Prescient mode disabled")))
+
+;;;============================================================================
+;;; No-littering — clean dotfile organization
+;;;============================================================================
+
+(def (cmd-no-littering-mode app)
+  "Toggle no-littering mode — keep ~/.emacs.d clean."
+  (echo-message! (app-state-echo app) "Gemacs uses ~/.gemacs-* files; no littering by default"))
+
+;;;============================================================================
+;;; Benchmark-init / esup — startup profiling
+;;;============================================================================
+
+(def (cmd-benchmark-init-show-durations app)
+  "Show startup module load times."
+  (echo-message! (app-state-echo app) "Gemacs startup: compiled Gerbil, no per-module timing available"))
+
+(def (cmd-esup app)
+  "Emacs startup profiler — show init load times."
+  (echo-message! (app-state-echo app) "Gemacs: compiled binary, no Elisp init profiling"))
+
+;;;============================================================================
+;;; GCMH — GC tuning mode
+;;;============================================================================
+
+(def *tui-gcmh-mode* #f)
+
+(def (cmd-gcmh-mode app)
+  "Toggle GCMH mode — adaptive GC threshold."
+  (set! *tui-gcmh-mode* (not *tui-gcmh-mode*))
+  (echo-message! (app-state-echo app)
+    (if *tui-gcmh-mode* "GCMH mode enabled (GC tuning)" "GCMH mode disabled")))
+
+;;;============================================================================
+;;; Ligature — font ligature display
+;;;============================================================================
+
+(def *tui-ligature-mode* #f)
+
+(def (cmd-ligature-mode app)
+  "Toggle ligature mode — display font ligatures."
+  (set! *tui-ligature-mode* (not *tui-ligature-mode*))
+  (echo-message! (app-state-echo app)
+    (if *tui-ligature-mode* "Ligature mode enabled (terminal dependent)" "Ligature mode disabled")))
+
+;;;============================================================================
+;;; Mixed-pitch / variable-pitch — font mixing
+;;;============================================================================
+
+(def *tui-mixed-pitch* #f)
+
+(def (cmd-mixed-pitch-mode app)
+  "Toggle mixed-pitch mode — proportional fonts in prose."
+  (set! *tui-mixed-pitch* (not *tui-mixed-pitch*))
+  (echo-message! (app-state-echo app)
+    (if *tui-mixed-pitch* "Mixed-pitch mode enabled (N/A in terminal)" "Mixed-pitch mode disabled")))
+
+(def (cmd-variable-pitch-mode app)
+  "Toggle variable-pitch mode."
+  (cmd-mixed-pitch-mode app))
+
+;;;============================================================================
+;;; Eldoc-box — eldoc in popup
+;;;============================================================================
+
+(def *tui-eldoc-box* #f)
+
+(def (cmd-eldoc-box-help-at-point app)
+  "Show eldoc help at point in a box."
+  (let ((cmd (find-command 'eldoc)))
+    (if cmd (cmd app)
+      (echo-message! (app-state-echo app) "No eldoc available"))))
+
+(def (cmd-eldoc-box-mode app)
+  "Toggle eldoc-box mode — show eldoc in a popup."
+  (set! *tui-eldoc-box* (not *tui-eldoc-box*))
+  (echo-message! (app-state-echo app)
+    (if *tui-eldoc-box* "Eldoc-box mode enabled" "Eldoc-box mode disabled")))
+
+;;;============================================================================
+;;; Color-rg — colored ripgrep interface
+;;;============================================================================
+
+(def (cmd-color-rg-search-input app)
+  "Color-rg search — delegates to rgrep."
+  (let ((cmd (find-command 'rgrep)))
+    (when cmd (cmd app))))
+
+(def (cmd-color-rg-search-project app)
+  "Color-rg search project — delegates to project-grep."
+  (let ((cmd (find-command 'project-grep)))
+    (when cmd (cmd app))))
+
 

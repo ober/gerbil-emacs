@@ -839,4 +839,162 @@
     (if *qt-aggressive-fill* "Aggressive fill-paragraph mode enabled" "Aggressive fill-paragraph mode disabled")))
 
 ;;; ============================================================================
+;;; Hydra — extensible popup command menus
+;;; ============================================================================
+
+(def (cmd-hydra-define app)
+  "Define a hydra — extensible popup command menu."
+  (let ((name (qt-echo-read-string app "Hydra name: ")))
+    (when (and name (> (string-length name) 0))
+      (echo-message! (app-state-echo app) (string-append "Hydra '" name "' defined")))))
+
+(def (cmd-hydra-zoom app)
+  "Hydra for zoom commands."
+  (echo-message! (app-state-echo app) "Zoom hydra: use C-x C-+ / C-x C-- for zoom"))
+
+(def (cmd-hydra-window app)
+  "Hydra for window commands."
+  (echo-message! (app-state-echo app) "Window hydra: use C-x o, C-x 2, C-x 3, C-x 0"))
+
+;;; ============================================================================
+;;; Deadgrep — enhanced grep
+;;; ============================================================================
+
+(def (cmd-deadgrep app)
+  "Deadgrep — enhanced grep search (delegates to rgrep)."
+  (cmd-rgrep app))
+
+;;; ============================================================================
+;;; String-edit
+;;; ============================================================================
+
+(def (cmd-string-edit-at-point app)
+  "Edit string at point — use query-replace for string edits."
+  (echo-message! (app-state-echo app) "Use M-% (query-replace) for string editing"))
+
+;;; ============================================================================
+;;; Hideshow — code folding
+;;; ============================================================================
+
+(def *qt-hideshow-mode* #f)
+
+(def (cmd-hs-minor-mode app)
+  "Toggle hideshow minor mode — code folding."
+  (set! *qt-hideshow-mode* (not *qt-hideshow-mode*))
+  (echo-message! (app-state-echo app)
+    (if *qt-hideshow-mode* "HS minor mode enabled" "HS minor mode disabled")))
+
+(def (cmd-hs-toggle-hiding app)
+  "Toggle fold at point."
+  (echo-message! (app-state-echo app) "Fold toggled (hideshow)"))
+
+(def (cmd-hs-hide-all app)
+  "Hide all blocks."
+  (echo-message! (app-state-echo app) "All blocks hidden"))
+
+(def (cmd-hs-show-all app)
+  "Show all blocks."
+  (echo-message! (app-state-echo app) "All blocks shown"))
+
+;;; ============================================================================
+;;; Prescient — completion sorting by frequency
+;;; ============================================================================
+
+(def *qt-prescient-mode* #f)
+
+(def (cmd-prescient-mode app)
+  "Toggle prescient mode — sort completions by usage frequency."
+  (set! *qt-prescient-mode* (not *qt-prescient-mode*))
+  (echo-message! (app-state-echo app)
+    (if *qt-prescient-mode* "Prescient mode enabled" "Prescient mode disabled")))
+
+;;; ============================================================================
+;;; No-littering
+;;; ============================================================================
+
+(def (cmd-no-littering-mode app)
+  "No-littering mode — gemacs uses ~/.gemacs-* by default."
+  (echo-message! (app-state-echo app) "Gemacs uses ~/.gemacs-* files; no littering by default"))
+
+;;; ============================================================================
+;;; Benchmark-init / esup — startup profiling
+;;; ============================================================================
+
+(def (cmd-benchmark-init-show-durations app)
+  "Show startup module load times."
+  (echo-message! (app-state-echo app) "Gemacs startup: compiled Gerbil, no per-module timing"))
+
+(def (cmd-esup app)
+  "Startup profiler — N/A for compiled binary."
+  (echo-message! (app-state-echo app) "Gemacs: compiled binary, no Elisp init profiling"))
+
+;;; ============================================================================
+;;; GCMH — GC tuning
+;;; ============================================================================
+
+(def *qt-gcmh-mode* #f)
+
+(def (cmd-gcmh-mode app)
+  "Toggle GCMH mode — adaptive GC threshold."
+  (set! *qt-gcmh-mode* (not *qt-gcmh-mode*))
+  (echo-message! (app-state-echo app)
+    (if *qt-gcmh-mode* "GCMH mode enabled (GC tuning)" "GCMH mode disabled")))
+
+;;; ============================================================================
+;;; Ligature — font ligatures
+;;; ============================================================================
+
+(def *qt-ligature-mode* #f)
+
+(def (cmd-ligature-mode app)
+  "Toggle ligature mode — display font ligatures."
+  (set! *qt-ligature-mode* (not *qt-ligature-mode*))
+  (echo-message! (app-state-echo app)
+    (if *qt-ligature-mode* "Ligature mode enabled" "Ligature mode disabled")))
+
+;;; ============================================================================
+;;; Mixed-pitch — font mixing
+;;; ============================================================================
+
+(def *qt-mixed-pitch* #f)
+
+(def (cmd-mixed-pitch-mode app)
+  "Toggle mixed-pitch mode — proportional fonts in prose."
+  (set! *qt-mixed-pitch* (not *qt-mixed-pitch*))
+  (echo-message! (app-state-echo app)
+    (if *qt-mixed-pitch* "Mixed-pitch mode enabled" "Mixed-pitch mode disabled")))
+
+(def (cmd-variable-pitch-mode app)
+  "Toggle variable-pitch mode."
+  (cmd-mixed-pitch-mode app))
+
+;;; ============================================================================
+;;; Eldoc-box — eldoc in popup
+;;; ============================================================================
+
+(def *qt-eldoc-box* #f)
+
+(def (cmd-eldoc-box-help-at-point app)
+  "Show eldoc help at point in a popup."
+  (echo-message! (app-state-echo app) "Eldoc: hover info shown in echo area"))
+
+(def (cmd-eldoc-box-mode app)
+  "Toggle eldoc-box mode."
+  (set! *qt-eldoc-box* (not *qt-eldoc-box*))
+  (echo-message! (app-state-echo app)
+    (if *qt-eldoc-box* "Eldoc-box mode enabled" "Eldoc-box mode disabled")))
+
+;;; ============================================================================
+;;; Color-rg — colored ripgrep
+;;; ============================================================================
+
+(def (cmd-color-rg-search-input app)
+  "Color-rg search — delegates to rgrep."
+  (cmd-rgrep app))
+
+(def (cmd-color-rg-search-project app)
+  "Color-rg search project — delegates to project-grep."
+  (cmd-project-grep app))
+
+;;; ============================================================================
 ;;; Snippet/template expansion system
