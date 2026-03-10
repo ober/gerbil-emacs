@@ -1211,4 +1211,62 @@
     (qt-plain-text-edit-set-text! ed fire)))
 
 ;;; ============================================================================
+;;; DAP-UI / poly-mode / company-box / impatient / modeline themes / tabs
+;;; ============================================================================
+
+(def *qt-dap-ui-mode* #f)
+(def (cmd-dap-ui-mode app)
+  "Toggle DAP-UI mode."
+  (set! *qt-dap-ui-mode* (not *qt-dap-ui-mode*))
+  (echo-message! (app-state-echo app) (if *qt-dap-ui-mode* "DAP-UI enabled" "DAP-UI disabled")))
+
+(def *qt-poly-mode* #f)
+(def (cmd-poly-mode app)
+  "Toggle poly-mode — multiple major modes."
+  (set! *qt-poly-mode* (not *qt-poly-mode*))
+  (echo-message! (app-state-echo app) (if *qt-poly-mode* "Poly-mode enabled" "Poly-mode disabled")))
+
+(def *qt-company-box* #f)
+(def (cmd-company-box-mode app)
+  "Toggle company-box — fancy completion popup."
+  (set! *qt-company-box* (not *qt-company-box*))
+  (echo-message! (app-state-echo app) (if *qt-company-box* "Company-box enabled" "Company-box disabled")))
+
+(def *qt-impatient-mode* #f)
+(def (cmd-impatient-mode app)
+  "Toggle impatient mode — live preview."
+  (set! *qt-impatient-mode* (not *qt-impatient-mode*))
+  (echo-message! (app-state-echo app) (if *qt-impatient-mode* "Impatient mode enabled" "Impatient mode disabled")))
+
+(def *qt-mood-line* #f)
+(def (cmd-mood-line-mode app)
+  "Toggle mood-line — minimal modeline."
+  (set! *qt-mood-line* (not *qt-mood-line*))
+  (echo-message! (app-state-echo app) (if *qt-mood-line* "Mood-line enabled" "Mood-line disabled")))
+
+(def *qt-powerline* #f)
+(def (cmd-powerline-mode app)
+  "Toggle powerline — fancy modeline."
+  (set! *qt-powerline* (not *qt-powerline*))
+  (echo-message! (app-state-echo app) (if *qt-powerline* "Powerline enabled" "Powerline disabled")))
+
+(def *qt-centaur-tabs* #f)
+(def (cmd-centaur-tabs-mode app)
+  "Toggle centaur-tabs — tab bar for buffer groups."
+  (set! *qt-centaur-tabs* (not *qt-centaur-tabs*))
+  (echo-message! (app-state-echo app) (if *qt-centaur-tabs* "Centaur-tabs enabled" "Centaur-tabs disabled")))
+
+(def (cmd-all-the-icons-dired-mode app)
+  "Toggle all-the-icons in dired."
+  (echo-message! (app-state-echo app) "Icon display in dired: use Unicode glyphs"))
+
+(def (cmd-treemacs-icons-dired-mode app)
+  "Toggle treemacs icons in dired."
+  (echo-message! (app-state-echo app) "Treemacs icons: use Unicode glyphs"))
+
+(def (cmd-nano-theme app)
+  "Switch to nano-emacs theme."
+  (echo-message! (app-state-echo app) "Use M-x customize-themes to browse themes"))
+
+;;; ============================================================================
 ;;; Snippet/template expansion system

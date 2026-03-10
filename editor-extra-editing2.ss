@@ -1834,4 +1834,62 @@
     (editor-set-text ed fire)
     (editor-goto-pos ed 0)))
 
+;;;============================================================================
+;;; DAP-UI / poly-mode / company-box / impatient / modeline themes
+;;;============================================================================
+
+(def *tui-dap-ui-mode* #f)
+(def (cmd-dap-ui-mode app)
+  "Toggle DAP-UI mode — debugger UI panels."
+  (set! *tui-dap-ui-mode* (not *tui-dap-ui-mode*))
+  (echo-message! (app-state-echo app) (if *tui-dap-ui-mode* "DAP-UI enabled" "DAP-UI disabled")))
+
+(def *tui-poly-mode* #f)
+(def (cmd-poly-mode app)
+  "Toggle poly-mode — multiple major modes in one buffer."
+  (set! *tui-poly-mode* (not *tui-poly-mode*))
+  (echo-message! (app-state-echo app) (if *tui-poly-mode* "Poly-mode enabled" "Poly-mode disabled")))
+
+(def *tui-company-box* #f)
+(def (cmd-company-box-mode app)
+  "Toggle company-box mode — fancy completion popup."
+  (set! *tui-company-box* (not *tui-company-box*))
+  (echo-message! (app-state-echo app) (if *tui-company-box* "Company-box enabled" "Company-box disabled")))
+
+(def *tui-impatient-mode* #f)
+(def (cmd-impatient-mode app)
+  "Toggle impatient mode — live preview HTML in browser."
+  (set! *tui-impatient-mode* (not *tui-impatient-mode*))
+  (echo-message! (app-state-echo app) (if *tui-impatient-mode* "Impatient mode enabled" "Impatient mode disabled")))
+
+(def *tui-mood-line* #f)
+(def (cmd-mood-line-mode app)
+  "Toggle mood-line — minimal modeline theme."
+  (set! *tui-mood-line* (not *tui-mood-line*))
+  (echo-message! (app-state-echo app) (if *tui-mood-line* "Mood-line enabled" "Mood-line disabled")))
+
+(def *tui-powerline* #f)
+(def (cmd-powerline-mode app)
+  "Toggle powerline — fancy modeline."
+  (set! *tui-powerline* (not *tui-powerline*))
+  (echo-message! (app-state-echo app) (if *tui-powerline* "Powerline enabled" "Powerline disabled")))
+
+(def *tui-centaur-tabs* #f)
+(def (cmd-centaur-tabs-mode app)
+  "Toggle centaur-tabs — tab bar for buffer groups."
+  (set! *tui-centaur-tabs* (not *tui-centaur-tabs*))
+  (echo-message! (app-state-echo app) (if *tui-centaur-tabs* "Centaur-tabs enabled" "Centaur-tabs disabled")))
+
+(def (cmd-all-the-icons-dired-mode app)
+  "Toggle all-the-icons in dired."
+  (echo-message! (app-state-echo app) "Icon display in dired: N/A in terminal"))
+
+(def (cmd-treemacs-icons-dired-mode app)
+  "Toggle treemacs icons in dired."
+  (echo-message! (app-state-echo app) "Treemacs icons: N/A in terminal"))
+
+(def (cmd-nano-theme app)
+  "Switch to nano-emacs theme."
+  (let ((cmd (find-command 'load-theme))) (when cmd (cmd app))))
+
 

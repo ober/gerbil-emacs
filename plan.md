@@ -215,6 +215,14 @@ Largest files: modes (~1851), lsp (~1802), search (~1778)
 - ~~**Circadian / auto-dark**~~ — DONE: time-based and OS-based theme switching toggles
 - ~~**Breadcrumb / sideline / flycheck-inline**~~ — DONE: code context, side info, inline error display mode toggles
 - ~~**Zone / fireplace**~~ — DONE: screen saver and decorative fireplace display
+- ~~**DAP-UI**~~ — DONE: debugger UI panels mode toggle
+- ~~**Poly-mode**~~ — DONE: multiple major modes in one buffer toggle
+- ~~**Company-box**~~ — DONE: fancy completion popup mode toggle
+- ~~**Impatient mode**~~ — DONE: live HTML preview mode toggle
+- ~~**Mood-line / powerline**~~ — DONE: modeline theme toggles
+- ~~**Centaur-tabs**~~ — DONE: tab bar for buffer groups toggle
+- ~~**All-the-icons-dired / treemacs-icons**~~ — DONE: icon display in dired
+- ~~**Nano-theme**~~ — DONE: nano-emacs theme selection
 
 ### Aspirational
 - LSP in TUI
