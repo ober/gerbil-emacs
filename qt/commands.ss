@@ -2428,19 +2428,35 @@
 
 ;;; Batch 14: Completion, AI, TRAMP/Remote
 
+;; Completion framework modes — mutually exclusive
 (def *qt-vertico-mode* #f)
-(def (cmd-vertico-mode app)
-  "Toggle Vertico mode (Qt) — uses narrowing framework."
-  (set! *qt-vertico-mode* (not *qt-vertico-mode*))
-  (echo-message! (app-state-echo app)
-    (if *qt-vertico-mode* "Vertico mode: on (using narrowing)" "Vertico mode: off")))
-
 (def *qt-selectrum-mode* #f)
+(def (qt-deactivate-completion-frameworks!)
+  "Deactivate all completion framework mode flags."
+  (set! *qt-vertico-mode* #f)
+  (set! *qt-selectrum-mode* #f)
+  ;; Also deactivate toggle-based frameworks via parity toggle system
+  (for-each (lambda (name)
+              (hash-put! *qt-toggle-states* name #f))
+            '(toggle-helm-mode toggle-ivy-mode ido-mode ivy-mode helm-mode)))
+
+(def (cmd-vertico-mode app)
+  "Toggle Vertico mode (Qt) — mutually exclusive with other frameworks."
+  (if *qt-vertico-mode*
+    (begin (set! *qt-vertico-mode* #f)
+           (echo-message! (app-state-echo app) "Vertico mode: off"))
+    (begin (qt-deactivate-completion-frameworks!)
+           (set! *qt-vertico-mode* #t)
+           (echo-message! (app-state-echo app) "Vertico mode: on (other frameworks disabled)"))))
+
 (def (cmd-selectrum-mode app)
-  "Toggle Selectrum mode (Qt) — alternative vertical completion."
-  (set! *qt-selectrum-mode* (not *qt-selectrum-mode*))
-  (echo-message! (app-state-echo app)
-    (if *qt-selectrum-mode* "Selectrum mode: on (using narrowing)" "Selectrum mode: off")))
+  "Toggle Selectrum mode (Qt) — mutually exclusive with other frameworks."
+  (if *qt-selectrum-mode*
+    (begin (set! *qt-selectrum-mode* #f)
+           (echo-message! (app-state-echo app) "Selectrum mode: off"))
+    (begin (qt-deactivate-completion-frameworks!)
+           (set! *qt-selectrum-mode* #t)
+           (echo-message! (app-state-echo app) "Selectrum mode: on (other frameworks disabled)"))))
 
 (def (cmd-cape-dabbrev app)
   "Cape dabbrev (Qt) — delegates to hippie-expand."

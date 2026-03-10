@@ -799,16 +799,21 @@
       ((terminal-buffer? buf)    (cmd-terminal-send app))
       ((chat-buffer? buf)        (cmd-chat-send app))
       (else
-       ;; Electric indent: match previous line's indentation
        (let* ((ed (current-editor app))
-              (pos (editor-get-current-pos ed))
-              (text (editor-get-text ed))
-              (line (editor-line-from-position ed pos))
-              (line-start (editor-position-from-line ed line))
-              (indent (get-line-indent text line-start))
-              (indent-str (make-string indent #\space)))
-         (editor-insert-text ed pos (string-append "\n" indent-str))
-         (editor-goto-pos ed (+ pos 1 indent)))))))
+              (pos (editor-get-current-pos ed)))
+         (if *electric-indent-mode*
+           ;; Electric indent: match previous line's indentation
+           (let* ((text (editor-get-text ed))
+                  (line (editor-line-from-position ed pos))
+                  (line-start (editor-position-from-line ed line))
+                  (indent (get-line-indent text line-start))
+                  (indent-str (make-string indent #\space)))
+             (editor-insert-text ed pos (string-append "\n" indent-str))
+             (editor-goto-pos ed (+ pos 1 indent)))
+           ;; Plain newline without auto-indent
+           (begin
+             (editor-insert-text ed pos "\n")
+             (editor-goto-pos ed (+ pos 1)))))))))
 
 (def (cmd-open-line app)
   (let* ((ed (current-editor app))

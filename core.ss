@@ -78,6 +78,9 @@
   key-lossage-record!
   key-lossage->string
 
+  ;; Shared editor flags
+  *electric-indent-mode*
+
   ;; Shared helpers
   brace-char?
   safe-string-trim
@@ -1663,6 +1666,9 @@
 ;;;============================================================================
 ;;; Shared helpers
 ;;;============================================================================
+
+;; Shared editor flags (used by editor-core.ss cmd-newline and toggle commands)
+(def *electric-indent-mode* #t)
 
 (def (brace-char? ch)
   "Check if a character code represents a brace/paren/bracket."

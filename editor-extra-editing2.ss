@@ -615,7 +615,7 @@
 
 ;; ── batch 42: editing preferences and modes ─────────────────────────
 (def *auto-fill-comments* #f)
-(def *electric-indent-mode* #t)
+;; *electric-indent-mode* is defined in editor-core.ss (used by cmd-newline)
 (def *truncate-partial-width* #f)
 (def *inhibit-startup-screen* #f)
 (def *visible-cursor* #t)

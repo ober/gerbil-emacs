@@ -650,8 +650,31 @@
                     (echo-message! (app-state-echo app) "Grep done")))))))))))
 
 (def (cmd-previous-grep-result app)
-  "Jump to previous grep result."
-  (echo-message! (app-state-echo app) "Use grep buffer to navigate results"))
+  "Jump to previous grep result in *Grep* or *Compilation* buffer."
+  (let* ((echo (app-state-echo app))
+         (grep-buf (or (buffer-by-name "*Grep*")
+                       (buffer-by-name "*Compilation*"))))
+    (if (not grep-buf)
+      (echo-error! echo "No grep/compilation buffer")
+      (let* ((ed (current-editor app))
+             (fr (app-state-frame app))
+             (cur-buf (current-buffer-from-app app)))
+        (unless (eq? cur-buf grep-buf)
+          (buffer-attach! ed grep-buf)
+          (set! (edit-window-buffer (current-window fr)) grep-buf))
+        (let* ((pos (editor-get-current-pos ed))
+               (cur-line (editor-line-from-position ed pos)))
+          (let loop ((line (- cur-line 1)))
+            (if (< line 0)
+              (echo-message! echo "No previous results")
+              (let* ((line-text (editor-get-line ed line))
+                     (parsed (parse-grep-line-text line-text)))
+                (if parsed
+                  (begin
+                    (editor-goto-line ed line)
+                    (editor-scroll-caret ed)
+                    (cmd-grep-goto app))
+                  (loop (- line 1)))))))))))
 
 ;; --- Wdired/wgrep ---
 (def *tui-wdired-active* #f)
@@ -737,8 +760,38 @@
       (let ((val (app-read-string app (string-append name " = "))))
         (echo-message! (app-state-echo app) (string-append "Set " name " = " (or val "")))))))
 (def (cmd-show-dir-locals app)
-  "Show dir-locals."
-  (echo-message! (app-state-echo app) "Dir-locals: use .gemacs-config"))
+  "Show directory-local settings for the current buffer's file."
+  (let* ((buf (current-buffer-from-app app))
+         (path (and buf (buffer-file-path buf)))
+         (echo (app-state-echo app)))
+    (if (not path)
+      (echo-error! echo "Buffer has no file")
+      (let ((config (find-tui-dir-locals-file (path-directory path))))
+        (if (not config)
+          (echo-message! echo "No .gemacs-config found")
+          (with-exception-catcher
+            (lambda (e) (echo-error! echo "Cannot read config"))
+            (lambda ()
+              (let* ((content (read-file-as-string config))
+                     (fr (app-state-frame app))
+                     (win (current-window fr))
+                     (ed (edit-window-editor win))
+                     (new-buf (buffer-create! "*Dir Locals*" ed)))
+                (buffer-attach! ed new-buf)
+                (set! (edit-window-buffer win) new-buf)
+                (editor-set-text ed (string-append "Directory locals from: " config "\n\n" content))
+                (editor-goto-pos ed 0)
+                (editor-set-read-only ed #t)
+                (echo-message! echo (string-append "Showing: " config))))))))))
+
+(def (find-tui-dir-locals-file dir)
+  "Search DIR and parent directories for .gemacs-config file."
+  (let loop ((d dir))
+    (let ((config-path (path-expand ".gemacs-config" d)))
+      (if (file-exists? config-path) config-path
+        (let ((parent (path-directory d)))
+          (if (string=? parent d) #f
+            (loop parent)))))))
 
 ;; --- Remote files ---
 (def (cmd-find-file-remote app)

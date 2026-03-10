@@ -168,9 +168,9 @@
 
 (def (cmd-electric-indent-mode app)
   "Toggle electric-indent-mode — auto-indent on newline."
-  (let ((on (toggle-mode! 'electric-indent)))
-    (echo-message! (app-state-echo app)
-      (if on "Electric indent: on" "Electric indent: off"))))
+  (set! *electric-indent-mode* (not *electric-indent-mode*))
+  (echo-message! (app-state-echo app)
+    (if *electric-indent-mode* "Electric indent: on" "Electric indent: off")))
 
 (def (cmd-show-paren-mode app)
   "Toggle show-paren-mode — highlight matching parentheses."

@@ -209,11 +209,22 @@
         "wheat       #F5DEB3    ivory       #FFFFF0\n"))
     (editor-set-read-only ed #t)))
 
-;; IDO mode (Interactively Do Things) — delegates to built-in completion
+;; Completion framework modes — mutually exclusive (enabling one disables others)
+(def *completion-frameworks* '(ido helm ivy vertico))
+
+(def (activate-completion-framework! name app)
+  "Activate completion framework NAME, deactivating all others."
+  (for-each (lambda (fw) (when (mode-enabled? fw) (toggle-mode! fw)))
+            *completion-frameworks*)
+  (let ((on (toggle-mode! name)))
+    (echo-message! (app-state-echo app)
+      (if on
+        (string-append (symbol->string name) " mode: on (other frameworks disabled)")
+        (string-append (symbol->string name) " mode: off")))))
+
 (def (cmd-ido-mode app)
-  "Toggle IDO mode — enhanced completion is always active."
-  (let ((on (toggle-mode! 'ido)))
-    (echo-message! (app-state-echo app) (if on "IDO mode: on" "IDO mode: off"))))
+  "Toggle IDO mode — enhanced completion (mutually exclusive with helm/ivy/vertico)."
+  (activate-completion-framework! 'ido app))
 
 (def (cmd-ido-find-file app)
   "Find file with IDO — delegates to find-file with completion."
@@ -225,19 +236,16 @@
 
 ;; Helm / Ivy / Vertico — completion framework modes
 (def (cmd-helm-mode app)
-  "Toggle Helm mode — uses built-in completion framework."
-  (let ((on (toggle-mode! 'helm)))
-    (echo-message! (app-state-echo app) (if on "Helm mode: on" "Helm mode: off"))))
+  "Toggle Helm mode — mutually exclusive with ido/ivy/vertico."
+  (activate-completion-framework! 'helm app))
 
 (def (cmd-ivy-mode app)
-  "Toggle Ivy mode — uses built-in completion framework."
-  (let ((on (toggle-mode! 'ivy)))
-    (echo-message! (app-state-echo app) (if on "Ivy mode: on" "Ivy mode: off"))))
+  "Toggle Ivy mode — mutually exclusive with ido/helm/vertico."
+  (activate-completion-framework! 'ivy app))
 
 (def (cmd-vertico-mode app)
-  "Toggle Vertico mode — uses built-in completion framework."
-  (let ((on (toggle-mode! 'vertico)))
-    (echo-message! (app-state-echo app) (if on "Vertico mode: on" "Vertico mode: off"))))
+  "Toggle Vertico mode — mutually exclusive with ido/helm/ivy."
+  (activate-completion-framework! 'vertico app))
 
 (def (cmd-consult-line app)
   "Search buffer lines with consult — interactive line search."
