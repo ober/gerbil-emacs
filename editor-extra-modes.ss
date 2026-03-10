@@ -1523,21 +1523,81 @@
     (echo-message! (app-state-echo app) (if on "Diff-hl: on" "Diff-hl: off"))))
 
 ;; Wgrep — editable grep results
+(def *wgrep-original-lines* '())
+
 (def (cmd-wgrep-change-to-wgrep-mode app)
-  "Change to wgrep mode — makes grep results editable."
+  "Make grep results buffer editable for bulk editing."
   (let* ((fr (app-state-frame app))
          (win (current-window fr))
-         (ed (edit-window-editor win)))
-    (editor-set-read-only ed #f)
-    (echo-message! (app-state-echo app) "Wgrep: editing enabled. C-c C-c to apply.")))
+         (ed (edit-window-editor win))
+         (buf (edit-window-buffer win))
+         (name (buffer-name buf)))
+    (if (not (or (string-contains name "*grep*")
+                 (string-contains name "*rg*")
+                 (string-contains name "*Occur*")))
+      (echo-message! (app-state-echo app) "Not a grep results buffer")
+      (let ((text (editor-get-text ed)))
+        (set! *wgrep-original-lines*
+          (let loop ((lines (string-split text #\newline)) (n 0) (acc '()))
+            (if (null? lines) (reverse acc)
+              (loop (cdr lines) (+ n 1) (cons (cons n (car lines)) acc)))))
+        (send-message ed SCI_SETREADONLY 0 0)
+        (echo-message! (app-state-echo app)
+          "Wgrep: editing enabled. C-c C-c to apply.")))))
+
+(def (wgrep-parse-grep-line line)
+  "Parse 'filename:linenum:content' into (filename linenum content) or #f."
+  (let ((first-colon (string-index line #\:)))
+    (if (not first-colon) #f
+      (let* ((filename (substring line 0 first-colon))
+             (rest (substring line (+ first-colon 1) (string-length line)))
+             (second-colon (string-index rest #\:)))
+        (if (not second-colon) #f
+          (let ((linenum (string->number (substring rest 0 second-colon)))
+                (content (substring rest (+ second-colon 1) (string-length rest))))
+            (if linenum (list filename linenum content) #f)))))))
 
 (def (cmd-wgrep-finish-edit app)
-  "Finish wgrep editing — applies changes to files."
+  "Apply wgrep edits back to source files."
   (let* ((fr (app-state-frame app))
          (win (current-window fr))
-         (ed (edit-window-editor win)))
-    (editor-set-read-only ed #t)
-    (echo-message! (app-state-echo app) "Wgrep: changes applied")))
+         (ed (edit-window-editor win))
+         (text (editor-get-text ed))
+         (lines (string-split text #\newline))
+         (changes 0))
+    (for-each
+      (lambda (pair)
+        (let ((idx (car pair)) (orig (cdr pair)))
+          (when (< idx (length lines))
+            (let ((current (list-ref lines idx)))
+              (unless (string=? current orig)
+                (let ((parsed (wgrep-parse-grep-line current)))
+                  (when parsed
+                    (let ((filename (car parsed))
+                          (linenum (cadr parsed))
+                          (new-content (caddr parsed)))
+                      (when (file-exists? filename)
+                        (with-exception-catcher
+                          (lambda (e) #f)
+                          (lambda ()
+                            (let* ((file-text (call-with-input-file filename
+                                                (lambda (p) (read-line p #f))))
+                                   (file-lines (string-split file-text #\newline)))
+                              (when (< (- linenum 1) (length file-lines))
+                                (let ((updated
+                                        (let loop ((fl file-lines) (n 1) (acc '()))
+                                          (if (null? fl) (reverse acc)
+                                            (loop (cdr fl) (+ n 1)
+                                                  (cons (if (= n linenum)
+                                                          new-content (car fl))
+                                                        acc))))))
+                                  (call-with-output-file filename
+                                    (lambda (p) (display (string-join updated "\n") p)))
+                                  (set! changes (+ changes 1))))))))))))))))
+      *wgrep-original-lines*)
+    (send-message ed SCI_SETREADONLY 1 0)
+    (echo-message! (app-state-echo app)
+      (string-append "Wgrep: applied " (number->string changes) " changes"))))
 
 ;; Symbol overlay — highlight occurrences of symbol at point
 (def (cmd-symbol-overlay-put app)

@@ -793,3 +793,365 @@ Scheme/Gerbil/Lisp buffers. Also used by LSP for hover information."
       (string-append "[" (number->string current) "/" (number->string total) "]")
       "[0/0]")))
 
+;;;============================================================================
+;;; Elfeed — RSS/Atom feed reader (Qt)
+;;;============================================================================
+
+(def *qt-elfeed-feeds* '())
+(def *qt-elfeed-entries* '())
+
+(def (qt-elfeed-db-path)
+  (let ((home (getenv "HOME" "/tmp")))
+    (string-append home "/.gemacs-elfeed-feeds")))
+
+(def (qt-elfeed-load-feeds!)
+  (let ((path (qt-elfeed-db-path)))
+    (when (file-exists? path)
+      (set! *qt-elfeed-feeds*
+        (with-exception-catcher
+          (lambda (e) '())
+          (lambda ()
+            (let ((content (call-with-input-file path
+                             (lambda (p) (read-line p #f)))))
+              (if (and content (string? content))
+                (filter (lambda (s) (> (string-length s) 0))
+                  (map string-trim-both
+                       (string-split content #\newline)))
+                '()))))))))
+
+(def (qt-elfeed-save-feeds!)
+  (call-with-output-file (qt-elfeed-db-path)
+    (lambda (p)
+      (for-each (lambda (url) (display url p) (newline p))
+                *qt-elfeed-feeds*))))
+
+(def (qt-elfeed-fetch url)
+  "Fetch and parse an RSS/Atom feed URL."
+  (with-exception-catcher
+    (lambda (e) '())
+    (lambda ()
+      (let* ((proc (open-process
+                     (list path: "curl"
+                           arguments: (list "-sL" "-A" "Mozilla/5.0"
+                                            "--max-time" "15" url)
+                           stdin-redirection: #f
+                           stdout-redirection: #t
+                           stderr-redirection: #f)))
+             (xml (read-line proc #f)))
+        (process-status proc)
+        (if (and xml (string? xml))
+          (qt-elfeed-parse xml url)
+          '())))))
+
+(def (qt-elfeed-extract-tag xml tag (start 0))
+  (let* ((open-tag (string-append "<" tag))
+         (close-tag (string-append "</" tag ">"))
+         (pos (string-contains xml open-tag start)))
+    (if (not pos) #f
+      (let ((gt (string-index xml #\> pos)))
+        (if (not gt) #f
+          (let* ((content-start (+ gt 1))
+                 (end-pos (string-contains xml close-tag content-start)))
+            (if (not end-pos) #f
+              (cons (substring xml content-start end-pos)
+                    (+ end-pos (string-length close-tag))))))))))
+
+(def (qt-elfeed-unescape s)
+  (let* ((s (string-replace-all s "&amp;" "&"))
+         (s (string-replace-all s "&lt;" "<"))
+         (s (string-replace-all s "&gt;" ">"))
+         (s (string-replace-all s "&quot;" "\""))
+         (s (string-replace-all s "&#39;" "'"))
+         (s (string-replace-all s "<![CDATA[" ""))
+         (s (string-replace-all s "]]>" "")))
+    (string-trim-both s)))
+
+(def (qt-elfeed-extract-href content)
+  (let ((pos (string-contains content "<link")))
+    (if (not pos) ""
+      (let ((href-pos (string-contains content "href=" pos)))
+        (if (not href-pos) ""
+          (let* ((q-start (+ href-pos 5))
+                 (quote-char (if (< q-start (string-length content))
+                               (string-ref content q-start) #\"))
+                 (val-start (+ q-start 1))
+                 (val-end (string-index content quote-char val-start)))
+            (if val-end (substring content val-start val-end) "")))))))
+
+(def (qt-elfeed-parse xml url)
+  "Parse RSS/Atom feed."
+  (let ((feed-title
+          (let ((t (qt-elfeed-extract-tag xml "title")))
+            (if t (qt-elfeed-unescape (car t)) url))))
+    (let ((items (qt-elfeed-parse-items xml "item" feed-title)))
+      (if (null? items)
+        (qt-elfeed-parse-items xml "entry" feed-title)
+        items))))
+
+(def (qt-elfeed-parse-items xml tag feed-title)
+  (let loop ((start 0) (acc '()))
+    (let ((item (qt-elfeed-extract-tag xml tag start)))
+      (if (not item) (reverse acc)
+        (let* ((content (car item))
+               (next (cdr item))
+               (title-r (qt-elfeed-extract-tag content "title"))
+               (title (if title-r (qt-elfeed-unescape (car title-r)) "(no title)"))
+               (link-r (qt-elfeed-extract-tag content "link"))
+               (link (if link-r
+                       (let ((l (car link-r)))
+                         (if (> (string-length l) 0)
+                           (qt-elfeed-unescape l)
+                           (qt-elfeed-extract-href content)))
+                       ""))
+               (date-r (or (qt-elfeed-extract-tag content "pubDate")
+                           (qt-elfeed-extract-tag content "updated")
+                           (qt-elfeed-extract-tag content "published")
+                           (qt-elfeed-extract-tag content "dc:date")))
+               (date (if date-r (qt-elfeed-unescape (car date-r)) "")))
+          (loop next (cons (list title link date feed-title) acc)))))))
+
+(def (cmd-elfeed app)
+  "Open Elfeed RSS feed reader."
+  (qt-elfeed-load-feeds!)
+  (when (null? *qt-elfeed-feeds*)
+    (set! *qt-elfeed-feeds*
+      '("https://planet.emacslife.com/atom.xml"
+        "https://hnrss.org/frontpage")))
+  (let* ((fr (app-state-frame app))
+         (ed (current-qt-editor app)))
+    (echo-message! (app-state-echo app)
+      (string-append "Fetching " (number->string (length *qt-elfeed-feeds*)) " feeds..."))
+    (set! *qt-elfeed-entries* '())
+    (for-each
+      (lambda (url)
+        (set! *qt-elfeed-entries*
+          (append *qt-elfeed-entries* (qt-elfeed-fetch url))))
+      *qt-elfeed-feeds*)
+    ;; Display
+    (let* ((text (qt-elfeed-format *qt-elfeed-entries*))
+           (ed2 (current-qt-editor app))
+           (buf (or (buffer-by-name "*elfeed*")
+                    (qt-buffer-create! "*elfeed*" ed2 #f))))
+      (qt-buffer-attach! ed2 buf)
+      (set! (qt-edit-window-buffer (qt-current-window fr)) buf)
+      (qt-plain-text-edit-set-text! ed2 text)
+      (qt-plain-text-edit-set-cursor-position! ed2 0)
+      (echo-message! (app-state-echo app)
+        (string-append "Elfeed: " (number->string (length *qt-elfeed-entries*)) " entries")))))
+
+(def (qt-elfeed-format entries)
+  (string-append "Elfeed - RSS Feed Reader\n"
+    (make-string 60 #\=) "\n\n"
+    (string-join
+      (map (lambda (e)
+             (let ((title (car e))
+                   (link (cadr e))
+                   (date (caddr e))
+                   (feed (cadddr e)))
+               (string-append
+                 (if (> (string-length date) 16)
+                   (substring date 0 16) date)
+                 "  " (string-pad-right feed 20) "  " title
+                 "\n    " link)))
+           entries)
+      "\n\n")
+    "\n"))
+
+(def (cmd-elfeed-add-feed app)
+  "Add an RSS feed URL."
+  (let* ((echo (app-state-echo app))
+         (url (qt-echo-read-string app "Feed URL: ")))
+    (when (and url (> (string-length url) 0))
+      (qt-elfeed-load-feeds!)
+      (unless (member url *qt-elfeed-feeds*)
+        (set! *qt-elfeed-feeds* (cons url *qt-elfeed-feeds*))
+        (qt-elfeed-save-feeds!)
+        (echo-message! echo (string-append "Added feed: " url))))))
+
+(def (cmd-elfeed-update app)
+  "Refresh elfeed feeds."
+  (cmd-elfeed app))
+
+
+;;;============================================================================
+;;; Direnv — .envrc integration (Qt)
+;;;============================================================================
+
+(def (cmd-direnv-update-environment app)
+  "Load .envrc via direnv."
+  (let* ((dir (current-directory))
+         (envrc (string-append dir "/.envrc")))
+    (if (not (file-exists? envrc))
+      (echo-message! (app-state-echo app) "No .envrc in current directory")
+      (with-exception-catcher
+        (lambda (e) (echo-message! (app-state-echo app) "direnv failed"))
+        (lambda ()
+          (let* ((proc (open-process
+                         (list path: "direnv"
+                               arguments: (list "export" "bash")
+                               directory: dir
+                               stdin-redirection: #f
+                               stdout-redirection: #t
+                               stderr-redirection: #f)))
+                 (output (read-line proc #f)))
+            (process-status proc)
+            (when (and output (string? output))
+              (let loop ((rest output) (count 0))
+                (let ((pos (string-contains rest "export ")))
+                  (if (not pos)
+                    (echo-message! (app-state-echo app)
+                      (string-append "direnv: loaded " (number->string count) " vars"))
+                    (let* ((start (+ pos 7))
+                           (nl (or (string-index rest #\newline start)
+                                   (string-length rest)))
+                           (assign (substring rest start nl))
+                           (eq (string-index assign #\=)))
+                      (when eq
+                        (let ((var (substring assign 0 eq))
+                              (val (let ((raw (substring assign (+ eq 1) (string-length assign))))
+                                     (if (and (> (string-length raw) 1)
+                                              (or (char=? (string-ref raw 0) #\')
+                                                  (char=? (string-ref raw 0) #\")))
+                                       (substring raw 1 (- (string-length raw) 1))
+                                       raw))))
+                          (setenv var val)))
+                      (loop (substring rest (+ nl 1) (string-length rest))
+                            (+ count 1)))))))))))))
+
+(def (cmd-direnv-allow app)
+  "Run direnv allow."
+  (with-exception-catcher
+    (lambda (e) (echo-message! (app-state-echo app) "direnv allow failed"))
+    (lambda ()
+      (let* ((proc (open-process
+                     (list path: "direnv" arguments: (list "allow")
+                           directory: (current-directory)
+                           stdin-redirection: #f stdout-redirection: #t
+                           stderr-redirection: #f)))
+             (out (read-line proc #f)))
+        (process-status proc)
+        (echo-message! (app-state-echo app) "direnv: allowed .envrc")))))
+
+;;;============================================================================
+;;; Move text up/down (drag-stuff)
+;;;============================================================================
+
+(def (cmd-move-text-up app)
+  "Move current line up."
+  (let* ((ed (current-qt-editor app))
+         (text (qt-plain-text-edit-text ed))
+         (pos (qt-plain-text-edit-cursor-position ed))
+         (lines (string-split text #\newline))
+         (cur-line (qt-pos-to-line text pos)))
+    (when (> cur-line 0)
+      (let* ((swapped
+               (let loop ((ls lines) (n 0) (acc '()))
+                 (cond
+                   ((null? ls) (reverse acc))
+                   ((= n (- cur-line 1))
+                    (if (null? (cdr ls))
+                      (reverse (cons (car ls) acc))
+                      (loop (cddr ls) (+ n 2)
+                            (cons (car ls) (cons (cadr ls) acc)))))
+                   (else (loop (cdr ls) (+ n 1) (cons (car ls) acc))))))
+             (new-text (string-join swapped "\n")))
+        (qt-plain-text-edit-set-text! ed new-text)
+        (qt-plain-text-edit-set-cursor-position! ed
+          (qt-line-to-pos new-text (- cur-line 1)))))))
+
+(def (cmd-move-text-down app)
+  "Move current line down."
+  (let* ((ed (current-qt-editor app))
+         (text (qt-plain-text-edit-text ed))
+         (pos (qt-plain-text-edit-cursor-position ed))
+         (lines (string-split text #\newline))
+         (cur-line (qt-pos-to-line text pos))
+         (max-line (- (length lines) 1)))
+    (when (< cur-line max-line)
+      (let* ((swapped
+               (let loop ((ls lines) (n 0) (acc '()))
+                 (cond
+                   ((null? ls) (reverse acc))
+                   ((= n cur-line)
+                    (if (null? (cdr ls))
+                      (reverse (cons (car ls) acc))
+                      (loop (cddr ls) (+ n 2)
+                            (cons (car ls) (cons (cadr ls) acc)))))
+                   (else (loop (cdr ls) (+ n 1) (cons (car ls) acc))))))
+             (new-text (string-join swapped "\n")))
+        (qt-plain-text-edit-set-text! ed new-text)
+        (qt-plain-text-edit-set-cursor-position! ed
+          (qt-line-to-pos new-text (+ cur-line 1)))))))
+
+(def (qt-pos-to-line text pos)
+  "Convert character position to line number."
+  (let loop ((i 0) (line 0))
+    (if (>= i pos) line
+      (if (and (< i (string-length text)) (char=? (string-ref text i) #\newline))
+        (loop (+ i 1) (+ line 1))
+        (loop (+ i 1) line)))))
+
+(def (qt-line-to-pos text line)
+  "Convert line number to character position."
+  (let loop ((i 0) (n 0))
+    (if (= n line) i
+      (if (>= i (string-length text)) i
+        (if (char=? (string-ref text i) #\newline)
+          (loop (+ i 1) (+ n 1))
+          (loop (+ i 1) n))))))
+
+
+;;;============================================================================
+;;; Transient keymaps (Qt)
+;;;============================================================================
+
+(def *qt-transient-maps* (make-hash-table))
+
+(def (qt-transient-init!)
+  (hash-put! *qt-transient-maps* 'window-resize
+    '((#\{ "Shrink horizontal" shrink-window-horizontally)
+      (#\} "Grow horizontal" enlarge-window-horizontally)
+      (#\^ "Grow vertical" enlarge-window)
+      (#\v "Shrink vertical" shrink-window)
+      (#\= "Balance" balance-windows)))
+  (hash-put! *qt-transient-maps* 'zoom
+    '((#\+ "Zoom in" text-scale-increase)
+      (#\- "Zoom out" text-scale-decrease)
+      (#\0 "Reset" text-scale-adjust)))
+  (hash-put! *qt-transient-maps* 'navigate
+    '((#\n "Next error" next-error)
+      (#\p "Previous error" previous-error)
+      (#\N "Next buffer" next-buffer)
+      (#\P "Previous buffer" previous-buffer))))
+
+(def (cmd-transient-map app)
+  "Show transient keymap menu."
+  (qt-transient-init!)
+  (let* ((echo (app-state-echo app))
+         (names (hash-keys *qt-transient-maps*))
+         (choice (qt-echo-read-string app
+                   (string-append "Transient ("
+                     (string-join (map symbol->string names) "/") "): "))))
+    (when (and choice (> (string-length choice) 0))
+      (let ((sym (string->symbol choice)))
+        (if (not (hash-get *qt-transient-maps* sym))
+          (echo-message! echo (string-append "Unknown: " choice))
+          (let* ((entries (hash-get *qt-transient-maps* sym))
+                 (prompt (string-append (symbol->string sym) ": "
+                           (string-join
+                             (map (lambda (e)
+                                    (string-append (string (car e)) "=" (cadr e)))
+                                  entries) " ")))
+                 (key-str (qt-echo-read-string app (string-append prompt " > "))))
+            (when (and key-str (= (string-length key-str) 1))
+              (let* ((ch (string-ref key-str 0))
+                     (entry (find (lambda (e) (char=? (car e) ch)) entries)))
+                (if entry
+                  (let* ((cmd-sym (caddr entry))
+                         (cmd (find-command cmd-sym)))
+                    (if cmd (cmd app)
+                      (echo-message! echo "Command not found")))
+                  (echo-message! echo "Unknown key"))))))))))
+
+
+

@@ -1082,3 +1082,448 @@
         (send-message ed SCI_SETMARGINWIDTHN 0 48)
         (echo-message! (app-state-echo app) "Line numbers ON")))))
 
+;;;============================================================================
+;;; Helper: get or create a named buffer (TUI)
+;;;============================================================================
+
+(def (tui-get-or-create-buffer app name)
+  "Find buffer by name or create a new one, attach to current editor."
+  (let* ((fr (app-state-frame app))
+         (win (current-window fr))
+         (ed (edit-window-editor win)))
+    (or (buffer-by-name name)
+        (buffer-create! name ed))))
+
+(def (tui-display-in-buffer! app name text)
+  "Display text in a named buffer, switching to it."
+  (let* ((fr (app-state-frame app))
+         (win (current-window fr))
+         (ed (edit-window-editor win))
+         (buf (tui-get-or-create-buffer app name)))
+    (buffer-attach! ed buf)
+    (set! (edit-window-buffer win) buf)
+    (editor-set-text ed text)
+    (editor-goto-pos ed 0)
+    buf))
+
+;;;============================================================================
+;;; Elfeed — RSS/Atom feed reader
+;;;============================================================================
+
+(def *elfeed-feeds* '())           ; list of feed URL strings
+(def *elfeed-entries* '())         ; list of (title url date feed-title read?)
+(def *elfeed-db-file* #f)         ; path to feeds list file
+
+(def (elfeed-db-path)
+  "Path to elfeed feeds list."
+  (or *elfeed-db-file*
+      (let ((home (getenv "HOME" "/tmp")))
+        (string-append home "/.gemacs-elfeed-feeds"))))
+
+(def (elfeed-load-feeds!)
+  "Load feed URLs from disk."
+  (let ((path (elfeed-db-path)))
+    (when (file-exists? path)
+      (set! *elfeed-feeds*
+        (with-exception-catcher
+          (lambda (e) '())
+          (lambda ()
+            (let ((lines (call-with-input-file path
+                           (lambda (p) (read-line p #f)))))
+              (if (and lines (string? lines))
+                (let loop ((rest lines) (acc '()))
+                  (let ((nl (string-index rest #\newline)))
+                    (if nl
+                      (let ((line (string-trim-both (substring rest 0 nl))))
+                        (loop (substring rest (+ nl 1) (string-length rest))
+                              (if (and (> (string-length line) 0)
+                                       (not (char=? (string-ref line 0) #\#)))
+                                (cons line acc) acc)))
+                      (let ((line (string-trim-both rest)))
+                        (reverse (if (> (string-length line) 0)
+                                   (cons line acc) acc))))))
+                '()))))))))
+
+(def (elfeed-save-feeds!)
+  "Save feed URLs to disk."
+  (let ((path (elfeed-db-path)))
+    (call-with-output-file path
+      (lambda (p)
+        (for-each (lambda (url) (display url p) (newline p))
+                  *elfeed-feeds*)))))
+
+(def (elfeed-fetch-feed url)
+  "Fetch and parse an RSS/Atom feed. Returns list of (title link date)."
+  (with-exception-catcher
+    (lambda (e) '())
+    (lambda ()
+      (let* ((proc (open-process
+                     (list path: "curl"
+                           arguments: (list "-sL" "-A" "Mozilla/5.0"
+                                            "--max-time" "15" url)
+                           stdin-redirection: #f
+                           stdout-redirection: #t
+                           stderr-redirection: #f)))
+             (xml (read-line proc #f)))
+        (process-status proc)
+        (if (and xml (string? xml))
+          (elfeed-parse-feed xml url)
+          '())))))
+
+(def (elfeed-extract-tag xml tag (start 0))
+  "Extract content between <tag> and </tag> starting from position start.
+   Returns (content . end-pos) or #f."
+  (let* ((open-tag (string-append "<" tag))
+         (close-tag (string-append "</" tag ">"))
+         (len (string-length xml))
+         (pos (string-contains xml open-tag start)))
+    (if (not pos) #f
+      ;; Find end of opening tag (handle attributes)
+      (let ((gt (string-index xml #\> pos)))
+        (if (not gt) #f
+          (let* ((content-start (+ gt 1))
+                 (end-pos (string-contains xml close-tag content-start)))
+            (if (not end-pos) #f
+              (cons (substring xml content-start end-pos)
+                    (+ end-pos (string-length close-tag))))))))))
+
+(def (elfeed-str-replace str from to)
+  "Replace all occurrences of from with to in str."
+  (let ((from-len (string-length from))
+        (str-len (string-length str)))
+    (if (= from-len 0) str
+      (let ((out (open-output-string)))
+        (let loop ((i 0))
+          (if (> (+ i from-len) str-len)
+            (begin (display (substring str i str-len) out)
+                   (get-output-string out))
+            (if (string=? (substring str i (+ i from-len)) from)
+              (begin (display to out) (loop (+ i from-len)))
+              (begin (write-char (string-ref str i) out) (loop (+ i 1))))))))))
+
+(def (elfeed-unescape-html s)
+  "Basic HTML entity unescaping."
+  (let* ((s (elfeed-str-replace s "&amp;" "&"))
+         (s (elfeed-str-replace s "&lt;" "<"))
+         (s (elfeed-str-replace s "&gt;" ">"))
+         (s (elfeed-str-replace s "&quot;" "\""))
+         (s (elfeed-str-replace s "&#39;" "'"))
+         (s (elfeed-str-replace s "<![CDATA[" ""))
+         (s (elfeed-str-replace s "]]>" "")))
+    (string-trim-both s)))
+
+(def (elfeed-parse-feed xml url)
+  "Parse RSS or Atom feed XML into entries. Returns list of (title link date)."
+  (let ((feed-title
+          (let ((t (elfeed-extract-tag xml "title")))
+            (if t (elfeed-unescape-html (car t)) url))))
+    ;; Try RSS <item> first, then Atom <entry>
+    (let ((items (elfeed-parse-items xml "item" feed-title)))
+      (if (null? items)
+        (elfeed-parse-items xml "entry" feed-title)
+        items))))
+
+(def (elfeed-parse-items xml tag feed-title)
+  "Parse all <item> or <entry> elements from xml."
+  (let loop ((start 0) (acc '()))
+    (let ((item (elfeed-extract-tag xml tag start)))
+      (if (not item) (reverse acc)
+        (let* ((content (car item))
+               (next (cdr item))
+               (title-r (elfeed-extract-tag content "title"))
+               (title (if title-r (elfeed-unescape-html (car title-r)) "(no title)"))
+               ;; RSS uses <link>, Atom uses <link href="..."/>
+               (link-r (elfeed-extract-tag content "link"))
+               (link (if link-r
+                       (let ((l (car link-r)))
+                         (if (> (string-length l) 0)
+                           (elfeed-unescape-html l)
+                           ;; Atom: extract href attribute
+                           (elfeed-extract-href content)))
+                       ""))
+               (date-r (or (elfeed-extract-tag content "pubDate")
+                           (elfeed-extract-tag content "updated")
+                           (elfeed-extract-tag content "published")
+                           (elfeed-extract-tag content "dc:date")))
+               (date (if date-r (elfeed-unescape-html (car date-r)) "")))
+          (loop next (cons (list title link date feed-title #f) acc)))))))
+
+(def (elfeed-extract-href content)
+  "Extract href from <link href='...' /> in Atom feeds."
+  (let ((pos (string-contains content "<link")))
+    (if (not pos) ""
+      (let ((href-pos (string-contains content "href=" pos)))
+        (if (not href-pos) ""
+          (let* ((q-start (+ href-pos 5))
+                 (quote-char (if (< q-start (string-length content))
+                               (string-ref content q-start) #\"))
+                 (val-start (+ q-start 1))
+                 (val-end (string-index content quote-char val-start)))
+            (if val-end (substring content val-start val-end) "")))))))
+
+(def (cmd-elfeed app)
+  "Open the Elfeed RSS feed reader."
+  (elfeed-load-feeds!)
+  (when (null? *elfeed-feeds*)
+    (set! *elfeed-feeds*
+      '("https://planet.emacslife.com/atom.xml"
+        "https://hnrss.org/frontpage")))
+  (echo-message! (app-state-echo app)
+    (string-append "Fetching " (number->string (length *elfeed-feeds*)) " feeds..."))
+  ;; Fetch all feeds
+  (set! *elfeed-entries* '())
+  (for-each
+    (lambda (url)
+      (let ((entries (elfeed-fetch-feed url)))
+        (set! *elfeed-entries* (append *elfeed-entries* entries))))
+    *elfeed-feeds*)
+  ;; Display in buffer
+  (let* ((text (elfeed-format-entries *elfeed-entries*)))
+    (tui-display-in-buffer! app "*elfeed*" text)
+    (echo-message! (app-state-echo app)
+      (string-append "Elfeed: " (number->string (length *elfeed-entries*)) " entries"))))
+
+(def (elfeed-format-entries entries)
+  "Format feed entries for display."
+  (let ((lines (map (lambda (e)
+                      (let ((title (car e))
+                            (link (cadr e))
+                            (date (caddr e))
+                            (feed (cadddr e)))
+                        (string-append
+                          (if (> (string-length date) 16)
+                            (substring date 0 16) date)
+                          "  "
+                          (string-pad-right feed 20)
+                          "  "
+                          title
+                          "\n    " link)))
+                    entries)))
+    (string-append "Elfeed - RSS Feed Reader\n"
+                   (make-string 60 #\=) "\n\n"
+                   (string-join lines "\n\n") "\n")))
+
+(def (cmd-elfeed-add-feed app)
+  "Add an RSS/Atom feed URL to elfeed."
+  (let* ((echo (app-state-echo app))
+         (fr (app-state-frame app))
+         (row (- (frame-height fr) 1))
+         (width (frame-width fr))
+         (url (echo-read-string echo "Feed URL: " row width)))
+    (when (and url (> (string-length url) 0))
+      (elfeed-load-feeds!)
+      (unless (member url *elfeed-feeds*)
+        (set! *elfeed-feeds* (cons url *elfeed-feeds*))
+        (elfeed-save-feeds!)
+        (echo-message! echo (string-append "Added feed: " url))))))
+
+(def (cmd-elfeed-update app)
+  "Refresh all elfeed feeds."
+  (cmd-elfeed app))
+
+
+;;;============================================================================
+;;; Direnv / envrc — .envrc integration
+;;;============================================================================
+
+(def *direnv-active* #f)
+
+(def (cmd-direnv-update-environment app)
+  "Load environment from .envrc in project root using direnv."
+  (let* ((dir (current-directory))
+         (envrc (string-append dir "/.envrc")))
+    (if (not (file-exists? envrc))
+      (echo-message! (app-state-echo app) "No .envrc found in current directory")
+      (with-exception-catcher
+        (lambda (e)
+          (echo-message! (app-state-echo app) "direnv not installed or failed"))
+        (lambda ()
+          (let* ((proc (open-process
+                         (list path: "direnv"
+                               arguments: (list "export" "bash")
+                               directory: dir
+                               stdin-redirection: #f
+                               stdout-redirection: #t
+                               stderr-redirection: #f)))
+                 (output (read-line proc #f)))
+            (process-status proc)
+            (when (and output (string? output))
+              ;; Parse export VAR=value lines
+              (let loop ((rest output) (count 0))
+                (let ((pos (string-contains rest "export ")))
+                  (if (not pos)
+                    (begin
+                      (set! *direnv-active* #t)
+                      (echo-message! (app-state-echo app)
+                        (string-append "direnv: loaded " (number->string count)
+                                       " variables from " envrc)))
+                    (let* ((start (+ pos 7))
+                           (nl (or (string-index rest #\newline start)
+                                   (string-length rest)))
+                           (assign (substring rest start nl))
+                           (eq (string-index assign #\=)))
+                      (when eq
+                        (let ((var (substring assign 0 eq))
+                              (val (let ((raw (substring assign (+ eq 1)
+                                                         (string-length assign))))
+                                     ;; Strip quotes
+                                     (if (and (> (string-length raw) 1)
+                                              (or (char=? (string-ref raw 0) #\')
+                                                  (char=? (string-ref raw 0) #\")))
+                                       (substring raw 1 (- (string-length raw) 1))
+                                       raw))))
+                          (setenv var val)))
+                      (loop (substring rest (+ nl 1) (string-length rest))
+                            (+ count 1)))))))))))))
+
+(def (cmd-direnv-allow app)
+  "Run direnv allow for the current directory."
+  (with-exception-catcher
+    (lambda (e) (echo-message! (app-state-echo app) "direnv allow failed"))
+    (lambda ()
+      (let* ((proc (open-process
+                     (list path: "direnv" arguments: (list "allow")
+                           directory: (current-directory)
+                           stdin-redirection: #f stdout-redirection: #t
+                           stderr-redirection: #f)))
+             (out (read-line proc #f)))
+        (process-status proc)
+        (echo-message! (app-state-echo app) "direnv: allowed .envrc")))))
+
+;;;============================================================================
+;;; Move text up/down (drag-stuff / move-text)
+;;;============================================================================
+
+(def (cmd-move-text-up app)
+  "Move current line up one line."
+  (let* ((ed (current-editor app))
+         (text (editor-get-text ed))
+         (pos (editor-get-current-pos ed))
+         (cur-line (editor-line-from-position ed pos))
+         (lines (string-split text #\newline)))
+    (when (> cur-line 0)
+      (let* ((swapped
+               (let loop ((ls lines) (n 0) (acc '()))
+                 (cond
+                   ((null? ls) (reverse acc))
+                   ((= n (- cur-line 1))
+                    ;; Swap this line with the next
+                    (if (null? (cdr ls))
+                      (reverse (cons (car ls) acc))
+                      (loop (cddr ls) (+ n 2)
+                            (cons (car ls) (cons (cadr ls) acc)))))
+                   (else (loop (cdr ls) (+ n 1) (cons (car ls) acc))))))
+             (new-text (string-join swapped "\n"))
+             (new-pos (editor-position-from-line ed (- cur-line 1))))
+        (editor-set-text ed new-text)
+        (editor-goto-pos ed new-pos)))))
+
+(def (cmd-move-text-down app)
+  "Move current line down one line."
+  (let* ((ed (current-editor app))
+         (text (editor-get-text ed))
+         (pos (editor-get-current-pos ed))
+         (cur-line (editor-line-from-position ed pos))
+         (lines (string-split text #\newline))
+         (max-line (- (length lines) 1)))
+    (when (< cur-line max-line)
+      (let* ((swapped
+               (let loop ((ls lines) (n 0) (acc '()))
+                 (cond
+                   ((null? ls) (reverse acc))
+                   ((= n cur-line)
+                    (if (null? (cdr ls))
+                      (reverse (cons (car ls) acc))
+                      (loop (cddr ls) (+ n 2)
+                            (cons (car ls) (cons (cadr ls) acc)))))
+                   (else (loop (cdr ls) (+ n 1) (cons (car ls) acc))))))
+             (new-text (string-join swapped "\n"))
+             (new-pos (editor-position-from-line ed (+ cur-line 1))))
+        (editor-set-text ed new-text)
+        (editor-goto-pos ed new-pos)))))
+
+
+;;;============================================================================
+;;; Transient keymaps — modal command menus (like Magit's transient)
+;;;============================================================================
+
+(def *transient-active* #f)   ; currently active transient map name
+(def *transient-maps* (make-hash-table)) ; name → list of (key description command)
+
+(def (transient-define-map! name entries)
+  "Define a transient keymap. entries: list of (key-char description cmd-symbol)."
+  (hash-put! *transient-maps* name entries))
+
+;; Pre-define common transient maps
+(def (transient-init-defaults!)
+  "Set up default transient maps."
+  ;; Window resize transient
+  (transient-define-map! 'window-resize
+    '((#\{ "Shrink horizontal" shrink-window-horizontally)
+      (#\} "Grow horizontal" enlarge-window-horizontally)
+      (#\^ "Grow vertical" enlarge-window)
+      (#\v "Shrink vertical" shrink-window)
+      (#\= "Balance" balance-windows)))
+  ;; Zoom transient
+  (transient-define-map! 'zoom
+    '((#\+ "Zoom in" text-scale-increase)
+      (#\- "Zoom out" text-scale-decrease)
+      (#\0 "Reset" text-scale-adjust)))
+  ;; Navigation transient
+  (transient-define-map! 'navigate
+    '((#\n "Next error" next-error)
+      (#\p "Previous error" previous-error)
+      (#\N "Next buffer" next-buffer)
+      (#\P "Previous buffer" previous-buffer))))
+
+(def (cmd-transient-map app)
+  "Activate a transient keymap by name."
+  (transient-init-defaults!)
+  (let* ((echo (app-state-echo app))
+         (fr (app-state-frame app))
+         (row (- (frame-height fr) 1))
+         (width (frame-width fr))
+         (names (hash-keys *transient-maps*))
+         (name-strs (map symbol->string names))
+         (choice (echo-read-string echo
+                   (string-append "Transient map ("
+                                  (string-join name-strs "/") "): ")
+                   row width)))
+    (when (and choice (> (string-length choice) 0))
+      (let ((sym (string->symbol choice)))
+        (if (not (hash-get *transient-maps* sym))
+          (echo-message! echo (string-append "Unknown transient: " choice))
+          (cmd-transient-activate app sym))))))
+
+(def (cmd-transient-activate app name)
+  "Show and activate a transient keymap."
+  (let* ((entries (hash-get *transient-maps* name))
+         (echo (app-state-echo app))
+         (prompt (string-append
+                   (symbol->string name) ": "
+                   (string-join
+                     (map (lambda (e)
+                            (string-append
+                              (string (car e)) "=" (cadr e)))
+                          entries)
+                     " "))))
+    (set! *transient-active* name)
+    (let ((key-str (echo-read-string echo (string-append prompt " > ")
+                     (- (frame-height (app-state-frame app)) 1)
+                     (frame-width (app-state-frame app)))))
+      (set! *transient-active* #f)
+      (when (and key-str (= (string-length key-str) 1))
+        (let* ((ch (string-ref key-str 0))
+               (entry (find (lambda (e) (char=? (car e) ch)) entries)))
+          (if entry
+            (let ((cmd-sym (caddr entry)))
+              (let ((cmd (find-command cmd-sym)))
+                (if cmd (cmd app)
+                  (echo-message! echo
+                    (string-append "Command not found: "
+                                   (symbol->string cmd-sym))))))
+            (echo-message! echo "Unknown key")))))))
+
+
+
+

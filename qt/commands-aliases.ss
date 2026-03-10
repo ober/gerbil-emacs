@@ -1082,6 +1082,15 @@
   (register-command! 'hungry-delete-backward cmd-hungry-delete-backward)
   (register-command! 'crux-move-beginning-of-line cmd-crux-move-beginning-of-line)
   (register-command! 'ws-butler-mode cmd-ws-butler-mode)
+  ;; Batch: elfeed, direnv, move-text, string-inflection, transient, helpful
+  (register-command! 'elfeed cmd-elfeed)
+  (register-command! 'elfeed-add-feed cmd-elfeed-add-feed)
+  (register-command! 'elfeed-update cmd-elfeed-update)
+  (register-command! 'direnv-update-environment cmd-direnv-update-environment)
+  (register-command! 'direnv-allow cmd-direnv-allow)
+  (register-command! 'move-text-up cmd-move-text-up)
+  (register-command! 'move-text-down cmd-move-text-down)
+  (register-command! 'transient-map cmd-transient-map)
   (register-command! 'ediff-regions-linewise cmd-ediff-buffers)
   ;; Batch 5: file/dired/ibuffer aliases + new commands
   (register-command! 'rename-file cmd-rename-file-and-buffer)
