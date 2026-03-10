@@ -135,35 +135,59 @@
       (editor-set-text ed (string-append "Git Log (last 50)\n\n" result "\n"))
       (editor-set-read-only ed #t))))
 
+(def (vc-git-dir app)
+  "Get the git working directory from the current buffer's file, or current-directory."
+  (let* ((buf (current-buffer-from-app app))
+         (file (and buf (buffer-file-path buf))))
+    (if file (path-directory file) (current-directory))))
+
 (def (cmd-vc-stash app)
-  "Stash current changes."
-  (let ((result (with-exception-catcher
-                  (lambda (e) (with-output-to-string (lambda () (display-exception e))))
-                  (lambda ()
-                    (let ((p (open-process
-                               (list path: "git" arguments: '("stash")
-                                     stdin-redirection: #f stdout-redirection: #t
-                                     stderr-redirection: #t))))
-                      (let ((out (read-line p #f)))
-                        (process-status p)
-                        (or out "")))))))
-    (echo-message! (app-state-echo app)
-      (string-append "Stash: " result))))
+  "Stash current changes with git stash."
+  (let* ((echo (app-state-echo app))
+         (dir (vc-git-dir app)))
+    (with-catch
+      (lambda (e)
+        (echo-message! echo
+          (string-append "git stash failed: "
+                         (with-output-to-string (lambda () (display-exception e))))))
+      (lambda ()
+        (let* ((proc (open-process
+                       (list path: "git" arguments: '("stash")
+                             directory: dir
+                             stdin-redirection: #f
+                             stdout-redirection: #t
+                             stderr-redirection: #t)))
+               (output (read-line proc #f))
+               (status (process-status proc)))
+          (close-port proc)
+          (let ((result (or output "")))
+            (if (zero? status)
+              (echo-message! echo (string-append "Stash: " result))
+              (echo-message! echo (string-append "git stash failed: " result)))))))))
 
 (def (cmd-vc-stash-pop app)
-  "Pop last stash."
-  (let ((result (with-exception-catcher
-                  (lambda (e) (with-output-to-string (lambda () (display-exception e))))
-                  (lambda ()
-                    (let ((p (open-process
-                               (list path: "git" arguments: '("stash" "pop")
-                                     stdin-redirection: #f stdout-redirection: #t
-                                     stderr-redirection: #t))))
-                      (let ((out (read-line p #f)))
-                        (process-status p)
-                        (or out "")))))))
-    (echo-message! (app-state-echo app)
-      (string-append "Stash pop: " result))))
+  "Pop the last stash with git stash pop."
+  (let* ((echo (app-state-echo app))
+         (dir (vc-git-dir app)))
+    (with-catch
+      (lambda (e)
+        (echo-message! echo
+          (string-append "git stash pop failed: "
+                         (with-output-to-string (lambda () (display-exception e))))))
+      (lambda ()
+        (let* ((proc (open-process
+                       (list path: "git" arguments: '("stash" "pop")
+                             directory: dir
+                             stdin-redirection: #f
+                             stdout-redirection: #t
+                             stderr-redirection: #t)))
+               (output (read-line proc #f))
+               (status (process-status proc)))
+          (close-port proc)
+          (let ((result (or output "")))
+            (if (zero? status)
+              (echo-message! echo (string-append "Stash pop: " result))
+              (echo-message! echo (string-append "git stash pop failed: " result)))))))))
 
 ;; Mail
 (def (cmd-compose-mail app)

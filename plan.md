@@ -160,10 +160,15 @@ Largest files: modes (~1851), lsp (~1802), search (~1778)
 - ~~**Visual-line-mode**~~ — DONE: toggle word wrap via Scintilla SCI_SETWRAPMODE, both TUI and Qt
 - ~~**Whitespace-mode / delete-trailing-whitespace**~~ — DONE: show/hide whitespace and EOL markers, strip trailing spaces
 
+- ~~**Enriched-mode & picture-mode**~~ — DONE: enriched text formatting (bold/italic) and overwrite-mode picture drawing, both TUI and Qt
+- ~~**Electric-pair-mode**~~ — DONE: `*electric-pair-mode*` variable in persist.ss with defvar! registration
+- ~~**Auto-fill centralization**~~ — DONE: moved `*auto-fill-mode*` and `*fill-column*` to persist.ss, TUI self-insert auto-fill line breaking
+- ~~**Abbrev mode variables**~~ — DONE: `*abbrev-table*` and `*abbrev-mode-enabled*` in persist.ss
+
 ### Aspirational
 - LSP in TUI
 - ~~DAP/debugger integration~~ — DONE: real GDB/MI interface (Qt), DAP protocol skeleton (TUI)
-- ~~Multi-frame support~~ — IN PROGRESS: virtual frame management (C-x 5 prefix)
+- ~~Multi-frame support~~ — DONE: virtual frame management (C-x 5 prefix), make-frame/delete-frame/other-frame
 - ~~Spell checking integration~~ — DONE: flyspell-mode, ispell-word, ispell-buffer, ispell-region, dictionary switching (both TUI and Qt)
-- TRAMP remote editing — IN PROGRESS: SSH-based file open/save
-- AI Copilot integration — IN PROGRESS: OpenAI API inline code completion
+- ~~TRAMP remote editing~~ — DONE: SSH-based file open/save, remote shell, remote compile
+- ~~AI Copilot integration~~ — DONE: OpenAI API inline code completion, copilot-complete/accept/dismiss

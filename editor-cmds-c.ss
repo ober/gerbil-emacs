@@ -818,98 +818,121 @@
 
 ;; --- Version control extras ---
 
+(def (run-git-command dir args)
+  "Run a git command in DIR with ARGS, return (values output exit-status).
+   Captures both stdout and stderr. Returns combined output."
+  (let* ((proc (open-process
+                 (list path: "git"
+                       arguments: args
+                       directory: dir
+                       stdin-redirection: #f
+                       stdout-redirection: #t
+                       stderr-redirection: #t)))
+         (output (read-line proc #f))
+         (status (process-status proc)))
+    (close-port proc)
+    (values (or output "") status)))
+
 (def (cmd-vc-annotate app)
   "Show file annotations (git blame) in buffer."
   (let* ((buf (current-buffer-from-app app))
-         (file (buffer-file-path buf)))
-    (if file
+         (file (buffer-file-path buf))
+         (echo (app-state-echo app)))
+    (if (not file)
+      (echo-message! echo "Buffer is not visiting a file")
       (with-catch
         (lambda (e)
-          (echo-message! (app-state-echo app) "Error running git annotate"))
+          (echo-message! echo
+            (string-append "git blame failed: "
+                           (with-output-to-string (lambda () (display-exception e))))))
         (lambda ()
-          (let* ((proc (open-process
-                         (list path: "git" arguments: ["blame" "--date=short" file]
-                               stdin-redirection: #f
-                               stdout-redirection: #t
-                               stderr-redirection: #t)))
-                 (output (read-line proc #f))
-                 (result (or output "")))
-            (close-port proc)
-            (open-output-buffer app
-                                (string-append "*Annotate: " file "*")
-                                result))))
-      (echo-message! (app-state-echo app) "Buffer is not visiting a file"))))
+          (let-values (((output status) (run-git-command (path-directory file)
+                                          ["blame" "--date=short" file])))
+            (if (zero? status)
+              (begin
+                (open-output-buffer app
+                  (string-append "*Annotate: " (path-strip-directory file) "*")
+                  output)
+                (echo-message! echo (string-append "git blame " (path-strip-directory file))))
+              (echo-message! echo (string-append "git blame failed: " output)))))))))
 
 (def (cmd-vc-diff-head app)
-  "Show diff against HEAD."
+  "Show diff of current file against HEAD."
   (let* ((buf (current-buffer-from-app app))
-         (file (buffer-file-path buf)))
-    (if file
+         (file (buffer-file-path buf))
+         (echo (app-state-echo app)))
+    (if (not file)
+      (echo-message! echo "Buffer is not visiting a file")
       (with-catch
         (lambda (e)
-          (echo-message! (app-state-echo app) "Error running git diff"))
+          (echo-message! echo
+            (string-append "git diff failed: "
+                           (with-output-to-string (lambda () (display-exception e))))))
         (lambda ()
-          (let* ((proc (open-process
-                         (list path: "git" arguments: ["diff" "HEAD" "--" file]
-                               stdin-redirection: #f
-                               stdout-redirection: #t
-                               stderr-redirection: #t)))
-                 (output (read-line proc #f))
-                 (result (or output "")))
-            (close-port proc)
-            (open-output-buffer app
-                                (string-append "*VC Diff: " file "*")
-                                result))))
-      (echo-message! (app-state-echo app) "Buffer is not visiting a file"))))
+          (let-values (((output status) (run-git-command (path-directory file)
+                                          ["diff" "HEAD" "--" file])))
+            (if (zero? status)
+              (if (string=? output "")
+                (echo-message! echo (string-append "No changes in " (path-strip-directory file)))
+                (begin
+                  (open-output-buffer app
+                    (string-append "*VC Diff: " (path-strip-directory file) "*")
+                    output)
+                  (echo-message! echo (string-append "git diff " (path-strip-directory file)))))
+              (echo-message! echo (string-append "git diff failed: " output)))))))))
 
 (def (cmd-vc-log-file app)
   "Show git log for current file."
   (let* ((buf (current-buffer-from-app app))
-         (file (buffer-file-path buf)))
-    (if file
+         (file (buffer-file-path buf))
+         (echo (app-state-echo app)))
+    (if (not file)
+      (echo-message! echo "Buffer is not visiting a file")
       (with-catch
         (lambda (e)
-          (echo-message! (app-state-echo app) "Error running git log"))
+          (echo-message! echo
+            (string-append "git log failed: "
+                           (with-output-to-string (lambda () (display-exception e))))))
         (lambda ()
-          (let* ((proc (open-process
-                         (list path: "git" arguments: ["log" "--oneline" "-20" "--" file]
-                               stdin-redirection: #f
-                               stdout-redirection: #t
-                               stderr-redirection: #t)))
-                 (output (read-line proc #f))
-                 (result (or output "")))
-            (close-port proc)
-            (open-output-buffer app
-                                (string-append "*VC Log: " file "*")
-                                result))))
-      (echo-message! (app-state-echo app) "Buffer is not visiting a file"))))
+          (let-values (((output status) (run-git-command (path-directory file)
+                                          ["log" "--oneline" "--follow" "-50" "--" file])))
+            (if (zero? status)
+              (if (string=? output "")
+                (echo-message! echo (string-append "No git history for " (path-strip-directory file)))
+                (begin
+                  (open-output-buffer app
+                    (string-append "*VC Log: " (path-strip-directory file) "*")
+                    output)
+                  (echo-message! echo (string-append "git log " (path-strip-directory file)))))
+              (echo-message! echo (string-append "git log failed: " output)))))))))
 
 (def (cmd-vc-revert app)
   "Revert current file to last committed version."
   (let* ((buf (current-buffer-from-app app))
-         (file (buffer-file-path buf)))
-    (if file
+         (file (buffer-file-path buf))
+         (echo (app-state-echo app)))
+    (if (not file)
+      (echo-message! echo "Buffer is not visiting a file")
       (let ((confirm (app-read-string app
-                                        (string-append "Revert " file " to HEAD? (yes/no): "))))
+                       (string-append "Revert " (path-strip-directory file) " to HEAD? (yes/no): "))))
         (when (and confirm (string=? confirm "yes"))
           (with-catch
             (lambda (e)
-              (echo-message! (app-state-echo app) "Error running git checkout"))
+              (echo-message! echo
+                (string-append "git checkout failed: "
+                               (with-output-to-string (lambda () (display-exception e))))))
             (lambda ()
-              (let* ((proc (open-process
-                             (list path: "git" arguments: ["checkout" "HEAD" "--" file]
-                                   stdin-redirection: #f
-                                   stdout-redirection: #t
-                                   stderr-redirection: #t)))
-                     (_ (process-status proc)))
-                (close-port proc)
-                ;; Reload the file
-                (let ((content (read-file-as-string file))
-                      (ed (current-editor app)))
-                  (editor-set-text ed content)
-                  (editor-set-save-point ed)
-                  (echo-message! (app-state-echo app) "Reverted")))))))
-      (echo-message! (app-state-echo app) "Buffer is not visiting a file"))))
+              (let-values (((output status)
+                            (run-git-command (path-directory file)
+                              ["checkout" "HEAD" "--" file])))
+                (if (zero? status)
+                  ;; Reload the file
+                  (let ((content (read-file-as-string file))
+                        (ed (current-editor app)))
+                    (editor-set-text ed content)
+                    (editor-set-save-point ed)
+                    (echo-message! echo "Reverted"))
+                  (echo-message! echo (string-append "git checkout failed: " output)))))))))))
 
 ;; --- Imenu ---
 

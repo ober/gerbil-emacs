@@ -99,6 +99,9 @@
   ;; Picture mode
   *picture-mode*
 
+  ;; Electric-pair mode
+  *electric-pair-mode*
+
   ;; Copilot (AI inline completion)
   *copilot-mode*
   *copilot-api-key*
@@ -943,6 +946,15 @@
 (def *picture-mode* #f)
 (defvar! 'picture-mode #f "Overwrite mode with directional cursor drawing"
          setter: (lambda (v) (set! *picture-mode* v))
+         type: 'boolean group: 'editing)
+
+;;;============================================================================
+;;; Electric-pair mode
+;;;============================================================================
+
+(def *electric-pair-mode* #f)
+(defvar! 'electric-pair-mode #f "Auto-insert matching delimiters (parens, brackets, quotes)"
+         setter: (lambda (v) (set! *electric-pair-mode* v))
          type: 'boolean group: 'editing)
 
 ;;;============================================================================

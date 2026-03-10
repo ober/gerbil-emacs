@@ -25,7 +25,7 @@
         :gemacs/qt/echo
         :gemacs/qt/highlight
         :gemacs/qt/modeline
-        (only-in :gemacs/qt/magit magit-run-git)
+        (only-in :gemacs/qt/magit magit-run-git magit-run-git/async)
         :gemacs/qt/commands-core
         :gemacs/qt/commands-core2
         :gemacs/qt/commands-edit
@@ -1108,26 +1108,47 @@ SPC = page down, DEL = page up, q = quit view-mode."
   (cmd-show-git-blame app))
 
 (def (cmd-vc-diff-head app)
-  "Show git diff against HEAD."
-  (cmd-show-git-diff app))
+  "Show git diff HEAD for the current file."
+  (let* ((buf (current-qt-buffer app))
+         (path (buffer-file-path buf)))
+    (if path
+      (let ((dir (path-directory path)))
+        (magit-run-git/async (list "diff" "HEAD" "--" path) dir
+          (lambda (output)
+            (if (and (string? output) (> (string-length output) 0))
+              (let* ((ed (current-qt-editor app))
+                     (fr (app-state-frame app))
+                     (git-buf (qt-buffer-create! "*VC Diff*" ed #f)))
+                (qt-buffer-attach! ed git-buf)
+                (set! (qt-edit-window-buffer (qt-current-window fr)) git-buf)
+                (qt-plain-text-edit-set-text! ed output)
+                (qt-text-document-set-modified! (buffer-doc-pointer git-buf) #f)
+                (qt-plain-text-edit-set-cursor-position! ed 0)
+                (qt-highlight-diff! ed))
+              (echo-message! (app-state-echo app) "No changes against HEAD")))))
+      (echo-error! (app-state-echo app) "Buffer has no file"))))
 
 (def (cmd-vc-log-file app)
   "Show git log for current file."
   (let* ((buf (current-qt-buffer app))
          (path (buffer-file-path buf)))
     (if path
-      (let* ((fr (app-state-frame app))
-             (ed (qt-current-editor fr))
-             (out (open-process
-                    (list path: "git" arguments: (list "log" "--oneline" "-20" path)
-                          stderr-redirection: #t)))
-             (text (read-line out #f)))
-        (close-port out)
-        (when (string? text)
-          (let ((buf (qt-buffer-create! "*Git Log*" ed #f)))
-            (qt-buffer-attach! ed buf)
-            (set! (qt-edit-window-buffer (qt-current-window fr)) buf)
-            (qt-plain-text-edit-set-text! ed text))))
+      (let ((dir (path-directory path)))
+        (magit-run-git/async (list "log" "--oneline" "--follow" "-40" "--" path) dir
+          (lambda (output)
+            (if (and (string? output) (> (string-length output) 0))
+              (let* ((ed (current-qt-editor app))
+                     (fr (app-state-frame app))
+                     (git-buf (qt-buffer-create!
+                                (string-append "*Git Log: "
+                                  (path-strip-directory path) "*")
+                                ed #f)))
+                (qt-buffer-attach! ed git-buf)
+                (set! (qt-edit-window-buffer (qt-current-window fr)) git-buf)
+                (qt-plain-text-edit-set-text! ed output)
+                (qt-text-document-set-modified! (buffer-doc-pointer git-buf) #f)
+                (qt-plain-text-edit-set-cursor-position! ed 0))
+              (echo-message! (app-state-echo app) "No git history for this file")))))
       (echo-error! (app-state-echo app) "Buffer has no file"))))
 
 (def (cmd-vc-revert app)

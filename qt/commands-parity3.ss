@@ -1163,25 +1163,41 @@
             (close-port proc)
             (echo-message! echo (string-append "Registered: " path))))))))
 (def (cmd-vc-stash app)
-  (with-catch
-    (lambda (e) (echo-message! (app-state-echo app) "git stash failed"))
-    (lambda ()
-      (let ((proc (open-process
-                    (list path: "git" arguments: '("stash")
-                          stdout-redirection: #t))))
-        (let ((out (read-line proc #f)))
+  "Stash current changes with git stash."
+  (let* ((buf (current-qt-buffer app))
+         (path (buffer-file-path buf))
+         (dir (if path (path-directory path) (current-directory)))
+         (echo (app-state-echo app)))
+    (with-catch
+      (lambda (e) (echo-error! echo "git stash failed"))
+      (lambda ()
+        (let* ((proc (open-process
+                       (list path: "/usr/bin/git"
+                             arguments: '("stash")
+                             directory: dir
+                             stdout-redirection: #t
+                             stderr-redirection: #t)))
+               (out (read-line proc #f)))
           (close-port proc)
-          (echo-message! (app-state-echo app) (or out "Stashed")))))))
+          (echo-message! echo (or out "Stashed")))))))
 (def (cmd-vc-stash-pop app)
-  (with-catch
-    (lambda (e) (echo-message! (app-state-echo app) "git stash pop failed"))
-    (lambda ()
-      (let ((proc (open-process
-                    (list path: "git" arguments: '("stash" "pop")
-                          stdout-redirection: #t))))
-        (let ((out (read-line proc #f)))
+  "Pop the most recent stash with git stash pop."
+  (let* ((buf (current-qt-buffer app))
+         (path (buffer-file-path buf))
+         (dir (if path (path-directory path) (current-directory)))
+         (echo (app-state-echo app)))
+    (with-catch
+      (lambda (e) (echo-error! echo "git stash pop failed"))
+      (lambda ()
+        (let* ((proc (open-process
+                       (list path: "/usr/bin/git"
+                             arguments: '("stash" "pop")
+                             directory: dir
+                             stdout-redirection: #t
+                             stderr-redirection: #t)))
+               (out (read-line proc #f)))
           (close-port proc)
-          (echo-message! (app-state-echo app) (or out "Popped stash")))))))
+          (echo-message! echo (or out "Popped stash")))))))
 
 ;; Treemacs extras
 (def (cmd-treemacs-find-file app)
