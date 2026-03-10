@@ -20,6 +20,7 @@
         :gemacs/snippets
         :gemacs/repl
         :gemacs/eshell
+        :gemacs/gsh-eshell
         :gemacs/shell
         :gemacs/keymap
         :gemacs/buffer
@@ -346,6 +347,40 @@
          (buf (current-buffer-from-app app)))
     (cond
       ((dired-buffer? buf) (void))
+      ((gsh-eshell-buffer? buf)
+       ;; Eshell: complete filename/command
+       (when (tui-eshell-on-input-line? ed)
+         (let* ((input (tui-eshell-current-input ed))
+                (matches (eshell-complete input buf)))
+           (cond
+             ((null? matches)
+              (echo-message! (app-state-echo app) "[No completions]"))
+             ((= (length matches) 1)
+              ;; Single match — replace the partial word
+              (let* ((trimmed (safe-string-trim-both input))
+                     (sp (let loop ((i (- (string-length trimmed) 1)))
+                           (cond ((< i 0) #f)
+                                 ((char=? (string-ref trimmed i) #\space) i)
+                                 (else (loop (- i 1))))))
+                     (before (if sp (substring trimmed 0 (+ sp 1)) ""))
+                     (new-input (string-append before (car matches))))
+                (tui-eshell-replace-input! ed new-input)))
+             (else
+              ;; Multiple matches — insert longest common prefix, show matches
+              (let* ((lcp (eshell-longest-common-prefix matches))
+                     (trimmed (safe-string-trim-both input))
+                     (sp (let loop ((i (- (string-length trimmed) 1)))
+                           (cond ((< i 0) #f)
+                                 ((char=? (string-ref trimmed i) #\space) i)
+                                 (else (loop (- i 1))))))
+                     (partial (if sp
+                                (substring trimmed (+ sp 1) (string-length trimmed))
+                                trimmed)))
+                (when (> (string-length lcp) (string-length partial))
+                  (let ((before (if sp (substring trimmed 0 (+ sp 1)) "")))
+                    (tui-eshell-replace-input! ed (string-append before lcp))))
+                (echo-message! (app-state-echo app)
+                  (string-join matches "  "))))))))
       ((repl-buffer? buf)
        ;; In REPL, insert 2 spaces
        (let ((pos (editor-get-current-pos ed))

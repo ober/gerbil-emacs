@@ -14,6 +14,7 @@
         :gemacs/core
         :gemacs/repl
         :gemacs/eshell
+        :gemacs/gsh-eshell
         :gemacs/shell
         :gemacs/keymap
         :gemacs/buffer
@@ -618,6 +619,36 @@
     (test-case "eshell keybinding"
       (setup-default-bindings!)
       (check (keymap-lookup *ctrl-c-map* "e") => 'eshell))
+
+    (test-case "eshell-longest-common-prefix"
+      (check (eshell-longest-common-prefix '("foo" "foobar" "fob")) => "fo")
+      (check (eshell-longest-common-prefix '("abc" "abd" "abe")) => "ab")
+      (check (eshell-longest-common-prefix '("hello")) => "hello")
+      (check (eshell-longest-common-prefix '()) => "")
+      (check (eshell-longest-common-prefix '("a" "b")) => ""))
+
+    (test-case "eshell-complete-files: completes in /tmp"
+      ;; Create a known test file in /tmp
+      (let ((test-dir "/tmp/gemacs-test-completion"))
+        (with-catch (lambda (e) (void))
+          (lambda () (create-directory* test-dir)))
+        (with-output-to-file (path-expand "testfile1.txt" test-dir)
+          (lambda () (display "test")))
+        (with-output-to-file (path-expand "testfile2.txt" test-dir)
+          (lambda () (display "test")))
+        ;; Complete "testf" should match both files
+        (let ((matches (eshell-complete-files "testf" test-dir)))
+          (check (length matches) => 2)
+          (check (member "testfile1.txt" matches) ? pair?))
+        ;; Clean up
+        (delete-file (path-expand "testfile1.txt" test-dir))
+        (delete-file (path-expand "testfile2.txt" test-dir))
+        (delete-directory test-dir)))
+
+    (test-case "eshell-complete-commands: finds ls"
+      (let ((matches (eshell-complete-commands "l")))
+        ;; "ls" should be in the matches
+        (check (member "ls" matches) ? pair?)))
 
     (test-case "shell-buffer? predicate"
       (let ((buf (make-buffer "*test*" #f #f #f #f #f #f)))

@@ -14,11 +14,18 @@
         interactive-command?
         eshell-history-prev
         eshell-history-next
-        eshell-history-reset!)
+        eshell-history-reset!
+        eshell-complete
+        eshell-complete-files
+        eshell-complete-commands
+        eshell-longest-common-prefix)
 
 (import :std/sugar
         :std/format
+        :std/sort
+        :std/srfi/1
         :std/srfi/13
+        (only-in :std/misc/string string-split)
         :gsh/lib
         :gsh/environment
         :gsh/startup
@@ -274,3 +281,110 @@
                       (string-append display-output
                                      (if (> (string-length stderr) 0) stderr "")))
                     (or (env-get env "PWD") (current-directory)))))))))
+
+;;;============================================================================
+;;; Tab completion for eshell
+;;;============================================================================
+
+(def (eshell-complete input buf)
+  "Complete the partial word at the end of INPUT for eshell buffer BUF.
+   Returns a list of completion strings, or '() if none.
+   First word completes against commands in PATH + files; subsequent words
+   complete against files/dirs in the eshell's CWD."
+  (let* ((env (hash-get *gsh-eshell-state* buf))
+         (cwd (if env (or (env-get env "PWD") (current-directory))
+                 (current-directory)))
+         ;; Extract the partial word (last space-delimited token)
+         (trimmed (safe-string-trim-both input))
+         (sp (let loop ((i (- (string-length trimmed) 1)))
+               (cond ((< i 0) #f)
+                     ((char=? (string-ref trimmed i) #\space) i)
+                     (else (loop (- i 1))))))
+         (partial (if sp
+                    (substring trimmed (+ sp 1) (string-length trimmed))
+                    trimmed))
+         (is-first-word (not sp)))
+    (if (string=? partial "")
+      '()
+      (let* ((file-matches (eshell-complete-files partial cwd))
+             (cmd-matches (if is-first-word
+                            (eshell-complete-commands partial)
+                            '()))
+             (all (append cmd-matches file-matches))
+             (unique (delete-duplicates all string=?)))
+        (sort unique string<?)))))
+
+(def (eshell-complete-files partial cwd)
+  "Complete PARTIAL against files/dirs in CWD.
+   If partial contains '/', complete relative to that path."
+  (with-catch
+    (lambda (e) '())
+    (lambda ()
+      (let* ((has-slash (string-index partial #\/))
+             (dir (if has-slash
+                    (let ((d (path-expand (substring partial 0
+                               (+ has-slash 1)) cwd)))
+                      d)
+                    cwd))
+             (prefix (if has-slash
+                       (substring partial (+ has-slash 1) (string-length partial))
+                       partial))
+             (dir-prefix (if has-slash
+                           (substring partial 0 (+ has-slash 1))
+                           ""))
+             (entries (with-catch (lambda (e) '()) (lambda () (directory-files dir))))
+             (matches (filter (lambda (f)
+                                (and (string-prefix? prefix f)
+                                     (not (string=? f "."))
+                                     (not (string=? f ".."))))
+                              entries)))
+        (map (lambda (f)
+               (let* ((full (path-expand f dir))
+                      (suffix (if (file-exists? full)
+                                (let ((info (with-catch (lambda (e) #f)
+                                              (lambda () (file-info full)))))
+                                  (if (and info (eq? (file-info-type info) 'directory))
+                                    "/" ""))
+                                "")))
+                 (string-append dir-prefix f suffix)))
+             matches)))))
+
+(def (eshell-complete-commands partial)
+  "Complete PARTIAL against executable commands in PATH."
+  (with-catch
+    (lambda (e) '())
+    (lambda ()
+      (let* ((path-str (or (getenv "PATH" #f) "/usr/bin:/bin"))
+             (path-dirs (string-split path-str #\:))
+             (results '()))
+        (for-each
+          (lambda (dir)
+            (with-catch
+              (lambda (e) (void))
+              (lambda ()
+                (let ((entries (directory-files dir)))
+                  (for-each
+                    (lambda (f)
+                      (when (string-prefix? partial f)
+                        (set! results (cons f results))))
+                    entries)))))
+          path-dirs)
+        (delete-duplicates results string=?)))))
+
+(def (eshell-longest-common-prefix strings)
+  "Return the longest common prefix of a list of strings."
+  (if (or (null? strings) (null? (cdr strings)))
+    (if (null? strings) "" (car strings))
+    (let* ((first (car strings))
+           (len (string-length first)))
+      (let loop ((i 0))
+        (if (>= i len)
+          first
+          (let ((ch (string-ref first i)))
+            (if (let check ((rest (cdr strings)))
+                  (or (null? rest)
+                      (and (> (string-length (car rest)) i)
+                           (char=? (string-ref (car rest) i) ch)
+                           (check (cdr rest)))))
+              (loop (+ i 1))
+              (substring first 0 i))))))))

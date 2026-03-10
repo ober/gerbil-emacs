@@ -119,6 +119,7 @@
                  *copilot-api-url* *copilot-suggestion* *copilot-suggestion-pos*)
         :gemacs/repl
         :gemacs/eshell
+        :gemacs/gsh-eshell
         :gemacs/shell
         :gemacs/shell-history
         :gemacs/terminal
@@ -948,6 +949,60 @@
               (rs (hash-get *repl-state* buf)))
          (when (and rs (>= pos (repl-state-prompt-pos rs)))
            (qt-plain-text-edit-insert-text! ed "  "))))
+      ((gsh-eshell-buffer? buf)
+       ;; Eshell: complete filename/command
+       (let* ((ed (current-qt-editor app))
+              (all-text (qt-plain-text-edit-text ed))
+              (cur-prompt gsh-eshell-prompt)
+              (prompt-len (string-length cur-prompt))
+              ;; Find the last prompt
+              (prompt-pos (let loop ((pos (- (string-length all-text) prompt-len)))
+                            (cond
+                              ((< pos 0) #f)
+                              ((string=? (substring all-text pos (+ pos prompt-len)) cur-prompt) pos)
+                              (else (loop (- pos 1))))))
+              (input (if (and prompt-pos (> (string-length all-text) (+ prompt-pos prompt-len)))
+                       (substring all-text (+ prompt-pos prompt-len) (string-length all-text))
+                       ""))
+              (matches (eshell-complete input buf)))
+         (cond
+           ((null? matches)
+            (echo-message! (app-state-echo app) "[No completions]"))
+           ((= (length matches) 1)
+            ;; Single match — replace partial word
+            (let* ((trimmed (safe-string-trim-both input))
+                   (sp (let loop ((i (- (string-length trimmed) 1)))
+                         (cond ((< i 0) #f)
+                               ((char=? (string-ref trimmed i) #\space) i)
+                               (else (loop (- i 1))))))
+                   (before (if sp (substring trimmed 0 (+ sp 1)) ""))
+                   (new-input (string-append before (car matches)))
+                   ;; Replace text from after prompt to end
+                   (input-start (+ prompt-pos prompt-len))
+                   (end-pos (string-length all-text))
+                   (new-text (string-append (substring all-text 0 input-start) new-input)))
+              (qt-plain-text-edit-set-text! ed new-text)
+              (qt-plain-text-edit-move-cursor! ed QT_CURSOR_END)))
+           (else
+            ;; Multiple matches — insert longest common prefix, show matches
+            (let* ((lcp (eshell-longest-common-prefix matches))
+                   (trimmed (safe-string-trim-both input))
+                   (sp (let loop ((i (- (string-length trimmed) 1)))
+                         (cond ((< i 0) #f)
+                               ((char=? (string-ref trimmed i) #\space) i)
+                               (else (loop (- i 1))))))
+                   (partial (if sp
+                              (substring trimmed (+ sp 1) (string-length trimmed))
+                              trimmed)))
+              (when (> (string-length lcp) (string-length partial))
+                (let* ((before (if sp (substring trimmed 0 (+ sp 1)) ""))
+                       (new-input (string-append before lcp))
+                       (input-start (+ prompt-pos prompt-len))
+                       (new-text (string-append (substring all-text 0 input-start) new-input)))
+                  (qt-plain-text-edit-set-text! ed new-text)
+                  (qt-plain-text-edit-move-cursor! ed QT_CURSOR_END)))
+              (echo-message! (app-state-echo app)
+                (string-join matches "  ")))))))
       (else
        ;; If snippet is active, jump to next field
        (if *snippet-active*
