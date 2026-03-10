@@ -1525,5 +1525,22 @@
   (register-command! 'display-cursor-position cmd-display-cursor-position)
   (register-command! 'display-column-number cmd-display-column-number)
   ;; Narrow to page
-  (register-command! 'narrow-to-page cmd-narrow-to-page))
+  (register-command! 'narrow-to-page cmd-narrow-to-page)
+
+  ;; Batch 3: swiper / counsel / god-mode / beacon / volatile / use-package
+  (register-command! 'swiper-isearch cmd-swiper-isearch)
+  (register-command! 'counsel-find-file cmd-counsel-find-file)
+  (register-command! 'counsel-recentf cmd-counsel-recentf)
+  (register-command! 'counsel-bookmark cmd-counsel-bookmark)
+  (register-command! 'ivy-resume cmd-ivy-resume)
+  (register-command! 'god-mode cmd-god-mode)
+  (register-command! 'god-local-mode cmd-god-local-mode)
+  (register-command! 'god-execute-with-current-bindings cmd-god-execute-with-current-bindings)
+  (register-command! 'beacon-mode cmd-beacon-mode)
+  (register-command! 'volatile-highlights-mode cmd-volatile-highlights-mode)
+  (register-command! 'all-the-icons-install-fonts cmd-all-the-icons-install-fonts)
+  (register-command! 'nerd-icons-install-fonts cmd-nerd-icons-install-fonts)
+  (register-command! 'use-package-report cmd-use-package-report)
+  (register-command! 'straight-use-package cmd-straight-use-package)
+  (register-command! 'which-key-show-major-mode cmd-which-key-show-major-mode))
 

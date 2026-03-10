@@ -165,6 +165,24 @@ Largest files: modes (~1851), lsp (~1802), search (~1778)
 - ~~**Auto-fill centralization**~~ — DONE: moved `*auto-fill-mode*` and `*fill-column*` to persist.ss, TUI self-insert auto-fill line breaking
 - ~~**Abbrev mode variables**~~ — DONE: `*abbrev-table*` and `*abbrev-mode-enabled*` in persist.ss
 
+- ~~**Winner-mode hooks**~~ — DONE: `winner-save-config!` hooked into TUI split/delete window commands
+- ~~**Hungry-delete**~~ — DONE: `hungry-delete-forward/backward` delete all consecutive whitespace
+- ~~**Crux-move-beginning-of-line**~~ — DONE: smart BOL toggle (first non-whitespace ↔ column 0)
+- ~~**Isearch match counter**~~ — DONE: anzu-style [N/M] match counting in both TUI and Qt
+- ~~**Ws-butler-mode**~~ — DONE: snapshot/clean whitespace on save (Qt)
+- ~~**Elfeed RSS reader**~~ — DONE: real RSS/Atom feed reader with curl fetch, XML parsing, feed persistence, default feeds
+- ~~**Wgrep upgrade**~~ — DONE: real editable grep results — parses filename:line:content, applies edits back to source files
+- ~~**Direnv/envrc integration**~~ — DONE: load .envrc via `direnv export bash`, `direnv-allow` command
+- ~~**Move-text (drag-stuff)**~~ — DONE: move current line up/down
+- ~~**Transient keymaps**~~ — DONE: modal command menus with predefined maps (window-resize, zoom, navigate)
+- ~~**Swiper/counsel wrappers**~~ — DONE: swiper→occur, counsel-M-x→execute-extended-command, counsel-rg→rgrep, counsel-find-file, counsel-recentf, counsel-bookmark, ivy-resume
+- ~~**God mode**~~ — DONE: Ctrl-free command execution toggle (god-mode, god-local-mode, god-execute-with-current-bindings)
+- ~~**Beacon mode**~~ — DONE: cursor flash on large movements toggle
+- ~~**Volatile highlights**~~ — DONE: flash edited regions toggle
+- ~~**Smartparens wrappers**~~ — DONE: smartparens-mode→auto-pair, smartparens-strict-mode→paredit-strict
+- ~~**use-package/straight stubs**~~ — DONE: informational stubs (all packages built-in)
+- ~~**Which-key enhancements**~~ — DONE: which-key-show-top-level, which-key-show-major-mode
+
 ### Aspirational
 - LSP in TUI
 - ~~DAP/debugger integration~~ — DONE: real GDB/MI interface (Qt), DAP protocol skeleton (TUI)

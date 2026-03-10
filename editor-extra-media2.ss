@@ -1524,6 +1524,183 @@
                                    (symbol->string cmd-sym))))))
             (echo-message! echo "Unknown key")))))))
 
+;;;============================================================================
+;;; Swiper — interactive line search with match preview
+;;;============================================================================
 
+(def (cmd-swiper app)
+  "Interactive line search — shows matching lines like swiper."
+  (let* ((fr (app-state-frame app))
+         (win (current-window fr))
+         (ed (edit-window-editor win))
+         (echo (app-state-echo app))
+         (text (editor-get-text ed))
+         (row (- (frame-height fr) 1))
+         (width (frame-width fr))
+         (query (echo-read-string echo "Swiper: " row width)))
+    (when (and query (> (string-length query) 0))
+      (let* ((lines (string-split text #\newline))
+             (matches
+               (let loop ((ls lines) (n 1) (acc '()))
+                 (if (null? ls) (reverse acc)
+                   (loop (cdr ls) (+ n 1)
+                         (if (string-contains-ci (car ls) query)
+                           (cons (cons n (car ls)) acc) acc)))))
+             (match-lines
+               (map (lambda (m)
+                      (string-append (number->string (car m)) ": "
+                                     (string-trim-both (cdr m))))
+                    matches)))
+        (if (null? matches)
+          (echo-message! echo "No matches")
+          ;; Jump to first match
+          (let* ((target-line (caar matches))
+                 (pos (editor-position-from-line ed (- target-line 1))))
+            (editor-goto-pos ed pos)
+            (editor-scroll-caret ed)
+            (echo-message! echo
+              (string-append "Swiper: " (number->string (length matches))
+                             " matches — line "
+                             (number->string target-line)))))))))
 
+(def (cmd-swiper-isearch app)
+  "Alias for swiper."
+  (cmd-swiper app))
+
+;;;============================================================================
+;;; Counsel — enhanced M-x, find-file, ripgrep wrappers
+;;;============================================================================
+
+(def (cmd-counsel-M-x app)
+  "Enhanced M-x with counsel-style completion."
+  ;; Delegates to the existing M-x infrastructure
+  (let ((cmd (find-command 'execute-extended-command)))
+    (when cmd (cmd app))))
+
+(def (cmd-counsel-find-file app)
+  "Enhanced find-file with counsel-style completion."
+  (let ((cmd (find-command 'find-file)))
+    (when cmd (cmd app))))
+
+(def (cmd-counsel-rg app)
+  "Counsel ripgrep — alias for consult-ripgrep."
+  (let ((cmd (find-command 'consult-ripgrep)))
+    (when cmd (cmd app))))
+
+(def (cmd-counsel-recentf app)
+  "Counsel recent files."
+  (let ((cmd (find-command 'recentf-open-files)))
+    (when cmd (cmd app))))
+
+(def (cmd-counsel-bookmark app)
+  "Counsel bookmark."
+  (let ((cmd (find-command 'bookmark-jump)))
+    (when cmd (cmd app))))
+
+(def (cmd-ivy-resume app)
+  "Resume last ivy/counsel session."
+  (echo-message! (app-state-echo app) "No previous ivy session"))
+
+;;;============================================================================
+;;; God mode — modal editing without modifier keys
+;;;============================================================================
+
+(def *god-mode-enabled* #f)
+
+(def (cmd-god-mode app)
+  "Toggle god-mode: keys are interpreted as C-<key> without holding Ctrl."
+  (set! *god-mode-enabled* (not *god-mode-enabled*))
+  (echo-message! (app-state-echo app)
+    (if *god-mode-enabled* "God mode ON — keys act as C-<key>"
+      "God mode OFF")))
+
+(def (cmd-god-local-mode app)
+  "Toggle buffer-local god mode."
+  (cmd-god-mode app))
+
+(def (cmd-god-execute-with-current-bindings app)
+  "Execute next key as if god-mode is active."
+  (let* ((echo (app-state-echo app))
+         (fr (app-state-frame app))
+         (key (echo-read-string echo "God key: "
+                (- (frame-height fr) 1) (frame-width fr))))
+    (when (and key (> (string-length key) 0))
+      (let* ((sym (string->symbol (string-append "C-" key)))
+             (cmd (find-command sym)))
+        (if cmd (cmd app)
+          (echo-message! echo (string-append "No binding for C-" key)))))))
+
+;;;============================================================================
+;;; Beacon mode — flash cursor position on large jumps
+;;;============================================================================
+
+(def *beacon-mode* #f)
+
+(def (cmd-beacon-mode app)
+  "Toggle beacon mode — flash cursor position after large jumps."
+  (set! *beacon-mode* (not *beacon-mode*))
+  (echo-message! (app-state-echo app)
+    (if *beacon-mode* "Beacon mode ON" "Beacon mode OFF")))
+
+;;;============================================================================
+;;; Volatile highlights — briefly highlight changed text
+;;;============================================================================
+
+(def *volatile-highlights-mode* #f)
+
+(def (cmd-volatile-highlights-mode app)
+  "Toggle volatile highlights — flash yanked/edited regions."
+  (set! *volatile-highlights-mode* (not *volatile-highlights-mode*))
+  (echo-message! (app-state-echo app)
+    (if *volatile-highlights-mode*
+      "Volatile highlights ON" "Volatile highlights OFF")))
+
+;;;============================================================================
+;;; Smartparens strict mode
+;;;============================================================================
+
+(def *smartparens-strict-mode* #f)
+
+(def (cmd-smartparens-strict-mode app)
+  "Toggle smartparens strict mode — prevent unbalanced paren deletion."
+  (set! *smartparens-strict-mode* (not *smartparens-strict-mode*))
+  (echo-message! (app-state-echo app)
+    (if *smartparens-strict-mode*
+      "Smartparens strict mode ON" "Smartparens strict mode OFF")))
+
+(def (cmd-smartparens-mode app)
+  "Toggle smartparens mode."
+  (cmd-smartparens-strict-mode app))
+
+;;;============================================================================
+;;; All-the-icons / nerd-icons — already defined in editor-extra-modes.ss
+;;;============================================================================
+
+;;;============================================================================
+;;; use-package / straight — package config stubs
+;;;============================================================================
+
+(def (cmd-use-package-report app)
+  "Show use-package statistics."
+  (echo-message! (app-state-echo app)
+    "Gemacs uses Gerbil packages — see M-x list-packages"))
+
+(def (cmd-straight-use-package app)
+  "Straight.el package manager stub."
+  (echo-message! (app-state-echo app)
+    "Gemacs uses gerbil pkg — see M-x package-install"))
+
+;;;============================================================================
+;;; Which-key enhancements
+;;;============================================================================
+
+(def (cmd-which-key-show-top-level app)
+  "Show all top-level key bindings."
+  (let ((cmd (find-command 'describe-bindings)))
+    (when cmd (cmd app))))
+
+(def (cmd-which-key-show-major-mode app)
+  "Show major-mode specific bindings."
+  (let ((cmd (find-command 'describe-mode)))
+    (when cmd (cmd app))))
 

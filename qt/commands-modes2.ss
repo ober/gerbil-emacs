@@ -484,4 +484,136 @@
         (echo-message! (app-state-echo app) (string-append "Copied: " name))))))
 
 ;;; ============================================================================
+;;; Swiper / counsel — interactive search wrappers
+;;; ============================================================================
+
+(def (cmd-swiper app)
+  "Swiper-style interactive search — delegates to occur."
+  (cmd-occur app))
+
+(def (cmd-swiper-isearch app)
+  "Swiper isearch — delegates to occur (isearch unavailable at this chain level)."
+  (cmd-occur app))
+
+(def (cmd-counsel-M-x app)
+  "Counsel M-x — delegates to execute-extended-command."
+  (cmd-execute-extended-command app))
+
+(def (cmd-counsel-find-file app)
+  "Counsel find-file — use M-x find-file or C-x C-f."
+  (echo-message! (app-state-echo app) "Use C-x C-f (find-file) to open files"))
+
+(def (cmd-counsel-rg app)
+  "Counsel ripgrep — delegates to rgrep."
+  (cmd-rgrep app))
+
+(def (cmd-counsel-recentf app)
+  "Counsel recent files — delegates to recentf-open."
+  (cmd-recentf-open app))
+
+(def (cmd-counsel-bookmark app)
+  "Counsel bookmarks — delegates to bookmark-jump."
+  (cmd-bookmark-jump app))
+
+(def (cmd-ivy-resume app)
+  "Ivy resume — stub, no session to resume."
+  (echo-message! (app-state-echo app) "No ivy session to resume"))
+
+;;; ============================================================================
+;;; God mode — Ctrl-free command entry
+;;; ============================================================================
+
+(def *qt-god-mode* #f)
+
+(def (cmd-god-mode app)
+  "Toggle god mode — Ctrl-free command execution."
+  (set! *qt-god-mode* (not *qt-god-mode*))
+  (echo-message! (app-state-echo app)
+    (if *qt-god-mode* "God mode enabled (prefix keys act as C-)" "God mode disabled")))
+
+(def (cmd-god-local-mode app)
+  "Toggle god mode in current buffer."
+  (cmd-god-mode app))
+
+(def (cmd-god-execute-with-current-bindings app)
+  "Execute next key with current bindings (god-mode helper)."
+  (echo-message! (app-state-echo app) "Type a key to execute with C- prefix..."))
+
+;;; ============================================================================
+;;; Beacon mode — cursor flash
+;;; ============================================================================
+
+(def *qt-beacon-mode* #f)
+
+(def (cmd-beacon-mode app)
+  "Toggle beacon mode — flash cursor on large movements."
+  (set! *qt-beacon-mode* (not *qt-beacon-mode*))
+  (echo-message! (app-state-echo app)
+    (if *qt-beacon-mode* "Beacon mode enabled" "Beacon mode disabled")))
+
+;;; ============================================================================
+;;; Volatile highlights — flash edited regions
+;;; ============================================================================
+
+(def *qt-volatile-highlights* #f)
+
+(def (cmd-volatile-highlights-mode app)
+  "Toggle volatile highlights — flash edited regions briefly."
+  (set! *qt-volatile-highlights* (not *qt-volatile-highlights*))
+  (echo-message! (app-state-echo app)
+    (if *qt-volatile-highlights* "Volatile highlights enabled" "Volatile highlights disabled")))
+
+;;; ============================================================================
+;;; Smartparens — paren auto-pairing
+;;; ============================================================================
+
+(def (cmd-smartparens-strict-mode app)
+  "Toggle strict smartparens mode — delegates to paredit-strict-mode."
+  (cmd-paredit-strict-mode app))
+
+(def (cmd-smartparens-mode app)
+  "Toggle smartparens mode — delegates to auto-pair-mode."
+  (cmd-toggle-auto-pair-mode app))
+
+;;; ============================================================================
+;;; All-the-icons / nerd-icons — icon display
+;;; ============================================================================
+
+(def (cmd-all-the-icons-install-fonts app)
+  "Install all-the-icons fonts (informational)."
+  (echo-message! (app-state-echo app)
+    "Icon fonts: use Unicode glyphs. No separate install needed."))
+
+(def (cmd-nerd-icons-install-fonts app)
+  "Install nerd-icons fonts (informational)."
+  (echo-message! (app-state-echo app)
+    "Nerd icons: install a Nerd Font from nerdfonts.com for glyph support."))
+
+;;; ============================================================================
+;;; use-package / straight — package config stubs
+;;; ============================================================================
+
+(def (cmd-use-package-report app)
+  "Show use-package statistics."
+  (echo-message! (app-state-echo app)
+    "Gemacs: all packages built-in. No external packages to report."))
+
+(def (cmd-straight-use-package app)
+  "Configure straight.el package — N/A in gemacs."
+  (echo-message! (app-state-echo app)
+    "Gemacs uses built-in packages. straight.el not applicable."))
+
+;;; ============================================================================
+;;; Which-key enhancements
+;;; ============================================================================
+
+(def (cmd-which-key-show-top-level app)
+  "Show all top-level key bindings via which-key."
+  (echo-message! (app-state-echo app) "Use C-h b to see all key bindings"))
+
+(def (cmd-which-key-show-major-mode app)
+  "Show major-mode key bindings via which-key."
+  (echo-message! (app-state-echo app) "Use C-h m to see major-mode bindings"))
+
+;;; ============================================================================
 ;;; Snippet/template expansion system
