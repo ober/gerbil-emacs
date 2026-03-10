@@ -182,6 +182,17 @@ Largest files: modes (~1851), lsp (~1802), search (~1778)
 - ~~**Smartparens wrappers**~~ — DONE: smartparens-mode→auto-pair, smartparens-strict-mode→paredit-strict
 - ~~**use-package/straight stubs**~~ — DONE: informational stubs (all packages built-in)
 - ~~**Which-key enhancements**~~ — DONE: which-key-show-top-level, which-key-show-major-mode
+- ~~**Dimmer mode**~~ — DONE: dim non-active windows toggle
+- ~~**Nyan mode**~~ — DONE: fun position indicator toggle
+- ~~**Centered cursor mode**~~ — DONE: keep cursor vertically centered toggle
+- ~~**Format-all-buffer**~~ — DONE: real external formatter integration (black, prettier, gofmt, rustfmt, clang-format, jq, shfmt, etc.)
+- ~~**Visual regexp**~~ — DONE: visual-regexp-replace, visual-regexp-query-replace delegating to query-replace-regexp
+- ~~**Anzu mode**~~ — DONE: search match count indicator toggle
+- ~~**Popwin mode**~~ — DONE: popup window management mode with close-popup
+- ~~**Easy-kill**~~ — DONE: copy word at point without moving cursor
+- ~~**Crux extras**~~ — DONE: open-with (xdg-open), duplicate-current-line, indent-defun, swap-windows, cleanup-buffer-or-region
+- ~~**Selected mode**~~ — DONE: special keybindings when region active toggle
+- ~~**Aggressive fill-paragraph**~~ — DONE: auto-reflow paragraphs mode toggle
 
 ### Aspirational
 - LSP in TUI

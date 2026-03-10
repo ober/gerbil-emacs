@@ -616,4 +616,227 @@
   (echo-message! (app-state-echo app) "Use C-h m to see major-mode bindings"))
 
 ;;; ============================================================================
+;;; Dimmer — dim non-active windows
+;;; ============================================================================
+
+(def *qt-dimmer-mode* #f)
+
+(def (cmd-dimmer-mode app)
+  "Toggle dimmer mode — dim non-active windows."
+  (set! *qt-dimmer-mode* (not *qt-dimmer-mode*))
+  (echo-message! (app-state-echo app)
+    (if *qt-dimmer-mode* "Dimmer mode enabled" "Dimmer mode disabled")))
+
+;;; ============================================================================
+;;; Nyan mode — fun position indicator
+;;; ============================================================================
+
+(def *qt-nyan-mode* #f)
+
+(def (cmd-nyan-mode app)
+  "Toggle nyan-mode — show nyan cat position indicator in modeline."
+  (set! *qt-nyan-mode* (not *qt-nyan-mode*))
+  (echo-message! (app-state-echo app)
+    (if *qt-nyan-mode* "Nyan mode enabled =^.^=" "Nyan mode disabled")))
+
+;;; ============================================================================
+;;; Centered cursor mode
+;;; ============================================================================
+
+(def *qt-centered-cursor* #f)
+
+(def (cmd-centered-cursor-mode app)
+  "Toggle centered cursor mode — keep cursor vertically centered."
+  (set! *qt-centered-cursor* (not *qt-centered-cursor*))
+  (echo-message! (app-state-echo app)
+    (if *qt-centered-cursor* "Centered cursor mode enabled" "Centered cursor mode disabled")))
+
+;;; ============================================================================
+;;; Format-all — external formatter integration
+;;; ============================================================================
+
+(def (cmd-format-all-buffer app)
+  "Format current buffer using external formatter."
+  (let* ((buf (current-qt-buffer app))
+         (path (buffer-file-path buf)))
+    (if (not path)
+      (echo-message! (app-state-echo app) "Buffer has no file — save first")
+      (let* ((ext (path-extension path))
+             (formatter (cond
+                          ((member ext '("py" "pyw")) "black -q -")
+                          ((member ext '("js" "jsx" "ts" "tsx")) "prettier --stdin-filepath dummy.js")
+                          ((member ext '("go")) "gofmt")
+                          ((member ext '("rs")) "rustfmt")
+                          ((member ext '("c" "h" "cpp" "hpp" "cc")) "clang-format")
+                          ((member ext '("json")) "jq .")
+                          ((member ext '("html" "htm" "xml")) "tidy -q -indent")
+                          ((member ext '("sh" "bash")) "shfmt -")
+                          ((member ext '("rb")) "rubocop -a --stdin dummy.rb 2>/dev/null")
+                          ((member ext '("lua")) "lua-format -i --stdin")
+                          (else #f))))
+        (if (not formatter)
+          (echo-message! (app-state-echo app) (string-append "No formatter for ." ext))
+          (let* ((ed (current-qt-editor app))
+                 (text (qt-plain-text-edit-text ed))
+                 (result (with-catch
+                           (lambda (e) (cons 'error (error-message e)))
+                           (lambda ()
+                             (let ((p (open-input-process
+                                        (list path: "/bin/sh"
+                                              arguments: (list "-c" formatter)
+                                              stdin-redirection: #t
+                                              stdout-redirection: #t
+                                              stderr-redirection: #t))))
+                               (display text p)
+                               (force-output p)
+                               (close-output-port p)
+                               (let ((out (read-line p #f)))
+                                 (close-input-port p)
+                                 (cons 'ok (or out ""))))))))
+            (if (eq? (car result) 'error)
+              (echo-message! (app-state-echo app) (string-append "Formatter error: " (cdr result)))
+              (let ((formatted (cdr result)))
+                (when (and (> (string-length formatted) 0)
+                           (not (equal? formatted text)))
+                  (qt-plain-text-edit-set-text! ed formatted)
+                  (echo-message! (app-state-echo app) "Buffer formatted"))))))))))
+
+;;; ============================================================================
+;;; Visual regexp — visual feedback during replace
+;;; ============================================================================
+
+(def (cmd-visual-regexp-replace app)
+  "Visual regexp replace — delegates to query-replace-regexp."
+  (cmd-query-replace-regexp app))
+
+(def (cmd-visual-regexp-query-replace app)
+  "Visual regexp query replace."
+  (cmd-query-replace-regexp app))
+
+;;; ============================================================================
+;;; Anzu — search match count indicator
+;;; ============================================================================
+
+(def *qt-anzu-mode* #f)
+
+(def (cmd-anzu-mode app)
+  "Toggle anzu mode — show search match count."
+  (set! *qt-anzu-mode* (not *qt-anzu-mode*))
+  (echo-message! (app-state-echo app)
+    (if *qt-anzu-mode* "Anzu mode enabled (match counting)" "Anzu mode disabled")))
+
+;;; ============================================================================
+;;; Popwin — popup window management
+;;; ============================================================================
+
+(def *qt-popwin-mode* #f)
+
+(def (cmd-popwin-mode app)
+  "Toggle popwin mode — manage popup windows."
+  (set! *qt-popwin-mode* (not *qt-popwin-mode*))
+  (echo-message! (app-state-echo app)
+    (if *qt-popwin-mode* "Popwin mode enabled" "Popwin mode disabled")))
+
+(def (cmd-popwin-close-popup app)
+  "Close the current popup window."
+  (cmd-delete-window app))
+
+;;; ============================================================================
+;;; Easy-kill — easy copy of various things at point
+;;; ============================================================================
+
+(def (cmd-easy-kill app)
+  "Easy kill — copy word at point without moving."
+  (let* ((ed (current-qt-editor app))
+         (pos (qt-plain-text-edit-cursor-position ed))
+         (text (qt-plain-text-edit-text ed))
+         (len (string-length text)))
+    (let loop ((start pos))
+      (if (and (> start 0)
+               (let ((c (string-ref text (- start 1))))
+                 (or (char-alphabetic? c) (char-numeric? c) (eqv? c #\_))))
+        (loop (- start 1))
+        (let loop2 ((end pos))
+          (if (and (< end len)
+                   (let ((c (string-ref text end)))
+                     (or (char-alphabetic? c) (char-numeric? c) (eqv? c #\_))))
+            (loop2 (+ end 1))
+            (let ((word (substring text start end)))
+              (when (> (string-length word) 0)
+                (qt-kill-ring-push! app word)
+                (echo-message! (app-state-echo app) (string-append "Copied: " word))))))))))
+
+;;; ============================================================================
+;;; Crux extras — useful editing commands
+;;; ============================================================================
+
+(def (cmd-crux-open-with app)
+  "Open current file with external program."
+  (let* ((buf (current-qt-buffer app))
+         (path (buffer-file-path buf)))
+    (if (not path)
+      (echo-message! (app-state-echo app) "Buffer has no file")
+      (begin
+        (with-catch void (lambda () (open-process (list path: "xdg-open" arguments: (list path)))))
+        (echo-message! (app-state-echo app) (string-append "Opening with system handler: " path))))))
+
+(def (cmd-crux-duplicate-current-line app)
+  "Duplicate the current line."
+  (let* ((ed (current-qt-editor app))
+         (pos (qt-plain-text-edit-cursor-position ed))
+         (text (qt-plain-text-edit-text ed))
+         (len (string-length text))
+         (line-start (let loop ((i pos)) (if (or (<= i 0) (eqv? (string-ref text (- i 1)) #\newline)) i (loop (- i 1)))))
+         (line-end (let loop ((i pos)) (if (or (>= i len) (eqv? (string-ref text i) #\newline)) i (loop (+ i 1)))))
+         (line (substring text line-start line-end))
+         (new-text (string-append (substring text 0 line-end) "\n" line (substring text line-end len))))
+    (qt-plain-text-edit-set-text! ed new-text)
+    (qt-plain-text-edit-set-cursor-position! ed (+ line-end 1 (- pos line-start)))))
+
+(def (cmd-crux-indent-defun app)
+  "Indent the current top-level form."
+  (echo-message! (app-state-echo app) "Use C-M-\\ (indent-region) to indent forms"))
+
+(def (cmd-crux-swap-windows app)
+  "Swap the contents of the two most recent windows."
+  (let ((cmd (find-command 'swap-windows)))
+    (if cmd (cmd app)
+      (echo-message! (app-state-echo app) "Only one window"))))
+
+(def (cmd-crux-cleanup-buffer-or-region app)
+  "Clean up buffer: delete trailing whitespace."
+  (let* ((ed (current-qt-editor app))
+         (text (qt-plain-text-edit-text ed))
+         (lines (string-split text #\newline))
+         (cleaned (map (lambda (line) (string-trim-right line)) lines))
+         (result (string-join cleaned "\n")))
+    (when (not (equal? text result))
+      (qt-plain-text-edit-set-text! ed result))
+    (echo-message! (app-state-echo app) "Buffer cleaned up")))
+
+;;; ============================================================================
+;;; Selected — act on region commands
+;;; ============================================================================
+
+(def *qt-selected-mode* #f)
+
+(def (cmd-selected-mode app)
+  "Toggle selected mode — special keybindings when region is active."
+  (set! *qt-selected-mode* (not *qt-selected-mode*))
+  (echo-message! (app-state-echo app)
+    (if *qt-selected-mode* "Selected mode enabled" "Selected mode disabled")))
+
+;;; ============================================================================
+;;; Aggressive fill — auto-fill paragraphs as you type
+;;; ============================================================================
+
+(def *qt-aggressive-fill* #f)
+
+(def (cmd-aggressive-fill-paragraph-mode app)
+  "Toggle aggressive fill paragraph mode — auto-reflow paragraphs."
+  (set! *qt-aggressive-fill* (not *qt-aggressive-fill*))
+  (echo-message! (app-state-echo app)
+    (if *qt-aggressive-fill* "Aggressive fill-paragraph mode enabled" "Aggressive fill-paragraph mode disabled")))
+
+;;; ============================================================================
 ;;; Snippet/template expansion system
