@@ -1588,8 +1588,8 @@
           (echo-message! (app-state-echo app) (string-append "'" name "' not found")))))))
 
 (def (cmd-helpful-key app)
-  "Describe key — shows what a keybinding does."
-  (echo-message! (app-state-echo app) "Press key to describe (C-h k equivalent)..."))
+  "Describe key — delegates to describe-key."
+  (execute-command! app 'describe-key))
 
 ;; Diff-hl — delegates to git-gutter
 (def (cmd-diff-hl-mode app)

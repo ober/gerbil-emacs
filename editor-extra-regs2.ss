@@ -1130,21 +1130,28 @@
 (def (cmd-mc-mark-next app) "Mark next." (echo-message! (app-state-echo app) "Multiple cursors not available in TUI"))
 (def (cmd-mc-mark-all app) "Mark all." (echo-message! (app-state-echo app) "Multiple cursors not available in TUI"))
 (def (cmd-mc-skip-and-mark-next app) "Skip and mark next." (echo-message! (app-state-echo app) "Multiple cursors not available in TUI"))
-(def (cmd-lsp-goto-definition app) "LSP goto def." (echo-message! (app-state-echo app) "LSP: not available in TUI"))
-(def (cmd-lsp-smart-goto-definition app) "LSP smart goto." (echo-message! (app-state-echo app) "LSP: not available in TUI"))
-(def (cmd-lsp-find-references app) "LSP refs." (echo-message! (app-state-echo app) "LSP: not available in TUI"))
-(def (cmd-lsp-hover app) "LSP hover." (echo-message! (app-state-echo app) "LSP: not available in TUI"))
-(def (cmd-lsp-rename app) "LSP rename." (echo-message! (app-state-echo app) "LSP: not available in TUI"))
-(def (cmd-lsp-format-buffer app) "LSP format." (echo-message! (app-state-echo app) "LSP: not available in TUI"))
-(def (cmd-lsp-code-actions app) "LSP actions." (echo-message! (app-state-echo app) "LSP: not available in TUI"))
-(def (cmd-lsp-completion app) "LSP complete." (echo-message! (app-state-echo app) "LSP: not available in TUI"))
-(def (cmd-lsp-declaration app) "LSP decl." (echo-message! (app-state-echo app) "LSP: not available in TUI"))
-(def (cmd-lsp-implementation app) "LSP impl." (echo-message! (app-state-echo app) "LSP: not available in TUI"))
-(def (cmd-lsp-type-definition app) "LSP type def." (echo-message! (app-state-echo app) "LSP: not available in TUI"))
-(def (cmd-lsp-document-symbols app) "LSP symbols." (echo-message! (app-state-echo app) "LSP: not available in TUI"))
-(def (cmd-lsp-workspace-symbol app) "LSP ws sym." (echo-message! (app-state-echo app) "LSP: not available in TUI"))
-(def (cmd-lsp-restart app) "LSP restart." (echo-message! (app-state-echo app) "LSP: not available in TUI"))
-(def (cmd-lsp-stop app) "LSP stop." (echo-message! (app-state-echo app) "LSP: not available in TUI"))
+;; LSP commands — delegate to ctags/grep/formatter where possible
+(def (cmd-lsp-goto-definition app) "LSP goto def — delegates to find-tag (ctags)." (execute-command! app 'find-tag))
+(def (cmd-lsp-smart-goto-definition app) "LSP smart goto — delegates to find-tag." (execute-command! app 'find-tag))
+(def (cmd-lsp-find-references app) "LSP refs — delegates to rgrep for symbol at point."
+  (execute-command! app 'rgrep))
+(def (cmd-lsp-hover app) "LSP hover — delegates to eldoc."
+  (execute-command! app 'eldoc))
+(def (cmd-lsp-rename app) "LSP rename — delegates to query-replace for symbol renaming."
+  (execute-command! app 'query-replace))
+(def (cmd-lsp-format-buffer app) "LSP format — delegates to format-buffer (external formatter)."
+  (execute-command! app 'format-buffer))
+(def (cmd-lsp-code-actions app) "LSP actions." (echo-message! (app-state-echo app) "LSP code actions: use M-x for available commands"))
+(def (cmd-lsp-completion app) "LSP complete — delegates to hippie-expand."
+  (execute-command! app 'hippie-expand))
+(def (cmd-lsp-declaration app) "LSP decl — delegates to find-tag." (execute-command! app 'find-tag))
+(def (cmd-lsp-implementation app) "LSP impl — delegates to find-tag." (execute-command! app 'find-tag))
+(def (cmd-lsp-type-definition app) "LSP type def — delegates to find-tag." (execute-command! app 'find-tag))
+(def (cmd-lsp-document-symbols app) "LSP symbols — delegates to imenu." (execute-command! app 'imenu))
+(def (cmd-lsp-workspace-symbol app) "LSP workspace symbols — delegates to imenu-anywhere."
+  (execute-command! app 'imenu-anywhere))
+(def (cmd-lsp-restart app) "LSP restart." (echo-message! (app-state-echo app) "LSP: use Qt mode for full LSP support"))
+(def (cmd-lsp-stop app) "LSP stop." (echo-message! (app-state-echo app) "LSP: use Qt mode for full LSP support"))
 
 ;;;============================================================================
 ;;; Batch 12: Emacs-standard alias registrations (editor-extra chain scope)
