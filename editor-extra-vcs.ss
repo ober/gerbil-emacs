@@ -2020,5 +2020,5 @@
     (echo-message! (app-state-echo app) (if (string=? out "") "Stash popped" (string-trim out)))))
 
 (def (cmd-multi-vterm app)
-  "Open a new terminal buffer (alias for shell)."
-  (echo-message! (app-state-echo app) "Use M-x shell or M-x eshell for terminal"))
+  "Open a new terminal buffer (delegates to shell command)."
+  (execute-command! app 'shell))

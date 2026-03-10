@@ -738,9 +738,18 @@ SPC = page down, DEL = page up, q = quit view-mode."
   "Toggle input method."
   (echo-message! (app-state-echo app) "Input method toggled"))
 
+(def *qt-eol-mode* 0) ;; 0=LF(Unix) 1=CRLF(Windows) 2=CR(Mac)
+
 (def (cmd-toggle-eol-conversion app)
-  "Toggle end-of-line conversion display."
-  (echo-message! (app-state-echo app) "EOL conversion toggled"))
+  "Cycle end-of-line mode: Unix (LF) -> Windows (CRLF) -> Mac (CR)."
+  (set! *qt-eol-mode* (modulo (+ *qt-eol-mode* 1) 3))
+  (let ((ed (current-qt-editor app)))
+    ;; SCI_SETEOLMODE = 2031
+    (sci-send ed 2031 *qt-eol-mode* 0)
+    (echo-message! (app-state-echo app)
+      (cond ((= *qt-eol-mode* 0) "EOL: Unix (LF)")
+            ((= *qt-eol-mode* 1) "EOL: Windows (CRLF)")
+            (else "EOL: Classic Mac (CR)")))))
 
 (def (cmd-toggle-flymake app)
   "Toggle flymake mode — delegates to flycheck."
@@ -845,9 +854,13 @@ SPC = page down, DEL = page up, q = quit view-mode."
   "Toggle narrow indicator."
   (cmd-toggle-narrowing-indicator app))
 
+(def *qt-auto-complete* #t)
+
 (def (cmd-toggle-auto-complete app)
-  "Toggle auto-complete."
-  (echo-message! (app-state-echo app) "Auto-complete toggled"))
+  "Toggle auto-completion for buffer editing."
+  (set! *qt-auto-complete* (not *qt-auto-complete*))
+  (echo-message! (app-state-echo app)
+    (if *qt-auto-complete* "Auto-complete enabled" "Auto-complete disabled")))
 
 ;; --- Window management ---
 (def (cmd-split-window-below app)
@@ -859,12 +872,18 @@ SPC = page down, DEL = page up, q = quit view-mode."
   (cmd-delete-window app))
 
 (def (cmd-fit-window-to-buffer app)
-  "Fit window to buffer content."
-  (echo-message! (app-state-echo app) "Window fitted"))
+  "Fit window to buffer content — report line count."
+  (let* ((ed (current-qt-editor app))
+         (lines (sci-send ed SCI_GETLINECOUNT 0 0)))
+    (echo-message! (app-state-echo app)
+      (string-append "Buffer has " (number->string lines) " lines"))))
 
 (def (cmd-shrink-window-if-larger-than-buffer app)
-  "Shrink window to fit buffer."
-  (echo-message! (app-state-echo app) "Window shrunk"))
+  "Shrink window to fit buffer — report line count."
+  (let* ((ed (current-qt-editor app))
+         (lines (sci-send ed SCI_GETLINECOUNT 0 0)))
+    (echo-message! (app-state-echo app)
+      (string-append "Buffer: " (number->string lines) " lines"))))
 
 (def (cmd-resize-window-width app)
   "Resize window width."

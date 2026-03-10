@@ -500,8 +500,8 @@
   (cmd-execute-extended-command app))
 
 (def (cmd-counsel-find-file app)
-  "Counsel find-file — use M-x find-file or C-x C-f."
-  (echo-message! (app-state-echo app) "Use C-x C-f (find-file) to open files"))
+  "Counsel find-file — delegates to find-file."
+  (execute-command! app 'find-file))
 
 (def (cmd-counsel-rg app)
   "Counsel ripgrep — delegates to rgrep."
@@ -840,8 +840,8 @@
     (qt-plain-text-edit-set-cursor-position! ed (+ line-end 1 (- pos line-start)))))
 
 (def (cmd-crux-indent-defun app)
-  "Indent the current top-level form."
-  (echo-message! (app-state-echo app) "Use C-M-\\ (indent-region) to indent forms"))
+  "Indent the current top-level form — delegates to indent-region."
+  (execute-command! app 'indent-region))
 
 (def (cmd-crux-swap-windows app)
   "Swap the contents of the two most recent windows."
@@ -1306,12 +1306,12 @@
 ;;; ============================================================================
 
 (def (cmd-ef-themes-select app)
-  "Select from ef-themes."
-  (echo-message! (app-state-echo app) "Use M-x customize-themes to browse themes"))
+  "Select from ef-themes — delegates to customize-themes."
+  (execute-command! app 'customize-themes))
 
 (def (cmd-modus-themes-toggle app)
-  "Toggle modus light/dark."
-  (echo-message! (app-state-echo app) "Use M-x customize-themes to switch themes"))
+  "Toggle modus light/dark — delegates to customize-themes."
+  (execute-command! app 'customize-themes))
 
 ;;; ============================================================================
 ;;; Circadian / auto-dark — automatic theme switching

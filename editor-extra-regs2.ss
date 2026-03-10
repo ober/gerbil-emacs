@@ -894,8 +894,8 @@
 
 ;; --- Flycheck ---
 (def (cmd-flycheck-prev-error app)
-  "Jump to previous flycheck error."
-  (echo-message! (app-state-echo app) "No previous error"))
+  "Jump to previous flycheck error — delegates to previous-error."
+  (execute-command! app 'previous-error))
 
 ;; --- Insert char by name ---
 (def (cmd-insert-char-by-name app)
@@ -1092,7 +1092,7 @@
   (when (not *tui-calendar-year*) (cmd-calendar-today app))
   (set! *tui-calendar-year* (- *tui-calendar-year* 1))
   (cmd-calendar app))
-(def (cmd-helm-buffers-list app) "Helm buffers." (echo-message! (app-state-echo app) "Use M-x list-buffers"))
+(def (cmd-helm-buffers-list app) "Helm buffers — delegates to list-buffers." (execute-command! app 'list-buffers))
 (def (cmd-image-zoom-in app) "Zoom in." (echo-message! (app-state-echo app) "Image zoom not available in TUI"))
 (def (cmd-image-zoom-out app) "Zoom out." (echo-message! (app-state-echo app) "Image zoom not available in TUI"))
 (def (cmd-image-zoom-fit app) "Zoom fit." (echo-message! (app-state-echo app) "Image zoom not available in TUI"))

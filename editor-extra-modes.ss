@@ -118,8 +118,8 @@
     (echo-message! (app-state-echo app) "Gerbil mode")))
 
 (def (cmd-run-scheme app)
-  "Run Scheme REPL (alias for repl command)."
-  (echo-message! (app-state-echo app) "Use C-x r to open REPL"))
+  "Run Scheme REPL — opens Gerbil REPL."
+  (execute-command! app 'repl))
 
 (def (cmd-scheme-send-region app)
   "Send region to Scheme process — evaluates selected text."
@@ -884,15 +884,15 @@
 
 (def (cmd-inferior-lisp app)
   "Start inferior Lisp process — opens Gerbil REPL."
-  (echo-message! (app-state-echo app) "Use C-x r to open Gerbil REPL"))
+  (execute-command! app 'repl))
 
 (def (cmd-slime app)
-  "Start SLIME — Superior Lisp Interaction Mode."
-  (echo-message! (app-state-echo app) "Use C-x r for Gerbil REPL (SLIME-like interaction)"))
+  "Start SLIME — delegates to Gerbil REPL."
+  (execute-command! app 'repl))
 
 (def (cmd-sly app)
-  "Start SLY — Sylvester the Cat's Lisp Interaction."
-  (echo-message! (app-state-echo app) "Use C-x r for Gerbil REPL (SLY-like interaction)"))
+  "Start SLY — delegates to Gerbil REPL."
+  (execute-command! app 'repl))
 
 ;; Code folding extras
 (def (cmd-fold-this app)

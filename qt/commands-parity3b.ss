@@ -415,40 +415,104 @@
               (cmd app))
             (echo-message! echo (string-append "Search URL: " url))))))))
 
-;; GDB / Debugger
+;; GDB / Debugger — persistent GDB/MI process
+(def *qt-gdb-process* #f)
+
+(def (qt-gdb-send! cmd app)
+  "Send a GDB/MI command and display response."
+  (let ((proc *qt-gdb-process*))
+    (when (port? proc)
+      (when (and (string? cmd) (not (string-empty? cmd)))
+        (display (string-append cmd "\n") proc)
+        (force-output proc))
+      (input-port-timeout-set! proc 0.3)
+      (let loop ((lines '()) (count 0))
+        (let ((line (with-catch (lambda (e) #f) (lambda () (read-line proc)))))
+          (cond
+            ((not (string? line))
+             (input-port-timeout-set! proc +inf.0)
+             (let ((text (string-join (reverse lines) "\n")))
+               (when (> (string-length text) 0)
+                 (echo-message! (app-state-echo app) text))))
+            ((string-prefix? "(gdb)" line)
+             (input-port-timeout-set! proc +inf.0)
+             (let ((text (string-join (reverse lines) "\n")))
+               (when (> (string-length text) 0)
+                 (echo-message! (app-state-echo app) text))))
+            ((> count 200)
+             (input-port-timeout-set! proc +inf.0))
+            (else
+             (loop (cons line lines) (+ count 1)))))))))
+
 (def (cmd-gdb app)
+  "Start GDB debugger with persistent MI interface."
   (let* ((ed (current-qt-editor app))
          (echo (app-state-echo app))
-         (cmd-str (qt-echo-read-string app "GDB command: ")))
-    (when (and cmd-str (> (string-length cmd-str) 0))
+         (program (qt-echo-read-string app "Program to debug: ")))
+    (when (and program (> (string-length program) 0))
       (with-catch
         (lambda (e) (echo-message! echo "GDB: error starting"))
         (lambda ()
-          (let* ((args (string-split cmd-str #\space))
-                 (proc (open-process
-                         (list path: "gdb" arguments: (cons "-q" args)
-                               stdout-redirection: #t stderr-redirection: #t)))
-                 (out (read-line proc #f)))
-            (close-port proc)
-            (when out
-              (let* ((fr (app-state-frame app))
-                     (buf (or (buffer-by-name "*GDB*")
-                              (qt-buffer-create! "*GDB*" ed #f))))
-                (qt-buffer-attach! ed buf)
-                (set! (qt-edit-window-buffer (qt-current-window fr)) buf)
-                (qt-plain-text-edit-set-text! ed out)
-                (echo-message! echo "GDB session started")))))))))
+          ;; Close existing session
+          (when (and *qt-gdb-process* (port? *qt-gdb-process*))
+            (with-catch void (lambda () (close-port *qt-gdb-process*))))
+          (let* ((proc (open-process
+                         (list path: "gdb"
+                               arguments: (list "-q" "--interpreter=mi2" program)
+                               stdin-redirection: #t stdout-redirection: #t stderr-redirection: #t)))
+                 (fr (app-state-frame app))
+                 (buf (or (buffer-by-name "*GDB*")
+                          (qt-buffer-create! "*GDB*" ed #f))))
+            (set! *qt-gdb-process* proc)
+            (qt-buffer-attach! ed buf)
+            (set! (qt-edit-window-buffer (qt-current-window fr)) buf)
+            (qt-plain-text-edit-set-text! ed (string-append "GDB: " program "\n\n"))
+            ;; Read initial GDB output
+            (qt-gdb-send! "" app)
+            (echo-message! echo (string-append "GDB started for " program))))))))
 
 (def (cmd-gud-break app)
-  (echo-message! (app-state-echo app) "GDB: set breakpoint via M-x gdb"))
+  "Set breakpoint at current line via GDB/MI."
+  (let* ((ed (current-qt-editor app))
+         (buf (current-qt-buffer app))
+         (path (and buf (buffer-file-path buf)))
+         (pos (sci-send ed SCI_GETCURRENTPOS 0 0))
+         (line (+ 1 (sci-send ed SCI_LINEFROMPOSITION pos 0))))
+    (if *qt-gdb-process*
+      (begin
+        (qt-gdb-send! (string-append "-break-insert " (or path "") ":" (number->string line)) app)
+        (echo-message! (app-state-echo app)
+          (string-append "Breakpoint at " (or (and path (path-strip-directory path)) "?") ":" (number->string line))))
+      (echo-message! (app-state-echo app)
+        (string-append "GDB not running. Breakpoint noted at line " (number->string line))))))
+
 (def (cmd-gud-cont app)
-  (echo-message! (app-state-echo app) "GDB: continue via M-x gdb"))
+  "Continue execution in GDB."
+  (if *qt-gdb-process*
+    (begin (qt-gdb-send! "-exec-continue" app)
+           (echo-message! (app-state-echo app) "GUD: continue"))
+    (echo-message! (app-state-echo app) "GDB not running")))
+
 (def (cmd-gud-next app)
-  (echo-message! (app-state-echo app) "GDB: next via M-x gdb"))
+  "Step over in GDB."
+  (if *qt-gdb-process*
+    (begin (qt-gdb-send! "-exec-next" app)
+           (echo-message! (app-state-echo app) "GUD: next"))
+    (echo-message! (app-state-echo app) "GDB not running")))
+
 (def (cmd-gud-step app)
-  (echo-message! (app-state-echo app) "GDB: step via M-x gdb"))
+  "Step into in GDB."
+  (if *qt-gdb-process*
+    (begin (qt-gdb-send! "-exec-step" app)
+           (echo-message! (app-state-echo app) "GUD: step"))
+    (echo-message! (app-state-echo app) "GDB not running")))
+
 (def (cmd-gud-remove app)
-  (echo-message! (app-state-echo app) "GDB: remove breakpoint via M-x gdb"))
+  "Remove all breakpoints in GDB."
+  (if *qt-gdb-process*
+    (begin (qt-gdb-send! "-break-delete" app)
+           (echo-message! (app-state-echo app) "GUD: breakpoints cleared"))
+    (echo-message! (app-state-echo app) "GDB not running")))
 
 ;; Multiple cursors (delegate to Scintilla multi-selection)
 (def (cmd-mc-add-next app)
@@ -702,11 +766,51 @@
           (echo-message! (app-state-echo app) (string-append "UTC: " (or out "?"))))))))
 
 (def (cmd-memory-usage app)
-  (echo-message! (app-state-echo app)
-    (let ((stats (##process-statistics)))
-      (string-append "Heap: "
-        (number->string (inexact->exact (floor (/ (f64vector-ref stats 16) 1024))))
-        "KB"))))
+  "Show Gambit memory and GC statistics in *Memory* buffer."
+  (let* ((ed (current-qt-editor app))
+         (stats (##process-statistics))
+         (report (with-output-to-string
+                   (lambda ()
+                     (display "Gemacs Memory Usage\n")
+                     (display (make-string 40 #\-))
+                     (display "\n")
+                     (display "User time:    ")
+                     (display (f64vector-ref stats 0))
+                     (display " s\n")
+                     (display "System time:  ")
+                     (display (f64vector-ref stats 1))
+                     (display " s\n")
+                     (display "Real time:    ")
+                     (display (f64vector-ref stats 2))
+                     (display " s\n")
+                     (display "GC user time: ")
+                     (display (f64vector-ref stats 3))
+                     (display " s\n")
+                     (display "GC sys time:  ")
+                     (display (f64vector-ref stats 4))
+                     (display " s\n")
+                     (display "GC real time: ")
+                     (display (f64vector-ref stats 5))
+                     (display " s\n")
+                     (display "Bytes alloc:  ")
+                     (display (inexact->exact (f64vector-ref stats 7)))
+                     (display "\n")
+                     (display "GC count:     ")
+                     (display (inexact->exact (f64vector-ref stats 6)))
+                     (display "\n")
+                     (display "Heap:         ")
+                     (display (number->string (inexact->exact (floor (/ (f64vector-ref stats 16) 1024)))))
+                     (display " KB\n")
+                     (display (make-string 40 #\-))
+                     (display "\n"))))
+         (fr (app-state-frame app))
+         (buf (or (buffer-by-name "*Memory*")
+                  (qt-buffer-create! "*Memory*" ed #f))))
+    (qt-buffer-attach! ed buf)
+    (set! (qt-edit-window-buffer (qt-current-window fr)) buf)
+    (qt-plain-text-edit-set-text! ed report)
+    (sci-send ed SCI_SETREADONLY 1 0)
+    (echo-message! (app-state-echo app) "Memory usage displayed")))
 
 (def (cmd-generate-password app)
   (let* ((chars "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*")
