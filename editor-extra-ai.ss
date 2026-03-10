@@ -545,4 +545,90 @@
         (editor-set-text ed text)
         (editor-set-read-only ed #t)
         (hash-remove! *tui-wdired-originals* name)
+        (editor-set-read-only ed #t)
         (echo-message! echo "wdired: aborted")))))
+
+;;;============================================================================
+;;; project-query-replace (TUI): replace-all across all project files
+;;;============================================================================
+
+(def (tui-pqr-grep-files root pattern)
+  "Use grep to find all project files containing pattern. Returns list of paths."
+  (with-exception-catcher
+    (lambda (e) '())
+    (lambda ()
+      (let* ((proc (open-process
+                     (list path: "/usr/bin/grep"
+                           arguments: (list "-rli" pattern root
+                             "--include=*.ss" "--include=*.scm"
+                             "--include=*.py" "--include=*.js" "--include=*.ts"
+                             "--include=*.go" "--include=*.rs"
+                             "--include=*.c" "--include=*.h"
+                             "--include=*.cpp" "--include=*.hpp"
+                             "--include=*.rb" "--include=*.java"
+                             "--include=*.md" "--include=*.txt")
+                           stdout-redirection: #t
+                           stderr-redirection: #f)))
+             (output (read-line proc #f)))
+        (close-port proc)
+        (if output
+          (filter (lambda (s) (> (string-length s) 0))
+                  (string-split output #\newline))
+          '())))))
+
+(def (tui-str-replace-all str from to)
+  "Replace all case-insensitive occurrences of from with to in str."
+  (let ((from-lower (string-downcase from))
+        (from-len   (string-length from)))
+    (let loop ((pos 0) (acc ""))
+      (let* ((rest (substring str pos (string-length str)))
+             (idx  (string-contains (string-downcase rest) from-lower)))
+        (if (not idx)
+          (string-append acc rest)
+          (loop (+ pos idx from-len)
+                (string-append acc
+                               (substring rest 0 idx)
+                               to)))))))
+
+(def (cmd-project-query-replace app)
+  "Replace string across all project files (TUI: replace-all, no per-match interaction)."
+  (let* ((fr   (app-state-frame app))
+         (echo (app-state-echo app))
+         (row  (- (frame-height fr) 1))
+         (w    (frame-width fr))
+         (from-str (echo-read-string echo "Project replace: " row w)))
+    (when (and from-str (> (string-length from-str) 0))
+      (let ((to-str (echo-read-string echo
+                      (string-append "Replace \"" from-str "\" with: ") row w)))
+        (when to-str
+          (let* ((root (with-exception-catcher
+                         (lambda (e) (current-directory))
+                         (lambda () (project-find-root (current-directory)))))
+                 (_ (echo-message! echo (string-append "Searching " root " ...")))
+                 (files (tui-pqr-grep-files root from-str))
+                 (file-count 0))
+            (if (null? files)
+              (echo-message! echo (string-append "No matches for: " from-str))
+              (begin
+                (for-each
+                  (lambda (file-path)
+                    (with-exception-catcher
+                      (lambda (e) (void))
+                      (lambda ()
+                        (let* ((p       (open-input-file file-path))
+                               (content (read-line p #f)))
+                          (close-port p)
+                          (when content
+                            (let ((new-content (tui-str-replace-all content from-str to-str)))
+                              (when (not (string=? content new-content))
+                                (call-with-output-file file-path
+                                  (lambda (p) (display new-content p)))
+                                (set! file-count (+ file-count 1)))))))))
+                  files)
+                (echo-message! echo
+                  (string-append "Replaced in " (number->string file-count)
+                                 " of " (number->string (length files))
+                                 " file(s)"))))))))))
+
+;; cmd-align-regexp already defined in editor-text.ss
+;; cmd-insert-uuid already defined in editor-cmds-a.ss

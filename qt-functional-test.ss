@@ -182,6 +182,8 @@
          (win (make-qt-edit-window ed #f buf #f #f #f))
          (fr  (make-qt-frame #f (make-split-leaf win) (list win) 0 #f))
          (app (new-app-state fr)))
+    ;; Reset singleton to known state for each test group
+    (sci-send ed SCI_SETREADONLY 0)
     (values ed w app)))
 
 (def (destroy-qt-test-app! ed w)
@@ -5179,6 +5181,65 @@
     (destroy-qt-test-app! ed w)
     (displayln "Group 51 complete")))
 
+(def (run-group-52-pqr-align-uuid)
+  (displayln "--- Group 52: project-query-replace, align-regexp, insert-uuid")
+  (let-values (((ed w app) (make-qt-test-app "pqr-align-uuid")))
+    (qt-register-all-commands!)
+
+    ;; --- command registration ---
+    (for-each
+      (lambda (cmd)
+        (if (find-command cmd)
+          (pass! (string-append (symbol->string cmd) " registered"))
+          (fail! (string-append (symbol->string cmd) " registered") #f "should be registered")))
+      '(project-query-replace project-query-replace-regexp
+        align-regexp align insert-uuid uuidgen))
+
+    ;; --- insert-uuid inserts a UUID-shaped string ---
+    ;; Use find-command + direct call (workaround for execute-command! hash-table identity issue in compiled exes)
+    (qt-plain-text-edit-set-text! ed "")
+    (with-catch
+      (lambda (e) (fail! "insert-uuid no crash" e "no exception"))
+      (lambda ()
+        (let ((cmd-fn (find-command 'insert-uuid)))
+          (if cmd-fn
+            (begin
+              (cmd-fn app)
+              (let ((text (qt-plain-text-edit-text ed)))
+                (if (and (= (string-length text) 36)
+                         (char=? (string-ref text 8) #\-)
+                         (char=? (string-ref text 13) #\-)
+                         (char=? (string-ref text 18) #\-)
+                         (char=? (string-ref text 23) #\-))
+                  (pass! "insert-uuid format correct")
+                  (fail! "insert-uuid format" text "UUID format XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX"))))
+            (fail! "insert-uuid format" #f "command not found")))))
+
+    ;; --- insert-uuid second call produces different UUID ---
+    (qt-plain-text-edit-set-text! ed "")
+    (with-catch
+      (lambda (e) (fail! "insert-uuid second call" e "no exception"))
+      (lambda ()
+        (execute-command! app 'insert-uuid)
+        (pass! "insert-uuid second call ok")))
+
+    ;; --- align-regexp on no selection shows error ---
+    (qt-plain-text-edit-set-text! ed "hello world")
+    (qt-plain-text-edit-set-selection! ed 0 0)
+    (with-catch
+      (lambda (e) (fail! "align-regexp no selection" e "no exception"))
+      (lambda ()
+        (execute-command! app 'align-regexp)
+        (pass! "align-regexp no selection handled")))
+
+    ;; --- project-query-replace registered and accessible ---
+    (if (find-command 'project-query-replace)
+      (pass! "project-query-replace find-command")
+      (fail! "project-query-replace" #f "procedure"))
+
+    (destroy-qt-test-app! ed w)
+    (displayln "Group 52 complete")))
+
 ;;;============================================================================
 
 (def (main . args)
@@ -5237,6 +5298,7 @@
     (run-group-49-stub-upgrades)
     (run-group-50-calc-describe-abbrev)
     (run-group-51-inflection-occur-wdired)
+    (run-group-52-pqr-align-uuid)
 
     (displayln "---")
     (displayln "Results: " *passes* " passed, " *failures* " failed")

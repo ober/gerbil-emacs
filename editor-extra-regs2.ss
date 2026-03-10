@@ -21,7 +21,8 @@
         (only-in :gemacs/editor-cmds-a
           cmd-project-tree-create-file cmd-project-tree-delete-file
           cmd-project-tree-rename-file cmd-gemacs-doc
-          cmd-dired-async-copy cmd-dired-async-move)
+          cmd-dired-async-copy cmd-dired-async-move
+          cmd-insert-uuid)
         (only-in :gemacs/editor-cmds-b
           cmd-customize cmd-set-variable
           cmd-load-plugin cmd-list-plugins
@@ -1376,4 +1377,9 @@
   (register-command! 'wdired-mode cmd-wdired-mode)
   (register-command! 'wdired-finish-edit cmd-wdired-finish-edit)
   (register-command! 'wdired-abort cmd-wdired-abort)
+  ;; Batch 23: project-query-replace, insert-uuid (align-regexp already in editor-text.ss)
+  (register-command! 'project-query-replace cmd-project-query-replace)
+  (register-command! 'project-query-replace-regexp cmd-project-query-replace)
+  (register-command! 'insert-uuid cmd-insert-uuid)
+  (register-command! 'uuidgen cmd-insert-uuid)
 )

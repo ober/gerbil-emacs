@@ -1632,5 +1632,10 @@
   (register-command! 'occur-commit-edits cmd-occur-commit-edits)
   (register-command! 'wdired-mode cmd-wdired-mode)
   (register-command! 'wdired-finish-edit cmd-wdired-finish-edit)
-  (register-command! 'wdired-abort cmd-wdired-abort))
+  (register-command! 'wdired-abort cmd-wdired-abort)
+  ;; Batch 9: project-query-replace, insert-uuid (align-regexp already in commands.ss)
+  (register-command! 'project-query-replace cmd-project-query-replace)
+  (register-command! 'project-query-replace-regexp cmd-project-query-replace)
+  (register-command! 'insert-uuid cmd-insert-uuid)
+  (register-command! 'uuidgen cmd-insert-uuid))
 

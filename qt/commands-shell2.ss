@@ -1288,4 +1288,82 @@ Scheme/Gerbil/Lisp buffers. Also used by LSP for hover information."
                           (or result "No output")))))))
       (echo-message! echo (string-append "docker compose down: " output)))))
 
+;;;============================================================================
+;;; project-query-replace: interactive search+replace across project files
+;;;============================================================================
+
+(def (pqr-grep-files root pattern)
+  "Use grep to find all project files containing pattern. Returns list of paths."
+  (with-catch
+    (lambda (e) '())
+    (lambda ()
+      (let* ((proc (open-process
+                     (list path: "/usr/bin/grep"
+                           arguments: (list "-rli" pattern root
+                             "--include=*.ss" "--include=*.scm"
+                             "--include=*.py" "--include=*.js" "--include=*.ts"
+                             "--include=*.go" "--include=*.rs"
+                             "--include=*.c" "--include=*.h"
+                             "--include=*.cpp" "--include=*.hpp"
+                             "--include=*.rb" "--include=*.java"
+                             "--include=*.md" "--include=*.txt")
+                           stdout-redirection: #t
+                           stderr-redirection: #f)))
+             (output (read-line proc #f)))
+        (close-port proc)
+        (if output
+          (filter (lambda (s) (> (string-length s) 0))
+                  (string-split output #\newline))
+          '())))))
+
+(def (cmd-project-query-replace app)
+  "Interactively replace string across all project files (like Emacs project-query-replace)."
+  (let* ((root (current-project-root app))
+         (echo (app-state-echo app)))
+    (if (not root)
+      (echo-error! echo "Not in a project")
+      (let ((from-str (qt-echo-read-string app "Project query replace: ")))
+        (when (and from-str (> (string-length from-str) 0))
+          (let ((to-str (qt-echo-read-string app
+                          (string-append "Replace \"" from-str "\" with: "))))
+            (when to-str
+              (echo-message! echo (string-append "Searching " root " ..."))
+              (let ((files (pqr-grep-files root from-str)))
+                (if (null? files)
+                  (echo-message! echo (string-append "No matches for: " from-str))
+                  (let* ((first-file (car files))
+                         (rest-files (cdr files))
+                         (fr (app-state-frame app))
+                         (ed (current-qt-editor app)))
+                    ;; Set up multi-file qreplace state
+                    (set! *qreplace-files-remaining* rest-files)
+                    (set! *qreplace-from* from-str)
+                    (set! *qreplace-to* to-str)
+                    (set! *qreplace-count* 0)
+                    (set! *qreplace-app* app)
+                    ;; Open first file
+                    (with-catch
+                      (lambda (e)
+                        (echo-error! echo (string-append "Cannot open: " first-file)))
+                      (lambda ()
+                        (let* ((content (let* ((p (open-input-file first-file))
+                                               (s (read-line p #f)))
+                                          (close-port p) s))
+                               (buf-name (path-strip-directory first-file))
+                               (buf (or (buffer-by-name buf-name)
+                                        (qt-buffer-create! buf-name ed #f)))
+                               (_ (set! (buffer-file-path buf) first-file)))
+                          (qt-buffer-attach! ed buf)
+                          (set! (qt-edit-window-buffer (qt-current-window fr)) buf)
+                          (when content
+                            (qt-plain-text-edit-set-text! ed content)
+                            (qt-text-document-set-modified! (buffer-doc-pointer buf) #f))
+                          (set! *qreplace-pos* 0)
+                          (set! *qreplace-active* #t)
+                          (qt-modeline-update! app)
+                          ;; Find and show first match
+                          (qreplace-show-next! app))))))))))))))
+
+;; cmd-align-regexp is defined in qt/commands-sexp.ss
+;; cmd-insert-uuid is defined in qt/commands-file.ss
 

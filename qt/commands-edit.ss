@@ -464,6 +464,7 @@
 (def *qreplace-pos* 0)        ; current search position in text
 (def *qreplace-count* 0)      ; number of replacements made
 (def *qreplace-app* #f)       ; app-state reference
+(def *qreplace-files-remaining* '()) ; For project-query-replace: remaining files to process
 
 ;; Query-replace highlight colors (red background for current match)
 (def qr-cur-fg-r #xff) (def qr-cur-fg-g #xff) (def qr-cur-fg-b #xff)
@@ -520,23 +521,91 @@
     (set! *qreplace-count* (+ *qreplace-count* 1))))
 
 (def (qreplace-replace-all! app)
-  "Replace all remaining matches."
+  "Replace all remaining matches (and all remaining files in project mode)."
   (let loop ()
     (let ((match-pos (qreplace-find-next! app)))
       (when match-pos
         (qreplace-do-replace! app match-pos)
         (loop))))
-  (qreplace-finish! app))
+  ;; In project mode: replace all in remaining files too, then finish
+  (if (null? *qreplace-files-remaining*)
+    (qreplace-finish! app)
+    (begin
+      ;; Replace all in remaining files without interaction
+      (for-each
+        (lambda (file-path)
+          (with-catch
+            (lambda (e) (void))
+            (lambda ()
+              (let* ((p       (open-input-file file-path))
+                     (content (read-line p #f))
+                     (_ (close-port p)))
+                (when content
+                  (let* ((from-lower (string-downcase *qreplace-from*))
+                         (from-len   (string-length *qreplace-from*))
+                         (to-str     *qreplace-to*))
+                    (let loop2 ((pos 0) (acc ""))
+                      (let* ((rest (substring content pos (string-length content)))
+                             (idx  (string-contains (string-downcase rest) from-lower)))
+                        (if (not idx)
+                          ;; No more matches — write result
+                          (let ((new-content (string-append acc rest)))
+                            (when (not (string=? new-content content))
+                              (call-with-output-file file-path
+                                (lambda (p) (display new-content p)))))
+                          (begin
+                            (set! *qreplace-count* (+ *qreplace-count* 1))
+                            (loop2 (+ pos idx from-len)
+                                   (string-append acc
+                                                  (substring rest 0 idx)
+                                                  to-str))))))))))))
+        *qreplace-files-remaining*)
+      (set! *qreplace-files-remaining* '())
+      (qreplace-finish! app))))
 
 (def (qreplace-finish! app)
-  "End query-replace mode."
-  (set! *qreplace-active* #f)
-  (set! *qreplace-app* #f)
-  ;; Restore visual decorations
+  "End query-replace mode, or advance to next project file if multi-file active."
+  ;; Restore visual decorations for current file
   (qt-update-visual-decorations! (current-qt-editor app))
-  (echo-message! (app-state-echo app)
-    (string-append "Replaced " (number->string *qreplace-count*) " occurrence"
-                   (if (= *qreplace-count* 1) "" "s"))))
+  (if (null? *qreplace-files-remaining*)
+    ;; Single-file or last file: fully done
+    (begin
+      (set! *qreplace-active* #f)
+      (set! *qreplace-app* #f)
+      (echo-message! (app-state-echo app)
+        (string-append "Replaced " (number->string *qreplace-count*) " occurrence"
+                       (if (= *qreplace-count* 1) "" "s"))))
+    ;; Project mode: open next file and continue
+    (let* ((next-file (car *qreplace-files-remaining*))
+           (rest (cdr *qreplace-files-remaining*))
+           (fr (app-state-frame app))
+           (ed (current-qt-editor app)))
+      (set! *qreplace-files-remaining* rest)
+      (with-catch
+        (lambda (e)
+          ;; Skip this file on error
+          (qreplace-finish! app))
+        (lambda ()
+          (let ((content (with-exception-catcher
+                           (lambda (e) #f)
+                           (lambda ()
+                             (let* ((p (open-input-file next-file))
+                                    (s (read-line p #f)))
+                               (close-port p) s)))))
+            (if (not content)
+              ;; Can't read file — skip to next
+              (qreplace-finish! app)
+              (let* ((buf-name (path-strip-directory next-file))
+                     (buf (or (buffer-by-name buf-name)
+                              (qt-buffer-create! buf-name ed #f)))
+                     (_ (set! (buffer-file-path buf) next-file)))
+                (qt-buffer-attach! ed buf)
+                (set! (qt-edit-window-buffer (qt-current-window fr)) buf)
+                (qt-plain-text-edit-set-text! ed content)
+                (qt-text-document-set-modified! (buffer-doc-pointer buf) #f)
+                (set! *qreplace-pos* 0)
+                (qt-modeline-update! app)
+                (qreplace-show-next! app)))))))))
 
 (def (qreplace-handle-key! app code mods text)
   "Handle a key event during query-replace mode. Returns #t if handled."
