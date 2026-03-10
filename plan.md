@@ -194,9 +194,9 @@ Largest files: modes (~1851), lsp (~1802), search (~1778)
 - ~~**Selected mode**~~ — DONE: special keybindings when region active toggle
 - ~~**Aggressive fill-paragraph**~~ — DONE: auto-reflow paragraphs mode toggle
 - ~~**Hydra menus**~~ — DONE: extensible popup command menus (hydra-zoom, hydra-window with interactive key loops)
-- ~~**Deadgrep**~~ — DONE: enhanced grep interface delegating to rgrep
+- ~~**Deadgrep**~~ — DONE: real ripgrep search with results buffer and navigation (TUI + Qt)
 - ~~**String-edit-at-point**~~ — DONE: edit string at point
-- ~~**Hideshow (hs-minor-mode)**~~ — DONE: code folding commands (hs-toggle-hiding, hs-hide-all, hs-show-all)
+- ~~**Hideshow (hs-minor-mode)**~~ — DONE: real Scintilla fold margin setup with box markers, automatic fold, toggle/hide-all/show-all
 - ~~**Prescient**~~ — DONE: completion sorting by frequency mode toggle
 - ~~**No-littering**~~ — DONE: clean dotfile organization (gemacs uses ~/.gemacs-* by default)
 - ~~**Benchmark-init / esup**~~ — DONE: startup profiling informational commands
@@ -204,7 +204,7 @@ Largest files: modes (~1851), lsp (~1802), search (~1778)
 - ~~**Ligature mode**~~ — DONE: font ligature display toggle
 - ~~**Mixed-pitch / variable-pitch**~~ — DONE: proportional font mode toggles
 - ~~**Eldoc-box**~~ — DONE: eldoc popup mode and help-at-point
-- ~~**Color-rg**~~ — DONE: colored ripgrep interface delegating to rgrep/project-grep
+- ~~**Color-rg**~~ — DONE: real ripgrep search with file type filter and project root detection
 - ~~**Ctrlf / phi-search**~~ — DONE: alternative isearch wrappers
 - ~~**Toc-org**~~ — DONE: auto-generate org table of contents with heading extraction
 - ~~**Org-super-agenda**~~ — DONE: enhanced agenda grouping mode toggle
@@ -234,7 +234,7 @@ Largest files: modes (~1851), lsp (~1802), search (~1778)
 
 ### Aspirational
 - LSP in TUI
-- ~~DAP/debugger integration~~ — DONE: real GDB/MI interface (Qt), DAP protocol skeleton (TUI)
+- ~~DAP/debugger integration~~ — DONE: real GDB/MI interface in both Qt and TUI (spawn, breakpoints, step, continue, REPL)
 - ~~Multi-frame support~~ — DONE: virtual frame management (C-x 5 prefix), make-frame/delete-frame/other-frame
 - ~~Spell checking integration~~ — DONE: flyspell-mode, ispell-word, ispell-buffer, ispell-region, dictionary switching (both TUI and Qt)
 - ~~TRAMP remote editing~~ — DONE: SSH-based file open/save, remote shell, remote compile

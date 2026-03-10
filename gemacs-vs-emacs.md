@@ -1,7 +1,7 @@
 # Gemacs vs GNU Emacs — Feature Comparison
 
 > **Last updated:** 2026-03-10
-> **Gemacs version:** master (5583330)
+> **Gemacs version:** master (e05d35b)
 > **Compared against:** GNU Emacs 29.x / 30.x feature set
 > **Command parity:** 2168+ commands registered in both TUI and Qt layers (zero gap)
 
@@ -520,11 +520,11 @@
 | Which-function mode | :large_blue_circle: | Multi-language: Scheme, Python, C, Go, Rust, JS/TS |
 | Semantic analysis | :yellow_circle: | `semantic-mode` toggle in both layers |
 | Tree-sitter integration | :yellow_circle: | `tree-sitter-mode` toggle — grammar-based parsing scaffolded |
-| DAP (debug adapter) | :yellow_circle: | `dap-debug`, `dap-breakpoint-toggle`, step-over/in/out in both layers |
+| DAP (debug adapter) | :large_blue_circle: | Real GDB/MI integration: spawn, breakpoints, step-over/in/out, continue, REPL in both layers |
 | Prog-mode hooks | :large_blue_circle: | `prog-mode-hook` fires for 14 languages, per-language hooks (e.g. `python-mode-hook`), `after-change-major-mode-hook` |
 | Electric indent | :large_blue_circle: | Smart newline indentation |
 
-**Summary:** Programming support covers the basics well (highlighting, folding, compilation, error nav). Missing Tree-sitter, DAP debugger, and deep semantic analysis.
+**Summary:** Programming support covers the basics well (highlighting, folding, compilation, error nav, real GDB/MI debugger). Missing Tree-sitter and deep semantic analysis.
 
 ---
 
