@@ -1291,8 +1291,6 @@
         (echo-message! (app-state-echo app)
                        (string-append (number->string (length file-results)) " matches for: " pat))))))
 
-;; --- Sort enhancements ---
-
 ;; --- Align ---
 
 (def (cmd-align-current app)

@@ -1252,3 +1252,110 @@
         "Picture mode ON (overwrite, use arrows to draw)"
         "Picture mode OFF"))))
 
+;;; ============================================================
+;;; Hungry delete — delete all consecutive whitespace
+;;; ============================================================
+
+(def (cmd-hungry-delete-forward app)
+  "Delete all consecutive whitespace ahead of point."
+  (let* ((ed (current-editor app))
+         (pos (editor-get-current-pos ed))
+         (text (editor-get-text ed))
+         (len (string-length text)))
+    (if (>= pos len)
+      (echo-message! (app-state-echo app) "End of buffer")
+      (let loop ((i pos))
+        (if (or (>= i len)
+                (not (char-whitespace? (string-ref text i))))
+          (if (> i pos)
+            (begin
+              (send-message ed SCI_SETTARGETSTART pos 0)
+              (send-message ed SCI_SETTARGETEND i 0)
+              (send-message/string ed SCI_REPLACETARGET ""))
+            ;; No whitespace — just delete one char
+            (send-message ed 2180 0 0)) ;; SCI_CLEAR
+          (loop (+ i 1)))))))
+
+(def (cmd-hungry-delete-backward app)
+  "Delete all consecutive whitespace behind point."
+  (let* ((ed (current-editor app))
+         (pos (editor-get-current-pos ed))
+         (text (editor-get-text ed)))
+    (if (<= pos 0)
+      (echo-message! (app-state-echo app) "Beginning of buffer")
+      (let loop ((i (- pos 1)))
+        (if (or (< i 0)
+                (not (char-whitespace? (string-ref text i))))
+          (let ((del-start (+ i 1)))
+            (if (< del-start pos)
+              (begin
+                (send-message ed SCI_SETTARGETSTART del-start 0)
+                (send-message ed SCI_SETTARGETEND pos 0)
+                (send-message/string ed SCI_REPLACETARGET ""))
+              ;; No whitespace — just delete one char
+              (send-message ed 2326 0 0))) ;; SCI_DELETEBACK
+          (loop (- i 1)))))))
+
+;;; ============================================================
+;;; Isearch match count (anzu-style N/M counter)
+;;; ============================================================
+
+(def (count-search-matches ed pattern)
+  "Count total occurrences of pattern in buffer."
+  (let* ((text (editor-get-text ed))
+         (plen (string-length pattern)))
+    (if (<= plen 0) 0
+      (let loop ((start 0) (count 0))
+        (let ((pos (string-contains text pattern start)))
+          (if pos
+            (loop (+ pos 1) (+ count 1))
+            count))))))
+
+(def (current-match-index ed pattern pos)
+  "Return which match number (1-based) the position corresponds to."
+  (let* ((text (editor-get-text ed))
+         (plen (string-length pattern)))
+    (if (<= plen 0) 0
+      (let loop ((start 0) (n 1))
+        (let ((found (string-contains text pattern start)))
+          (if (not found) 0
+            (if (= found pos) n
+              (loop (+ found 1) (+ n 1)))))))))
+
+(def (isearch-count-message ed pattern pos)
+  "Return a string like '[3/15]' for current isearch position."
+  (let ((total (count-search-matches ed pattern))
+        (current (current-match-index ed pattern pos)))
+    (if (> total 0)
+      (string-append "[" (number->string current) "/" (number->string total) "]")
+      "[0/0]")))
+
+;;; ============================================================
+;;; crux-move-beginning-of-line — smart BOL toggle
+;;; ============================================================
+
+(def (cmd-crux-move-beginning-of-line app)
+  "Smart beginning-of-line: toggle between first non-whitespace and column 0."
+  (let* ((ed (current-editor app))
+         (pos (editor-get-current-pos ed))
+         (line (editor-line-from-position ed pos))
+         (line-start (editor-position-from-line ed line))
+         (text (editor-get-text ed))
+         (len (string-length text))
+         ;; Find first non-whitespace on this line
+         (first-nonws
+           (let loop ((i line-start))
+             (if (or (>= i len)
+                     (let ((ch (string-ref text i)))
+                       (char=? ch #\newline)))
+               i
+               (if (char-whitespace? (string-ref text i))
+                 (loop (+ i 1))
+                 i)))))
+    (if (= pos first-nonws)
+      ;; Already at first non-ws, go to column 0
+      (editor-goto-pos ed line-start)
+      ;; Go to first non-ws
+      (editor-goto-pos ed first-nonws))))
+
+

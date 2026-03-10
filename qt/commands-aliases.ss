@@ -1078,6 +1078,10 @@
   (register-command! 'highlight-symbol-at-point cmd-highlight-symbol)
   (register-command! 'auto-highlight-symbol-mode cmd-toggle-auto-highlight)
   (register-command! 'toggle-auto-highlight cmd-toggle-auto-highlight)
+  (register-command! 'hungry-delete-forward cmd-hungry-delete-forward)
+  (register-command! 'hungry-delete-backward cmd-hungry-delete-backward)
+  (register-command! 'crux-move-beginning-of-line cmd-crux-move-beginning-of-line)
+  (register-command! 'ws-butler-mode cmd-ws-butler-mode)
   (register-command! 'ediff-regions-linewise cmd-ediff-buffers)
   ;; Batch 5: file/dired/ibuffer aliases + new commands
   (register-command! 'rename-file cmd-rename-file-and-buffer)

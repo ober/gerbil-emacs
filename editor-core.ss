@@ -1317,7 +1317,41 @@
   (editor-style-set-foreground ed STYLE_LINENUMBER #x808080)
   (editor-style-set-background ed STYLE_LINENUMBER #x181818))
 
+;;; Winner mode - save window configuration before changes
+(def *winner-max-history* 50)
+
+(def (winner-save-config! app)
+  "Save current window configuration to winner history."
+  (let* ((fr (app-state-frame app))
+         (wins (frame-windows fr))
+         (num-wins (length wins))
+         (current-idx (frame-current-idx fr))
+         (buffers (map (lambda (w)
+                         (let ((buf (edit-window-buffer w)))
+                           (if buf (buffer-name buf) "*scratch*")))
+                       wins))
+         (config (list num-wins current-idx buffers))
+         (history (app-state-winner-history app)))
+    ;; Don't save duplicate consecutive configs
+    (unless (and (not (null? history))
+                 (equal? config (car history)))
+      ;; Truncate future (redo) history when adding new config
+      (let ((idx (app-state-winner-history-idx app)))
+        (when (> idx 0)
+          (set! history (list-tail history idx))
+          (set! (app-state-winner-history-idx app) 0)))
+      ;; Add new config, limit size
+      (let ((new-history (cons config history)))
+        (set! (app-state-winner-history app)
+          (if (> (length new-history) *winner-max-history*)
+            (let loop ((lst new-history) (n *winner-max-history*) (acc []))
+              (if (or (null? lst) (<= n 0))
+                (reverse acc)
+                (loop (cdr lst) (- n 1) (cons (car lst) acc))))
+            new-history))))))
+
 (def (cmd-split-window app)
+  (winner-save-config! app)
   (let* ((fr (app-state-frame app))
          (cur-buf (edit-window-buffer (current-window fr)))
          (new-ed (frame-split! fr)))
@@ -1327,6 +1361,7 @@
     (run-hooks! 'post-buffer-attach-hook new-ed cur-buf)))
 
 (def (cmd-split-window-right app)
+  (winner-save-config! app)
   (let* ((fr (app-state-frame app))
          (cur-buf (edit-window-buffer (current-window fr)))
          (new-ed (frame-split-right! fr)))
@@ -1339,10 +1374,13 @@
 
 (def (cmd-delete-window app)
   (if (> (length (frame-windows (app-state-frame app))) 1)
-    (frame-delete-window! (app-state-frame app))
+    (begin
+      (winner-save-config! app)
+      (frame-delete-window! (app-state-frame app)))
     (echo-error! (app-state-echo app) "Can't delete sole window")))
 
 (def (cmd-delete-other-windows app)
+  (winner-save-config! app)
   (frame-delete-other-windows! (app-state-frame app)))
 
 (def (cmd-select-window-by-number app n)

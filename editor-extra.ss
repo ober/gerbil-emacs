@@ -1032,6 +1032,9 @@
   ;; Batch 37 - highlight-indentation, hungry-delete, type-break, etc.
   (register-command! 'toggle-highlight-indentation cmd-toggle-highlight-indentation)
   (register-command! 'toggle-hungry-delete cmd-toggle-hungry-delete)
+  (register-command! 'hungry-delete-forward cmd-hungry-delete-forward)
+  (register-command! 'hungry-delete-backward cmd-hungry-delete-backward)
+  (register-command! 'crux-move-beginning-of-line cmd-crux-move-beginning-of-line)
   (register-command! 'toggle-type-break cmd-toggle-type-break)
   (register-command! 'insert-zero-width-space cmd-insert-zero-width-space)
   (register-command! 'toggle-delete-trailing-on-save cmd-toggle-delete-trailing-on-save)

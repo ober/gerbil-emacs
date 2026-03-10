@@ -631,3 +631,165 @@ Scheme/Gerbil/Lisp buffers. Also used by LSP for hover information."
                 (qt-setup-highlighting! app buf)
                 (echo-message! (app-state-echo app) (string-append "Loaded: " path)))
               (echo-error! (app-state-echo app) "SCP failed or file empty"))))))))
+
+;;; ============================================================
+;;; Hungry delete — delete all consecutive whitespace
+;;; ============================================================
+
+(def (cmd-hungry-delete-forward app)
+  "Delete all consecutive whitespace ahead of point."
+  (let* ((ed (qt-current-editor app))
+         (pos (qt-plain-text-edit-cursor-position ed))
+         (text (qt-plain-text-edit-text ed))
+         (len (string-length text)))
+    (if (>= pos len)
+      (echo-message! (app-state-echo app) "End of buffer")
+      (let loop ((i pos))
+        (if (or (>= i len)
+                (not (char-whitespace? (string-ref text i))))
+          (if (> i pos)
+            (begin
+              (sci-send ed SCI_SETTARGETSTART pos)
+              (sci-send ed SCI_SETTARGETEND i)
+              (sci-send/string ed SCI_REPLACETARGET ""))
+            (sci-send ed 2180)) ;; SCI_CLEAR
+          (loop (+ i 1)))))))
+
+(def (cmd-hungry-delete-backward app)
+  "Delete all consecutive whitespace behind point."
+  (let* ((ed (qt-current-editor app))
+         (pos (qt-plain-text-edit-cursor-position ed))
+         (text (qt-plain-text-edit-text ed)))
+    (if (<= pos 0)
+      (echo-message! (app-state-echo app) "Beginning of buffer")
+      (let loop ((i (- pos 1)))
+        (if (or (< i 0)
+                (not (char-whitespace? (string-ref text i))))
+          (let ((del-start (+ i 1)))
+            (if (< del-start pos)
+              (begin
+                (sci-send ed SCI_SETTARGETSTART del-start)
+                (sci-send ed SCI_SETTARGETEND pos)
+                (sci-send/string ed SCI_REPLACETARGET ""))
+              (sci-send ed 2326))) ;; SCI_DELETEBACK
+          (loop (- i 1)))))))
+
+;;; ============================================================
+;;; ws-butler — trim trailing whitespace only on changed lines
+;;; ============================================================
+
+(def *qt-ws-butler-mode* #f)
+(def *qt-ws-butler-original-lines* (make-hash-table))
+
+(def (cmd-ws-butler-mode app)
+  "Toggle ws-butler mode: trim trailing whitespace only on modified lines when saving."
+  (set! *qt-ws-butler-mode* (not *qt-ws-butler-mode*))
+  (when *qt-ws-butler-mode*
+    (qt-ws-butler-snapshot! app))
+  (echo-message! (app-state-echo app)
+    (if *qt-ws-butler-mode*
+      "ws-butler mode ON (trim whitespace on changed lines when saving)"
+      "ws-butler mode OFF")))
+
+(def (qt-ws-butler-snapshot! app)
+  "Save snapshot of current buffer's lines."
+  (let* ((ed (qt-current-editor app))
+         (buf (qt-edit-window-buffer (qt-current-window (app-state-frame app))))
+         (buf-name (if buf (buffer-name buf) "*scratch*"))
+         (text (qt-plain-text-edit-text ed))
+         (lines (string-split text #\newline))
+         (tbl (make-hash-table)))
+    (let loop ((ls lines) (n 0))
+      (unless (null? ls)
+        (hash-put! tbl n (car ls))
+        (loop (cdr ls) (+ n 1))))
+    (hash-put! *qt-ws-butler-original-lines* buf-name tbl)))
+
+(def (qt-ws-butler-clean! app)
+  "Trim trailing whitespace only on lines that changed since last snapshot."
+  (when *qt-ws-butler-mode*
+    (let* ((ed (qt-current-editor app))
+           (buf (qt-edit-window-buffer (qt-current-window (app-state-frame app))))
+           (buf-name (if buf (buffer-name buf) "*scratch*"))
+           (original (hash-get *qt-ws-butler-original-lines* buf-name))
+           (text (qt-plain-text-edit-text ed))
+           (lines (string-split text #\newline))
+           (cleaned #f))
+      (let loop ((ls lines) (n 0) (acc []))
+        (if (null? ls)
+          (when cleaned
+            (let ((result (string-join (reverse acc) "\n"))
+                  (pos (qt-plain-text-edit-cursor-position ed)))
+              (qt-plain-text-edit-set-text! ed result)
+              (qt-plain-text-edit-set-cursor-position! ed (min pos (string-length result)))))
+          (let* ((line (car ls))
+                 (orig-line (and original (hash-get original n)))
+                 (changed? (not (equal? line orig-line)))
+                 (trimmed (if (and changed?
+                                   (> (string-length line) 0)
+                                   (char-whitespace? (string-ref line (- (string-length line) 1))))
+                            (begin (set! cleaned #t)
+                                   (string-trim-right line))
+                            line)))
+            (loop (cdr ls) (+ n 1) (cons trimmed acc))))))))
+
+;;; ============================================================
+;;; crux-move-beginning-of-line — smart BOL toggle
+;;; ============================================================
+
+(def (cmd-crux-move-beginning-of-line app)
+  "Smart beginning-of-line: toggle between first non-whitespace and column 0."
+  (let* ((ed (qt-current-editor app))
+         (pos (qt-plain-text-edit-cursor-position ed))
+         (text (qt-plain-text-edit-text ed))
+         (len (string-length text))
+         ;; Find start of current line
+         (line-start (let loop ((i (- pos 1)))
+                       (if (or (< i 0) (char=? (string-ref text i) #\newline))
+                         (+ i 1)
+                         (loop (- i 1)))))
+         ;; Find first non-whitespace on this line
+         (first-nonws
+           (let loop ((i line-start))
+             (if (or (>= i len)
+                     (char=? (string-ref text i) #\newline))
+               i
+               (if (char-whitespace? (string-ref text i))
+                 (loop (+ i 1))
+                 i)))))
+    (if (= pos first-nonws)
+      (qt-plain-text-edit-set-cursor-position! ed line-start)
+      (qt-plain-text-edit-set-cursor-position! ed first-nonws))))
+
+;;; ============================================================
+;;; Isearch match count (anzu-style)
+;;; ============================================================
+
+(def (qt-count-search-matches ed pattern)
+  "Count total occurrences of pattern in buffer."
+  (let* ((text (qt-plain-text-edit-text ed))
+         (plen (string-length pattern)))
+    (if (<= plen 0) 0
+      (let loop ((start 0) (count 0))
+        (let ((pos (string-contains text pattern start)))
+          (if pos (loop (+ pos 1) (+ count 1)) count))))))
+
+(def (qt-current-match-index ed pattern pos)
+  "Return 1-based match index at position."
+  (let* ((text (qt-plain-text-edit-text ed))
+         (plen (string-length pattern)))
+    (if (<= plen 0) 0
+      (let loop ((start 0) (n 1))
+        (let ((found (string-contains text pattern start)))
+          (if (not found) 0
+            (if (= found pos) n
+              (loop (+ found 1) (+ n 1)))))))))
+
+(def (qt-isearch-count-message ed pattern pos)
+  "Return '[3/15]' for current isearch position."
+  (let ((total (qt-count-search-matches ed pattern))
+        (current (qt-current-match-index ed pattern pos)))
+    (if (> total 0)
+      (string-append "[" (number->string current) "/" (number->string total) "]")
+      "[0/0]")))
+
