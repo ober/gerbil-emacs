@@ -239,6 +239,23 @@ Largest files: modes (~1851), lsp (~1802), search (~1778)
 - ~~**Stub delegation batch**~~ — DONE: counsel-find-file→find-file, crux-indent-defun→indent-region, run-scheme/slime/sly→repl, themes→customize-themes, multi-vterm→shell, flycheck-prev-error→previous-error, helm-buffers-list→list-buffers, helpful-key→describe-key
 - ~~**EOL conversion cycling**~~ — DONE: real SCI_SETEOLMODE cycling (LF→CRLF→CR) in Qt
 
+- ~~**Eshell tab completion**~~ — DONE: TAB in eshell completes filenames (in CWD) and PATH commands (for first word). Single match auto-completes, multiple matches insert longest common prefix and show candidates in echo area. Both TUI and Qt. 668 Qt tests
+
+- ~~**Qt stub upgrades batch**~~ — DONE: mc-mark-previous-like-this (real backward SCI_ADDSELECTION), eww-forward (forward history stack), reopen-killed-buffer (killed buffer tracking + disk reopen), add-dir-local-variable (prompt + write .gemacs-config), add-file-local-variable (insert/extend -*- header)
+
+### Current Status
+- **668 Qt tests passing**, all TUI tests passing (vtscreen flaky but known)
+- **~2170+ registered commands** across TUI and Qt
+- **~635+ implemented features**
+- Remaining stubs: ~5 niche Qt stubs (all-the-icons-install-fonts, nerd-icons-install-fonts, ediff-show-registry, menu-bar-open, notifications-list)
+- Remaining yellow circles in gemacs-vs-emacs.md: ~12 (mostly fundamental platform limitations: tree-sitter, EWW CSS/JS, screen reader, tab-line per-window)
+
+### Next Steps (for continuation)
+- Continue upgrading remaining stubs per standing instruction
+- Potential features: server-start (socket server), inferior-lisp (proper Scheme REPL), dired improvements
+- Update gemacs-vs-emacs.md after each batch
+- Static build verification (`make static-qt`) periodically
+
 ### Aspirational
 - LSP in TUI (currently delegates to ctags/grep/formatter; full LSP protocol not yet implemented)
 - ~~DAP/debugger integration~~ — DONE: real GDB/MI interface in both Qt and TUI (spawn, breakpoints, step, continue, REPL)
