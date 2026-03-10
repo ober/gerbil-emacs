@@ -25,10 +25,22 @@
 
 (def (snippet-define! lang trigger template)
   "Define a snippet: LANG is language symbol or 'global, TRIGGER is prefix string,
-   TEMPLATE is string with $1, $2 etc. for fields, ${1:default} for defaults, $0 for final pos."
+   TEMPLATE is string with $1, $2 etc. for fields, ${1:default} for defaults, $0 for final pos.
+   Also persists to ~/.gemacs-snippets/<lang>/<trigger> on disk."
   (let ((lang-table (or (hash-get *snippet-table* lang) (make-hash-table))))
     (hash-put! lang-table trigger template)
-    (hash-put! *snippet-table* lang lang-table)))
+    (hash-put! *snippet-table* lang lang-table))
+  ;; Persist to disk
+  (let* ((home (or (getenv "HOME") "."))
+         (dir (string-append home "/.gemacs-snippets/"
+                (symbol->string lang)))
+         (file (string-append dir "/" trigger)))
+    (with-catch
+      (lambda (e) (void))
+      (lambda ()
+        (create-directory* dir)
+        (call-with-output-file file
+          (lambda (p) (display template p)))))))
 
 (def (snippet-lookup trigger lang)
   "Look up a snippet by trigger, checking lang-specific then global."

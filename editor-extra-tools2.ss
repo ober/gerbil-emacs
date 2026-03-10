@@ -1202,7 +1202,7 @@
               (echo-error! echo "Snippet not found"))))))))
 
 (def (cmd-yas-new-snippet app)
-  "Create a new snippet definition."
+  "Create a new snippet definition and persist to ~/.gemacs-snippets/."
   (let* ((echo (app-state-echo app))
          (fr (app-state-frame app))
          (win (current-window fr))
@@ -1214,12 +1214,25 @@
     (when (and name (not (string-empty? name)))
       (let ((template (echo-read-string echo "Template (use $0-$9 for placeholders): " row width)))
         (when (and template (not (string-empty? template)))
+          ;; Add to in-memory table
           (let ((snippets (or (hash-get *yas-snippets* mode)
                               (let ((h (make-hash-table)))
                                 (hash-put! *yas-snippets* mode h)
                                 h))))
-            (hash-put! snippets (string->symbol name) template)
-            (echo-message! echo (string-append "Created snippet: " name))))))))
+            (hash-put! snippets (string->symbol name) template))
+          ;; Persist to ~/.gemacs-snippets/<mode>/<name>
+          (let* ((home (or (getenv "HOME") "."))
+                 (dir (string-append home "/.gemacs-snippets/"
+                        (symbol->string mode)))
+                 (file (string-append dir "/" name)))
+            (with-catch
+              (lambda (e) (void))
+              (lambda ()
+                (create-directory* dir)
+                (call-with-output-file file
+                  (lambda (p) (display template p)))
+                (echo-message! echo
+                  (string-append "Created snippet: " name " → " file))))))))))
 
 (def (cmd-yas-visit-snippet-file app)
   "Show all snippets for current mode."
