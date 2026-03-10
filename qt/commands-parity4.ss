@@ -7,7 +7,8 @@
 
 (import :std/sugar
         :gemacs/core
-        :gemacs/qt/commands-parity3)
+        :gemacs/qt/commands-parity3
+        :gemacs/qt/commands-parity3b)
 
 ;;;============================================================================
 ;;; Remaining 339 toggle commands

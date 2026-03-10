@@ -150,6 +150,7 @@
         :gemacs/qt/commands-parity
         :gemacs/qt/commands-parity2
         :gemacs/qt/commands-parity3
+        :gemacs/qt/commands-parity3b
         :gemacs/qt/commands-parity4
         :gemacs/qt/commands-parity5
         :gemacs/qt/commands-aliases

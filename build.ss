@@ -346,6 +346,7 @@
           (gxc: "qt/commands-parity"  "-cc-options" ,qt-cc-opts "-ld-options" ,qt-ld-opts)
           (gxc: "qt/commands-parity2" "-cc-options" ,qt-cc-opts "-ld-options" ,qt-ld-opts)
           (gxc: "qt/commands-parity3" "-cc-options" ,qt-cc-opts "-ld-options" ,qt-ld-opts)
+          (gxc: "qt/commands-parity3b" "-cc-options" ,qt-cc-opts "-ld-options" ,qt-ld-opts)
           (gxc: "qt/commands-parity4" "-cc-options" ,qt-cc-opts "-ld-options" ,qt-ld-opts)
           (gxc: "qt/commands-parity5" "-cc-options" ,qt-cc-opts "-ld-options" ,qt-ld-opts)
           (gxc: "qt/commands-aliases" "-cc-options" ,qt-cc-opts "-ld-options" ,qt-ld-opts)
