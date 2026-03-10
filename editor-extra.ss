@@ -36,6 +36,7 @@
         :gemacs/editor-extra-tools
         :gemacs/editor-extra-tools2
         :gemacs/editor-extra-media
+        :gemacs/editor-extra-media2
         :gemacs/editor-extra-modes
         :gemacs/editor-extra-final
         :gemacs/editor-extra-regs

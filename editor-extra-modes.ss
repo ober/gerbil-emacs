@@ -19,6 +19,7 @@
         :gemacs/editor-extra-helpers
         :gemacs/editor-extra-vcs
         :gemacs/editor-extra-media
+        :gemacs/editor-extra-media2
         (only-in :gemacs/persist *which-key-mode*))
 
 ;; --- Task #49: elisp mode, scheme mode, regex builder, color picker, etc. ---
@@ -575,10 +576,104 @@
     (when buf (set! (buffer-lexer-lang buf) #f))
     (echo-message! (app-state-echo app) "Fundamental mode")))
 
-;; Tab completion / completion-at-point
+;; Tab completion / completion-at-point (dabbrev-style with cycling)
+;; State for cycling through completions on repeated invocations
+(def *dabbrev-state* #f)  ; #f or [prefix prefix-start candidates index]
+
+(def (dabbrev-word-char? ch)
+  "Return #t if ch is part of a word for dabbrev purposes."
+  (or (char-alphabetic? ch) (char-numeric? ch) (char=? ch #\_) (char=? ch #\-)))
+
+(def (dabbrev-collect-candidates text prefix prefix-start)
+  "Collect all words in text that start with prefix, excluding the one at prefix-start."
+  (let ((len (string-length text))
+        (plen (string-length prefix))
+        (candidates []))
+    (let loop ((i 0))
+      (when (< i len)
+        (let* ((wstart
+                 (let ws ((j i))
+                   (if (or (>= j len) (dabbrev-word-char? (string-ref text j)))
+                     j (ws (+ j 1)))))
+               (wend
+                 (let we ((j wstart))
+                   (if (or (>= j len) (not (dabbrev-word-char? (string-ref text j))))
+                     j (we (+ j 1))))))
+          (when (> wend wstart)
+            (let ((word (substring text wstart wend)))
+              (when (and (> (string-length word) plen)
+                         (string-prefix? prefix word)
+                         (not (= wstart prefix-start))
+                         (not (member word candidates)))
+                (set! candidates (append candidates [word]))))
+            (loop wend))
+          (when (= wend wstart)
+            (loop (+ wstart 1))))))
+    candidates))
+
 (def (cmd-completion-at-point app)
-  "Complete symbol at point — delegates to hippie-expand."
-  (execute-command! app 'hippie-expand))
+  "Complete word at point from buffer text (dabbrev-style). Cycles on repeated invocations."
+  (let* ((ed (current-editor app))
+         (echo (app-state-echo app))
+         (pos (editor-get-current-pos ed))
+         (text (editor-get-text ed)))
+    ;; Check if we're cycling from a previous completion
+    (if (and *dabbrev-state*
+             (let* ((st *dabbrev-state*)
+                    (pstart (list-ref st 1))
+                    (cands (list-ref st 2))
+                    (idx (list-ref st 3))
+                    (cur-word (list-ref cands idx))
+                    (cur-len (string-length cur-word)))
+               (and (= pos (+ pstart cur-len))
+                    (<= (+ pstart cur-len) (string-length text))
+                    (string=? cur-word (substring text pstart (+ pstart cur-len))))))
+      ;; Cycling: replace current completion with next candidate
+      (let* ((st *dabbrev-state*)
+             (prefix (list-ref st 0))
+             (pstart (list-ref st 1))
+             (cands (list-ref st 2))
+             (idx (list-ref st 3))
+             (cur-word (list-ref cands idx))
+             (next-idx (modulo (+ idx 1) (length cands)))
+             (next-word (list-ref cands next-idx)))
+        (send-message ed SCI_SETTARGETSTART pstart 0)
+        (send-message ed SCI_SETTARGETEND (+ pstart (string-length cur-word)) 0)
+        (send-message/string ed SCI_REPLACETARGET next-word)
+        (editor-goto-pos ed (+ pstart (string-length next-word)))
+        (set! *dabbrev-state* [prefix pstart cands next-idx])
+        (echo-message! echo
+          (string-append next-word " [" (number->string (+ next-idx 1))
+                         "/" (number->string (length cands)) "]")))
+      ;; First invocation: find prefix and candidates
+      (let* ((prefix-start
+               (let loop ((i (- pos 1)))
+                 (if (or (< i 0) (not (dabbrev-word-char? (string-ref text i))))
+                   (+ i 1) (loop (- i 1)))))
+             (prefix (substring text prefix-start pos))
+             (plen (string-length prefix)))
+        (if (= plen 0)
+          (begin
+            (set! *dabbrev-state* #f)
+            (echo-message! echo "No prefix to complete"))
+          (let ((candidates (dabbrev-collect-candidates text prefix prefix-start)))
+            (if (null? candidates)
+              (begin
+                (set! *dabbrev-state* #f)
+                (echo-message! echo
+                  (string-append "No completions for \"" prefix "\"")))
+              ;; Insert first candidate
+              (let ((completion (car candidates)))
+                (send-message ed SCI_SETTARGETSTART prefix-start 0)
+                (send-message ed SCI_SETTARGETEND (+ prefix-start plen) 0)
+                (send-message/string ed SCI_REPLACETARGET completion)
+                (editor-goto-pos ed (+ prefix-start (string-length completion)))
+                (set! *dabbrev-state* [prefix prefix-start candidates 0])
+                (echo-message! echo
+                  (string-append completion
+                    (if (> (length candidates) 1)
+                      (string-append " [1/" (number->string (length candidates)) "]")
+                      "")))))))))))
 
 ;; Eldoc extras
 (def (cmd-eldoc-mode app)

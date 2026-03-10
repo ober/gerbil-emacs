@@ -146,7 +146,7 @@
                  *global-protobuf-mode* *global-graphql-mode*
                  *global-nix-mode*)
         (only-in :gemacs/editor register-all-commands!)
-        (only-in :gemacs/editor-extra-media
+        (only-in :gemacs/editor-extra-media2
                  *consult-mode* *orderless-mode* *embark-mode*
                  *undo-fu-session* *auto-package-mode*
                  *corfu-mode* *cape-mode* *nerd-icons-mode*

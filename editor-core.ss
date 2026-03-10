@@ -329,6 +329,28 @@
     ((= ch 34) 34)   ; " -> "
     (else #f)))
 
+(def (electric-pair-char ch buf)
+  "Return the closing character for electric-pair-mode, or #f.
+   Handles all auto-pair chars plus single-quote (skipped for Scheme/Lisp)."
+  (cond
+    ((= ch 40) 41)   ; ( -> )
+    ((= ch 91) 93)   ; [ -> ]
+    ((= ch 123) 125) ; { -> }
+    ((= ch 34) 34)   ; " -> "
+    ((= ch 39)        ; ' -> ' (skip for Scheme/Lisp)
+     (let ((lang (and buf (buffer-lexer-lang buf))))
+       (if (memq lang '(scheme lisp))
+         #f
+         39)))
+    (else #f)))
+
+(def (electric-pair-closing? ch buf)
+  "Return #t if ch is a closing delimiter that should be skipped over (electric-pair)."
+  (or (= ch 41) (= ch 93) (= ch 125) (= ch 34)  ; ) ] } "
+      (and (= ch 39)  ; '
+           (let ((lang (and buf (buffer-lexer-lang buf))))
+             (not (memq lang '(scheme lisp)))))))
+
 (def (auto-pair-closing? ch)
   "Return #t if ch is a closing delimiter that should be skipped over."
   (or (= ch 41) (= ch 93) (= ch 125) (= ch 34)))  ; ) ] } "
@@ -411,11 +433,18 @@
              (editor-goto-pos ed (+ pos 1))))))
       (else
        (let* ((ed (current-editor app))
-              (close-ch (and *auto-pair-mode* (auto-pair-char ch)))
+              (pair-active (or *auto-pair-mode* *electric-pair-mode*))
+              (close-ch (and pair-active
+                             (if *electric-pair-mode*
+                               (electric-pair-char ch buf)
+                               (auto-pair-char ch))))
               (n (get-prefix-arg app))) ; Get prefix arg
          (cond
-           ;; Auto-pair skip-over: typing a closing delimiter when next char matches
-           ((and *auto-pair-mode* (= n 1) (auto-pair-closing? ch))
+           ;; Auto/electric-pair skip-over: typing a closing delimiter when next char matches
+           ((and pair-active (= n 1)
+                 (if *electric-pair-mode*
+                   (electric-pair-closing? ch buf)
+                   (auto-pair-closing? ch)))
             (let* ((pos (editor-get-current-pos ed))
                    (len (send-message ed SCI_GETLENGTH))
                    (next-ch (and (< pos len)
@@ -427,7 +456,7 @@
                 (begin
                   (editor-insert-text ed pos (string (integer->char ch)))
                   (editor-goto-pos ed (+ pos 1))))))
-           ;; Auto-pair: insert both chars and place cursor between
+           ;; Auto/electric-pair: insert both chars and place cursor between
            ((and close-ch (= n 1))
             (let ((pos (editor-get-current-pos ed)))
               (editor-insert-text ed pos

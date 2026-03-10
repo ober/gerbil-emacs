@@ -894,6 +894,53 @@
             (echo-message! echo
               (string-append "Copied to register " (string reg-char)))))))))
 
+(def (find-buffer-by-file-path filepath)
+  "Find a buffer visiting the given file path, or #f."
+  (let loop ((bufs (buffer-list)))
+    (cond
+      ((null? bufs) #f)
+      ((let ((fp (buffer-file-path (car bufs))))
+         (and fp (string=? fp filepath)))
+       (car bufs))
+      (else (loop (cdr bufs))))))
+
+(def (jump-to-register-file! app echo fr filepath pos)
+  "Open file and jump to position. Reuses existing buffer if already open."
+  (let* ((ed (current-editor app))
+         (existing-buf (find-buffer-by-file-path filepath)))
+    (if existing-buf
+      ;; Buffer already open — switch to it
+      (begin
+        (buffer-attach! ed existing-buf)
+        (set! (edit-window-buffer (current-window fr)) existing-buf)
+        (editor-goto-pos ed pos)
+        (editor-scroll-caret ed)
+        (echo-message! echo "Jumped to register"))
+      ;; Not open — open the file directly
+      (if (file-exists? filepath)
+        (let* ((name (uniquify-buffer-name filepath))
+               (buf (buffer-create! name ed filepath))
+               (content (with-exception-catcher
+                          (lambda (e) #f)
+                          (lambda () (read-file-as-string filepath)))))
+          (buffer-attach! ed buf)
+          (set! (edit-window-buffer (current-window fr)) buf)
+          (when content
+            (editor-set-text ed content))
+          (editor-goto-pos ed pos)
+          (editor-scroll-caret ed)
+          (editor-set-save-point ed)
+          ;; Set up highlighting
+          (let ((lang (detect-file-language filepath)))
+            (when lang
+              (setup-highlighting-for-file! ed filepath)
+              (send-message ed SCI_SETMARGINTYPEN 0 SC_MARGIN_NUMBER)
+              (send-message ed SCI_SETMARGINWIDTHN 0 4)))
+          (echo-message! echo
+            (string-append "Opened and jumped to " filepath)))
+        (echo-error! echo
+          (string-append "File not found: " filepath))))))
+
 (def (cmd-insert-register app)
   "Insert text from a register (C-x r i)."
   (let* ((echo (app-state-echo app))
@@ -914,7 +961,12 @@
              (editor-insert-text ed pos val)
              (echo-message! echo
                (string-append "Inserted from register " (string reg-char)))))
-          ;; Point register — jump instead
+          ;; File+position register — jump to file
+          ((and (pair? val) (eq? (car val) 'file) (pair? (cdr val)))
+           (let ((filepath (cadr val))
+                 (pos (cddr val)))
+             (jump-to-register-file! app echo fr filepath pos)))
+          ;; Buffer+position register — jump instead
           ((pair? val)
            (let* ((buf-name (car val))
                   (reg-pos (cdr val))
@@ -931,7 +983,9 @@
                  (string-append "Buffer gone: " buf-name))))))))))
 
 (def (cmd-point-to-register app)
-  "Save current position to a register (C-x r SPC)."
+  "Save current position or region text to a register (C-x r SPC).
+   If region is active, saves the selected text as a string.
+   Otherwise, saves file-path + position (or buffer-name + position if no file)."
   (let* ((echo (app-state-echo app))
          (fr (app-state-frame app))
          (row (- (frame-height fr) 1))
@@ -941,14 +995,35 @@
       (let* ((reg-char (string-ref input 0))
              (ed (current-editor app))
              (buf (current-buffer-from-app app))
-             (pos (editor-get-current-pos ed)))
-        (hash-put! (app-state-registers app) reg-char
-                   (cons (buffer-name buf) pos))
-        (echo-message! echo
-          (string-append "Position saved to register " (string reg-char)))))))
+             (pos (editor-get-current-pos ed))
+             (mark (buffer-mark buf)))
+        (if mark
+          ;; Region active: save text
+          (let* ((start (min pos mark))
+                 (end (max pos mark))
+                 (text (substring (editor-get-text ed) start end)))
+            (hash-put! (app-state-registers app) reg-char text)
+            (echo-message! echo
+              (string-append "Region saved to register " (string reg-char))))
+          ;; No region: save file-path + position (or buffer-name + position)
+          (let ((fp (buffer-file-path buf)))
+            (if fp
+              ;; File-visiting buffer: save (file . (path . pos))
+              (begin
+                (hash-put! (app-state-registers app) reg-char
+                           (cons 'file (cons fp pos)))
+                (echo-message! echo
+                  (string-append "File position saved to register " (string reg-char))))
+              ;; Non-file buffer: save (buffer-name . pos)
+              (begin
+                (hash-put! (app-state-registers app) reg-char
+                           (cons (buffer-name buf) pos))
+                (echo-message! echo
+                  (string-append "Position saved to register " (string reg-char)))))))))))
 
 (def (cmd-jump-to-register app)
-  "Jump to a position saved in a register (C-x r j)."
+  "Jump to a position saved in a register (C-x r j).
+   Handles file+position, buffer+position, and text registers."
   (let* ((echo (app-state-echo app))
          (fr (app-state-frame app))
          (row (- (frame-height fr) 1))
@@ -961,6 +1036,12 @@
           ((not val)
            (echo-error! echo
              (string-append "Register " (string reg-char) " is empty")))
+          ;; File+position register: (file . (path . pos))
+          ((and (pair? val) (eq? (car val) 'file) (pair? (cdr val)))
+           (let ((filepath (cadr val))
+                 (pos (cddr val)))
+             (jump-to-register-file! app echo fr filepath pos)))
+          ;; Buffer+position register: (buffer-name . pos)
           ((pair? val)
            (let* ((buf-name (car val))
                   (pos (cdr val))

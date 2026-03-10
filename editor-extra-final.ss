@@ -27,6 +27,7 @@
         :gemacs/editor-extra-helpers
         :gemacs/editor-extra-web
         :gemacs/editor-extra-media
+        :gemacs/editor-extra-media2
         :gemacs/editor-extra-modes)
 
 ;;;============================================================================

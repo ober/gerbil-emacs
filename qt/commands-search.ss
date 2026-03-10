@@ -280,6 +280,53 @@ Returns (file line col message) or #f."
 (def *flycheck-errors* [])      ; list of (file line col message)
 (def *flycheck-error-idx* 0)    ; index for next/prev error navigation
 
+;;; Scintilla margin markers for error/warning fringe indicators
+(def *flycheck-error-marker* 0)    ; marker number 0 = error (red circle)
+(def *flycheck-warning-marker* 1)  ; marker number 1 = warning (yellow triangle)
+(def *flycheck-margin-num* 2)      ; margin index 2 for markers (0=line-numbers, 1=fold)
+
+(def (flycheck-setup-markers! ed)
+  "Define error/warning marker symbols and enable margin for fringe indicators."
+  ;; Set margin 2 as a symbol margin, 16px wide, showing markers 0 and 1
+  (sci-send ed SCI_SETMARGINTYPEN *flycheck-margin-num* SC_MARGIN_SYMBOL)
+  (sci-send ed SCI_SETMARGINWIDTHN *flycheck-margin-num* 16)
+  ;; Margin mask: show markers 0 and 1 (bitmask = 0x03)
+  (sci-send ed SCI_SETMARGINMASKN *flycheck-margin-num* 3)
+  (sci-send ed SCI_SETMARGINSENSITIVEN *flycheck-margin-num* 0)
+  ;; Marker 0: red circle for errors
+  (sci-send ed SCI_MARKERDEFINE *flycheck-error-marker* SC_MARK_CIRCLE)
+  (sci-send ed SCI_MARKERSETFORE *flycheck-error-marker* (rgb->sci 200 0 0))
+  (sci-send ed SCI_MARKERSETBACK *flycheck-error-marker* (rgb->sci 220 50 50))
+  ;; Marker 1: yellow triangle for warnings
+  (sci-send ed SCI_MARKERDEFINE *flycheck-warning-marker* SC_MARK_ARROW)
+  (sci-send ed SCI_MARKERSETFORE *flycheck-warning-marker* (rgb->sci 200 180 0))
+  (sci-send ed SCI_MARKERSETBACK *flycheck-warning-marker* (rgb->sci 230 200 50)))
+
+(def (flycheck-clear-markers! ed)
+  "Remove all flycheck error and warning markers from the editor."
+  (sci-send ed SCI_MARKERDELETEALL *flycheck-error-marker*)
+  (sci-send ed SCI_MARKERDELETEALL *flycheck-warning-marker*))
+
+(def (flycheck-add-markers! app errors)
+  "Add error/warning fringe markers for the current editor based on parsed errors."
+  (let ((ed (current-qt-editor app)))
+    ;; Set up markers if not already done, then clear old ones
+    (flycheck-setup-markers! ed)
+    (flycheck-clear-markers! ed)
+    ;; Add markers for each error
+    (for-each
+      (lambda (err)
+        (let* ((line (cadr err))
+               (msg (cadddr err))
+               (sci-line (max 0 (- line 1)))
+               (marker (if (and (string? msg)
+                                (string-contains (string-downcase msg) "warning"))
+                         *flycheck-warning-marker*
+                         *flycheck-error-marker*)))
+          (when (>= line 0)
+            (sci-send ed SCI_MARKERADD sci-line marker))))
+      errors)))
+
 (def (flycheck-linter-cmd path)
   "Return linter shell command for PATH based on extension, or #f."
   (cond
@@ -381,6 +428,8 @@ Supports Gerbil (.ss), Python, JS/TS, Go, Shell, C/C++, Ruby."
              (let ((errors (flycheck-parse-errors result path)))
                (set! *flycheck-errors* errors)
                (set! *flycheck-error-idx* 0)
+               ;; Update fringe markers
+               (flycheck-add-markers! app errors)
                (if (null? errors)
                  (echo-message! (app-state-echo app) "Flycheck: no errors")
                  (let* ((count (length errors))
@@ -399,6 +448,8 @@ Supports Gerbil (.ss), Python, JS/TS, Go, Shell, C/C++, Ruby."
                (let ((errors (flycheck-parse-multi result path path)))
                  (set! *flycheck-errors* errors)
                  (set! *flycheck-error-idx* 0)
+                 ;; Update fringe markers
+                 (flycheck-add-markers! app errors)
                  (if (null? errors)
                    (echo-message! (app-state-echo app) "Flycheck: no errors")
                    (let* ((count (length errors))
@@ -465,6 +516,10 @@ Supports Gerbil (.ss), Python, JS/TS, Go, Shell, C/C++, Ruby."
 (def (cmd-flycheck-mode app)
   "Toggle flycheck (live syntax checking on save) for Gerbil files."
   (set! *flycheck-mode* (not *flycheck-mode*))
+  ;; Clear fringe markers when disabling flycheck
+  (when (not *flycheck-mode*)
+    (let ((ed (current-qt-editor app)))
+      (flycheck-clear-markers! ed)))
   (echo-message! (app-state-echo app)
     (if *flycheck-mode* "Flycheck mode enabled" "Flycheck mode disabled")))
 

@@ -263,6 +263,7 @@
     "editor-extra-tools"
     "editor-extra-tools2"
     "editor-extra-media"
+    "editor-extra-media2"
     "editor-extra-modes"
     "editor-extra-final"
     "editor-extra-regs"
