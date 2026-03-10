@@ -1409,10 +1409,37 @@
 ;;;============================================================================
 
 (def (cmd-deadgrep app)
-  "Deadgrep — enhanced grep search (delegates to rgrep)."
-  (let ((cmd (find-command 'rgrep)))
-    (if cmd (cmd app)
-      (echo-error! (app-state-echo app) "rgrep not available"))))
+  "Deadgrep — search with ripgrep, showing results in *Deadgrep* buffer."
+  (let* ((echo (app-state-echo app))
+         (pattern (app-read-string app "Deadgrep search: ")))
+    (when (and pattern (not (string-empty? pattern)))
+      (let ((dir (or (let ((buf (current-buffer-from-app app)))
+                       (and buf (buffer-file-path buf) (path-directory (buffer-file-path buf))))
+                     (current-directory))))
+        (with-exception-catcher
+          (lambda (e)
+            ;; Fall back to grep if rg not available
+            (with-exception-catcher
+              (lambda (e2) (echo-error! echo "Neither rg nor grep found"))
+              (lambda ()
+                (let* ((proc (open-process
+                               (list path: "grep" arguments: (list "-rn" pattern dir)
+                                     stdin-redirection: #f stdout-redirection: #t stderr-redirection: #f)))
+                       (out (read-line proc #f)))
+                  (process-status proc)
+                  (if (and out (> (string-length out) 0))
+                    (open-output-buffer app "*Deadgrep*" (string-append "Deadgrep: " pattern "\n\n" out))
+                    (echo-message! echo "No matches found"))))))
+          (lambda ()
+            (let* ((proc (open-process
+                           (list path: "rg"
+                                 arguments: (list "--line-number" "--no-heading" "--color" "never" pattern dir)
+                                 stdin-redirection: #f stdout-redirection: #t stderr-redirection: #f)))
+                   (out (read-line proc #f)))
+              (process-status proc)
+              (if (and out (> (string-length out) 0))
+                (open-output-buffer app "*Deadgrep*" (string-append "Deadgrep: " pattern " in " dir "\n\n" out))
+                (echo-message! echo "No matches found")))))))))
 
 ;;;============================================================================
 ;;; String-edit — edit string at point in separate buffer
@@ -1447,34 +1474,62 @@
     (if *tui-hideshow-mode* "HS minor mode enabled" "HS minor mode disabled")))
 
 (def (cmd-hs-toggle-hiding app)
-  "Toggle fold at point."
-  (let ((cmd (find-command 'fold-toggle)))
-    (if cmd (cmd app)
-      (echo-message! (app-state-echo app) "Fold toggled (hideshow)"))))
+  "Toggle fold at point — delegates to Scintilla folding."
+  (let* ((fr (app-state-frame app))
+         (win (current-window fr))
+         (ed (edit-window-editor win))
+         (line (send-message ed SCI_LINEFROMPOSITION (send-message ed SCI_GETCURRENTPOS)))
+         (level (send-message ed SCI_GETFOLDLEVEL line)))
+    (when (> (bitwise-and level SC_FOLDLEVELHEADERFLAG) 0)
+      (send-message ed SCI_TOGGLEFOLD line))
+    (echo-message! (app-state-echo app) "Toggled fold")))
 
 (def (cmd-hs-hide-all app)
-  "Hide all blocks."
-  (let ((cmd (find-command 'fold-all)))
-    (if cmd (cmd app)
-      (echo-message! (app-state-echo app) "All blocks hidden"))))
+  "Hide all blocks — fold all via Scintilla."
+  (let* ((fr (app-state-frame app))
+         (win (current-window fr))
+         (ed (edit-window-editor win)))
+    (send-message ed SCI_FOLDALL 0)
+    (echo-message! (app-state-echo app) "All blocks hidden")))
 
 (def (cmd-hs-show-all app)
-  "Show all blocks."
-  (let ((cmd (find-command 'unfold-all)))
-    (if cmd (cmd app)
-      (echo-message! (app-state-echo app) "All blocks shown"))))
+  "Show all blocks — unfold all via Scintilla."
+  (let* ((fr (app-state-frame app))
+         (win (current-window fr))
+         (ed (edit-window-editor win)))
+    (send-message ed SCI_FOLDALL 1)
+    (echo-message! (app-state-echo app) "All blocks shown")))
 
 ;;;============================================================================
 ;;; Prescient — completion sorting by frequency
 ;;;============================================================================
 
 (def *tui-prescient-mode* #f)
+(def *prescient-frequency* (make-hash-table))  ; symbol -> count
+
+(def (prescient-record! cmd-name)
+  "Record a command invocation for frequency ranking."
+  (when *tui-prescient-mode*
+    (let ((count (or (hash-get *prescient-frequency* cmd-name) 0)))
+      (hash-put! *prescient-frequency* cmd-name (+ count 1)))))
+
+(def (prescient-sort completions)
+  "Sort completion candidates by usage frequency (most used first)."
+  (if (not *tui-prescient-mode*)
+    completions
+    (sort completions
+      (lambda (a b)
+        (let ((fa (or (hash-get *prescient-frequency* (if (symbol? a) a (string->symbol a))) 0))
+              (fb (or (hash-get *prescient-frequency* (if (symbol? b) b (string->symbol b))) 0)))
+          (> fa fb))))))
 
 (def (cmd-prescient-mode app)
-  "Toggle prescient mode — sort completions by usage frequency."
+  "Toggle prescient mode — sort M-x completions by usage frequency."
   (set! *tui-prescient-mode* (not *tui-prescient-mode*))
   (echo-message! (app-state-echo app)
-    (if *tui-prescient-mode* "Prescient mode enabled" "Prescient mode disabled")))
+    (if *tui-prescient-mode*
+      "Prescient mode enabled — commands sorted by frequency"
+      "Prescient mode disabled")))
 
 ;;;============================================================================
 ;;; No-littering — clean dotfile organization
