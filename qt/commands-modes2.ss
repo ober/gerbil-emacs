@@ -608,12 +608,12 @@
 ;;; ============================================================================
 
 (def (cmd-which-key-show-top-level app)
-  "Show all top-level key bindings via which-key."
-  (echo-message! (app-state-echo app) "Use C-h b to see all key bindings"))
+  "Show all top-level key bindings — delegates to describe-bindings."
+  (cmd-describe-bindings app))
 
 (def (cmd-which-key-show-major-mode app)
-  "Show major-mode key bindings via which-key."
-  (echo-message! (app-state-echo app) "Use C-h m to see major-mode bindings"))
+  "Show major-mode key bindings — delegates to describe-mode."
+  (cmd-describe-mode app))
 
 ;;; ============================================================================
 ;;; Dimmer — dim non-active windows
@@ -885,16 +885,24 @@
     (if *qt-hideshow-mode* "HS minor mode enabled" "HS minor mode disabled")))
 
 (def (cmd-hs-toggle-hiding app)
-  "Toggle fold at point."
-  (echo-message! (app-state-echo app) "Fold toggled (hideshow)"))
+  "Toggle fold at point using Scintilla folding."
+  (let* ((ed (current-qt-editor app))
+         (line (sci-send ed SCI_LINEFROMPOSITION
+                         (sci-send ed SCI_GETCURRENTPOS))))
+    (sci-send ed SCI_TOGGLEFOLD line 0)
+    (echo-message! (app-state-echo app) (string-append "Fold toggled at line " (number->string (+ line 1))))))
 
 (def (cmd-hs-hide-all app)
-  "Hide all blocks."
-  (echo-message! (app-state-echo app) "All blocks hidden"))
+  "Hide all blocks — fold all top-level folds."
+  (let ((ed (current-qt-editor app)))
+    (sci-send ed SCI_FOLDALL 0) ;; SC_FOLDACTION_CONTRACT = 0
+    (echo-message! (app-state-echo app) "All blocks folded")))
 
 (def (cmd-hs-show-all app)
-  "Show all blocks."
-  (echo-message! (app-state-echo app) "All blocks shown"))
+  "Show all blocks — unfold everything."
+  (let ((ed (current-qt-editor app)))
+    (sci-send ed SCI_FOLDALL 1) ;; SC_FOLDACTION_EXPAND = 1
+    (echo-message! (app-state-echo app) "All blocks unfolded")))
 
 ;;; ============================================================================
 ;;; Prescient — completion sorting by frequency
