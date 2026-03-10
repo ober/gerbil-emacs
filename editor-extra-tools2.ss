@@ -1018,40 +1018,104 @@
 
 ;; LSP: moved to qt/lsp-client.ss and qt/commands-lsp.ss
 
-;; Debug adapter protocol
+;; Debug adapter protocol — real GDB/MI integration
 (def *dap-process* #f)
-(def *dap-request-seq* 0)
+(def *dap-program* #f)
 (def *dap-breakpoints* (make-hash-table))  ; file -> list of line numbers
+(def *dap-output* '())  ; accumulated GDB output lines
 
-(def (dap-send! command . args-body)
-  "Send a DAP request."
-  (when *dap-process*
-    (set! *dap-request-seq* (+ *dap-request-seq* 1))
-    (let* ((body (string-append
-                   "{\"seq\":" (number->string *dap-request-seq*)
-                   ",\"type\":\"request\",\"command\":\"" command "\""
-                   (if (pair? args-body) (string-append ",\"arguments\":" (car args-body)) "")
-                   "}"))
-           (msg (string-append "Content-Length: " (number->string (string-length body)) "\r\n\r\n" body)))
-      (let ((proc *dap-process*))
-        (when (port? proc)
-          (display msg proc)
-          (force-output proc))))))
+(def (dap-gdb-send! cmd app)
+  "Send a GDB/MI command and display response."
+  (let ((proc *dap-process*))
+    (when (port? proc)
+      (when (and (string? cmd) (not (string-empty? cmd)))
+        (display (string-append cmd "\n") proc)
+        (force-output proc))
+      ;; Read response with timeout
+      (input-port-timeout-set! proc 0.3)
+      (let loop ((lines '()) (count 0))
+        (let ((line (with-exception-catcher (lambda (e) #f)
+                      (lambda () (read-line proc)))))
+          (cond
+            ((not (string? line))
+             (input-port-timeout-set! proc +inf.0)
+             (dap-show-output! app (reverse lines)))
+            ((string-prefix? "(gdb)" line)
+             (input-port-timeout-set! proc +inf.0)
+             (dap-show-output! app (reverse lines)))
+            ((> count 200)
+             (input-port-timeout-set! proc +inf.0)
+             (dap-show-output! app (reverse lines)))
+            (else
+             (loop (cons line lines) (+ count 1)))))))))
+
+(def (dap-show-output! app lines)
+  "Display GDB output lines in echo area."
+  (when (pair? lines)
+    (set! *dap-output* (append *dap-output* lines))
+    ;; Show last meaningful output line in echo area
+    (let ((meaningful (filter (lambda (s) (and (string? s)
+                                               (not (string-prefix? "~" s))
+                                               (not (string=? "(gdb)" s))
+                                               (not (string-empty? s))))
+                             lines)))
+      (echo-message! (app-state-echo app)
+        (if (pair? meaningful)
+          (car (reverse meaningful))
+          (if (pair? lines) (car (reverse lines)) ""))))))
+
+(def (dap-set-pending-breakpoints! app)
+  "Send all pending breakpoints to GDB."
+  (hash-for-each
+    (lambda (file lines)
+      (for-each
+        (lambda (line)
+          (dap-gdb-send!
+            (string-append "-break-insert " file ":" (number->string line))
+            app))
+        lines))
+    *dap-breakpoints*))
 
 (def (cmd-dap-debug app)
-  "Start debug session — prompts for program to debug."
+  "Start debug session — spawns GDB with MI interface for the specified program."
   (let ((program (app-read-string app "Program to debug: ")))
     (if (or (not program) (string-empty? program))
       (echo-error! (app-state-echo app) "No program specified")
       (begin
-        (set! *dap-process* #f)  ; Reset
-        (set! *dap-request-seq* 0)
-        (echo-message! (app-state-echo app)
-          (string-append "DAP: debug session started for " program
-                         " (use GDB commands for actual debugging)"))))))
+        ;; Kill existing session
+        (when (and *dap-process* (port? *dap-process*))
+          (with-exception-catcher void
+            (lambda () (close-port *dap-process*))))
+        (with-exception-catcher
+          (lambda (e) (echo-error! (app-state-echo app) "GDB not available — install gdb"))
+          (lambda ()
+            (let* ((proc (open-process
+                           (list path: "gdb"
+                                 arguments: (list "-q" "--interpreter=mi2" program)
+                                 stdin-redirection: #t
+                                 stdout-redirection: #t
+                                 stderr-redirection: #t)))
+                   (fr (app-state-frame app))
+                   (win (current-window fr))
+                   (ed (edit-window-editor win))
+                   (buf (buffer-create! "*GDB*" ed)))
+              (set! *dap-process* proc)
+              (set! *dap-program* program)
+              (set! *dap-output* '())
+              (buffer-attach! ed buf)
+              (set! (edit-window-buffer win) buf)
+              (editor-set-text ed (string-append "GDB: " program "\n\n"))
+              ;; Read initial GDB prompt
+              (thread-sleep! 0.5)
+              (dap-gdb-send! "" app)
+              ;; Set any pending breakpoints
+              (dap-set-pending-breakpoints! app)
+              (echo-message! (app-state-echo app)
+                (string-append "Debug session started for " program
+                               " — use dap-continue to run")))))))))
 
 (def (cmd-dap-breakpoint-toggle app)
-  "Toggle breakpoint at current line."
+  "Toggle breakpoint at current line — sends to GDB if session active."
   (let* ((fr (app-state-frame app))
          (win (current-window fr))
          (ed (edit-window-editor win))
@@ -1066,45 +1130,57 @@
         (if has-bp
           (begin
             (hash-put! *dap-breakpoints* path (filter (lambda (l) (not (= l line))) existing))
+            (when *dap-process*
+              (dap-gdb-send! (string-append "-break-delete") app))
             (echo-message! (app-state-echo app)
               (string-append "Breakpoint removed at " (path-strip-directory path) ":" (number->string line))))
           (begin
             (hash-put! *dap-breakpoints* path (cons line existing))
+            (when *dap-process*
+              (dap-gdb-send!
+                (string-append "-break-insert " path ":" (number->string line)) app))
             (echo-message! (app-state-echo app)
               (string-append "Breakpoint set at " (path-strip-directory path) ":" (number->string line)))))))))
 
 (def (cmd-dap-continue app)
   "Continue execution in debug session."
-  (if *dap-process*
-    (begin (dap-send! "continue") (echo-message! (app-state-echo app) "DAP: continue"))
-    (echo-message! (app-state-echo app) "DAP: continuing execution")))
+  (if (not *dap-process*)
+    (echo-error! (app-state-echo app) "No debug session — use M-x dap-debug first")
+    (begin
+      (dap-gdb-send! "-exec-continue" app)
+      (echo-message! (app-state-echo app) "Continuing..."))))
 
 (def (cmd-dap-step-over app)
-  "Step over in debug session."
-  (if *dap-process*
-    (begin (dap-send! "next") (echo-message! (app-state-echo app) "DAP: step over"))
-    (echo-message! (app-state-echo app) "DAP: step over")))
+  "Step over (next line) in debug session."
+  (if (not *dap-process*)
+    (echo-error! (app-state-echo app) "No debug session — use M-x dap-debug first")
+    (begin
+      (dap-gdb-send! "-exec-next" app)
+      (echo-message! (app-state-echo app) "Step over"))))
 
 (def (cmd-dap-step-in app)
-  "Step into in debug session."
-  (if *dap-process*
-    (begin (dap-send! "stepIn") (echo-message! (app-state-echo app) "DAP: step in"))
-    (echo-message! (app-state-echo app) "DAP: step in")))
+  "Step into function in debug session."
+  (if (not *dap-process*)
+    (echo-error! (app-state-echo app) "No debug session — use M-x dap-debug first")
+    (begin
+      (dap-gdb-send! "-exec-step" app)
+      (echo-message! (app-state-echo app) "Step in"))))
 
 (def (cmd-dap-step-out app)
-  "Step out in debug session."
-  (if *dap-process*
-    (begin (dap-send! "stepOut") (echo-message! (app-state-echo app) "DAP: step out"))
-    (echo-message! (app-state-echo app) "DAP: step out")))
+  "Step out of current function in debug session."
+  (if (not *dap-process*)
+    (echo-error! (app-state-echo app) "No debug session — use M-x dap-debug first")
+    (begin
+      (dap-gdb-send! "-exec-finish" app)
+      (echo-message! (app-state-echo app) "Step out"))))
 
 (def (cmd-dap-repl app)
-  "Send GDB/debugger command interactively."
+  "Send interactive GDB command."
   (if (not *dap-process*)
-    (echo-message! (app-state-echo app) "No debug session")
+    (echo-error! (app-state-echo app) "No debug session — use M-x dap-debug first")
     (let ((cmd (app-read-string app "GDB> ")))
       (when (and cmd (not (string-empty? cmd)))
-        (dap-send! cmd)
-        (echo-message! (app-state-echo app) (string-append "GDB: " cmd))))))
+        (dap-gdb-send! cmd app)))))
 
 ;; Snippet / template system (yasnippet-like)
 ;; Simple snippet system with $1, $2, etc. placeholders
