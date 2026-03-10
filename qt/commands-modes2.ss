@@ -937,8 +937,13 @@
 ;;; ============================================================================
 
 (def (cmd-deadgrep app)
-  "Deadgrep — enhanced grep search (delegates to rgrep)."
-  (cmd-rgrep app))
+  "Deadgrep -- search with ripgrep, results in *Grep* buffer with navigation."
+  (let ((pattern (qt-echo-read-string app "Deadgrep search: ")))
+    (when (and pattern (not (string-empty? pattern)))
+      (let* ((buf (current-qt-buffer app))
+             (dir (or (and buf (buffer-file-path buf) (path-directory (buffer-file-path buf)))
+                      (current-directory))))
+        (grep-run-and-show! app pattern dir (list "-rn"))))))
 
 ;;; ============================================================================
 ;;; String-edit
@@ -955,10 +960,32 @@
 (def *qt-hideshow-mode* #f)
 
 (def (cmd-hs-minor-mode app)
-  "Toggle hideshow minor mode — code folding."
+  "Toggle hideshow minor mode — enables fold margin and code folding."
   (set! *qt-hideshow-mode* (not *qt-hideshow-mode*))
-  (echo-message! (app-state-echo app)
-    (if *qt-hideshow-mode* "HS minor mode enabled" "HS minor mode disabled")))
+  (let ((ed (current-qt-editor app)))
+    (if *qt-hideshow-mode*
+      (begin
+        ;; Enable fold margin (margin 2) with fold markers
+        (sci-send ed SCI_SETMARGINTYPEN 2 SC_MARGIN_SYMBOL)
+        (sci-send ed SCI_SETMARGINWIDTHN 2 16)
+        (sci-send ed SCI_SETMARGINMASKN 2 SC_MASK_FOLDERS)
+        (sci-send ed SCI_SETMARGINSENSITIVEN 2 1)
+        ;; Set fold markers (box style)
+        (sci-send ed SCI_MARKERDEFINE SC_MARKNUM_FOLDEROPEN SC_MARK_BOXMINUS)
+        (sci-send ed SCI_MARKERDEFINE SC_MARKNUM_FOLDER SC_MARK_BOXPLUS)
+        (sci-send ed SCI_MARKERDEFINE SC_MARKNUM_FOLDERSUB SC_MARK_VLINE)
+        (sci-send ed SCI_MARKERDEFINE SC_MARKNUM_FOLDERTAIL SC_MARK_LCORNER)
+        (sci-send ed SCI_MARKERDEFINE SC_MARKNUM_FOLDEREND SC_MARK_BOXPLUSCONNECTED)
+        (sci-send ed SCI_MARKERDEFINE SC_MARKNUM_FOLDEROPENMID SC_MARK_BOXMINUSCONNECTED)
+        (sci-send ed SCI_MARKERDEFINE SC_MARKNUM_FOLDERMIDTAIL SC_MARK_TCORNER)
+        ;; Enable automatic fold
+        (sci-send ed SCI_SETAUTOMATICFOLD 7 0)  ;; all automatic fold flags
+        (echo-message! (app-state-echo app) "HS minor mode: on (fold margin visible)"))
+      (begin
+        ;; Unfold all and hide fold margin
+        (sci-send ed SCI_FOLDALL 1 0)
+        (sci-send ed SCI_SETMARGINWIDTHN 2 0)
+        (echo-message! (app-state-echo app) "HS minor mode: off")))))
 
 (def (cmd-hs-toggle-hiding app)
   "Toggle fold at point using Scintilla folding."
@@ -1109,16 +1136,23 @@
     (if *qt-eldoc-box* "Eldoc-box mode enabled" "Eldoc-box mode disabled")))
 
 ;;; ============================================================================
-;;; Color-rg — colored ripgrep
+;;; Color-rg -- colored ripgrep
 ;;; ============================================================================
 
 (def (cmd-color-rg-search-input app)
-  "Color-rg search — delegates to rgrep."
-  (cmd-rgrep app))
+  "Color-rg search -- ripgrep search with file type filter."
+  (let ((pattern (qt-echo-read-string app "Color-rg search: ")))
+    (when (and pattern (not (string-empty? pattern)))
+      (let ((dir (qt-echo-read-string app "In directory: ")))
+        (when (and dir (not (string-empty? dir)))
+          (grep-run-and-show! app pattern dir (list "-rn")))))))
 
 (def (cmd-color-rg-search-project app)
-  "Color-rg search project — delegates to project-grep."
-  (cmd-project-grep app))
+  "Color-rg search project -- ripgrep in project root."
+  (let ((pattern (qt-echo-read-string app "Color-rg project search: ")))
+    (when (and pattern (not (string-empty? pattern)))
+      (let ((dir (or (current-project-root app) (current-directory))))
+        (grep-run-and-show! app pattern dir (list "-rn"))))))
 
 ;;; ============================================================================
 ;;; Ctrlf / phi-search — better isearch

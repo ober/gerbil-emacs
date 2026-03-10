@@ -678,13 +678,74 @@
                   (loop (- line 1)))))))))))
 
 ;; --- Wdired/wgrep ---
-(def *tui-wdired-active* #f)
+(def *tui-wdired-state* (make-hash-table))  ; buffer-name -> list of original lines
+
 (def (cmd-wdired-mode app)
-  "Toggle writable dired."
-  (set! *tui-wdired-active* (not *tui-wdired-active*))
-  (echo-message! (app-state-echo app) (if *tui-wdired-active* "Wdired mode on" "Wdired mode off")))
-(def (cmd-wdired-finish app) "Finish wdired." (cmd-wdired-mode app))
-(def (cmd-wgrep-abort-changes app) "Abort wgrep." (echo-message! (app-state-echo app) "Wgrep changes aborted"))
+  "Toggle writable dired mode — edit filenames, then wdired-finish to commit renames."
+  (let* ((fr (app-state-frame app))
+         (win (current-window fr))
+         (ed (edit-window-editor win))
+         (buf (edit-window-buffer win))
+         (name (and buf (buffer-name buf)))
+         (echo (app-state-echo app)))
+    (cond
+      ;; Currently in wdired — commit changes
+      ((and name (hash-get *tui-wdired-state* name))
+       (let* ((originals (hash-get *tui-wdired-state* name))
+              (text (editor-get-text ed))
+              (lines (string-split text #\newline))
+              (renamed 0)
+              (errors 0))
+         (let loop ((os originals) (ls lines))
+           (when (and (pair? os) (pair? ls))
+             (let ((orig (string-trim (car os)))
+                   (new (string-trim (car ls))))
+               (when (and (> (string-length orig) 0)
+                          (> (string-length new) 0)
+                          (not (string=? orig new))
+                          (file-exists? orig))
+                 (with-exception-catcher
+                   (lambda (e) (set! errors (+ errors 1)))
+                   (lambda ()
+                     (rename-file orig new)
+                     (set! renamed (+ renamed 1)))))
+               (loop (cdr os) (cdr ls)))))
+         (hash-remove! *tui-wdired-state* name)
+         (editor-set-read-only ed #t)
+         (echo-message! echo
+           (string-append "WDired: " (number->string renamed) " renamed"
+                          (if (> errors 0)
+                            (string-append ", " (number->string errors) " errors")
+                            "")))))
+      ;; Enter wdired mode on a dired-like buffer
+      ((and name (or (string-prefix? "*Dired" name)
+                     (string-prefix? "*dired" name)))
+       (let* ((text (editor-get-text ed))
+              (lines (string-split text #\newline)))
+         (hash-put! *tui-wdired-state* name lines)
+         (editor-set-read-only ed #f)
+         (echo-message! echo
+           "WDired mode ON — edit filenames, M-x wdired-finish to commit")))
+      (else
+        (echo-error! echo "Not a dired buffer")))))
+
+(def (cmd-wdired-finish app)
+  "Finish wdired editing and rename files."
+  (cmd-wdired-mode app))
+
+(def (cmd-wgrep-abort-changes app)
+  "Abort wgrep changes — restore original content."
+  (let* ((fr (app-state-frame app))
+         (win (current-window fr))
+         (ed (edit-window-editor win))
+         (buf (edit-window-buffer win))
+         (name (and buf (buffer-name buf))))
+    (when (and name (hash-get *tui-wdired-state* name))
+      (let ((originals (hash-get *tui-wdired-state* name)))
+        (editor-set-text ed (string-join originals "\n"))
+        (hash-remove! *tui-wdired-state* name)
+        (editor-set-read-only ed #t)))
+    (echo-message! (app-state-echo app) "Wgrep changes aborted")))
 
 ;; --- Dired delete marked ---
 (def (cmd-dired-do-delete-marked app)

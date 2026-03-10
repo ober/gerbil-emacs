@@ -1468,10 +1468,34 @@
 (def *tui-hideshow-mode* #f)
 
 (def (cmd-hs-minor-mode app)
-  "Toggle hideshow minor mode — code folding."
+  "Toggle hideshow minor mode — enables fold margin and code folding."
   (set! *tui-hideshow-mode* (not *tui-hideshow-mode*))
-  (echo-message! (app-state-echo app)
-    (if *tui-hideshow-mode* "HS minor mode enabled" "HS minor mode disabled")))
+  (let* ((fr (app-state-frame app))
+         (win (current-window fr))
+         (ed (edit-window-editor win)))
+    (if *tui-hideshow-mode*
+      (begin
+        ;; Enable fold margin (margin 2)
+        (send-message ed SCI_SETMARGINTYPEN 2 4)  ;; SC_MARGIN_SYMBOL = 4
+        (send-message ed SCI_SETMARGINWIDTHN 2 16)
+        (send-message ed SCI_SETMARGINMASKN 2 #xFE000000) ;; SC_MASK_FOLDERS
+        (send-message ed SCI_SETMARGINSENSITIVEN 2 1)
+        ;; Set fold markers (box style)
+        (send-message ed SCI_MARKERDEFINE SC_MARKNUM_FOLDEROPEN SC_MARK_BOXMINUS)
+        (send-message ed SCI_MARKERDEFINE SC_MARKNUM_FOLDER SC_MARK_BOXPLUS)
+        (send-message ed SCI_MARKERDEFINE SC_MARKNUM_FOLDERSUB SC_MARK_VLINE)
+        (send-message ed SCI_MARKERDEFINE SC_MARKNUM_FOLDERTAIL SC_MARK_LCORNER)
+        (send-message ed SCI_MARKERDEFINE SC_MARKNUM_FOLDEREND SC_MARK_BOXPLUSCONNECTED)
+        (send-message ed SCI_MARKERDEFINE SC_MARKNUM_FOLDEROPENMID SC_MARK_BOXMINUSCONNECTED)
+        (send-message ed SCI_MARKERDEFINE SC_MARKNUM_FOLDERMIDTAIL SC_MARK_TCORNER)
+        ;; Enable automatic fold
+        (send-message ed SCI_SETAUTOMATICFOLD 7)
+        (echo-message! (app-state-echo app) "HS minor mode: on (fold margin visible)"))
+      (begin
+        ;; Unfold all and hide fold margin
+        (send-message ed SCI_FOLDALL 1)
+        (send-message ed SCI_SETMARGINWIDTHN 2 0)
+        (echo-message! (app-state-echo app) "HS minor mode: off")))))
 
 (def (cmd-hs-toggle-hiding app)
   "Toggle fold at point — delegates to Scintilla folding."
