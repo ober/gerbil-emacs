@@ -1815,8 +1815,27 @@
 ;;;============================================================================
 
 (def (cmd-zone app)
-  "Activate zone mode — screen saver."
-  (echo-message! (app-state-echo app) "Zoning out... (press any key)"))
+  "Activate zone mode — scramble buffer text, press q to restore."
+  (let* ((fr (app-state-frame app))
+         (win (current-window fr))
+         (ed (edit-window-editor win))
+         (original (editor-get-text ed))
+         (chars "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*()")
+         (clen (string-length chars))
+         (len (min 2000 (string-length original)))
+         (scrambled (make-string len)))
+    (let loop ((i 0))
+      (when (< i len)
+        (let ((c (string-ref original i)))
+          (if (eqv? c #\newline)
+            (string-set! scrambled i #\newline)
+            (string-set! scrambled i (string-ref chars (modulo (+ i (* i 7) 13) clen)))))
+        (loop (+ i 1))))
+    (editor-set-text ed (substring scrambled 0 len))
+    (echo-message! (app-state-echo app) "Zoning out... press q to restore")
+    (let ((key (app-read-string app "Press q to unzone: ")))
+      (editor-set-text ed original)
+      (echo-message! (app-state-echo app) "Unzoned"))))
 
 ;;;============================================================================
 ;;; Fireplace — decorative fireplace

@@ -536,8 +536,26 @@
   (cmd-god-mode app))
 
 (def (cmd-god-execute-with-current-bindings app)
-  "Execute next key with current bindings (god-mode helper)."
-  (echo-message! (app-state-echo app) "Type a key to execute with C- prefix..."))
+  "Execute next key as C-<key> — type a letter and it runs the C- version."
+  (let ((key (qt-echo-read-string app "God key (letter → C-letter): ")))
+    (when (and key (= (string-length key) 1))
+      (let* ((c (string-ref key 0))
+             (cmd-name (cond
+                         ((eqv? c #\n) 'next-line) ((eqv? c #\p) 'previous-line)
+                         ((eqv? c #\f) 'forward-char) ((eqv? c #\b) 'backward-char)
+                         ((eqv? c #\a) 'beginning-of-line) ((eqv? c #\e) 'end-of-line)
+                         ((eqv? c #\d) 'delete-char) ((eqv? c #\k) 'kill-line)
+                         ((eqv? c #\y) 'yank) ((eqv? c #\w) 'kill-region)
+                         ((eqv? c #\s) 'isearch-forward) ((eqv? c #\r) 'isearch-backward)
+                         ((eqv? c #\g) 'keyboard-quit) ((eqv? c #\l) 'recenter-top-bottom)
+                         ((eqv? c #\v) 'scroll-up-command) ((eqv? c #\x) 'execute-extended-command)
+                         ((eqv? c #\/) 'undo)
+                         (else #f))))
+        (if cmd-name
+          (let ((cmd (find-command cmd-name)))
+            (if cmd (begin (cmd app) (echo-message! (app-state-echo app) (string-append "C-" key " → " (symbol->string cmd-name))))
+              (echo-message! (app-state-echo app) (string-append "Command not found: " (symbol->string cmd-name)))))
+          (echo-message! (app-state-echo app) (string-append "No C-" key " binding")))))))
 
 ;;; ============================================================================
 ;;; Beacon mode — cursor flash
@@ -648,8 +666,19 @@
 (def (cmd-centered-cursor-mode app)
   "Toggle centered cursor mode — keep cursor vertically centered."
   (set! *qt-centered-cursor* (not *qt-centered-cursor*))
+  (when *qt-centered-cursor*
+    (qt-center-cursor-if-enabled! app))
   (echo-message! (app-state-echo app)
     (if *qt-centered-cursor* "Centered cursor mode enabled" "Centered cursor mode disabled")))
+
+(def (qt-center-cursor-if-enabled! app)
+  "If centered-cursor-mode is on, recenter viewport around cursor."
+  (when *qt-centered-cursor*
+    (let* ((ed (current-qt-editor app))
+           (cur-line (sci-send ed SCI_LINEFROMPOSITION (sci-send ed SCI_GETCURRENTPOS)))
+           (visible (sci-send ed SCI_LINESONSCREEN))
+           (target (max 0 (- cur-line (quotient visible 2)))))
+      (sci-send ed SCI_SETFIRSTVISIBLELINE target))))
 
 ;;; ============================================================================
 ;;; Format-all — external formatter integration
@@ -849,12 +878,42 @@
       (echo-message! (app-state-echo app) (string-append "Hydra '" name "' defined")))))
 
 (def (cmd-hydra-zoom app)
-  "Hydra for zoom commands."
-  (echo-message! (app-state-echo app) "Zoom hydra: use C-x C-+ / C-x C-- for zoom"))
+  "Hydra for zoom — interactive zoom with +/-/0/q keys."
+  (echo-message! (app-state-echo app) "Zoom: [+] zoom in  [-] zoom out  [0] reset  [q] quit")
+  (let loop ()
+    (let ((key (qt-echo-read-string app "Zoom key (+/-/0/q): ")))
+      (when (and key (> (string-length key) 0))
+        (let ((c (string-ref key 0)))
+          (cond
+            ((or (eqv? c #\+) (eqv? c #\=))
+             (cmd-zoom-in app)
+             (echo-message! (app-state-echo app) "Zoomed in. [+/-/0/q]")
+             (loop))
+            ((eqv? c #\-)
+             (cmd-zoom-out app)
+             (echo-message! (app-state-echo app) "Zoomed out. [+/-/0/q]")
+             (loop))
+            ((eqv? c #\0)
+             (cmd-zoom-reset app)
+             (echo-message! (app-state-echo app) "Zoom reset. [+/-/0/q]")
+             (loop))
+            ((eqv? c #\q) (echo-message! (app-state-echo app) "Zoom hydra exited"))
+            (else (echo-message! (app-state-echo app) "Unknown key. [+/-/0/q]") (loop))))))))
 
 (def (cmd-hydra-window app)
-  "Hydra for window commands."
-  (echo-message! (app-state-echo app) "Window hydra: use C-x o, C-x 2, C-x 3, C-x 0"))
+  "Hydra for windows — interactive window management with o/2/3/0/q keys."
+  (echo-message! (app-state-echo app) "Window: [o] other  [2] split-h  [3] split-v  [0] delete  [q] quit")
+  (let loop ()
+    (let ((key (qt-echo-read-string app "Window key (o/2/3/0/q): ")))
+      (when (and key (> (string-length key) 0))
+        (let ((c (string-ref key 0)))
+          (cond
+            ((eqv? c #\o) (cmd-other-window app) (echo-message! (app-state-echo app) "Switched window. [o/2/3/0/q]") (loop))
+            ((eqv? c #\2) (cmd-split-window-below app) (echo-message! (app-state-echo app) "Split horizontal. [o/2/3/0/q]") (loop))
+            ((eqv? c #\3) (cmd-split-window-right app) (echo-message! (app-state-echo app) "Split vertical. [o/2/3/0/q]") (loop))
+            ((eqv? c #\0) (cmd-delete-window app) (echo-message! (app-state-echo app) "Window deleted. [o/2/3/0/q]") (loop))
+            ((eqv? c #\q) (echo-message! (app-state-echo app) "Window hydra exited"))
+            (else (echo-message! (app-state-echo app) "Unknown key. [o/2/3/0/q]") (loop))))))))
 
 ;;; ============================================================================
 ;;; Deadgrep — enhanced grep
@@ -1013,16 +1072,16 @@
   (cmd-isearch-forward-word app))
 
 (def (cmd-ctrlf-backward app)
-  "Ctrlf backward search."
-  (echo-message! (app-state-echo app) "Use C-r for backward search"))
+  "Ctrlf backward search — delegates to isearch-backward-word."
+  (cmd-isearch-backward-word app))
 
 (def (cmd-phi-search app)
   "Phi-search — delegates to isearch."
   (cmd-isearch-forward-word app))
 
 (def (cmd-phi-search-backward app)
-  "Phi-search backward."
-  (echo-message! (app-state-echo app) "Use C-r for backward search"))
+  "Phi-search backward — delegates to isearch-backward-word."
+  (cmd-isearch-backward-word app))
 
 ;;; ============================================================================
 ;;; Toc-org — auto-generate TOC
@@ -1209,8 +1268,27 @@
 ;;; ============================================================================
 
 (def (cmd-zone app)
-  "Screen saver."
-  (echo-message! (app-state-echo app) "Zoning out... (press any key)"))
+  "Screen saver — scramble buffer text for fun, restore on quit."
+  (let* ((ed (current-qt-editor app))
+         (original (qt-plain-text-edit-text ed))
+         (chars "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*(){}[]|/\\~`")
+         (clen (string-length chars)))
+    (echo-message! (app-state-echo app) "Zoning out... press q to restore")
+    ;; Scramble the text
+    (let* ((len (min 2000 (string-length original)))
+           (scrambled (make-string len)))
+      (let loop ((i 0))
+        (when (< i len)
+          (let ((c (string-ref original i)))
+            (if (eqv? c #\newline)
+              (string-set! scrambled i #\newline)
+              (string-set! scrambled i (string-ref chars (modulo (+ i (* i 7) 13) clen)))))
+          (loop (+ i 1))))
+      (qt-plain-text-edit-set-text! ed (substring scrambled 0 len)))
+    ;; Wait for quit
+    (let ((key (qt-echo-read-string app "Press q to unzone: ")))
+      (qt-plain-text-edit-set-text! ed original)
+      (echo-message! (app-state-echo app) "Unzoned"))))
 
 (def (cmd-fireplace app)
   "Decorative fireplace."

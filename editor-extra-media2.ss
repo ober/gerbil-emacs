@@ -1737,6 +1737,15 @@
 (def (cmd-centered-cursor-mode app)
   "Toggle centered cursor mode — keep cursor vertically centered."
   (set! *tui-centered-cursor* (not *tui-centered-cursor*))
+  (when *tui-centered-cursor*
+    (let* ((fr (app-state-frame app))
+           (win (current-window fr))
+           (ed (edit-window-editor win))
+           (pos (editor-get-current-pos ed))
+           (cur-line (editor-line-from-position ed pos))
+           (visible-lines (max 1 (- (edit-window-h win) 1)))
+           (target (max 0 (- cur-line (quotient visible-lines 2)))))
+      (send-message ed SCI_SETFIRSTVISIBLELINE target 0)))
   (echo-message! (app-state-echo app)
     (if *tui-centered-cursor* "Centered cursor mode enabled" "Centered cursor mode disabled")))
 
