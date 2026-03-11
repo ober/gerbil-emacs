@@ -276,6 +276,7 @@
   (let ((tag (car msg))
         (data (cdr msg))
         (vt (terminal-state-vtscreen ts)))
+    (verbose-log! "PTY-MSG tag=" (symbol->string tag))
     (cond
       ((eq? tag 'data)
        ;; Single data message fallback
@@ -312,6 +313,13 @@
 (def (qt-do-init! qt-app args)
   ;; Initialize runtime error log (~/.gemacs-errors.log)
   (init-gemacs-log!)
+  ;; Verbose hang-diagnosis log: --verbose opens ~/.gemacs-verbose.log and
+  ;; enables per-BlockingQueuedConnection tracing in the Qt shim.
+  (when (member "--verbose" args)
+    (let ((vpath (init-verbose-log!)))
+      ;; Also enable the C-level BQC entry/exit logging to the same file.
+      (qt-verbose-log-enable! vpath)
+      (verbose-log! "gemacs-qt verbose mode ON  (C-level BQC tracing also active)")))
     ;; Initialize face system with standard faces
     (define-standard-faces!)
     ;; Load saved theme and font settings from ~/.gemacs-theme
@@ -470,7 +478,10 @@
                               raw-text)))
                 ;; Record keystroke in lossage ring
                 (let ((ks (qt-key-event->string code mods text)))
-                  (when ks (key-lossage-record! app ks)))
+                  (when ks
+                    (key-lossage-record! app ks)
+                    (verbose-log! "KEY " ks " code=" (number->string code)
+                                  " mods=" (number->string mods))))
                 ;; Modal mode intercepts: isearch and query-replace
                 (cond
                  (*isearch-active*

@@ -301,6 +301,7 @@
 
 (def (qt-open-image-inline! app filename)
   "Open an image file as an inline image buffer."
+  (verbose-log! "qt-open-image-inline! begin file=" filename)
   (gemacs-log! "IMG: loading pixmap " filename)
   (let* ((pixmap (qt-pixmap-load filename)))
     (gemacs-log! "IMG: pixmap loaded null=" (if (qt-pixmap-null? pixmap) "yes" "no"))

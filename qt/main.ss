@@ -18,6 +18,7 @@
      (displayln "Usage: gemacs-qt [OPTIONS] [FILES...]")
      (displayln "Options:")
      (displayln "  --version   Show version information")
-     (displayln "  --help      Show this help message"))
+     (displayln "  --help      Show this help message")
+     (displayln "  --verbose   Log all Qt calls and commands to ~/.gemacs-verbose.log"))
     (else
      (apply qt-main args))))
