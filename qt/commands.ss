@@ -4,6 +4,7 @@
 
 (export qt-register-all-commands!
         dired-open-directory!
+        qt-open-image-inline!
         *qt-app-ptr*
         qt-kill-ring-push!
         *isearch-active*
