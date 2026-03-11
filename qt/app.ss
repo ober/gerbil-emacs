@@ -1120,17 +1120,27 @@
                     (ipc-poll-files!))))
 
       ;; Master timer — drives all periodic tasks and drains the async UI queue.
-      ;; Single 50ms timer replaces 7+ individual Qt timers.
-      ;; Also drains the SMP callback queue: Qt signals that fire synchronously
-      ;; during BlockingQueuedConnection dispatch run on the Qt thread (not a
-      ;; Gambit VP), so their trampolines enqueue callbacks instead of calling
-      ;; Gerbil directly.  We drain that queue here, on the Gambit UI thread.
-      (let ((master-timer (qt-timer-create)))
-        (qt-on-timeout! master-timer
-          (lambda ()
+      ;; Single 50ms green-thread loop replaces 7+ individual Qt timers.
+      ;;
+      ;; SMP NOTE: We deliberately use a spawned Gambit green thread instead of
+      ;; a Qt QTimer.  In the SMP model the Qt thread is a raw pthread (not a
+      ;; Gambit VP), so any `c-define` callback invoked directly from the Qt
+      ;; thread has ___ps == NULL and crashes.  A Qt timer's timeout signal fires
+      ;; on the Qt thread, so its trampoline would enqueue the callback instead
+      ;; of executing it — creating a circular deadlock where the drain is inside
+      ;; the callback that never runs.
+      ;;
+      ;; A spawned Gambit green thread solves this cleanly: thread-sleep! yields
+      ;; to the Gambit scheduler (no Qt calls), and the tick/drain run on a
+      ;; Gambit VP where ___ps is valid.  Qt calls inside the drain/tick go
+      ;; through BlockingQueuedConnection to the Qt thread as normal.
+      (spawn/name 'master-timer
+        (lambda ()
+          (let loop ()
+            (thread-sleep! 0.05)
             (qt-drain-pending-callbacks!)
-            (master-timer-tick!)))
-        (qt-timer-start! master-timer 50))
+            (master-timer-tick!)
+            (loop))))
 
       )) ;; end of qt-do-init! let* and function body
 
