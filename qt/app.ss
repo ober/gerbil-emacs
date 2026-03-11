@@ -309,17 +309,9 @@
                    (qt-plain-text-edit-ensure-cursor-visible! ed)))
                (loop (cdr wins))))))))))
 
-(def (qt-main . args)
-  ;; Disable IBus input method plugin to prevent Scintilla assertion crash.
-  ;; IBus queries Qt::ImSurroundingText via SCI_GETTEXTRANGE with stale positions
-  ;; when the document changes rapidly (e.g. terminal PTY output every 50ms).
-  ;; The "compose" module handles basic compose sequences without querying text.
-  (setenv "QT_IM_MODULE" "compose")
-  ;; Also disable accessibility (AT-SPI) as defense-in-depth.
-  (setenv "QT_ACCESSIBILITY" "0")
-  (with-qt-app qt-app
-    ;; Initialize runtime error log (~/.gemacs-errors.log)
-    (init-gemacs-log!)
+(def (qt-do-init! qt-app args)
+  ;; Initialize runtime error log (~/.gemacs-errors.log)
+  (init-gemacs-log!)
     ;; Initialize face system with standard faces
     (define-standard-faces!)
     ;; Load saved theme and font settings from ~/.gemacs-theme
@@ -1133,13 +1125,29 @@
         (qt-on-timeout! master-timer master-timer-tick!)
         (qt-timer-start! master-timer 50))
 
-      ;; Enter Qt event loop (blocks until quit)
-      (qt-app-exec! qt-app)
+      )) ;; end of qt-do-init! let* and function body
 
-      ;; Cleanup LSP server on exit
+(def (qt-main . args)
+  ;; Disable IBus input method plugin to prevent Scintilla assertion crash.
+  ;; IBus queries Qt::ImSurroundingText via SCI_GETTEXTRANGE with stale positions
+  ;; when the document changes rapidly (e.g. terminal PTY output every 50ms).
+  ;; The "compose" module handles basic compose sequences without querying text.
+  (setenv "QT_IM_MODULE" "compose")
+  ;; Also disable accessibility (AT-SPI) as defense-in-depth.
+  (setenv "QT_ACCESSIBILITY" "0")
+  (let ((qt-app (qt-app-create)))
+    (try
+      ;; Schedule initialization to run once the event loop starts.
+      ;; BlockingQueuedConnection (used by the C++ thread-safe shim) requires
+      ;; a running event loop on the Qt thread — init must run after exec() starts.
+      (qt-schedule-init! (lambda () (qt-do-init! qt-app args)))
+      ;; Enter Qt event loop (blocks here until quit)
+      (qt-app-exec! qt-app)
+      ;; Cleanup after event loop exits
       (lsp-stop!)
-      ;; Cleanup IPC server on exit
-      (stop-ipc-server!))))
+      (stop-ipc-server!)
+      (finally
+        (qt-app-destroy! qt-app)))))
 
 ;;;============================================================================
 ;;; File opening helper

@@ -54,12 +54,17 @@
 (def (qt-show-image-buffer! editor buf)
   "Display an image buffer inline. Loads pixmap into the label and
    switches the stacked widget to the image view (index 1)."
+  (gemacs-log! "IMG: qt-show-image-buffer! start")
   (let ((win (hash-get *editor-window-map* editor)))
+    (gemacs-log! "IMG: win=" (if win "found" "#f"))
     (when win
+      (gemacs-log! "IMG: calling qt-ensure-image-widget!")
       (qt-ensure-image-widget! win)
+      (gemacs-log! "IMG: qt-ensure-image-widget! done")
       (let* ((state (hash-get *image-buffer-state* buf))
              (container (qt-edit-window-container win))
              (label (qt-edit-window-image-label win)))
+        (gemacs-log! "IMG: state=" (if state "found" "#f") " label=" (if label "found" "#f"))
         (when state
           (let* ((pixmap (list-ref state 0))
                  (zoom-ref (list-ref state 1))
@@ -68,11 +73,16 @@
                  (zoom (unbox zoom-ref))
                  (new-w (inexact->exact (round (* orig-w zoom))))
                  (new-h (inexact->exact (round (* orig-h zoom)))))
+            (gemacs-log! "IMG: scaling pixmap " (number->string new-w) "x" (number->string new-h))
             (when (and (> new-w 0) (> new-h 0))
               (let ((scaled (qt-pixmap-scaled pixmap new-w new-h)))
+                (gemacs-log! "IMG: setting pixmap on label")
                 (qt-label-set-pixmap! label scaled)
-                (qt-widget-set-minimum-size! label new-w new-h)))))
-        (qt-stacked-widget-set-current-index! container 1)))))
+                (qt-widget-set-minimum-size! label new-w new-h)
+                (gemacs-log! "IMG: pixmap set on label")))))
+        (gemacs-log! "IMG: calling qt-stacked-widget-set-current-index! 1")
+        (qt-stacked-widget-set-current-index! container 1)
+        (gemacs-log! "IMG: qt-stacked-widget-set-current-index! done")))))
 
 (def (qt-hide-image-buffer! editor)
   "Switch the stacked widget back to the editor view (index 0)."
