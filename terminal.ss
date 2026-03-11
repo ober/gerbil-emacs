@@ -316,7 +316,7 @@
                    0  ; job-count
                    (shell-environment-cmd-number env)
                    0  ; history-number
-                   (make-cmd-exec-fn env))))
+                   )))
 
 (def (terminal-prompt ts)
   "Return the expanded PS1 prompt string (ANSI stripped)."

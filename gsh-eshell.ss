@@ -78,8 +78,7 @@
     (hash-put! *gsh-eshell-state* buf env)
     ;; Update the prompt from PS1
     (let* ((ps1 (or (env-get env "PS1") "gsh> "))
-           (env-getter (lambda (name) (env-get env name)))
-           (cmd-exec (make-cmd-exec-fn env)))
+           (env-getter (lambda (name) (env-get env name))))
       (set! gsh-eshell-prompt
         (with-catch
           (lambda (e) "gsh> ")
@@ -88,7 +87,7 @@
                                       0  ; job-count
                                       (shell-environment-cmd-number env)
                                       0  ; history-number
-                                      cmd-exec))))))
+                                      ))))))
     env))
 
 (def (gsh-eshell-get-prompt buf)
@@ -97,7 +96,7 @@
     (if env
       (let* ((ps1 (or (env-get env "PS1") "gsh> "))
              (env-getter (lambda (name) (env-get env name)))
-             (cmd-exec (make-cmd-exec-fn env)))
+             )
         (with-catch
           (lambda (e) "gsh> ")
           (lambda ()
@@ -106,7 +105,7 @@
                              0  ; job-count
                              (shell-environment-cmd-number env)
                              0  ; history-number
-                             cmd-exec)))))
+                             )))))
       "gsh> ")))
 
 (def (gsh-eshell-strip-ansi str)

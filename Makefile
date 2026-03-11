@@ -1,15 +1,30 @@
-.PHONY: all help build clean test test-qt test-lsp test-lsp-protocol test-split-comprehensive test-org test-all install install-qt \
+.PHONY: all help build binary clean test test-qt test-lsp test-lsp-protocol test-split-comprehensive test-org test-all install install-qt \
         install-static install-static-qt \
         static static-qt clean-docker check-root build-static build-static-qt linux-static-docker linux-static-qt-docker \
         docker-deps build-gemacs-static build-gemacs-static-qt linux-static-docker-full linux-static-qt-docker-full
 
-export GERBIL_LOADPATH := $(HOME)/.gerbil/lib
-export GERBIL_BUILD_CORES := $(shell echo $$(( $$(nproc) / 2 )))
+UNAME_S := $(shell uname -s)
 
-OPENSSL_RPATH = /home/linuxbrew/.linuxbrew/opt/openssl@3/lib
-SCI_RPATH = $(HOME)/.gerbil/lib/gerbil-scintilla
-QT_SHIM_RPATH = $(shell readlink -f $(HOME)/.gerbil/pkg/gerbil-qt 2>/dev/null)/vendor
-LH_RPATH = $(shell readlink -f $(HOME)/.gerbil/pkg/gerbil-litehtml 2>/dev/null)/vendor
+export GERBIL_BUILD_CORES := $(shell nproc 2>/dev/null || sysctl -n hw.ncpu)
+
+ifeq ($(UNAME_S),Darwin)
+  HOMEBREW_PREFIX := $(shell brew --prefix 2>/dev/null || echo /opt/homebrew)
+  OPENSSL_RPATH   = $(HOMEBREW_PREFIX)/opt/openssl@3/lib
+  LH_RPATH        = $(shell ls -d $(CURDIR)/.gerbil/pkg/github.com/ober/gerbil-litehtml/vendor 2>/dev/null || echo $(HOMEBREW_PREFIX)/lib)
+  QT_SHIM_RPATH   = $(HOME)/mine/gerbil-qt/vendor
+  SCI_RPATH       = $(HOME)/.gerbil/lib/gerbil-scintilla
+  # On macOS, packages live under ~/mine/ — include their compiled lib dirs
+  # Also include project-local .gerbil/pkg/*/gerbil/lib for packages installed via `gerbil pkg install`
+  LH_PKG_LIB     = $(CURDIR)/.gerbil/pkg/github.com/ober/gerbil-litehtml/.gerbil/lib
+  MACOS_PKG_PATHS = $(HOME)/mine/gerbil-shell/.gerbil/lib:$(HOME)/mine/gerbil-scintilla/.gerbil/lib:$(HOME)/mine/gerbil-qt/.gerbil/lib:$(LH_PKG_LIB):$(CURDIR)/.gerbil/lib
+  export GERBIL_LOADPATH := $(MACOS_PKG_PATHS):$(HOME)/.gerbil/lib
+else
+  OPENSSL_RPATH = /home/linuxbrew/.linuxbrew/opt/openssl@3/lib
+  SCI_RPATH = $(HOME)/.gerbil/lib/gerbil-scintilla
+  QT_SHIM_RPATH = $(shell readlink -f $(HOME)/.gerbil/pkg/gerbil-qt 2>/dev/null)/vendor
+  LH_RPATH = $(shell readlink -f $(HOME)/.gerbil/pkg/gerbil-litehtml 2>/dev/null)/vendor
+  export GERBIL_LOADPATH := $(HOME)/.gerbil/lib
+endif
 
 all: help
 
@@ -17,7 +32,8 @@ help:
 	@echo "Usage: make <target>"
 	@echo ""
 	@echo "Build targets:"
-	@echo "  build                       Build TUI and Qt binaries (with patchelf)"
+	@echo "  build                       Build TUI and Qt binaries (with patchelf on Linux)"
+	@echo "  binary                      Build binaries (macOS-native, no patchelf)"
 	@echo "  clean                       Clean local and global build artifacts"
 	@echo ""
 	@echo "Test targets:"
@@ -44,13 +60,26 @@ help:
 	@echo "  clean-docker                Clean .gerbil dir via Docker"
 
 QT_TEST_TIMEOUT ?= 600
-QT_TEST_ENV = QT_QPA_PLATFORM=offscreen LD_LIBRARY_PATH=$(OPENSSL_RPATH):$(SCI_RPATH):$(QT_SHIM_RPATH):$(LH_RPATH)
+ifeq ($(UNAME_S),Darwin)
+  QT_TEST_ENV = QT_QPA_PLATFORM=offscreen DYLD_LIBRARY_PATH=$(OPENSSL_RPATH):$(SCI_RPATH):$(QT_SHIM_RPATH):$(LH_RPATH)
+else
+  QT_TEST_ENV = QT_QPA_PLATFORM=offscreen LD_LIBRARY_PATH=$(OPENSSL_RPATH):$(SCI_RPATH):$(QT_SHIM_RPATH):$(LH_RPATH)
+endif
+
+# binary: macOS-native build (no patchelf, uses dylib rpaths embedded at link time)
+binary:
+	@-rm -f .gerbil/lib/static/*.lock 2>/dev/null; true
+	chmod +x build.ss
+	gerbil build
 
 build:
 	@# Kill any competing gerbil build processes on this project
 	@-pkill -f 'gxi.*/home/jafourni/mine/gerbil-emacs/build.ss' 2>/dev/null; true
 	@-rm -f .gerbil/lib/static/*.lock 2>/dev/null; true
 	chmod +x build.ss
+ifeq ($(UNAME_S),Darwin)
+	gerbil build
+else
 	LD_LIBRARY_PATH=$(OPENSSL_RPATH) gerbil build
 	-patchelf --set-rpath $(OPENSSL_RPATH):$(SCI_RPATH):$(LH_RPATH) .gerbil/bin/gemacs
 	-patchelf --set-rpath $(OPENSSL_RPATH):$(SCI_RPATH):$(QT_SHIM_RPATH):$(LH_RPATH) .gerbil/bin/gemacs-qt
@@ -60,6 +89,7 @@ build:
 	-patchelf --set-rpath $(OPENSSL_RPATH):$(SCI_RPATH):$(QT_SHIM_RPATH):$(LH_RPATH) .gerbil/bin/qt-split-comprehensive-test
 	-patchelf --set-rpath $(OPENSSL_RPATH):$(SCI_RPATH):$(QT_SHIM_RPATH):$(LH_RPATH) .gerbil/bin/qt-split-debug-test
 	-patchelf --set-rpath $(OPENSSL_RPATH):$(SCI_RPATH):$(QT_SHIM_RPATH):$(LH_RPATH) .gerbil/bin/qt-split-simple-test
+endif
 
 clean:
 	@-pkill -f 'gxi.*/home/jafourni/mine/gerbil-emacs/build.ss' 2>/dev/null; true

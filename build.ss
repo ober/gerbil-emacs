@@ -10,6 +10,19 @@
 (def static-build? (getenv "GEMACS_STATIC" #f))
 (def build-tui-only? (getenv "GEMACS_BUILD_TUI_ONLY" #f))
 
+;; macOS detection
+(def macos?
+  (string=? (with-catch (lambda (_) "Linux")
+               (lambda () (run-process ["uname" "-s"] coprocess: read-line)))
+             "Darwin"))
+
+;; Homebrew prefix (macOS only)
+(def homebrew-prefix
+  (if macos?
+    (with-catch (lambda (_) "/opt/homebrew")
+      (lambda () (run-process ["brew" "--prefix"] coprocess: read-line)))
+    #f))
+
 ;; Helper: call pkg-config --static --libs for full transitive deps (static linking)
 (def (static-pkg-config-libs lib)
   (run-process ["pkg-config" "--static" "--libs" lib] coprocess: read-line))
@@ -22,13 +35,17 @@
 
 (def (find-pkg-source name)
   "Find package source dir via Gerbil package system."
-  (let ((local-linked (path-expand (string-append ".gerbil/pkg/" name) here))
-        (linked (path-expand (string-append "pkg/" name) user-gerbil-dir))
-        (github (path-expand (string-append "pkg/github.com/ober/" name) user-gerbil-dir)))
+  (let ((local-linked      (path-expand (string-append ".gerbil/pkg/" name) here))
+        (local-github      (path-expand (string-append ".gerbil/pkg/github.com/ober/" name) here))
+        (linked            (path-expand (string-append "pkg/" name) user-gerbil-dir))
+        (github            (path-expand (string-append "pkg/github.com/ober/" name) user-gerbil-dir))
+        (mine              (path-expand (string-append "mine/" name) (getenv "HOME"))))
     (cond
       ((file-exists? local-linked) local-linked)
+      ((file-exists? local-github) local-github)
       ((file-exists? linked) linked)
       ((file-exists? github) github)
+      ((file-exists? mine) mine)
       (else (error (string-append "Package not found: " name
                                   "\nRun: gerbil pkg install github.com/ober/" name))))))
 
@@ -61,7 +78,11 @@
    (path-expand "bin/scintilla.a" sci-dir) " "
    (path-expand "bin/liblexilla.a" lexilla-dir) " "
    (path-expand "bin/termbox.a" termbox-dir) " "
-   "-L" lh-vendor-dir " -lhtml_shim -llitehtml -lgumbo "
+   ;; litehtml: on macOS the library is in homebrew, on Linux in vendor dir
+   "-L" lh-vendor-dir " "
+   (if macos?
+     (string-append "-L" homebrew-prefix "/lib -lhtml_shim -llitehtml -lgumbo ")
+     "-lhtml_shim -llitehtml -lgumbo ")
    "-Wl,-rpath," lh-vendor-dir " "
    "-lstdc++ -lpthread -lpcre2-8 -lutil"))
 
@@ -74,17 +95,20 @@
                  (find-pkg-source "gerbil-qt")))
 (def qt-vendor-dir (path-expand "vendor" qt-base))
 
-;; Ensure pkg-config can find Qt6 .pc files
-(let ((existing (or (getenv "PKG_CONFIG_PATH" #f) "")))
-  (unless (string-contains existing "/usr/lib/x86_64-linux-gnu/pkgconfig")
+;; Ensure pkg-config can find Qt6 .pc files (Linux only — macOS uses frameworks)
+(let ((existing (or (getenv "PKG_CONFIG_PATH" #f) ""))
+      (linux-qt-pc "/usr/lib/x86_64-linux-gnu/pkgconfig"))
+  (when (and (file-exists? linux-qt-pc)
+             (not (string-contains existing linux-qt-pc)))
     (setenv "PKG_CONFIG_PATH"
       (if (string=? existing "")
-        "/usr/lib/x86_64-linux-gnu/pkgconfig"
-        (string-append existing ":/usr/lib/x86_64-linux-gnu/pkgconfig")))))
+        linux-qt-pc
+        (string-append existing ":" linux-qt-pc)))))
 
 ;; Detect QScintilla availability (same logic as gerbil-qt/build.ss)
 (def have-qscintilla?
-  (or (with-catch (lambda (_) #f)
+  (or (file-exists? "/opt/homebrew/lib/libqscintilla2_qt6.dylib")  ; macOS Homebrew
+      (with-catch (lambda (_) #f)
         (lambda ()
           (run-process ["pkg-config" "--exists" "QScintilla"] coprocess: void)
           #t))
@@ -97,7 +121,11 @@
 
 (def qsci-cppflags
   (if have-qscintilla?
-    (with-catch (lambda (_) "-DQT_SCINTILLA_AVAILABLE")
+    (with-catch (lambda (_)
+                  (if macos?
+                    ;; macOS Homebrew: QScintilla headers in standard include path
+                    (string-append "-DQT_SCINTILLA_AVAILABLE -I" homebrew-prefix "/include")
+                    "-DQT_SCINTILLA_AVAILABLE"))
       (lambda () (string-append "-DQT_SCINTILLA_AVAILABLE "
                                 (run-process ["pkg-config" "--cflags" "QScintilla"]
                                              coprocess: read-line))))
@@ -108,7 +136,10 @@
     (if static-build?
       (with-catch (lambda (_) "-lqscintilla2_qt6")
         (lambda () (static-pkg-config-libs "QScintilla")))
-      (with-catch (lambda (_) "-lqscintilla2_qt6")
+      (with-catch (lambda (_)
+                    (if (file-exists? "/opt/homebrew/lib/libqscintilla2_qt6.dylib")
+                      "-L/opt/homebrew/lib -lqscintilla2_qt6"
+                      "-lqscintilla2_qt6"))
         (lambda () (run-process ["pkg-config" "--libs" "QScintilla"]
                                 coprocess: read-line))))
     ""))
@@ -121,9 +152,14 @@
    qsci-cppflags " "
    cc-opts))
 
-;; Homebrew OpenSSL path — must come before system -L/usr/lib/... from Qt pkg-config
-;; to avoid linking against system OpenSSL 3.0 (missing newer symbols)
-(def openssl-lib-dir "/home/linuxbrew/.linuxbrew/opt/openssl@3/lib")
+;; OpenSSL library path — prefer Homebrew (macOS) or Linuxbrew
+(def openssl-lib-dir
+  (let ((brew-macos  "/opt/homebrew/opt/openssl@3/lib")
+        (brew-linux  "/home/linuxbrew/.linuxbrew/opt/openssl@3/lib"))
+    (cond
+      ((file-exists? brew-macos) brew-macos)
+      ((file-exists? brew-linux) brew-linux)
+      (else ""))))
 
 ;; Qt resource objects needed for static linking (styles, PDF, shaders, etc.)
 (def qt-prefix (or (getenv "QT_STATIC_PREFIX" #f) "/opt/qt6-static"))
@@ -147,8 +183,10 @@
 ;; Only exe: targets get -static for the final link step.
 (def qt-ld-opts-base
   (string-append
-   (if static-build? "" (string-append "-L" openssl-lib-dir " "))
-   (if static-build? "" (string-append "-Wl,-rpath," openssl-lib-dir " "))
+   (if (or static-build? (string=? openssl-lib-dir "")) ""
+       (string-append "-L" openssl-lib-dir " "))
+   (if (or static-build? macos? (string=? openssl-lib-dir "")) ""
+       (string-append "-Wl,-rpath," openssl-lib-dir " "))
    "-L" qt-vendor-dir " "
    (if static-build?
      ;; Static: link libqt_shim.a + qt_static_plugins.o separately.
@@ -160,8 +198,8 @@
      (string-append "-lqt_shim -Wl,-rpath," qt-vendor-dir " "))
    ;; Qt resource objects (static only — styles, PDF support, shaders)
    (if static-build? (string-append (qt-resource-objects) " ") "")
-   ;; XCB platform plugin (static only)
-   (if static-build?
+   ;; XCB platform plugin (static only, Linux only)
+   (if (and static-build? (not macos?))
      (with-catch (lambda (_) "")
        (lambda () (string-append (static-pkg-config-libs "Qt6XcbPlugin") " ")))
      "")
@@ -172,14 +210,18 @@
      (ldflags "Qt6Widgets" "-lQt6Widgets"))
    " "
    qsci-ldflags " "
-   "-L" lh-vendor-dir " -lhtml_shim -llitehtml -lgumbo "
+   ;; litehtml: on macOS the library is in homebrew, on Linux in vendor dir
+   "-L" lh-vendor-dir " "
+   (if macos?
+     (string-append "-L" homebrew-prefix "/lib -lhtml_shim -llitehtml -lgumbo ")
+     "-lhtml_shim -llitehtml -lgumbo ")
    "-Wl,-rpath," lh-vendor-dir " "
    (path-expand "bin/scintilla.a" sci-dir) " "
    (path-expand "bin/liblexilla.a" lexilla-dir) " "
    (path-expand "bin/termbox.a" termbox-dir) " "
    "-lstdc++ "
-   ;; musl's pthread_once is a weak symbol; --whole-archive ensures it resolves
-   (if static-build?
+   ;; --whole-archive is Linux ld specific; not needed/supported on macOS
+   (if (and static-build? (not macos?))
      "-Wl,--whole-archive -lpthread -Wl,--no-whole-archive"
      "-lpthread")
    " -lpcre2-8 -lutil"))

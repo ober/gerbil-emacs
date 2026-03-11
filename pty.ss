@@ -33,7 +33,11 @@
             ffi-pty-waitpid-status)
 
   (c-declare #<<END-C
+#ifdef __APPLE__
+#include <util.h>
+#else
 #include <pty.h>
+#endif
 #include <unistd.h>
 #include <fcntl.h>
 #include <signal.h>
@@ -79,7 +83,13 @@ static int ffi_pty_spawn_impl(const char *cmd, const char *envp,
         /* Set environment variables from the envp string */
         if (envp && envp[0]) {
             /* Clear inherited env, set from scratch */
+#ifdef __APPLE__
+            /* macOS lacks clearenv(); use environ directly */
+            extern char **environ;
+            environ = NULL;
+#else
             clearenv();
+#endif
             const char *p = envp;
             while (*p) {
                 const char *nl = strchr(p, '\n');

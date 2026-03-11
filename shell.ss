@@ -146,7 +146,7 @@
                      0  ; job-count
                      (shell-environment-cmd-number env)
                      0  ; history-number
-                     (make-cmd-exec-fn env)))))
+                     ))))
 
 (def (shell-execute! input ss)
   "Execute a command via gsh, return (values output-string new-cwd).
