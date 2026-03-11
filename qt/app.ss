@@ -1121,8 +1121,15 @@
 
       ;; Master timer — drives all periodic tasks and drains the async UI queue.
       ;; Single 50ms timer replaces 7+ individual Qt timers.
+      ;; Also drains the SMP callback queue: Qt signals that fire synchronously
+      ;; during BlockingQueuedConnection dispatch run on the Qt thread (not a
+      ;; Gambit VP), so their trampolines enqueue callbacks instead of calling
+      ;; Gerbil directly.  We drain that queue here, on the Gambit UI thread.
       (let ((master-timer (qt-timer-create)))
-        (qt-on-timeout! master-timer master-timer-tick!)
+        (qt-on-timeout! master-timer
+          (lambda ()
+            (qt-drain-pending-callbacks!)
+            (master-timer-tick!)))
         (qt-timer-start! master-timer 50))
 
       )) ;; end of qt-do-init! let* and function body

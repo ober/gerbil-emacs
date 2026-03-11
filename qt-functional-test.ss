@@ -19,7 +19,8 @@
                  qt-splitter-widget
                  qt-splitter-size-at
                  QT_VERTICAL
-                 QT_HORIZONTAL)
+                 QT_HORIZONTAL
+                 qt-drain-pending-callbacks!)
         :gerbil-scintilla/constants
         (only-in :gemacs/qt/sci-shim
                  sci-send
@@ -150,11 +151,13 @@
   (force-output (current-output-port)))
 
 (def (drain-async! (retries 20) (delay 0.05))
-  "Wait for async operations to complete by draining the UI queue.
+  "Wait for async operations to complete by draining the UI queue and
+   the SMP callback queue (Qt signals queued during BlockingQueuedConnection).
    Sleeps briefly between drains to allow background threads to finish."
   (let loop ((n 0))
     (when (< n retries)
       (thread-sleep! delay)
+      (qt-drain-pending-callbacks!)
       (ui-queue-drain!)
       (loop (+ n 1)))))
 
