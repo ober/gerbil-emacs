@@ -281,6 +281,8 @@
     "editor"
     ;; IPC server for emacsclient-like remote file opening
     "ipc"
+    ;; TCP debug REPL server (connect with nc 127.0.0.1 <port> when app is hung)
+    "debug-repl"
     "app"
     "emacs-test"
     "persist-test"
@@ -303,6 +305,7 @@
     "org-num-test"
     "org-property-test"
     "vtscreen-test"
+    "debug-repl-test"
     (exe: "main" bin: "gemacs"
           "-cc-options" ,cc-opts
           "-ld-options" ,ld-opts)

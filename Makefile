@@ -1,4 +1,4 @@
-.PHONY: all help build clean test test-qt test-lsp test-lsp-protocol test-split-comprehensive test-org test-all install install-qt \
+.PHONY: all help build clean test test-qt test-lsp test-lsp-protocol test-split-comprehensive test-org test-repl test-all install install-qt \
         install-static install-static-qt \
         static static-qt clean-docker check-root build-static build-static-qt linux-static-docker linux-static-qt-docker \
         docker-deps build-gemacs-static build-gemacs-static-qt linux-static-docker-full linux-static-qt-docker-full
@@ -27,6 +27,7 @@ help:
 	@echo "  test-lsp-protocol           Build + run LSP protocol tests (interpreter)"
 	@echo "  test-split-comprehensive    Build + run window split tests"
 	@echo "  test-org                    Build + run org-mode tests"
+	@echo "  test-repl                   Build + run debug REPL tests"
 	@echo "  test-all                    Build + run all tests"
 	@echo ""
 	@echo "Install targets:"
@@ -108,7 +109,12 @@ test-org: build
 	  ./org-num-test.ss ./org-property-test.ss; \
 	EC=$$?; [ $$EC -eq 139 ] && exit 0 || exit $$EC
 
-test-all: build test test-qt test-lsp test-lsp-protocol test-split-comprehensive test-org
+test-repl: build
+	@echo "Running debug REPL tests..."
+	LD_LIBRARY_PATH=$(OPENSSL_RPATH) timeout $(QT_TEST_TIMEOUT) gerbil test ./debug-repl-test.ss; \
+	EC=$$?; [ $$EC -eq 139 ] && exit 0 || exit $$EC
+
+test-all: build test test-qt test-lsp test-lsp-protocol test-split-comprehensive test-org test-repl
 
 PREFIX ?= $(HOME)/.local
 

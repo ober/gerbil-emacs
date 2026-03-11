@@ -33,11 +33,24 @@
         :gemacs/qt/menubar
         :gemacs/ipc
         :gemacs/vtscreen
-        (only-in :gemacs/editor-extra-web *aggressive-indent-mode*))
+        (only-in :gemacs/editor-extra-web *aggressive-indent-mode*)
+        (only-in :gemacs/debug-repl start-debug-repl! stop-debug-repl!))
 
 ;;;============================================================================
 ;;; Qt Application
 ;;;============================================================================
+
+(def (parse-repl-port args)
+  "Return (port-num . filtered-args) if --repl <port> is present, else #f."
+  (let loop ((rest args) (acc []))
+    (cond
+      ((null? rest) #f)
+      ((and (string=? (car rest) "--repl")
+            (pair? (cdr rest))
+            (string->number (cadr rest)))
+       (cons (string->number (cadr rest))
+             (append (reverse acc) (cddr rest))))
+      (else (loop (cdr rest) (cons (car rest) acc))))))
 
 ;; Auto-save path: #filename# (Emacs convention)
 (def (qt-make-auto-save-path path)
@@ -1125,6 +1138,13 @@
 
       ;; Start IPC server for gemacs-client
       (start-ipc-server!)
+      ;; Start debug REPL if --repl <port> or GEMACS_REPL_PORT is set
+      (let* ((repl-port-env (getenv "GEMACS_REPL_PORT" #f))
+             (repl-info     (or (parse-repl-port args)
+                                (and repl-port-env
+                                     (cons (string->number repl-port-env) args)))))
+        (when repl-info
+          (start-debug-repl! (car repl-info))))
       (schedule-periodic! 'ipc 200
         (lambda ()
           (for-each (lambda (f) (qt-open-file! app f))
@@ -1177,6 +1197,7 @@
       ;; Cleanup after event loop exits
       (lsp-stop!)
       (stop-ipc-server!)
+      (stop-debug-repl!)
       (finally
         (qt-app-destroy! qt-app)))))
 
