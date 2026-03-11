@@ -1137,10 +1137,13 @@
   (setenv "QT_ACCESSIBILITY" "0")
   (let ((qt-app (qt-app-create)))
     (try
-      ;; Schedule initialization to run once the event loop starts.
-      ;; BlockingQueuedConnection (used by the C++ thread-safe shim) requires
-      ;; a running event loop on the Qt thread — init must run after exec() starts.
-      (qt-schedule-init! (lambda () (qt-do-init! qt-app args)))
+      ;; Run initialization synchronously before entering the event loop.
+      ;; During init, only one Gambit green thread is active, so the SMP
+      ;; scheduler won't migrate it — all Qt calls go direct on the Qt main
+      ;; thread without needing BlockingQueuedConnection.  After exec() starts,
+      ;; background threads (LSP, async file I/O) use BlockingQueuedConnection
+      ;; safely because the event loop is then running.
+      (qt-do-init! qt-app args)
       ;; Enter Qt event loop (blocks here until quit)
       (qt-app-exec! qt-app)
       ;; Cleanup after event loop exits
