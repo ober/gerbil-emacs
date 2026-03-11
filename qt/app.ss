@@ -470,7 +470,7 @@
       (let ((key-handler
              (lambda ()
                (let* ((code (qt-last-key-code))
-                      (mods (qt-last-key-modifiers))
+                      (mods (normalize-qt-mods (qt-last-key-modifiers)))
                       (raw-text (qt-last-key-text))
                       ;; Apply key translation map to printable characters
                       (text (if (= (string-length raw-text) 1)

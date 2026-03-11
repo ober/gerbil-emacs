@@ -5,11 +5,30 @@
 ;;; used by the shared keymap in core.ss.
 
 (export qt-key-event->string
-        qt-key-state-feed!)
+        qt-key-state-feed!
+        normalize-qt-mods)
 
 (import :std/sugar
         :gemacs/qt/sci-shim
         :gemacs/core)
+
+;;;============================================================================
+;;; Platform detection and modifier normalization
+;;;============================================================================
+
+;; On macOS, Qt maps physical Ctrl → Qt::MetaModifier and Command → Qt::ControlModifier.
+;; Detect macOS by checking for /System/Library (exists on all macOS, not on Linux/Windows).
+(def macos-platform? (file-exists? "/System/Library"))
+
+(def (normalize-qt-mods mods)
+  "Normalize Qt modifier bitmask for cross-platform Emacs key behavior.
+   On macOS, physical Ctrl → QT_MOD_META; we remap it to QT_MOD_CTRL so
+   physical Ctrl works as the C- prefix, matching Emacs conventions."
+  (if (and macos-platform?
+           (not (zero? (bitwise-and mods QT_MOD_META))))
+    (bitwise-ior (bitwise-and mods (bitwise-not QT_MOD_META))
+                 QT_MOD_CTRL)
+    mods))
 
 ;;;============================================================================
 ;;; Qt key event -> Emacs key string conversion
