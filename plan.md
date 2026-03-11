@@ -258,7 +258,31 @@ Largest files: modes (~1851), lsp (~1802), search (~1778)
 - Remaining stubs: 2 niche Qt stubs (all-the-icons-install-fonts, nerd-icons-install-fonts — informational only)
 - Remaining yellow circles in gemacs-vs-emacs.md: ~12 (mostly fundamental platform limitations: tree-sitter, EWW CSS/JS, screen reader, tab-line per-window)
 
+### In Progress: SMP / Qt Thread Safety (`fix-smp-qt` branch)
+
+**Problem**: Gambit's M:N SMP scheduler migrates green threads between OS threads at heartbeat preemption points. Qt requires all widget operations on the OS thread where `QApplication` was created. This causes intermittent startup failures and crashes.
+
+**What was done**:
+- Added `QT_VOID` / `QT_RETURN` / `QT_RETURN_STRING` dispatch macros to all 803 C++ shim functions in `gerbil-qt/vendor/qt_shim.cpp`. These check `is_qt_main_thread()` and use `Qt::BlockingQueuedConnection` to marshal cross-thread calls.
+- Restructured `qt-main` in `qt/app.ss`: extracted body into `qt-do-init!`, run synchronously before `qt-app-exec!`.
+- Attempted `g_event_loop_running` atomic flag to skip dispatch before exec() — but exec() itself can be called from the wrong thread after migration.
+- Attempted dedicated Qt pthread (`pthread_create` in `qt_application_create`, `pthread_join` in `qt_application_exec`) — exec() always on correct thread, but broke Qt functional tests with `QObject::setParent: Cannot set parent, new parent is in a different thread` errors and a segfault in scenario 19+.
+
+**Current state of the branch**:
+- Dynamic build works, both binaries start (`--version` works)
+- Qt functional tests FAIL: 716→segfault with dedicated-pthread approach
+- The root cause of test breakage is not yet identified — suspected Qt object thread-affinity issue when using a `pthread`-created thread vs Qt's native main thread
+
+**Known constraint**: GAMBCOPT=,-:p1 (single-processor mode) is NOT an acceptable solution per user requirement.
+
+**Next steps to fix**:
+1. Investigate why `QObject::setParent` fires for objects all supposedly created on the Qt pthread
+2. Consider using `QThread`-based wrapper (inherits Qt's thread tracking) instead of raw `pthread_create`
+3. Or: investigate pinning the Gambit green thread to a VP during Qt init/exec using Gambit internals
+4. After tests pass, run full verification checklist
+
 ### Next Steps (for continuation)
+- Fix `fix-smp-qt` branch (see above) — tests are currently broken
 - Continue upgrading remaining stubs per standing instruction
 - Potential features: dired improvements (mark by regex, shell command on marked), more text transforms
 - Update gemacs-vs-emacs.md after each batch
