@@ -455,6 +455,7 @@
     (set! *mb-result* #f)
     (let loop ()
       (qt-app-process-events! *mb-qt-app*)
+      (qt-drain-pending-callbacks!)   ; execute enqueued signal callbacks (returnPressed, etc.)
       (thread-sleep! 0.01)
       (if *mb-result*
         ;; Done — extract result
@@ -502,6 +503,7 @@
       (set! *mb-result* #f)
       (let loop ()
         (qt-app-process-events! *mb-qt-app*)
+        (qt-drain-pending-callbacks!)
         (thread-sleep! 0.01)
         (if *mb-result*
           ;; Done — extract result
@@ -548,6 +550,7 @@
     (set! *mb-result* #f)
     (let loop ()
       (qt-app-process-events! *mb-qt-app*)
+      (qt-drain-pending-callbacks!)
       (thread-sleep! 0.01)
       (if *mb-result*
         ;; Done — extract result
@@ -610,6 +613,7 @@
     (set! *mb-result* #f)
     (let loop ()
       (qt-app-process-events! *mb-qt-app*)
+      (qt-drain-pending-callbacks!)
       (thread-sleep! 0.01)
       (if *mb-result*
         ;; Done — extract result
@@ -663,6 +667,7 @@
     (set! *mb-result* #f)
     (let loop ()
       (qt-app-process-events! *mb-qt-app*)
+      (qt-drain-pending-callbacks!)
       (thread-sleep! 0.01)
       (if *mb-result*
         (let ((text (if (pair? *mb-result*)
