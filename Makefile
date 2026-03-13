@@ -45,14 +45,14 @@ help:
 	@echo "  clean-docker                Clean .gerbil dir via Docker"
 
 QT_TEST_TIMEOUT ?= 600
-QT_TEST_ENV = QT_QPA_PLATFORM=offscreen LD_LIBRARY_PATH=$(OPENSSL_RPATH):$(SCI_RPATH):$(QT_SHIM_RPATH):$(LH_RPATH)
+QT_TEST_ENV = QT_QPA_PLATFORM=offscreen GAMBCOPT=,-:p1 LD_LIBRARY_PATH=$(OPENSSL_RPATH):$(SCI_RPATH):$(QT_SHIM_RPATH):$(LH_RPATH)
 
 build:
 	@# Kill any competing gerbil build processes on this project
 	@-pkill -f 'gxi.*/home/jafourni/mine/gerbil-emacs/build.ss' 2>/dev/null; true
 	@-rm -f .gerbil/lib/static/*.lock 2>/dev/null; true
 	chmod +x build.ss
-	LD_LIBRARY_PATH=$(OPENSSL_RPATH) gerbil build
+	GAMBCOPT=,-:p1 LD_LIBRARY_PATH=$(OPENSSL_RPATH) gerbil build
 	-patchelf --set-rpath $(OPENSSL_RPATH):$(SCI_RPATH):$(LH_RPATH) .gerbil/bin/gemacs
 	-patchelf --set-rpath $(OPENSSL_RPATH):$(SCI_RPATH):$(QT_SHIM_RPATH):$(LH_RPATH) .gerbil/bin/gemacs-qt
 	-patchelf --set-rpath $(OPENSSL_RPATH):$(SCI_RPATH):$(QT_SHIM_RPATH):$(LH_RPATH) .gerbil/bin/qt-highlight-test
@@ -76,7 +76,7 @@ test: build
 	@# Exit 139 (SIGSEGV) = Gambit cleanup crash after all tests pass (pre-existing
 	@# Qt FFI module finalization issue in interpreter mode). Only the success path
 	@# reaches Gambit cleanup; failures exit 42 cleanly via gerbil test's (exit 42).
-	gerbil test; EC=$$?; [ $$EC -eq 139 ] && exit 0 || exit $$EC
+	GAMBCOPT=,-:p1 gerbil test; EC=$$?; [ $$EC -eq 139 ] && exit 0 || exit $$EC
 
 test-qt: build
 	$(QT_TEST_ENV) timeout $(QT_TEST_TIMEOUT) .gerbil/bin/qt-highlight-test; \
@@ -212,6 +212,7 @@ GSH_LIB_DIR = $(GSH_PKG_DIR)/.gerbil/lib
 # Build only gemacs TUI inside the pre-built deps image
 build-gemacs-static: check-root
 	cd /src && \
+	  GAMBCOPT=,-:p1 \
 	  GERBIL_BUILD_CORES=1 \
 	  GEMACS_BUILD_TUI_ONLY=1 \
 	  GEMACS_STATIC=1 \
@@ -224,6 +225,7 @@ build-gemacs-static: check-root
 # Build gemacs TUI + Qt inside the pre-built deps image
 build-gemacs-static-qt: check-root
 	cd /src && \
+	  GAMBCOPT=,-:p1 \
 	  GERBIL_BUILD_CORES=1 \
 	  GEMACS_STATIC=1 \
 	  GEMACS_SCI_BASE=/deps/gerbil-scintilla \

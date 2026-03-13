@@ -1,5 +1,5 @@
 ;;; -*- Gerbil -*-
-;;; Async infrastructure for gemacs SMP
+;;; Async infrastructure for gemacs
 ;;;
 ;;; Provides a unified UI action queue, async process runners,
 ;;; async file I/O, and a periodic task scheduler.
