@@ -15,6 +15,7 @@
         (only-in :std/net/request
           http-post request-status request-text request-close)
         :gemacs/core
+        :gemacs/async
         :gemacs/qt/sci-shim
         :gemacs/qt/buffer
         :gemacs/qt/window
@@ -641,7 +642,7 @@
                            arguments: '("info" "--format" "Server Version: {{.ServerVersion}}\nContainers: {{.Containers}}\nImages: {{.Images}}")
                            stdin-redirection: #f stdout-redirection: #t stderr-redirection: #t)))
              (out (read-line proc #f)))
-        (process-status proc)
+        ;; Omit process-status (Qt SIGCHLD race)
         (let* ((fr (app-state-frame app))
                (win (qt-current-window fr))
                (ed (qt-edit-window-editor win))
@@ -661,7 +662,7 @@
                            arguments: '("ps" "--format" "{{.Names}}\t{{.Status}}\t{{.Image}}")
                            stdin-redirection: #f stdout-redirection: #t stderr-redirection: #t)))
              (out (read-line proc #f)))
-        (process-status proc)
+        ;; Omit process-status (Qt SIGCHLD race)
         (let* ((fr (app-state-frame app))
                (win (qt-current-window fr))
                (ed (qt-edit-window-editor win))
@@ -682,7 +683,7 @@
                            arguments: '("images" "--format" "{{.Repository}}\t{{.Tag}}\t{{.Size}}")
                            stdin-redirection: #f stdout-redirection: #t stderr-redirection: #t)))
              (out (read-line proc #f)))
-        (process-status proc)
+        ;; Omit process-status (Qt SIGCHLD race)
         (let* ((fr (app-state-frame app))
                (win (qt-current-window fr))
                (ed (qt-edit-window-editor win))
@@ -769,7 +770,7 @@
                                                 (string-append "https://devdocs.io/#q=" query))
                                stdin-redirection: #f stdout-redirection: #t stderr-redirection: #f)))
                  (out (read-line proc #f)))
-            (process-status proc)
+            ;; Omit process-status (Qt SIGCHLD race)
             (close-port proc)
             (if (and out (> (string-length out) 0))
               (let* ((ed (current-qt-editor app))
@@ -915,34 +916,28 @@
                                (substring prompt 0 (min 50 (string-length prompt)))))
               (begin
                 (echo-message! (app-state-echo app) "GPTel: sending...")
-                (with-exception-catcher
-                  (lambda (e)
-                    (echo-error! (app-state-echo app) "GPTel: API call failed"))
-                  (lambda ()
-                    (let* ((escaped (string-map (lambda (c)
-                                                  (cond ((char=? c #\") #\\)
-                                                        ((char=? c #\newline) #\space)
-                                                        (else c))) prompt))
-                           (body (string-append
-                                   "{\"model\":\"gpt-3.5-turbo\",\"messages\":[{\"role\":\"user\",\"content\":\""
-                                   escaped "\"}]}"))
-                           (proc (open-process
-                                   (list path: "curl"
-                                         arguments: (list "-s" "-X" "POST"
-                                                         "https://api.openai.com/v1/chat/completions"
-                                                         "-H" "Content-Type: application/json"
-                                                         "-H" (string-append "Authorization: Bearer " api-key)
-                                                         "-d" body)
-                                         stdin-redirection: #f stdout-redirection: #t
-                                         stderr-redirection: #t)))
-                           (out (read-line proc #f)))
-                      (process-status proc)
-                      (let ((response (or out "(no response)")))
+                (let* ((escaped (string-map (lambda (c)
+                                              (cond ((char=? c #\") #\\)
+                                                    ((char=? c #\newline) #\space)
+                                                    (else c))) prompt))
+                       (body (string-append
+                               "{\"model\":\"gpt-3.5-turbo\",\"messages\":[{\"role\":\"user\",\"content\":\""
+                               escaped "\"}]}")))
+                  (async-process!
+                    (string-append
+                      "curl -s -X POST https://api.openai.com/v1/chat/completions"
+                      " -H 'Content-Type: application/json'"
+                      " -H 'Authorization: Bearer " api-key "'"
+                      " -d '" (string-map (lambda (c) (if (char=? c #\') #\_ c)) body) "'")
+                    callback: (lambda (out)
+                      (let ((response (if (string=? out "") "(no response)" out)))
                         (qt-plain-text-edit-set-text! ed
                           (string-append text "\n\nAssistant: " response "\n\nYou: "))
                         (qt-plain-text-edit-set-cursor-position! ed
                           (string-length (qt-plain-text-edit-text ed)))
-                        (echo-message! (app-state-echo app) "GPTel: response received")))))))))))))
+                        (echo-message! (app-state-echo app) "GPTel: response received")))
+                    on-error: (lambda (e)
+                      (echo-error! (app-state-echo app) "GPTel: API call failed"))))))))))))
 
 ;;;============================================================================
 ;;; Customize — settings and theme browser
@@ -1023,7 +1018,7 @@
                            stdin-redirection: #f stdout-redirection: #t
                            stderr-redirection: #t)))
              (out (read-line proc #f)))
-        (process-status proc)
+        ;; Omit process-status (Qt SIGCHLD race)
         (or out "")))))
 
 (def (cmd-list-packages app)
@@ -1044,7 +1039,7 @@
                                stdin-redirection: #f stdout-redirection: #t
                                stderr-redirection: #t)))
                  (output (read-line proc #f)))
-            (process-status proc)
+            ;; Omit process-status (Qt SIGCHLD race)
             (let* ((text (or output ""))
                    (fr (app-state-frame app))
                    (win (qt-current-window fr))
@@ -1221,7 +1216,7 @@
                                stdin-redirection: #f stdout-redirection: #t
                                stderr-redirection: #t)))
                  (out (read-line proc #f)))
-            (process-status proc)
+            ;; Omit process-status (Qt SIGCHLD race)
             (let* ((fr (app-state-frame app))
                    (win (qt-current-window fr))
                    (resp-buf (qt-buffer-create! "*HTTP Response*" ed #f)))
@@ -1269,7 +1264,7 @@
                                                  stdin-redirection: #f stdout-redirection: #t
                                                  stderr-redirection: #f)))
                                    (out (read-line proc)))
-                              (process-status proc)
+                              ;; Omit process-status (Qt SIGCHLD race)
                               (or out "20260213")))))
              (slug (string-map (lambda (c) (if (char-alphabetic? c) (char-downcase c) #\-)) title))
              (dir (string-append (getenv "HOME" "/tmp") "/notes/"))

@@ -444,7 +444,7 @@
                              stderr-redirection: #t)))
                (_ (begin (display text proc) (close-output-port proc)))
                (result (read-line proc #f)))
-          (process-status proc)
+          ;; Omit process-status (Qt SIGCHLD race)
           (if (and result (> (string-length result) 0))
             (begin
               (qt-plain-text-edit-set-text! ed result)

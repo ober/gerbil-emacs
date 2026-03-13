@@ -157,7 +157,7 @@
                         (if (eof-object? line)
                           acc
                           (loop (cons line acc)))))))
-        (process-status proc)
+        ;; Omit process-status (Qt SIGCHLD race) — read-line loop already consumed all output
         (close-port proc)
         ;; Parse fc-list output: "Family Name,Variant:style=..."
         ;; Take the first family name before comma
@@ -1038,7 +1038,7 @@ modified so the next save uses the new encoding."
                                    arguments: (list "-u" path-a path-b)
                                    stdout-redirection: #t)))
                      (output (read-line proc #f))
-                     (_ (process-status proc))
+                     ;; Omit process-status (Qt SIGCHLD race)
                      (ed (current-qt-editor app))
                      (fr (app-state-frame app))
                      (diff-buf (qt-buffer-create! "*Ediff*" ed #f)))

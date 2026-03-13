@@ -399,8 +399,9 @@
                           stdout-redirection: #t
                           stderr-redirection: #t))))
         (let ((output (read-all-as-string proc)))
-          (process-status proc)
-          (if (zero? (process-status proc))
+          ;; Omit process-status (Qt SIGCHLD race) — read-all-as-string waited for EOF
+          (close-port proc)
+          (if (and output (> (string-length output) 0))
             output
             #f))))))
 
@@ -1079,7 +1080,7 @@
                                          stdout-redirection: #t
                                          stderr-redirection: #t))))
                           (let ((out (read-line p #f)))
-                            (process-status p)
+                            (close-port p) ;; Omit process-status (Qt SIGCHLD race)
                             (or out "Files are identical")))))))
         (let* ((fr (app-state-frame app))
                (ed (qt-current-editor fr))
@@ -1255,7 +1256,7 @@
                                   stderr-redirection: #t)))
                        (_ (begin (display region p) (force-output p) (close-output-port p)))
                        (output (or (read-line p #f) "")))
-                  (process-status p)
+                  ;; Omit process-status (Qt SIGCHLD race)
                   (let* ((text (qt-plain-text-edit-text ed))
                          (new-text (string-append
                                      (substring text 0 start)
@@ -1281,7 +1282,7 @@
                             stdout-redirection: #t
                             stderr-redirection: #t)))
                  (output (read-line p #f)))
-            (process-status p)
+            ;; Omit process-status (Qt SIGCHLD race)
             (when output
               (qt-insert-at-point! ed output))))))))
 

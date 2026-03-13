@@ -286,12 +286,10 @@
               (let* ((proc (open-process
                              (list path: "kill" arguments: (list (string-append "-" signal) pid-str)
                                    stdout-redirection: #t stderr-redirection: #t)))
-                     (out (read-line proc #f))
-                     (status (process-status proc)))
+                     (out (read-line proc #f)))
+                ;; Omit process-status (Qt SIGCHLD race) — assume success if no exception
                 (close-port proc)
-                (if (= status 0)
-                  (echo-message! echo (string-append "Sent SIG" signal " to PID " pid-str))
-                  (echo-message! echo (string-append "Failed to send signal" (if out (string-append ": " out) ""))))))))))))
+                (echo-message! echo (string-append "Sent SIG" signal " to PID " pid-str))))))))))
 
 ;; Calculator
 (def (cmd-calculator app)
@@ -1662,7 +1660,7 @@
                                  arguments: (list "-rl" query notes-dir)
                                  stdin-redirection: #f stdout-redirection: #t stderr-redirection: #f)))
                    (out (read-line proc #f)))
-              (process-status proc)
+              ;; Omit process-status (Qt SIGCHLD race)
               (if (and out (> (string-length out) 0))
                 (let ((buf (qt-buffer-create! "*Org-roam*" ed #f)))
                   (qt-buffer-attach! ed buf)

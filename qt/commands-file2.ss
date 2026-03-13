@@ -519,7 +519,7 @@
                                    (list path: "git" arguments: (list "reset" "HEAD" path)
                                          stdin-redirection: #f stdout-redirection: #t
                                          stderr-redirection: #t))))
-                          (process-status p)
+                          (read-line p #f) ;; Omit process-status (Qt SIGCHLD race)
                           (string-append "Unstaged: " (path-strip-directory path)))))))
         (echo-message! (app-state-echo app) result))
       (echo-message! (app-state-echo app) "Buffer has no file"))))
@@ -610,7 +610,7 @@
   (with-exception-catcher (lambda (e) "")
     (lambda () (let ((p (open-process (list path: (car args) arguments: (cdr args)
                           stdin-redirection: #f stdout-redirection: #t stderr-redirection: #t))))
-                 (let ((out (read-line p #f))) (process-status p) (or out ""))))))
+                 (let ((out (read-line p #f))) (close-port p) (or out "")))))) ;; Omit process-status (Qt SIGCHLD race)
 (def (cmd-git-blame-line app)
   "Git blame for current line."
   (let* ((buf (current-qt-buffer app)) (path (and buf (buffer-file-path buf))))

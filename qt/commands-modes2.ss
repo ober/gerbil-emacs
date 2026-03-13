@@ -462,7 +462,7 @@
                                      stderr-redirection: #f)))
                        (_ (begin (display text proc) (close-output-port proc)))
                        (formatted (read-line proc #f))
-                       (status (process-status proc)))
+                       ) ;; Omit process-status (Qt SIGCHLD race)
                   (close-port proc)
                   (when (and formatted (> (string-length formatted) 0)
                              (not (string=? formatted text)))

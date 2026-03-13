@@ -13,6 +13,7 @@
         (only-in :gemacs/pregexp-compat pregexp pregexp-match)
         :gemacs/qt/sci-shim
         :gemacs/core
+        :gemacs/async
         :gemacs/editor
         (only-in :gemacs/org-babel
                  org-babel-find-src-block org-babel-execute
@@ -89,31 +90,22 @@
         (dired-open-directory! app dir)))))
 
 (def (cmd-dired-do-shell-command app)
-  "Run shell command on marked files in dired."
+  "Run shell command on marked files in dired (async)."
   (let ((cmd (qt-echo-read-string app "Shell command: ")))
     (when (and cmd (not (string-empty? cmd)))
-      (with-catch
-        (lambda (e)
-          (echo-message! (app-state-echo app) "Shell command error"))
-        (lambda ()
-          (let* ((proc (open-process
-                         (list path: "/bin/sh"
-                               arguments: ["-c" cmd]
-                               stdin-redirection: #f
-                               stdout-redirection: #t
-                               stderr-redirection: #t)))
-                 (output (read-line proc #f)))
-            (process-status proc)
-            (close-port proc)
-            ;; Show output in a new buffer
-            (let* ((fr (app-state-frame app))
-                   (ed (current-qt-editor app))
-                   (out-buf (qt-buffer-create! "*Shell Command*" ed #f)))
-              (qt-buffer-attach! ed out-buf)
-              (set! (qt-edit-window-buffer (qt-current-window fr)) out-buf)
-              (qt-plain-text-edit-set-text! ed (or output ""))
-              (qt-text-document-set-modified! (buffer-doc-pointer out-buf) #f)
-              (qt-plain-text-edit-set-cursor-position! ed 0))))))))
+      (echo-message! (app-state-echo app) (string-append "Running: " cmd "..."))
+      (async-process! cmd
+        callback: (lambda (output)
+          (let* ((fr (app-state-frame app))
+                 (ed (current-qt-editor app))
+                 (out-buf (qt-buffer-create! "*Shell Command*" ed #f)))
+            (qt-buffer-attach! ed out-buf)
+            (set! (qt-edit-window-buffer (qt-current-window fr)) out-buf)
+            (qt-plain-text-edit-set-text! ed output)
+            (qt-text-document-set-modified! (buffer-doc-pointer out-buf) #f)
+            (qt-plain-text-edit-set-cursor-position! ed 0)))
+        on-error: (lambda (e)
+          (echo-message! (app-state-echo app) "Shell command error"))))))
 
 ;;;============================================================================
 ;;; Help / Apropos
@@ -367,7 +359,7 @@
                            stdout-redirection: #t
                            stderr-redirection: #t)))
              (ts (read-line proc)))
-        (process-status proc)
+        ;; Omit process-status (Qt SIGCHLD race)
         (close-port proc)
         (when (string? ts)
           (let* ((ed (current-qt-editor app))
@@ -608,7 +600,7 @@
                                stdout-redirection: #t
                                stderr-redirection: #t)))
                  (status-line (read-line proc)))
-            (process-status proc)
+            ;; Omit process-status (Qt SIGCHLD race)
             (close-port proc)
             (cond
               ((eof-object? status-line)
@@ -624,7 +616,7 @@
                                  stdin-redirection: #f
                                  stdout-redirection: #t
                                  stderr-redirection: #t))))
-                 (process-status p2)
+                 (read-line p2 #f) ;; Omit process-status (Qt SIGCHLD race)
                  (close-port p2)
                  (echo-message! (app-state-echo app)
                    (string-append "Staged: "
@@ -640,7 +632,7 @@
                                  stdin-redirection: #f
                                  stdout-redirection: #t
                                  stderr-redirection: #t))))
-                 (process-status p2)
+                 (read-line p2 #f) ;; Omit process-status (Qt SIGCHLD race)
                  (close-port p2)
                  (echo-message! (app-state-echo app)
                    (string-append "Staged: "
