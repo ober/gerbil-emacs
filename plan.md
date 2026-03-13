@@ -273,7 +273,13 @@ Largest files: modes (~1851), lsp (~1802), search (~1778)
 - Qt functional tests FAIL: 716→segfault with dedicated-pthread approach
 - The root cause of test breakage is not yet identified — suspected Qt object thread-affinity issue when using a `pthread`-created thread vs Qt's native main thread
 
-**Decision (2026-03-13)**: Switched to GAMBCOPT=,-:p1 (single-processor mode). After 6+ SMP deadlocks in 4 days (GC sync, device manager mutex, SIGCHLD race, QTimer circular deadlock, BQC reentrancy, callback starvation), SMP is not viable for Qt applications. Green threads still work cooperatively on the single VP. See ~/mine/gambit-smp-woes.md for the full post-mortem.
+**Known constraint**: GAMBCOPT=,-:p1 (single-processor mode) is NOT an acceptable solution per user requirement.
+
+**Next steps to fix**:
+1. Investigate why `QObject::setParent` fires for objects all supposedly created on the Qt pthread
+2. Consider using `QThread`-based wrapper (inherits Qt's thread tracking) instead of raw `pthread_create`
+3. Or: investigate pinning the Gambit green thread to a VP during Qt init/exec using Gambit internals
+4. After tests pass, run full verification checklist
 
 ### Next Steps (for continuation)
 - Fix `fix-smp-qt` branch (see above) — tests are currently broken

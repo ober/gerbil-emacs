@@ -7,10 +7,6 @@
 (include "../manifest.ss")
 
 (def (main . args)
-  ;; Single-processor mode: GAMBCOPT=,-:p1 must be set in the environment
-  ;; BEFORE launching the binary (Gambit reads it at startup, before main).
-  ;; Set it here for child processes spawned by gemacs.
-  (setenv "GAMBCOPT" ",-:p1")
   (cond
     ((member "--version" args)
      (displayln "gemacs " (cdar version-manifest))

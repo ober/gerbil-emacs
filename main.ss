@@ -25,9 +25,6 @@
       (else (loop (cdr rest) (cons (car rest) acc))))))
 
 (def (main . args)
-  ;; Single-processor mode: GAMBCOPT=,-:p1 must be set in the environment
-  ;; BEFORE launching (Gambit reads it at startup). Set here for child processes.
-  (setenv "GAMBCOPT" ",-:p1")
   (cond
     ((member "--version" args)
      (displayln "gemacs " (cdar version-manifest))
