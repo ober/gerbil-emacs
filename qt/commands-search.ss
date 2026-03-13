@@ -1256,35 +1256,21 @@ Supports Gerbil (.ss), Python, JS/TS, Go, Shell, C/C++, Ruby."
          (cmd (qt-echo-read-string app "Pipe buffer through: ")))
     (when (and cmd (> (string-length cmd) 0))
       (let* ((ed (current-qt-editor app))
-             (text (qt-plain-text-edit-text ed))
-             (result (with-catch
-                       (lambda (e) (string-append "Error: "
-                                     (with-output-to-string
-                                       (lambda () (display-exception e)))))
-                       (lambda ()
-                         (let ((port (open-process
-                                       (list path: "/bin/sh"
-                                             arguments: ["-c" cmd]
-                                             stdin-redirection: #t
-                                             stdout-redirection: #t
-                                             stderr-redirection: #t
-                                             pseudo-terminal: #f))))
-                           (display text port)
-                           (force-output port)
-                           (close-output-port port)
-                           (let ((output (read-line port #f)))
-                             (close-port port)
-                             (or output "")))))))
-        ;; Show result in *Shell Output*
-        (let* ((fr (app-state-frame app))
-               (out-buf (or (buffer-by-name "*Shell Output*")
-                            (qt-buffer-create! "*Shell Output*" ed #f))))
-          (qt-buffer-attach! ed out-buf)
-          (set! (qt-edit-window-buffer (qt-current-window fr)) out-buf)
-          (qt-plain-text-edit-set-text! ed result)
-          (qt-text-document-set-modified! (buffer-doc-pointer out-buf) #f)
-          (qt-plain-text-edit-set-cursor-position! ed 0)
-          (echo-message! echo "Buffer piped"))))))
+             (text (qt-plain-text-edit-text ed)))
+        (echo-message! echo "Piping buffer...")
+        (async-process! cmd
+          stdin-text: text
+          callback: (lambda (result)
+            (let* ((ed (current-qt-editor app))
+                   (fr (app-state-frame app))
+                   (out-buf (or (buffer-by-name "*Shell Output*")
+                                (qt-buffer-create! "*Shell Output*" ed #f))))
+              (qt-buffer-attach! ed out-buf)
+              (set! (qt-edit-window-buffer (qt-current-window fr)) out-buf)
+              (qt-plain-text-edit-set-text! ed result)
+              (qt-text-document-set-modified! (buffer-doc-pointer out-buf) #f)
+              (qt-plain-text-edit-set-cursor-position! ed 0)
+              (echo-message! echo "Buffer piped"))))))))
 
 ;;;============================================================================
 ;;; Apropos (search commands)

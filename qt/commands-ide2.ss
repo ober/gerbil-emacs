@@ -11,6 +11,7 @@
         :std/misc/completion
         :gemacs/qt/sci-shim
         :gemacs/core
+        :gemacs/async
         (only-in :gemacs/persist *fill-column*)
         :gemacs/editor
         :gemacs/qt/buffer
@@ -505,21 +506,17 @@
 ;;;============================================================================
 
 (def (cmd-shell-command-insert app)
-  "Run shell command and insert output at point."
+  "Run shell command async and insert output at point."
   (let ((cmd (qt-echo-read-string app "Shell command (insert): ")))
     (when cmd
-      (with-catch
-        (lambda (e) (echo-error! (app-state-echo app) "Command failed"))
-        (lambda ()
-          (let* ((proc (open-process
-                          (list path: "/bin/sh"
-                                arguments: (list "-c" cmd)
-                                stdout-redirection: #t)))
-                 (output (read-line proc #f))
-                 (_ (process-status proc)))
-            (close-port proc)
-            (when output
-              (qt-plain-text-edit-insert-text! (current-qt-editor app) output))))))))
+      (echo-message! (app-state-echo app) (string-append "Running: " cmd "..."))
+      (async-process! cmd
+        callback: (lambda (output)
+          (when (and output (> (string-length output) 0))
+            (qt-plain-text-edit-insert-text! (current-qt-editor app) output)
+            (echo-message! (app-state-echo app) "Inserted")))
+        on-error: (lambda (e)
+          (echo-error! (app-state-echo app) "Command failed"))))))
 
 ;;;============================================================================
 ;;; Pipe region
@@ -755,7 +752,8 @@
 ;;;============================================================================
 
 (def (shell-command-to-string cmd)
-  "Run CMD via /bin/sh and return stdout as a string. Returns empty string on error."
+  "Run CMD via /bin/sh and return stdout as a string. Returns empty string on error.
+   NOTE: This is synchronous — prefer async-process! for long-running commands."
   (with-catch
     (lambda (e) "")
     (lambda ()
@@ -766,35 +764,31 @@
                             stderr-redirection: #t
                             pseudo-terminal: #f)))
              (output (read-line proc #f)))
-        (process-status proc)
+        ;; Omit process-status — races with Qt SIGCHLD handler (hangs)
         (close-port proc)
         (or output "")))))
 
 (def (shell-command-to-buffer! app cmd buffer-name . opts)
-  "Run CMD, display output in BUFFER-NAME. Options: read-only: #t (default #t)."
-  (let* ((read-only? (if (and (pair? opts) (pair? (car opts)))
-                       (let ((ro (assoc read-only: opts)))
-                         (if ro (cdr ro) #t))
-                       #t))
-         (result (with-catch
-                   (lambda (e)
-                     (string-append "Error: "
-                       (with-output-to-string (lambda () (display-exception e)))))
-                   (lambda ()
-                     (shell-command-to-string cmd))))
-         (fr (app-state-frame app))
-         (ed (current-qt-editor app))
-         (buf (or (buffer-by-name buffer-name)
-                  (qt-buffer-create! buffer-name ed #f))))
-    (qt-buffer-attach! ed buf)
-    (set! (qt-edit-window-buffer (qt-current-window fr)) buf)
-    (qt-plain-text-edit-set-text! ed result)
-    (qt-text-document-set-modified! (buffer-doc-pointer buf) #f)
-    (qt-plain-text-edit-set-cursor-position! ed 0)
-    (when read-only?
-      (qt-plain-text-edit-set-read-only! ed #t))
-    (qt-modeline-update! app)
-    result))
+  "Run CMD async, display output in BUFFER-NAME. Options: read-only: #t (default #t)."
+  (let ((read-only? (if (and (pair? opts) (pair? (car opts)))
+                      (let ((ro (assoc read-only: opts)))
+                        (if ro (cdr ro) #t))
+                      #t)))
+    (echo-message! (app-state-echo app) (string-append "Running: " cmd "..."))
+    (async-process! cmd
+      callback: (lambda (result)
+        (let* ((fr (app-state-frame app))
+               (ed (current-qt-editor app))
+               (buf (or (buffer-by-name buffer-name)
+                        (qt-buffer-create! buffer-name ed #f))))
+          (qt-buffer-attach! ed buf)
+          (set! (qt-edit-window-buffer (qt-current-window fr)) buf)
+          (qt-plain-text-edit-set-text! ed result)
+          (qt-text-document-set-modified! (buffer-doc-pointer buf) #f)
+          (qt-plain-text-edit-set-cursor-position! ed 0)
+          (when read-only?
+            (qt-plain-text-edit-set-read-only! ed #t))
+          (qt-modeline-update! app))))))
 
 (def *user-shell-commands* (make-hash-table))
 
@@ -1403,8 +1397,9 @@
       (let ((p (open-process (list path: "rg" arguments: '("--version")
                                    stdout-redirection: #t
                                    stderr-redirection: #f))))
-        (close-port p)
-        (zero? (process-status p))))))
+        (let ((out (read-line p #f))) ;; Omit process-status (Qt SIGCHLD race)
+          (close-port p)
+          (and out (string? out)))))))
 
 (def (run-rg pattern dir)
   "Run rg and return list of result strings (file:line:col:text)."
@@ -1418,7 +1413,7 @@
                         stdout-redirection: #t
                         stderr-redirection: #f)))
              (output (read-line p #f))
-             (rc (process-status p)))
+             ) ;; Omit process-status (Qt SIGCHLD race)
         (if (and output (string? output) (> (string-length output) 0))
           (let loop ((s output) (acc []))
             (let ((nl (string-index s #\newline)))

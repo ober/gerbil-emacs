@@ -149,7 +149,9 @@
    After replacing text, clamps cursor and anchor positions to the new document
    length to prevent Scintilla assertion failures (cpMax <= pdoc->Length())
    when downstream code queries text at the stale cursor position."
+  (verbose-log! "qt-plain-text-edit-set-text! len=" (number->string (string-length text)))
   (qt-scintilla-set-text! sci text)
+  (verbose-log! "qt-plain-text-edit-set-text! done")
   ;; Clamp cursor to new document length — prevents assertion crash when
   ;; terminal PTY output shrinks the document and a key press follows.
   (let ((new-len (sci-send sci SCI_GETLENGTH)))

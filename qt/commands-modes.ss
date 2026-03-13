@@ -156,7 +156,7 @@
     (set! *qt-eww-lh-context* (html-context-create))))
 
 (def (eww-fetch-url url)
-  "Fetch a URL using curl and return the raw HTML."
+  "Fetch a URL using curl and return the raw HTML (sync, for legacy callers)."
   (with-catch
     (lambda (e) #f)
     (lambda ()
@@ -168,10 +168,19 @@
                            stdout-redirection: #t
                            stderr-redirection: #f
                            pseudo-terminal: #f)))
-             (output (read-line port #f))
-             (_ (process-status port)))
+             (output (read-line port #f)))
+        ;; Omit process-status — races with Qt SIGCHLD handler
         (close-port port)
         output))))
+
+(def (eww-fetch-url-async! url callback)
+  "Fetch a URL async using curl. Calls (callback html-or-#f) on UI thread."
+  (async-process!
+    (string-append "curl -sL -m 10 -A 'Mozilla/5.0 (compatible; gemacs eww)' "
+                   "'" (string-map (lambda (c) (if (char=? c #\') #\_ c)) url) "'")
+    callback: (lambda (result)
+      (callback (if (string=? result "") #f result)))
+    on-error: (lambda (e) (callback #f))))
 
 (def (eww-html-to-text html)
   "Convert HTML to text using litehtml for proper CSS layout."
@@ -313,7 +322,7 @@
              (loop (+ i 1) #f in-pre ""))))))))
 
 (def (cmd-eww app)
-  "Open a URL in the text browser."
+  "Open a URL in the text browser (async fetch)."
   (let ((url (qt-echo-read-string app "URL: ")))
     (when (and url (not (string=? url "")))
       ;; Prepend https:// if no scheme
@@ -322,56 +331,58 @@
                         url
                         (string-append "https://" url))))
         (echo-message! (app-state-echo app) (string-append "Fetching " full-url "..."))
-        (let ((html (eww-fetch-url full-url)))
-          (if (not html)
-            (echo-error! (app-state-echo app) "Failed to fetch URL")
-            (let* ((text (eww-html-to-text html))
-                   (buf-name "*eww*")
-                   (fr (app-state-frame app))
-                   (ed (current-qt-editor app))
-                   (buf (or (buffer-by-name buf-name)
-                            (qt-buffer-create! buf-name ed #f))))
-              (set! *eww-current-url* full-url)
-              (set! *eww-history* (cons full-url *eww-history*))
-              (qt-buffer-attach! ed buf)
-              (set! (qt-edit-window-buffer (qt-current-window fr)) buf)
-              (qt-plain-text-edit-set-text! ed
-                (string-append "URL: " full-url "\n\n" text))
-              (qt-text-document-set-modified! (buffer-doc-pointer buf) #f)
-              (qt-plain-text-edit-set-cursor-position! ed 0)
-              (echo-message! (app-state-echo app) full-url))))))))
+        (eww-fetch-url-async! full-url
+          (lambda (html)
+            (if (not html)
+              (echo-error! (app-state-echo app) "Failed to fetch URL")
+              (let* ((text (eww-html-to-text html))
+                     (buf-name "*eww*")
+                     (fr (app-state-frame app))
+                     (ed (current-qt-editor app))
+                     (buf (or (buffer-by-name buf-name)
+                              (qt-buffer-create! buf-name ed #f))))
+                (set! *eww-current-url* full-url)
+                (set! *eww-history* (cons full-url *eww-history*))
+                (qt-buffer-attach! ed buf)
+                (set! (qt-edit-window-buffer (qt-current-window fr)) buf)
+                (qt-plain-text-edit-set-text! ed
+                  (string-append "URL: " full-url "\n\n" text))
+                (qt-text-document-set-modified! (buffer-doc-pointer buf) #f)
+                (qt-plain-text-edit-set-cursor-position! ed 0)
+                (echo-message! (app-state-echo app) full-url)))))))))
 
 (def (cmd-eww-back app)
-  "Go back in eww browsing history."
+  "Go back in eww browsing history (async fetch)."
   (if (or (null? *eww-history*) (null? (cdr *eww-history*)))
     (echo-message! (app-state-echo app) "No previous page")
     (begin
-      ;; Push current URL to forward stack before going back
       (set! *eww-forward-history* (cons (car *eww-history*) *eww-forward-history*))
       (set! *eww-history* (cdr *eww-history*))
       (let ((url (car *eww-history*)))
         (set! *eww-current-url* url)
         (echo-message! (app-state-echo app) (string-append "Fetching " url "..."))
-        (let ((html (eww-fetch-url url)))
-          (when html
-            (let* ((text (eww-html-to-text html))
-                   (ed (current-qt-editor app))
-                   (fr (app-state-frame app)))
-              (qt-plain-text-edit-set-text! ed
-                (string-append "URL: " url "\n\n" text))
-              (qt-plain-text-edit-set-cursor-position! ed 0))))))))
+        (eww-fetch-url-async! url
+          (lambda (html)
+            (when html
+              (let* ((text (eww-html-to-text html))
+                     (ed (current-qt-editor app))
+                     (fr (app-state-frame app)))
+                (qt-plain-text-edit-set-text! ed
+                  (string-append "URL: " url "\n\n" text))
+                (qt-plain-text-edit-set-cursor-position! ed 0)))))))))
 
 (def (cmd-eww-reload app)
-  "Reload the current eww page."
+  "Reload the current eww page (async fetch)."
   (when *eww-current-url*
     (echo-message! (app-state-echo app) "Reloading...")
-    (let ((html (eww-fetch-url *eww-current-url*)))
-      (when html
-        (let* ((text (eww-html-to-text html))
-               (ed (current-qt-editor app)))
-          (qt-plain-text-edit-set-text! ed
-            (string-append "URL: " *eww-current-url* "\n\n" text))
-          (qt-plain-text-edit-set-cursor-position! ed 0))))))
+    (eww-fetch-url-async! *eww-current-url*
+      (lambda (html)
+        (when html
+          (let* ((text (eww-html-to-text html))
+                 (ed (current-qt-editor app)))
+            (qt-plain-text-edit-set-text! ed
+              (string-append "URL: " *eww-current-url* "\n\n" text))
+            (qt-plain-text-edit-set-cursor-position! ed 0)))))))
 
 ;; --- Remote file editing (tramp-style) ---
 (def (tramp-path? path)
@@ -393,24 +404,37 @@
       (values rest "/"))))
 
 (def (tramp-read-file host remote-path)
-  "Read a remote file via scp into a string."
-  (let* ((tmp (path-expand
-                (string-append "tramp-" (number->string (random-integer 100000)))
-                (or (getenv "TMPDIR" #f) "/tmp")))
-         (src (string-append host ":" remote-path))
-         (proc (open-process
-                 (list path: "/usr/bin/scp"
-                       arguments: ["-q" src tmp]
-                       stdout-redirection: #t
-                       stderr-redirection: #f
-                       pseudo-terminal: #f)))
-         (_ (process-status proc)))
-    (close-port proc)
-    (if (file-exists? tmp)
-      (let ((content (call-with-input-file tmp (lambda (p) (read-line p #f)))))
-        (delete-file tmp)
-        content)
-      #f)))
+  "Read a remote file via scp into a string (sync, for legacy callers)."
+  (with-catch
+    (lambda (e) #f)
+    (lambda ()
+      (let* ((tmp (path-expand
+                    (string-append "tramp-" (number->string (random-integer 100000)))
+                    (or (getenv "TMPDIR" #f) "/tmp")))
+             (src (string-append host ":" remote-path))
+             (proc (open-process
+                     (list path: "/usr/bin/scp"
+                           arguments: ["-q" src tmp]
+                           stdout-redirection: #t
+                           stderr-redirection: #f
+                           pseudo-terminal: #f)))
+             ;; read-line blocks until scp exits (EOF on stdout)
+             (_ (read-line proc #f)))
+        ;; Omit process-status — races with Qt SIGCHLD handler
+        (close-port proc)
+        (if (file-exists? tmp)
+          (let ((content (call-with-input-file tmp (lambda (p) (read-line p #f)))))
+            (delete-file tmp)
+            content)
+          #f)))))
+
+(def (tramp-read-file-async! host remote-path callback)
+  "Read a remote file via scp async. Calls (callback content-or-#f) on UI thread."
+  (let ((src (string-append host ":" remote-path)))
+    (async-process! (string-append "scp -q " src " /dev/stdout")
+      callback: (lambda (result)
+        (callback (if (string=? result "") #f result)))
+      on-error: (lambda (e) (callback #f)))))
 
 (def (tramp-write-file host remote-path content)
   "Write content to a remote file via scp."
@@ -425,10 +449,12 @@
                          stdout-redirection: #t
                          stderr-redirection: #f
                          pseudo-terminal: #f)))
-           (status (process-status proc)))
+           ;; read-line blocks until scp exits
+           (_ (read-line proc #f)))
+      ;; Omit process-status — races with Qt SIGCHLD handler
       (close-port proc)
       (when (file-exists? tmp) (delete-file tmp))
-      (= status 0))))
+      #t)))
 
 (def (cmd-find-file-remote app)
   "Open a remote file via SSH/SCP. Use /ssh:host:path or /scp:host:path syntax."
@@ -439,23 +465,24 @@
         (let-values (((host remote-path) (tramp-parse-path path)))
           (echo-message! (app-state-echo app)
             (string-append "Fetching " host ":" remote-path "..."))
-          (let ((content (tramp-read-file host remote-path)))
-            (if (not content)
-              (echo-error! (app-state-echo app)
-                (string-append "Failed to fetch " remote-path " from " host))
-              (let* ((name (string-append (path-strip-directory remote-path) " [" host "]"))
-                     (fr (app-state-frame app))
-                     (ed (current-qt-editor app))
-                     (buf (qt-buffer-create! name ed #f)))
-                (qt-buffer-attach! ed buf)
-                (set! (qt-edit-window-buffer (qt-current-window fr)) buf)
-                (qt-plain-text-edit-set-text! ed content)
-                (qt-text-document-set-modified! (buffer-doc-pointer buf) #f)
-                (qt-plain-text-edit-set-cursor-position! ed 0)
-                ;; Store remote info in buffer for save-back
-                (set! (buffer-file-path buf) path)
-                (echo-message! (app-state-echo app)
-                  (string-append "Loaded " remote-path " from " host))))))))))
+          (tramp-read-file-async! host remote-path
+            (lambda (content)
+              (if (not content)
+                (echo-error! (app-state-echo app)
+                  (string-append "Failed to fetch " remote-path " from " host))
+                (let* ((name (string-append (path-strip-directory remote-path) " [" host "]"))
+                       (fr (app-state-frame app))
+                       (ed (current-qt-editor app))
+                       (buf (qt-buffer-create! name ed #f)))
+                  (qt-buffer-attach! ed buf)
+                  (set! (qt-edit-window-buffer (qt-current-window fr)) buf)
+                  (qt-plain-text-edit-set-text! ed content)
+                  (qt-text-document-set-modified! (buffer-doc-pointer buf) #f)
+                  (qt-plain-text-edit-set-cursor-position! ed 0)
+                  ;; Store remote info in buffer for save-back
+                  (set! (buffer-file-path buf) path)
+                  (echo-message! (app-state-echo app)
+                    (string-append "Loaded " remote-path " from " host)))))))))))
 
 (def (cmd-save-remote-buffer app)
   "Save buffer back to remote host if it has a tramp-style path."

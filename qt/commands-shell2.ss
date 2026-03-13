@@ -63,15 +63,15 @@
                          (list path: "/usr/bin/sudo"
                                arguments: (list "cp" tmp path)
                                stdout-redirection: #f
-                               stderr-redirection: #f))))
-                (process-status p)
+                               stderr-redirection: #t))))
+                (read-line p #f) ;; Omit process-status (Qt SIGCHLD race)
                 (close-port p))
               (let ((p2 (open-process
                           (list path: "/bin/rm"
                                 arguments: (list "-f" tmp)
-                                stdout-redirection: #f
-                                stderr-redirection: #f))))
-                (process-status p2)
+                                stdout-redirection: #t
+                                stderr-redirection: #t))))
+                (read-line p2 #f) ;; Omit process-status (Qt SIGCHLD race)
                 (close-port p2))
               (qt-text-document-set-modified! (buffer-doc-pointer buf) #f)
               (echo-message! (app-state-echo app)
@@ -131,18 +131,19 @@
                                  stdout-redirection: #t
                                  stderr-redirection: #t)))
                    (output (read-line proc #f))
-                   (status (process-status proc))
+                   ;; Omit process-status (Qt SIGCHLD race) — detect conflicts from output
                    (_ (close-port proc))
                    (ed (current-qt-editor app))
                    (fr (app-state-frame app))
                    (buf (or (buffer-by-name "*Ediff Merge*")
-                            (qt-buffer-create! "*Ediff Merge*" ed #f))))
+                            (qt-buffer-create! "*Ediff Merge*" ed #f)))
+                   (has-conflicts (and output (string-contains output "<<<<<<<"))))
               (qt-buffer-attach! ed buf)
               (set! (qt-edit-window-buffer (qt-current-window fr)) buf)
               (qt-plain-text-edit-set-text! ed
                 (string-append "Three-way merge: " file-mine " + " file-base " + " file-theirs "\n"
                                (make-string 60 #\=) "\n"
-                               (if (= status 0) "No conflicts.\n\n"
+                               (if (not has-conflicts) "No conflicts.\n\n"
                                  "Conflicts marked with <<<<<<< / ======= / >>>>>>>.\nUse smerge-keep-mine / smerge-keep-other to resolve.\n\n")
                                (or output "Files are identical")))
               (qt-text-document-set-modified! (buffer-doc-pointer buf) #f)
@@ -614,10 +615,10 @@ Scheme/Gerbil/Lisp buffers. Also used by LSP for hover information."
                                arguments: (list path tmp)
                                stdout-redirection: #t
                                stderr-redirection: #t)))
-                 (output (read-line proc #f))
-                 (status (process-status proc)))
+                 (output (read-line proc #f)))
+            ;; Omit process-status (Qt SIGCHLD race) — check file existence instead
             (close-port proc)
-            (if (and (= status 0) (file-exists? tmp))
+            (if (file-exists? tmp)
               (let* ((content (read-file-as-string tmp))
                      (buf-name (string-append "[SSH] " path))
                      (ed (current-qt-editor app))
@@ -838,7 +839,7 @@ Scheme/Gerbil/Lisp buffers. Also used by LSP for hover information."
                            stdout-redirection: #t
                            stderr-redirection: #f)))
              (xml (read-line proc #f)))
-        (process-status proc)
+        ;; Omit process-status (Qt SIGCHLD race)
         (if (and xml (string? xml))
           (qt-elfeed-parse xml url)
           '())))))
@@ -994,7 +995,7 @@ Scheme/Gerbil/Lisp buffers. Also used by LSP for hover information."
                                stdout-redirection: #t
                                stderr-redirection: #f)))
                  (output (read-line proc #f)))
-            (process-status proc)
+            ;; Omit process-status (Qt SIGCHLD race)
             (when (and output (string? output))
               (let loop ((rest output) (count 0))
                 (let ((pos (string-contains rest "export ")))
@@ -1029,7 +1030,7 @@ Scheme/Gerbil/Lisp buffers. Also used by LSP for hover information."
                            stdin-redirection: #f stdout-redirection: #t
                            stderr-redirection: #f)))
              (out (read-line proc #f)))
-        (process-status proc)
+        ;; Omit process-status (Qt SIGCHLD race)
         (echo-message! (app-state-echo app) "direnv: allowed .envrc")))))
 
 ;;;============================================================================

@@ -4,6 +4,7 @@
 
 (export qt-register-all-commands!
         dired-open-directory!
+        qt-open-image-inline!
         *qt-app-ptr*
         qt-kill-ring-push!
         *isearch-active*
@@ -300,7 +301,10 @@
 
 (def (qt-open-image-inline! app filename)
   "Open an image file as an inline image buffer."
+  (verbose-log! "qt-open-image-inline! begin file=" filename)
+  (gemacs-log! "IMG: loading pixmap " filename)
   (let* ((pixmap (qt-pixmap-load filename)))
+    (gemacs-log! "IMG: pixmap loaded null=" (if (qt-pixmap-null? pixmap) "yes" "no"))
     (if (qt-pixmap-null? pixmap)
       (begin
         (qt-pixmap-destroy! pixmap)
@@ -309,17 +313,22 @@
       (let* ((name (path-strip-directory filename))
              (fr (app-state-frame app))
              (ed (current-qt-editor app))
+             (_ (gemacs-log! "IMG: creating buffer"))
              (buf (qt-buffer-create! name ed filename))
              (orig-w (qt-pixmap-width pixmap))
              (orig-h (qt-pixmap-height pixmap)))
+        (gemacs-log! "IMG: buffer created " (number->string orig-w) "x" (number->string orig-h))
         (set! (buffer-lexer-lang buf) 'image)
         (hash-put! *image-buffer-state* buf
           (list pixmap (box 1.0) orig-w orig-h))
         (buffer-touch! buf)
+        (gemacs-log! "IMG: calling qt-buffer-attach!")
         (qt-buffer-attach! ed buf)
+        (gemacs-log! "IMG: qt-buffer-attach! done")
         (set! (qt-edit-window-buffer (qt-current-window fr)) buf)
         (echo-message! (app-state-echo app)
-          (string-append "Image: " name " (" (number->string orig-w) "x" (number->string orig-h) ")"))))))
+          (string-append "Image: " name " (" (number->string orig-w) "x" (number->string orig-h) ")"))
+        (gemacs-log! "IMG: qt-open-image-inline! done")))))
 
 (def (cmd-find-file-at-point app)
   "Open file at point, or prompt with path at point as default."

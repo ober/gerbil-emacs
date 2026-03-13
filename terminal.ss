@@ -294,18 +294,28 @@
     (make-terminal-state env 0 -1 #f #f #f #f #f #f #f)))
 
 (def (make-cmd-exec-fn env)
-  "Create a command-execution function for PS1 $(...) expansion."
+  "Create a command-execution function for PS1 $(...) expansion.
+   Runs gsh-capture in a background thread with a 2-second timeout
+   to prevent slow commands from hanging the editor."
   (lambda (cmd)
-    (with-catch
-      (lambda (e) "")
-      (lambda ()
-        (let-values (((output status) (gsh-capture cmd env)))
-          (let ((s (or output "")))
-            ;; Strip trailing newline (command substitution convention)
-            (if (and (> (string-length s) 0)
-                     (char=? (string-ref s (- (string-length s) 1)) #\newline))
-              (substring s 0 (- (string-length s) 1))
-              s)))))))
+    (let* ((result-box (box #f))
+           (thread (spawn
+                     (lambda ()
+                       (with-catch
+                         (lambda (e) (set-box! result-box ""))
+                         (lambda ()
+                           (let-values (((output status) (gsh-capture cmd env)))
+                             (set-box! result-box (or output "")))))))))
+      ;; Wait up to 2 seconds for the command to complete
+      (thread-join! thread 2.0 'timeout)
+      (let ((raw (unbox result-box)))
+        (if (not raw)
+          ""  ; timed out or failed
+          ;; Strip trailing newline (command substitution convention)
+          (if (and (> (string-length raw) 0)
+                   (char=? (string-ref raw (- (string-length raw) 1)) #\newline))
+            (substring raw 0 (- (string-length raw) 1))
+            raw))))))
 
 (def (terminal-prompt-raw ts)
   "Return the expanded PS1 prompt string with ANSI codes intact."

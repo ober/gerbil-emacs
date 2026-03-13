@@ -1277,7 +1277,7 @@
                            stdout-redirection: #t
                            stderr-redirection: #f)))
              (output (read-line proc #f))
-             (_ (process-status proc)))
+             ) ;; Omit process-status (Qt SIGCHLD race)
         (close-port proc)
         (and output
              (let ((files (let loop ((s output) (acc []))

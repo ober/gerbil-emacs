@@ -227,7 +227,7 @@
              (p (open-process (list path: "git" arguments: (list "diff" "-U0" "--" file-path)
                    directory: dir stdin-redirection: #f stdout-redirection: #t stderr-redirection: #t)))
              (out (read-line p #f)))
-        (process-status p)
+        ;; Omit process-status (Qt SIGCHLD race)
         (if (not out) '()
           (let ((lines (string-split out #\newline)))
             (let loop ((ls lines) (acc []))
@@ -351,7 +351,7 @@
         (lambda ()
           (let ((p (open-process (list path: "git" arguments: (list "checkout" "--" path)
                      directory: (path-directory path) stdin-redirection: #f stdout-redirection: #t stderr-redirection: #t))))
-            (process-status p)
+            (read-line p #f) ;; Omit process-status (Qt SIGCHLD race)
             (let ((ed (current-qt-editor app)) (text (read-file-as-string path)))
               (when text (qt-plain-text-edit-set-text! ed text)
                 (qt-text-document-set-modified! (buffer-doc-pointer buf) #f)))
@@ -366,7 +366,7 @@
         (lambda ()
           (let ((p (open-process (list path: "git" arguments: (list "add" "--" path)
                      directory: (path-directory path) stdin-redirection: #f stdout-redirection: #t stderr-redirection: #t))))
-            (process-status p)
+            (read-line p #f) ;; Omit process-status (Qt SIGCHLD race)
             (echo-message! (app-state-echo app) (string-append "Staged: " (path-strip-directory path)))))))))
 
 ;; --- Goto last edit ---
@@ -580,7 +580,7 @@
             (let* ((p (open-process (list path: "ls" arguments: (list "-la" path)
                         stdin-redirection: #f stdout-redirection: #t stderr-redirection: #t)))
                    (out (read-line p #f)))
-              (process-status p)
+              ;; Omit process-status (Qt SIGCHLD race)
               (when out
                 (let ((ed (current-qt-editor app)))
                   (qt-plain-text-edit-set-text! ed (string-append "Directory: " path "\n\n" out))

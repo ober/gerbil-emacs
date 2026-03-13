@@ -349,11 +349,11 @@
                     (let* ((proc (open-process
                                   (list path: "chmod"
                                         arguments: (list mode-str path)
-                                        stdout-redirection: #f
-                                        stderr-redirection: #f)))
-                           (rc (process-status proc)))
-                      (when (zero? rc)
-                        (set! count (+ count 1)))))))
+                                        stdout-redirection: #t
+                                        stderr-redirection: #t)))
+                           (_ (read-line proc #f))) ;; Omit process-status (Qt SIGCHLD race)
+                      (close-port proc)
+                      (set! count (+ count 1))))))
               files)
             ;; Refresh dired listing
             (let ((dir (buffer-file-path buf)))
@@ -459,7 +459,7 @@
                                    arguments: '("/sys/class/power_supply/BAT0/capacity")
                                    stdout-redirection: #t)))
                      (output (read-line proc))
-                     (_ (process-status proc)))
+                     ) ;; Omit process-status (Qt SIGCHLD race)
                 (close-port proc)
                 output)))))
     (if result
@@ -1535,8 +1535,7 @@
                             stdin-redirection: #f
                             stdout-redirection: #t
                             stderr-redirection: #f))))
-          (read-line proc)  ;; wait for completion
-          (process-status proc)
+          (read-line proc #f)  ;; wait for completion; omit process-status (Qt SIGCHLD race)
           (close-port proc))
         (set! *tags-file* tags-path)
         (set! *tags-table* (parse-ctags-file tags-path))

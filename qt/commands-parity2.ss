@@ -13,6 +13,7 @@
                  org-heading-line? org-heading-stars-of-line)
         :gemacs/qt/sci-shim
         :gemacs/core
+        :gemacs/async
         :gemacs/editor
         :gemacs/qt/buffer
         :gemacs/qt/window
@@ -361,34 +362,26 @@
 ;;;============================================================================
 
 (def (cmd-vc-pull app)
-  "Pull from remote repository."
-  (let ((result (with-exception-catcher
-                  (lambda (e) (with-output-to-string (lambda () (display-exception e))))
-                  (lambda ()
-                    (let ((p (open-process
-                               (list path: "git" arguments: '("pull")
-                                     stdin-redirection: #f stdout-redirection: #t
-                                     stderr-redirection: #t))))
-                      (let ((out (read-line p #f)))
-                        (process-status p) (or out "")))))))
-    (echo-message! (app-state-echo app)
-      (string-append "git pull: " (if (> (string-length result) 60)
-                                    (substring result 0 60) result)))))
+  "Pull from remote repository (async — network operation)."
+  (echo-message! (app-state-echo app) "git pull...")
+  (async-process! "git pull"
+    callback: (lambda (result)
+      (echo-message! (app-state-echo app)
+        (string-append "git pull: " (if (> (string-length result) 60)
+                                      (substring result 0 60) result))))
+    on-error: (lambda (e)
+      (echo-error! (app-state-echo app) "git pull failed"))))
 
 (def (cmd-vc-push app)
-  "Push to remote repository."
-  (let ((result (with-exception-catcher
-                  (lambda (e) (with-output-to-string (lambda () (display-exception e))))
-                  (lambda ()
-                    (let ((p (open-process
-                               (list path: "git" arguments: '("push")
-                                     stdin-redirection: #f stdout-redirection: #t
-                                     stderr-redirection: #t))))
-                      (let ((out (read-line p #f)))
-                        (process-status p) (or out "")))))))
-    (echo-message! (app-state-echo app)
-      (string-append "git push: " (if (> (string-length result) 60)
-                                    (substring result 0 60) result)))))
+  "Push to remote repository (async — network operation)."
+  (echo-message! (app-state-echo app) "git push...")
+  (async-process! "git push"
+    callback: (lambda (result)
+      (echo-message! (app-state-echo app)
+        (string-append "git push: " (if (> (string-length result) 60)
+                                      (substring result 0 60) result))))
+    on-error: (lambda (e)
+      (echo-error! (app-state-echo app) "git push failed"))))
 
 (def (cmd-magit-stage-file app)
   "Stage current buffer's file."
@@ -402,7 +395,7 @@
                                    (list path: "git" arguments: (list "add" path)
                                          stdin-redirection: #f stdout-redirection: #t
                                          stderr-redirection: #t))))
-                          (process-status p)
+                          (read-line p #f) ;; Omit process-status (Qt SIGCHLD race)
                           (string-append "Staged: " (path-strip-directory path)))))))
         (echo-message! (app-state-echo app) result))
       (echo-message! (app-state-echo app) "Buffer has no file"))))
@@ -467,7 +460,7 @@
           (with-exception-catcher (lambda (e) #f)
             (lambda ()
               (gdb-send! "quit")
-              (process-status *qt-dap-process*)))
+              (read-line *qt-dap-process* #f))) ;; Omit process-status (Qt SIGCHLD race)
           (set! *qt-dap-process* #f))
         ;; Start GDB with MI interface
         (set! *qt-dap-program* program)
@@ -1442,7 +1435,7 @@
                   (force-output proc)
                   (close-output-port proc)
                   (let ((encrypted (read-line proc #f)))
-                    (process-status proc)
+                    ;; Omit process-status (Qt SIGCHLD race)
                     (close-port proc)
                     (when (and encrypted (string-contains encrypted "BEGIN PGP"))
                       (let ((new-text (string-append
@@ -1494,7 +1487,7 @@
                     (force-output proc)
                     (close-output-port proc)
                     (let ((decrypted (read-line proc #f)))
-                      (process-status proc)
+                      ;; Omit process-status (Qt SIGCHLD race)
                       (close-port proc)
                       (when decrypted
                         (let ((new-text (string-append

@@ -536,7 +536,7 @@ Returns list of (name . line-number) pairs."
                            stdout-redirection: #t
                            stderr-redirection: #f)))
              (output (read-line proc #f))
-             (_ (process-status proc)))
+             ) ;; Omit process-status (Qt SIGCHLD race)
         (close-port proc)
         (if output
           (let loop ((s output) (acc []))

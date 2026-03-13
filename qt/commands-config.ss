@@ -157,7 +157,7 @@
                         (if (eof-object? line)
                           acc
                           (loop (cons line acc)))))))
-        (process-status proc)
+        ;; Omit process-status (Qt SIGCHLD race) — read-line loop already consumed all output
         (close-port proc)
         ;; Parse fc-list output: "Family Name,Variant:style=..."
         ;; Take the first family name before comma
@@ -704,6 +704,7 @@ modified so the next save uses the new encoding."
 
 (def (cmd-term app)
   "Open a new gsh-backed terminal buffer."
+  (verbose-log! "cmd-term: begin")
   (let* ((fr (app-state-frame app))
          (ed (current-qt-editor app))
          (name (begin
@@ -716,23 +717,32 @@ modified so the next save uses the new encoding."
     ;; Mark as terminal buffer
     (set! (buffer-lexer-lang buf) 'terminal)
     ;; Attach buffer to editor
+    (verbose-log! "cmd-term: qt-buffer-attach! begin")
     (qt-buffer-attach! ed buf)
+    (verbose-log! "cmd-term: qt-buffer-attach! done")
     (set! (qt-edit-window-buffer (qt-current-window fr)) buf)
     ;; Initialize gsh-backed terminal
     (with-catch
       (lambda (e)
         (let ((msg (with-output-to-string "" (lambda () (display-exception e)))))
           (gemacs-log! "cmd-term: gsh init failed: " msg)
+          (verbose-log! "cmd-term: gsh init FAILED: " msg)
           (echo-error! (app-state-echo app)
             (string-append "Terminal failed: " msg))))
       (lambda ()
+        (verbose-log! "cmd-term: terminal-start! begin")
         (let ((ts (terminal-start!)))
+          (verbose-log! "cmd-term: terminal-start! done")
           (hash-put! *terminal-state* buf ts)
           ;; Show initial prompt
           (let ((prompt (terminal-prompt ts)))
+            (verbose-log! "cmd-term: qt-plain-text-edit-set-text! begin prompt-len="
+                          (number->string (string-length prompt)))
             (qt-plain-text-edit-set-text! ed prompt)
+            (verbose-log! "cmd-term: qt-plain-text-edit-set-text! done")
             (set! (terminal-state-prompt-pos ts) (string-length prompt))
             (qt-plain-text-edit-move-cursor! ed QT_CURSOR_END)))
+        (verbose-log! "cmd-term: done, terminal started")
         (echo-message! (app-state-echo app) (string-append name " started"))))))
 
 (def (cmd-terminal-send app)
@@ -1028,7 +1038,7 @@ modified so the next save uses the new encoding."
                                    arguments: (list "-u" path-a path-b)
                                    stdout-redirection: #t)))
                      (output (read-line proc #f))
-                     (_ (process-status proc))
+                     ;; Omit process-status (Qt SIGCHLD race)
                      (ed (current-qt-editor app))
                      (fr (app-state-frame app))
                      (diff-buf (qt-buffer-create! "*Ediff*" ed #f)))

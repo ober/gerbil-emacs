@@ -19,7 +19,8 @@
                  qt-splitter-widget
                  qt-splitter-size-at
                  QT_VERTICAL
-                 QT_HORIZONTAL)
+                 QT_HORIZONTAL
+                 qt-drain-pending-callbacks!)
         :gerbil-scintilla/constants
         (only-in :gemacs/qt/sci-shim
                  sci-send
@@ -88,7 +89,10 @@
                  define-standard-faces!
                  parse-hex-color)
         (only-in :gemacs/qt/commands
-                 qt-register-all-commands!)
+                 qt-register-all-commands!
+                 qt-open-image-inline!)
+        (only-in :gemacs/qt/image
+                 image-file?)
         (only-in :gemacs/qt/helm-commands
                  qt-register-helm-commands!)
         (only-in :gemacs/helm
@@ -150,11 +154,13 @@
   (force-output (current-output-port)))
 
 (def (drain-async! (retries 20) (delay 0.05))
-  "Wait for async operations to complete by draining the UI queue.
+  "Wait for async operations to complete by draining the UI queue and
+   the SMP callback queue (Qt signals queued during BlockingQueuedConnection).
    Sleeps briefly between drains to allow background threads to finish."
   (let loop ((n 0))
     (when (< n retries)
       (thread-sleep! delay)
+      (qt-drain-pending-callbacks!)
       (ui-queue-drain!)
       (loop (+ n 1)))))
 
@@ -5240,6 +5246,47 @@
     (destroy-qt-test-app! ed w)
     (displayln "Group 52 complete")))
 
+;;; Group 53: open-file regression — opening ~/proof.png must not hang
+;;; This test exercises the full image-opening path:
+;;;   qt-open-image-inline! -> qt-pixmap-load -> qt-buffer-create! ->
+;;;   qt-buffer-attach! (SCI_SETDOCPOINTER via BlockingQueuedConnection)
+;;; Regressed when SMP BlockingQueuedConnection deadlocked in setUpdatesEnabled.
+
+(def (run-group-53-open-file-regression)
+  (let-values (((ed w app) (make-qt-test-app "group53")))
+    (displayln "--- Group 53: open-file regression (proof.png must not hang)")
+
+    ;; image-file? detection
+    (let ((r (image-file? "/home/jafourni/proof.png")))
+      (if r
+        (pass! "image-file? detects .png")
+        (fail! "image-file? detects .png" r #t)))
+
+    ;; The core regression: opening an image file must complete without hanging.
+    ;; Before the setUpdatesEnabled fix, SCI_SETDOCPOINTER inside
+    ;; BlockingQueuedConnection triggered a reentrant paint event that deadlocked.
+    (with-catch
+      (lambda (e)
+        (fail! "qt-open-image-inline! ~/proof.png does not crash"
+               (##object->string e) "no exception"))
+      (lambda ()
+        (qt-open-image-inline! app "/home/jafourni/proof.png")
+        (pass! "qt-open-image-inline! ~/proof.png returns normally")))
+
+    ;; Drain any queued callbacks before next check
+    (drain-async! 5 0.02)
+
+    ;; After opening, the buffer name should match the file basename
+    (let* ((fr (app-state-frame app))
+           (buf (qt-current-buffer fr)))
+      (if (and buf (string=? (buffer-name buf) "proof.png"))
+        (pass! "image buffer name is proof.png")
+        (fail! "image buffer name is proof.png"
+               (if buf (buffer-name buf) "#f") "proof.png")))
+
+    (destroy-qt-test-app! ed w)
+    (displayln "Group 53 complete")))
+
 ;;;============================================================================
 
 (def (main . args)
@@ -5299,6 +5346,7 @@
     (run-group-50-calc-describe-abbrev)
     (run-group-51-inflection-occur-wdired)
     (run-group-52-pqr-align-uuid)
+    (run-group-53-open-file-regression)
 
     (displayln "---")
     (displayln "Results: " *passes* " passed, " *failures* " failed")

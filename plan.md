@@ -249,12 +249,30 @@ Largest files: modes (~1851), lsp (~1802), search (~1778)
 
 - ~~**String inflection, occur-edit mode, wdired**~~ — DONE (Batch 4): `string-inflection-cycle/snake-case/camelcase/upcase` cycle identifiers through snake→camel→PascalCase→UPPER→kebab with full tokenizer (handles all casing boundaries + UPPER_CASE detection); `occur-edit-mode` makes `*Occur*` buffer editable (snapshots lines, commits on C-c C-c to write changes back to source buffer); `wdired-mode/wdired-finish-edit/wdired-abort` enable filename renaming in dired buffers via `mv`. All 9 commands in both TUI and Qt. 706 Qt tests.
 
+- ~~**project-query-replace, multi-file qreplace**~~ — DONE (Batch 5): `project-query-replace` / `project-query-replace-regexp` — grep project for files matching `from`, open each file, run interactive query-replace (Qt: y/n/!/q per match using existing qreplace key handler; TUI: batch replace-all per file). Extended `qreplace-finish!` with `*qreplace-files-remaining*` state to auto-advance to next project file. `insert-uuid` / `uuidgen` properly registered in both layers (Qt: calls `/usr/bin/uuidgen`; TUI: already in `editor-cmds-a.ss`). Fix: singleton Scintilla editor now resets `SCI_SETREADONLY 0` at start of each test group. 716 Qt tests.
+
 ### Current Status
-- **706 Qt tests passing**, all TUI tests passing (vtscreen flaky but known)
-- **~2179+ registered commands** across TUI and Qt
-- **~647+ implemented features**
+- **716 Qt tests passing**, all TUI tests passing (vtscreen flaky but known)
+- **~2185+ registered commands** across TUI and Qt
+- **~650+ implemented features**
 - Remaining stubs: 2 niche Qt stubs (all-the-icons-install-fonts, nerd-icons-install-fonts — informational only)
 - Remaining yellow circles in gemacs-vs-emacs.md: ~12 (mostly fundamental platform limitations: tree-sitter, EWW CSS/JS, screen reader, tab-line per-window)
+
+### Completed: SMP / Qt Thread Safety (`fix-smp-qt` branch)
+
+**Problem**: Gambit's M:N SMP scheduler migrates green threads between OS threads at heartbeat preemption points. Qt requires all widget operations on the OS thread where `QApplication` was created.
+
+**Solution**: Two-layer approach:
+1. **BlockingQueuedConnection** (C++ shim layer): All 803 C++ shim functions in `gerbil-qt/vendor/qt_shim.cpp` use `QT_VOID`/`QT_RETURN`/`QT_RETURN_STRING` dispatch macros that check `is_qt_main_thread()` and marshal cross-thread calls via `Qt::BlockingQueuedConnection`.
+2. **`##thread-pin!`** (Scheme layer): The primordial/UI thread and master-timer thread are pinned to processor 0 (the main OS thread) using Gambit's internal `##thread-pin!` API. This prevents work-stealing migration while allowing SMP parallelism for background threads.
+
+**Thread pinning architecture** (`async.ss`):
+- `pin-thread-to-processor0!` — Pin any thread to processor 0
+- `spawn/name/pinned` — Spawn a named thread pre-pinned to processor 0
+- **Pinned threads**: primordial/UI thread (in `qt-main`), master-timer
+- **Unpinned threads**: async-process, file-indexer, git-watcher, flycheck, LSP, auto-save, org-highlight, dired ops, PTY readers, debug REPL — all deliver results via `ui-queue-push!`
+
+**Status**: Build succeeds, 719/719 Qt functional tests pass, full SMP enabled.
 
 ### Next Steps (for continuation)
 - Continue upgrading remaining stubs per standing instruction

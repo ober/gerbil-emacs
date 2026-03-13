@@ -33,11 +33,24 @@
         :gemacs/qt/menubar
         :gemacs/ipc
         :gemacs/vtscreen
-        (only-in :gemacs/editor-extra-web *aggressive-indent-mode*))
+        (only-in :gemacs/editor-extra-web *aggressive-indent-mode*)
+        (only-in :gemacs/debug-repl start-debug-repl! stop-debug-repl!))
 
 ;;;============================================================================
 ;;; Qt Application
 ;;;============================================================================
+
+(def (parse-repl-port args)
+  "Return (port-num . filtered-args) if --repl <port> is present, else #f."
+  (let loop ((rest args) (acc []))
+    (cond
+      ((null? rest) #f)
+      ((and (string=? (car rest) "--repl")
+            (pair? (cdr rest))
+            (string->number (cadr rest)))
+       (cons (string->number (cadr rest))
+             (append (reverse acc) (cddr rest))))
+      (else (loop (cdr rest) (cons (car rest) acc))))))
 
 ;; Auto-save path: #filename# (Emacs convention)
 (def (qt-make-auto-save-path path)
@@ -276,6 +289,7 @@
   (let ((tag (car msg))
         (data (cdr msg))
         (vt (terminal-state-vtscreen ts)))
+    (verbose-log! "PTY-MSG tag=" (symbol->string tag))
     (cond
       ((eq? tag 'data)
        ;; Single data message fallback
@@ -309,17 +323,16 @@
                    (qt-plain-text-edit-ensure-cursor-visible! ed)))
                (loop (cdr wins))))))))))
 
-(def (qt-main . args)
-  ;; Disable IBus input method plugin to prevent Scintilla assertion crash.
-  ;; IBus queries Qt::ImSurroundingText via SCI_GETTEXTRANGE with stale positions
-  ;; when the document changes rapidly (e.g. terminal PTY output every 50ms).
-  ;; The "compose" module handles basic compose sequences without querying text.
-  (setenv "QT_IM_MODULE" "compose")
-  ;; Also disable accessibility (AT-SPI) as defense-in-depth.
-  (setenv "QT_ACCESSIBILITY" "0")
-  (with-qt-app qt-app
-    ;; Initialize runtime error log (~/.gemacs-errors.log)
-    (init-gemacs-log!)
+(def (qt-do-init! qt-app args)
+  ;; Initialize runtime error log (~/.gemacs-errors.log)
+  (init-gemacs-log!)
+  ;; Verbose hang-diagnosis log: --verbose opens ~/.gemacs-verbose.log and
+  ;; enables per-BlockingQueuedConnection tracing in the Qt shim.
+  (when (member "--verbose" args)
+    (let ((vpath (init-verbose-log!)))
+      ;; Also enable the C-level BQC entry/exit logging to the same file.
+      (qt-verbose-log-enable! vpath)
+      (verbose-log! "gemacs-qt verbose mode ON  (C-level BQC tracing also active)")))
     ;; Initialize face system with standard faces
     (define-standard-faces!)
     ;; Load saved theme and font settings from ~/.gemacs-theme
@@ -478,7 +491,10 @@
                               raw-text)))
                 ;; Record keystroke in lossage ring
                 (let ((ks (qt-key-event->string code mods text)))
-                  (when ks (key-lossage-record! app ks)))
+                  (when ks
+                    (key-lossage-record! app ks)
+                    (verbose-log! "KEY " ks " code=" (number->string code)
+                                  " mods=" (number->string mods))))
                 ;; Modal mode intercepts: isearch and query-replace
                 (cond
                  (*isearch-active*
@@ -1122,24 +1138,78 @@
 
       ;; Start IPC server for gemacs-client
       (start-ipc-server!)
+      ;; Start debug REPL if --repl <port> or GEMACS_REPL_PORT is set
+      (let* ((repl-port-env (getenv "GEMACS_REPL_PORT" #f))
+             (repl-info     (or (parse-repl-port args)
+                                (and repl-port-env
+                                     (cons (string->number repl-port-env) args)))))
+        (when repl-info
+          (start-debug-repl! (car repl-info))))
       (schedule-periodic! 'ipc 200
         (lambda ()
           (for-each (lambda (f) (qt-open-file! app f))
                     (ipc-poll-files!))))
 
       ;; Master timer — drives all periodic tasks and drains the async UI queue.
-      ;; Single 50ms timer replaces 7+ individual Qt timers.
-      (let ((master-timer (qt-timer-create)))
-        (qt-on-timeout! master-timer master-timer-tick!)
-        (qt-timer-start! master-timer 50))
+      ;; Single 50ms green-thread loop replaces 7+ individual Qt timers.
+      ;;
+      ;; SMP NOTE: We deliberately use a spawned Gambit green thread instead of
+      ;; a Qt QTimer.  In the SMP model the Qt thread is a raw pthread (not a
+      ;; Gambit VP), so any `c-define` callback invoked directly from the Qt
+      ;; thread has ___ps == NULL and crashes.  A Qt timer's timeout signal fires
+      ;; on the Qt thread, so its trampoline would enqueue the callback instead
+      ;; of executing it — creating a circular deadlock where the drain is inside
+      ;; the callback that never runs.
+      ;;
+      ;; A spawned Gambit green thread solves this cleanly: thread-sleep! yields
+      ;; to the Gambit scheduler (no Qt calls), and the tick/drain run on a
+      ;; Gambit VP where ___ps is valid.  Qt calls inside the drain/tick go
+      ;; through BlockingQueuedConnection to the Qt thread as normal.
+      ;; Pin the master timer to processor 0 so it always drains the BQC
+      ;; callback queue and runs periodic UI tasks on the main OS thread.
+      ;; Without pinning, work-stealing could move it to another VP where
+      ;; Qt calls via BQC would still work but add unnecessary latency.
+      (spawn/name/pinned 'master-timer
+        (lambda ()
+          (let loop ()
+            (thread-sleep! 0.05)
+            (qt-drain-pending-callbacks!)
+            (master-timer-tick!)
+            (loop))))
 
-      ;; Enter Qt event loop (blocks until quit)
+      )) ;; end of qt-do-init! let* and function body
+
+(def (qt-main . args)
+  ;; Pin the primordial thread to processor 0 (the main OS thread).
+  ;; This is the most critical pinning: the primordial thread runs all
+  ;; command dispatch, key handling, minibuffer poll loops, and Qt init.
+  ;; Without pinning, Gambit's work-stealing scheduler could migrate it
+  ;; to a different OS thread mid-operation, breaking Qt thread affinity.
+  (pin-thread-to-processor0! (current-thread))
+  ;; Disable IBus input method plugin to prevent Scintilla assertion crash.
+  ;; IBus queries Qt::ImSurroundingText via SCI_GETTEXTRANGE with stale positions
+  ;; when the document changes rapidly (e.g. terminal PTY output every 50ms).
+  ;; The "compose" module handles basic compose sequences without querying text.
+  (setenv "QT_IM_MODULE" "compose")
+  ;; Also disable accessibility (AT-SPI) as defense-in-depth.
+  (setenv "QT_ACCESSIBILITY" "0")
+  (let ((qt-app (qt-app-create)))
+    (try
+      ;; Run initialization synchronously before entering the event loop.
+      ;; The primordial thread is pinned to processor 0, so it will always
+      ;; run on the main OS thread — Qt calls go direct without needing
+      ;; BlockingQueuedConnection during init.  After exec() starts,
+      ;; background threads (LSP, async file I/O) use BlockingQueuedConnection
+      ;; safely because the event loop is then running.
+      (qt-do-init! qt-app args)
+      ;; Enter Qt event loop (blocks here until quit)
       (qt-app-exec! qt-app)
-
-      ;; Cleanup LSP server on exit
+      ;; Cleanup after event loop exits
       (lsp-stop!)
-      ;; Cleanup IPC server on exit
-      (stop-ipc-server!))))
+      (stop-ipc-server!)
+      (stop-debug-repl!)
+      (finally
+        (qt-app-destroy! qt-app)))))
 
 ;;;============================================================================
 ;;; File opening helper

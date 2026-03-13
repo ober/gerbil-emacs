@@ -110,6 +110,10 @@
   init-gemacs-log!
   gemacs-log!
 
+  ;; Verbose hang-diagnosis log (~/.gemacs-verbose.log)
+  init-verbose-log!
+  verbose-log!
+
   ;; Captured output logs
   append-error-log! append-output-log!
   get-error-log get-output-log
@@ -1511,6 +1515,7 @@
   (let ((cmd (find-command name)))
     (if cmd
       (begin
+        (verbose-log! "CMD " (symbol->string name))
         (set! (app-state-last-command app) name)
         (quit-flag-clear!)
         (with-catch
@@ -1866,6 +1871,7 @@
 
 (def *gemacs-log-port* #f)
 (def *gemacs-original-stderr* #f)
+(def *verbose-log-port* #f)
 
 (def (init-gemacs-log!)
   "Initialize the runtime error log. Opens ~/.gemacs-errors.log for append,
@@ -1889,6 +1895,30 @@
           (ts (date->string (current-date 0) "~Y-~m-~d ~H:~M:~S")))
       (display "[" port)
       (display ts port)
+      (display "] " port)
+      (for-each (lambda (arg) (display arg port)) args)
+      (newline port)
+      (force-output port))))
+
+(def (init-verbose-log!)
+  "Open ~/.gemacs-verbose.log for append and enable verbose-log!.
+   Call from qt-main when --verbose is passed."
+  (let ((path (string-append (getenv "HOME" "/tmp") "/.gemacs-verbose.log")))
+    (set! *verbose-log-port* (open-output-file [path: path append: #t]))
+    (verbose-log! "=== gemacs-qt verbose log started ===")
+    path))
+
+(def (verbose-log! . args)
+  "Write a timestamped line to ~/.gemacs-verbose.log with thread id.
+   No-op if verbose mode is not enabled."
+  (when *verbose-log-port*
+    (let* ((port *verbose-log-port*)
+           (ts   (date->string (current-date 0) "~Y-~m-~d ~H:~M:~S"))
+           (tid  (##object->string (current-thread))))
+      (display "[" port)
+      (display ts port)
+      (display "] [" port)
+      (display tid port)
       (display "] " port)
       (for-each (lambda (arg) (display arg port)) args)
       (newline port)

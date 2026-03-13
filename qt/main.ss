@@ -17,7 +17,9 @@
     ((member "--help" args)
      (displayln "Usage: gemacs-qt [OPTIONS] [FILES...]")
      (displayln "Options:")
-     (displayln "  --version   Show version information")
-     (displayln "  --help      Show this help message"))
+     (displayln "  --version        Show version information")
+     (displayln "  --help           Show this help message")
+     (displayln "  --verbose        Log all Qt calls and commands to ~/.gemacs-verbose.log")
+     (displayln "  --repl <port>    Start TCP debug REPL on given port (0=auto)"))
     (else
      (apply qt-main args))))

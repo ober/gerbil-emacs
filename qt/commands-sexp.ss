@@ -852,7 +852,7 @@
                                 stdout-redirection: #t))))
               (display text proc)
               (close-output-port proc)
-              (process-status proc)
+              ;; Omit process-status (Qt SIGCHLD race) — read-line already waited
               (close-port proc)
               (qt-text-document-set-modified! (buffer-doc-pointer buf) #f)
               (echo-message! (app-state-echo app)
@@ -877,7 +877,7 @@
                                  stdout-redirection: #t
                                  stderr-redirection: #t)))
                    (content (read-line proc #f)))
-              (process-status proc)
+              ;; Omit process-status (Qt SIGCHLD race)
               (close-port proc)
               (let* ((buf-name (string-append full-path " (sudo)"))
                      (fr (app-state-frame app))
@@ -929,7 +929,7 @@
                                        arguments: (list "-u" tmp-a tmp-b)
                                        stdout-redirection: #t)))
                          (output (read-line proc #f))
-                         (_ (process-status proc))
+                         ;; Omit process-status (Qt SIGCHLD race)
                          (ed (current-qt-editor app))
                          (fr (app-state-frame app))
                          (diff-buf (qt-buffer-create! "*Ediff*" ed #f)))
