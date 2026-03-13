@@ -5,11 +5,22 @@
 ;;; async file I/O, and a periodic task scheduler.
 ;;; Background threads push thunks via ui-queue-push!; a master timer
 ;;; drains them on the UI thread.
+;;;
+;;; SMP Thread Pinning:
+;;; Gambit SMP can migrate green threads between OS-level Virtual Processors
+;;; via work-stealing.  For Qt apps, the UI thread must stay on processor 0
+;;; (the main OS thread) so Qt widget operations happen on the correct pthread.
+;;; Use pin-thread-to-processor0! to pin critical threads, and
+;;; spawn/name/pinned to spawn a green thread pre-pinned to processor 0.
 
 (export
   ;; UI action queue
   ui-queue-push!
   ui-queue-drain!
+
+  ;; SMP thread pinning
+  pin-thread-to-processor0!
+  spawn/name/pinned
 
   ;; Async command runner
   async-process!
@@ -45,6 +56,27 @@
         :std/sugar
         :std/srfi/13
         :gemacs/core)
+
+;;;============================================================================
+;;; SMP Thread Pinning
+;;;============================================================================
+
+(def (pin-thread-to-processor0! thread)
+  "Pin a green thread to processor 0 (the main OS thread).
+   Prevents Gambit's SMP work-stealing scheduler from migrating this thread
+   to a different OS thread.  Essential for threads that make Qt calls or
+   drain the Qt callback queue.
+   Uses ##thread-pin! (internal Gambit API, lib/_thread.scm:1460)."
+  (##thread-pin! thread (##processor 0)))
+
+(def (spawn/name/pinned name thunk)
+  "Spawn a named green thread pinned to processor 0.
+   The thread is pinned before starting so it never runs on any other processor.
+   Use for threads that must stay on the main OS thread (Qt UI operations)."
+  (let ((t (make-thread thunk name)))
+    (pin-thread-to-processor0! t)
+    (thread-start! t)
+    t))
 
 ;;;============================================================================
 ;;; UI Action Queue

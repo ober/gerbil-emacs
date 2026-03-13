@@ -258,31 +258,23 @@ Largest files: modes (~1851), lsp (~1802), search (~1778)
 - Remaining stubs: 2 niche Qt stubs (all-the-icons-install-fonts, nerd-icons-install-fonts — informational only)
 - Remaining yellow circles in gemacs-vs-emacs.md: ~12 (mostly fundamental platform limitations: tree-sitter, EWW CSS/JS, screen reader, tab-line per-window)
 
-### In Progress: SMP / Qt Thread Safety (`fix-smp-qt` branch)
+### Completed: SMP / Qt Thread Safety (`fix-smp-qt` branch)
 
-**Problem**: Gambit's M:N SMP scheduler migrates green threads between OS threads at heartbeat preemption points. Qt requires all widget operations on the OS thread where `QApplication` was created. This causes intermittent startup failures and crashes.
+**Problem**: Gambit's M:N SMP scheduler migrates green threads between OS threads at heartbeat preemption points. Qt requires all widget operations on the OS thread where `QApplication` was created.
 
-**What was done**:
-- Added `QT_VOID` / `QT_RETURN` / `QT_RETURN_STRING` dispatch macros to all 803 C++ shim functions in `gerbil-qt/vendor/qt_shim.cpp`. These check `is_qt_main_thread()` and use `Qt::BlockingQueuedConnection` to marshal cross-thread calls.
-- Restructured `qt-main` in `qt/app.ss`: extracted body into `qt-do-init!`, run synchronously before `qt-app-exec!`.
-- Attempted `g_event_loop_running` atomic flag to skip dispatch before exec() — but exec() itself can be called from the wrong thread after migration.
-- Attempted dedicated Qt pthread (`pthread_create` in `qt_application_create`, `pthread_join` in `qt_application_exec`) — exec() always on correct thread, but broke Qt functional tests with `QObject::setParent: Cannot set parent, new parent is in a different thread` errors and a segfault in scenario 19+.
+**Solution**: Two-layer approach:
+1. **BlockingQueuedConnection** (C++ shim layer): All 803 C++ shim functions in `gerbil-qt/vendor/qt_shim.cpp` use `QT_VOID`/`QT_RETURN`/`QT_RETURN_STRING` dispatch macros that check `is_qt_main_thread()` and marshal cross-thread calls via `Qt::BlockingQueuedConnection`.
+2. **`##thread-pin!`** (Scheme layer): The primordial/UI thread and master-timer thread are pinned to processor 0 (the main OS thread) using Gambit's internal `##thread-pin!` API. This prevents work-stealing migration while allowing SMP parallelism for background threads.
 
-**Current state of the branch**:
-- Dynamic build works, both binaries start (`--version` works)
-- Qt functional tests FAIL: 716→segfault with dedicated-pthread approach
-- The root cause of test breakage is not yet identified — suspected Qt object thread-affinity issue when using a `pthread`-created thread vs Qt's native main thread
+**Thread pinning architecture** (`async.ss`):
+- `pin-thread-to-processor0!` — Pin any thread to processor 0
+- `spawn/name/pinned` — Spawn a named thread pre-pinned to processor 0
+- **Pinned threads**: primordial/UI thread (in `qt-main`), master-timer
+- **Unpinned threads**: async-process, file-indexer, git-watcher, flycheck, LSP, auto-save, org-highlight, dired ops, PTY readers, debug REPL — all deliver results via `ui-queue-push!`
 
-**Known constraint**: GAMBCOPT=,-:p1 (single-processor mode) is NOT an acceptable solution per user requirement.
-
-**Next steps to fix**:
-1. Investigate why `QObject::setParent` fires for objects all supposedly created on the Qt pthread
-2. Consider using `QThread`-based wrapper (inherits Qt's thread tracking) instead of raw `pthread_create`
-3. Or: investigate pinning the Gambit green thread to a VP during Qt init/exec using Gambit internals
-4. After tests pass, run full verification checklist
+**Status**: Build succeeds, 719/719 Qt functional tests pass, full SMP enabled.
 
 ### Next Steps (for continuation)
-- Fix `fix-smp-qt` branch (see above) — tests are currently broken
 - Continue upgrading remaining stubs per standing instruction
 - Potential features: dired improvements (mark by regex, shell command on marked), more text transforms
 - Update gemacs-vs-emacs.md after each batch

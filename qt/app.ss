@@ -1165,7 +1165,11 @@
       ;; to the Gambit scheduler (no Qt calls), and the tick/drain run on a
       ;; Gambit VP where ___ps is valid.  Qt calls inside the drain/tick go
       ;; through BlockingQueuedConnection to the Qt thread as normal.
-      (spawn/name 'master-timer
+      ;; Pin the master timer to processor 0 so it always drains the BQC
+      ;; callback queue and runs periodic UI tasks on the main OS thread.
+      ;; Without pinning, work-stealing could move it to another VP where
+      ;; Qt calls via BQC would still work but add unnecessary latency.
+      (spawn/name/pinned 'master-timer
         (lambda ()
           (let loop ()
             (thread-sleep! 0.05)
@@ -1176,6 +1180,12 @@
       )) ;; end of qt-do-init! let* and function body
 
 (def (qt-main . args)
+  ;; Pin the primordial thread to processor 0 (the main OS thread).
+  ;; This is the most critical pinning: the primordial thread runs all
+  ;; command dispatch, key handling, minibuffer poll loops, and Qt init.
+  ;; Without pinning, Gambit's work-stealing scheduler could migrate it
+  ;; to a different OS thread mid-operation, breaking Qt thread affinity.
+  (pin-thread-to-processor0! (current-thread))
   ;; Disable IBus input method plugin to prevent Scintilla assertion crash.
   ;; IBus queries Qt::ImSurroundingText via SCI_GETTEXTRANGE with stale positions
   ;; when the document changes rapidly (e.g. terminal PTY output every 50ms).
@@ -1186,9 +1196,9 @@
   (let ((qt-app (qt-app-create)))
     (try
       ;; Run initialization synchronously before entering the event loop.
-      ;; During init, only one Gambit green thread is active, so the SMP
-      ;; scheduler won't migrate it — all Qt calls go direct on the Qt main
-      ;; thread without needing BlockingQueuedConnection.  After exec() starts,
+      ;; The primordial thread is pinned to processor 0, so it will always
+      ;; run on the main OS thread — Qt calls go direct without needing
+      ;; BlockingQueuedConnection during init.  After exec() starts,
       ;; background threads (LSP, async file I/O) use BlockingQueuedConnection
       ;; safely because the event loop is then running.
       (qt-do-init! qt-app args)
