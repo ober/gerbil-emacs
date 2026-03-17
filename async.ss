@@ -61,13 +61,24 @@
 ;;; SMP Thread Pinning
 ;;;============================================================================
 
+;; Dynamically resolve ##thread-pin! to avoid a hard reference in the compiled
+;; code object that would segfault at module init time on older Gambit builds
+;; (e.g. the Docker deps image uses v4.9.7-6 which predates ##thread-pin!).
+;; With a dynamic lookup the reference is only resolved at call time, so the
+;; module loads cleanly and pinning is simply a no-op on old runtimes.
+(def *gambit-thread-pin!*
+  (let ((v (##global-var-ref (##make-global-var '##thread-pin!))))
+    (if (##unbound? v) #f v)))
+
 (def (pin-thread-to-processor0! thread)
   "Pin a green thread to processor 0 (the main OS thread).
    Prevents Gambit's SMP work-stealing scheduler from migrating this thread
    to a different OS thread.  Essential for threads that make Qt calls or
    drain the Qt callback queue.
-   Uses ##thread-pin! (internal Gambit API, lib/_thread.scm:1460)."
-  (##thread-pin! thread (##processor 0)))
+   Uses ##thread-pin! (internal Gambit API, lib/_thread.scm:1460).
+   No-op on Gambit builds that predate ##thread-pin! (e.g. Docker deps image)."
+  (when *gambit-thread-pin!*
+    (*gambit-thread-pin!* thread (##processor 0))))
 
 (def (spawn/name/pinned name thunk)
   "Spawn a named green thread pinned to processor 0.
