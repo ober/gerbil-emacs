@@ -1,33 +1,17 @@
 ;;; -*- Gerbil -*-
-;;; VT100 virtual terminal screen buffer.
+;;; VT100 virtual terminal screen buffer — libvterm backend.
 ;;;
-;;; Maintains a rows×cols character grid. Processes ANSI/VT100 escape
-;;; sequences for cursor movement, screen clearing, and scrolling.
-;;; Renders the grid to a plain string for display in Scintilla.
+;;; Uses libvterm (via begin-ffi / c-declare + -lvterm link) for complete
+;;; VT100/VT220/xterm terminal emulation with:
+;;;   - C-speed byte parsing (no per-byte Scheme overhead)
+;;;   - Full SGR color support (16/256/RGB per-cell)
+;;;   - Proper alt screen buffer with save/restore
+;;;   - Unicode + combining characters + wide chars
+;;;   - Scrollback ring buffer (10,000 lines)
+;;;   - Row-level damage tracking for efficient rendering
+;;;   - Resize with line reflow
 ;;;
-;;; Supported CSI sequences:
-;;;   H/f  — Cursor position (row;col or home)
-;;;   A    — Cursor up
-;;;   B    — Cursor down
-;;;   C    — Cursor forward
-;;;   D    — Cursor backward
-;;;   J    — Erase in display (0=below, 1=above, 2=all, 3=scrollback)
-;;;   K    — Erase in line (0=right, 1=left, 2=whole)
-;;;   G    — Cursor horizontal absolute
-;;;   d    — Cursor vertical absolute
-;;;   m    — SGR (colors — tracked but not rendered here)
-;;;   r    — Set scrolling region
-;;;   L    — Insert lines
-;;;   M    — Delete lines
-;;;   S    — Scroll up
-;;;   T    — Scroll down
-;;;   @    — Insert characters
-;;;   P    — Delete characters
-;;;   X    — Erase characters
-;;;   s    — Save cursor position
-;;;   u    — Restore cursor position
-;;;   ?... h/l — DEC private modes (ignored)
-;;;   n    — Device status report (ignored)
+;;; API is backwards-compatible with the old pure-Scheme vtscreen.
 
 (export new-vtscreen
         vtscreen-feed!
@@ -37,668 +21,726 @@
         vtscreen-cols
         vtscreen-cursor-row
         vtscreen-cursor-col
-        vtscreen-alt-screen?)
+        vtscreen-alt-screen?
+        ;; Row-level damage tracking for batched updates
+        vtscreen-has-damage?
+        vtscreen-row-dirty?
+        vtscreen-clear-damage!
+        vtscreen-mark-all-dirty!
+        ;; Per-row text extraction
+        vtscreen-get-row-text
+        ;; Scrollback access
+        vtscreen-scrollback-len
+        vtscreen-scrollback-line
+        vtscreen-scrollback-clear!
+        ;; Per-cell color queries (packed 0x00RRGGBB, -1 = default)
+        vtscreen-cell-fg
+        vtscreen-cell-bg
+        vtscreen-cell-attrs
+        ;; Free resources
+        vtscreen-free!)
 
-(import :std/sugar)
+(import :std/foreign
+        :std/sugar)
 
 ;;;============================================================================
-;;; Screen data structure
+;;; FFI: libvterm via begin-ffi (compiled C code + -lvterm link flag)
 ;;;============================================================================
+
+(begin-ffi (ffi-jvt-new
+            ffi-jvt-free
+            ffi-jvt-write
+            ffi-jvt-resize
+            ffi-jvt-get-row-text
+            ffi-jvt-get-text
+            ffi-jvt-is-altscreen
+            ffi-jvt-get-rows
+            ffi-jvt-get-cols
+            ffi-jvt-get-cursor-row
+            ffi-jvt-get-cursor-col
+            ffi-jvt-has-damage
+            ffi-jvt-row-dirty
+            ffi-jvt-clear-damage
+            ffi-jvt-mark-all-dirty
+            ffi-jvt-get-cell-fg
+            ffi-jvt-get-cell-bg
+            ffi-jvt-get-cell-attrs
+            ffi-jvt-scrollback-len
+            ffi-jvt-scrollback-line
+            ffi-jvt-scrollback-clear)
+
+  (c-declare #<<END-C
+
+/*
+ * vterm_shim — Thin C wrapper bridging libvterm to Gambit FFI.
+ *
+ * Wraps libvterm's VTerm/VTermScreen with:
+ *   - Scrollback ring buffer (sb_pushline/sb_popline callbacks)
+ *   - Row-level damage tracking (dirty bitmask)
+ *   - Alt-screen detection
+ *   - Per-row text extraction (UTF-8)
+ *   - Per-cell color + attribute queries
+ */
+
+#include <vterm.h>
+#include <stdlib.h>
+#include <string.h>
+#include <stdint.h>
+
+/* ============================================================
+ * Scrollback ring buffer
+ * ============================================================ */
+
+#define JVT_DEFAULT_SCROLLBACK 10000
+
+typedef struct {
+    char *text;
+    int   text_len;
+} JvtScrollLine;
+
+typedef struct {
+    JvtScrollLine *lines;
+    int            max_lines;
+    int            count;
+    int            head;
+} JvtScrollback;
+
+static void scrollback_init(JvtScrollback *sb, int max_lines) {
+    sb->max_lines = max_lines;
+    sb->count = 0;
+    sb->head = 0;
+    sb->lines = (JvtScrollLine *)calloc(max_lines, sizeof(JvtScrollLine));
+}
+
+static void scrollback_free(JvtScrollback *sb) {
+    if (!sb->lines) return;
+    for (int i = 0; i < sb->max_lines; i++) free(sb->lines[i].text);
+    free(sb->lines);
+    sb->lines = NULL;
+}
+
+static void scrollback_push(JvtScrollback *sb, const char *text, int len) {
+    int idx;
+    if (sb->count < sb->max_lines) {
+        idx = (sb->head + sb->count) % sb->max_lines;
+        sb->count++;
+    } else {
+        idx = sb->head;
+        sb->head = (sb->head + 1) % sb->max_lines;
+        free(sb->lines[idx].text);
+    }
+    sb->lines[idx].text = (char *)malloc(len + 1);
+    memcpy(sb->lines[idx].text, text, len);
+    sb->lines[idx].text[len] = '\0';
+    sb->lines[idx].text_len = len;
+}
+
+static int scrollback_pop(JvtScrollback *sb, char *buf, int buflen) {
+    if (sb->count == 0) return -1;
+    sb->count--;
+    int idx = (sb->head + sb->count) % sb->max_lines;
+    int len = sb->lines[idx].text_len;
+    if (buf && buflen > 0) {
+        int copy = len < buflen ? len : buflen - 1;
+        memcpy(buf, sb->lines[idx].text, copy);
+        buf[copy] = '\0';
+    }
+    free(sb->lines[idx].text);
+    sb->lines[idx].text = NULL;
+    sb->lines[idx].text_len = 0;
+    return len;
+}
+
+static JvtScrollLine *scrollback_get(JvtScrollback *sb, int idx) {
+    if (idx < 0 || idx >= sb->count) return NULL;
+    int ring_idx = (sb->head + sb->count - 1 - idx) % sb->max_lines;
+    return &sb->lines[ring_idx];
+}
+
+/* ============================================================
+ * Main JVT wrapper struct
+ * ============================================================ */
+
+typedef struct {
+    VTerm       *vt;
+    VTermScreen *screen;
+    int          rows;
+    int          cols;
+    uint8_t     *dirty_rows;
+    int          any_damage;
+    JvtScrollback scrollback;
+    int          is_altscreen;
+    char        *text_buf;
+    int          text_buf_size;
+} JvtState;
+
+/* ============================================================
+ * libvterm screen callbacks
+ * ============================================================ */
+
+static int jvt_cb_damage(VTermRect rect, void *user) {
+    JvtState *st = (JvtState *)user;
+    for (int r = rect.start_row; r < rect.end_row && r < st->rows; r++)
+        st->dirty_rows[r] = 1;
+    st->any_damage = 1;
+    return 0;
+}
+
+static int jvt_cb_sb_pushline(int cols, const VTermScreenCell *cells, void *user) {
+    JvtState *st = (JvtState *)user;
+    int max_len = cols * VTERM_MAX_CHARS_PER_CELL * 4;
+    char *buf = (char *)malloc(max_len + 1);
+    int pos = 0;
+    for (int c = 0; c < cols; c++) {
+        for (int ci = 0; ci < VTERM_MAX_CHARS_PER_CELL && cells[c].chars[ci]; ci++) {
+            uint32_t cp = cells[c].chars[ci];
+            if (cp < 0x80) {
+                buf[pos++] = (char)cp;
+            } else if (cp < 0x800) {
+                buf[pos++] = 0xC0 | (cp >> 6);
+                buf[pos++] = 0x80 | (cp & 0x3F);
+            } else if (cp < 0x10000) {
+                buf[pos++] = 0xE0 | (cp >> 12);
+                buf[pos++] = 0x80 | ((cp >> 6) & 0x3F);
+                buf[pos++] = 0x80 | (cp & 0x3F);
+            } else {
+                buf[pos++] = 0xF0 | (cp >> 18);
+                buf[pos++] = 0x80 | ((cp >> 12) & 0x3F);
+                buf[pos++] = 0x80 | ((cp >> 6) & 0x3F);
+                buf[pos++] = 0x80 | (cp & 0x3F);
+            }
+        }
+        if (cells[c].chars[0] == 0) buf[pos++] = ' ';
+    }
+    while (pos > 0 && buf[pos - 1] == ' ') pos--;
+    buf[pos] = '\0';
+    scrollback_push(&st->scrollback, buf, pos);
+    free(buf);
+    return 0;
+}
+
+static int jvt_cb_sb_popline(int cols, VTermScreenCell *cells, void *user) {
+    JvtState *st = (JvtState *)user;
+    if (st->scrollback.count == 0) return 0;
+    for (int c = 0; c < cols; c++) {
+        memset(&cells[c], 0, sizeof(VTermScreenCell));
+        cells[c].chars[0] = ' ';
+        cells[c].width = 1;
+    }
+    char tmpbuf[8192];
+    int len = scrollback_pop(&st->scrollback, tmpbuf, sizeof(tmpbuf));
+    if (len > 0) {
+        int c = 0, i = 0;
+        while (i < len && c < cols) {
+            unsigned char b = (unsigned char)tmpbuf[i];
+            uint32_t cp; int bytes;
+            if (b < 0x80) { cp = b; bytes = 1; }
+            else if (b < 0xE0) { cp = b & 0x1F; bytes = 2; }
+            else if (b < 0xF0) { cp = b & 0x0F; bytes = 3; }
+            else { cp = b & 0x07; bytes = 4; }
+            for (int j = 1; j < bytes && (i + j) < len; j++)
+                cp = (cp << 6) | (tmpbuf[i + j] & 0x3F);
+            cells[c].chars[0] = cp; cells[c].width = 1;
+            i += bytes; c++;
+        }
+    }
+    return 1;
+}
+
+static int jvt_cb_settermprop(VTermProp prop, VTermValue *val, void *user) {
+    JvtState *st = (JvtState *)user;
+    if (prop == VTERM_PROP_ALTSCREEN) st->is_altscreen = val->boolean;
+    return 1;
+}
+
+static int jvt_cb_movecursor(VTermPos pos, VTermPos oldpos, int visible, void *user) {
+    (void)pos; (void)oldpos; (void)visible; (void)user; return 1;
+}
+
+static int jvt_cb_bell(void *user) { (void)user; return 0; }
+static int jvt_cb_resize(int rows, int cols, void *user) {
+    (void)rows; (void)cols; (void)user; return 1;
+}
+
+static VTermScreenCallbacks jvt_screen_cbs = {
+    .damage      = jvt_cb_damage,
+    .moverect    = NULL,
+    .movecursor  = jvt_cb_movecursor,
+    .settermprop = jvt_cb_settermprop,
+    .bell        = jvt_cb_bell,
+    .resize      = jvt_cb_resize,
+    .sb_pushline = jvt_cb_sb_pushline,
+    .sb_popline  = jvt_cb_sb_popline,
+    .sb_clear    = NULL,
+};
+
+/* ============================================================
+ * Public API
+ * ============================================================ */
+
+static void *jvt_new(int rows, int cols) {
+    JvtState *st = (JvtState *)calloc(1, sizeof(JvtState));
+    if (!st) return NULL;
+    st->vt = vterm_new(rows, cols);
+    if (!st->vt) { free(st); return NULL; }
+    vterm_set_utf8(st->vt, 1);
+    st->screen = vterm_obtain_screen(st->vt);
+    st->rows = rows; st->cols = cols;
+    st->dirty_rows = (uint8_t *)calloc(rows, 1);
+    st->any_damage = 0;
+    scrollback_init(&st->scrollback, JVT_DEFAULT_SCROLLBACK);
+    st->text_buf_size = cols * 4 + 16;
+    st->text_buf = (char *)malloc(st->text_buf_size);
+    vterm_screen_set_callbacks(st->screen, &jvt_screen_cbs, st);
+    vterm_screen_enable_altscreen(st->screen, 1);
+    vterm_screen_enable_reflow(st->screen, 1);
+    vterm_screen_set_damage_merge(st->screen, VTERM_DAMAGE_ROW);
+    vterm_screen_reset(st->screen, 1);
+    return st;
+}
+
+static void jvt_free(void *handle) {
+    JvtState *st = (JvtState *)handle;
+    if (!st) return;
+    scrollback_free(&st->scrollback);
+    free(st->dirty_rows);
+    free(st->text_buf);
+    if (st->vt) vterm_free(st->vt);
+    free(st);
+}
+
+static void jvt_write(void *handle, const char *data, int len) {
+    JvtState *st = (JvtState *)handle;
+    if (!st || !data || len <= 0) return;
+    vterm_input_write(st->vt, data, (size_t)len);
+    vterm_screen_flush_damage(st->screen);
+}
+
+static void jvt_resize(void *handle, int rows, int cols) {
+    JvtState *st = (JvtState *)handle;
+    if (!st || rows <= 0 || cols <= 0) return;
+    vterm_set_size(st->vt, rows, cols);
+    free(st->dirty_rows);
+    st->dirty_rows = (uint8_t *)calloc(rows, 1);
+    memset(st->dirty_rows, 1, rows);
+    st->any_damage = 1;
+    st->rows = rows; st->cols = cols;
+    free(st->text_buf);
+    st->text_buf_size = cols * 4 + 16;
+    st->text_buf = (char *)malloc(st->text_buf_size);
+}
+
+static int jvt_get_row_text(void *handle, int row, char *buf, int buflen) {
+    JvtState *st = (JvtState *)handle;
+    if (!st || row < 0 || row >= st->rows || !buf || buflen <= 0) return -1;
+    VTermRect rect = { .start_row = row, .end_row = row + 1,
+                       .start_col = 0,   .end_col = st->cols };
+    size_t n = vterm_screen_get_text(st->screen, buf, (size_t)buflen - 1, rect);
+    buf[n] = '\0';
+    while (n > 0 && buf[n - 1] == ' ') { n--; buf[n] = '\0'; }
+    return (int)n;
+}
+
+static int jvt_get_text(void *handle, char *buf, int buflen, int start_row, int end_row) {
+    JvtState *st = (JvtState *)handle;
+    if (!st || !buf || buflen <= 0) return -1;
+    if (start_row < 0) start_row = 0;
+    if (end_row > st->rows) end_row = st->rows;
+    int row_buf_size = st->cols * 4 + 4;
+    char *row_buf = st->text_buf;
+    if (row_buf_size > st->text_buf_size) row_buf = (char *)malloc(row_buf_size);
+    int last_nonempty = start_row - 1;
+    for (int r = end_row - 1; r >= start_row; r--) {
+        VTermRect rect = { .start_row = r, .end_row = r + 1,
+                           .start_col = 0, .end_col = st->cols };
+        size_t n = vterm_screen_get_text(st->screen, row_buf, (size_t)row_buf_size - 1, rect);
+        while (n > 0 && row_buf[n - 1] == ' ') n--;
+        if (n > 0) { last_nonempty = r; break; }
+    }
+    if (last_nonempty < start_row) {
+        buf[0] = '\0';
+        if (row_buf != st->text_buf) free(row_buf);
+        return 0;
+    }
+    int pos = 0;
+    for (int r = start_row; r <= last_nonempty; r++) {
+        if (r > start_row && pos < buflen - 1) buf[pos++] = '\n';
+        VTermRect rect = { .start_row = r, .end_row = r + 1,
+                           .start_col = 0, .end_col = st->cols };
+        size_t n = vterm_screen_get_text(st->screen, row_buf, (size_t)row_buf_size - 1, rect);
+        row_buf[n] = '\0';
+        while (n > 0 && row_buf[n - 1] == ' ') n--;
+        int copy = (int)n;
+        if (pos + copy >= buflen) copy = buflen - pos - 1;
+        if (copy > 0) { memcpy(buf + pos, row_buf, copy); pos += copy; }
+    }
+    if (row_buf != st->text_buf) free(row_buf);
+    buf[pos] = '\0';
+    return pos;
+}
+
+static int jvt_is_altscreen(void *handle) {
+    JvtState *st = (JvtState *)handle;
+    return st ? st->is_altscreen : 0;
+}
+
+static int jvt_get_rows(void *handle) {
+    return handle ? ((JvtState *)handle)->rows : 0;
+}
+
+static int jvt_get_cols(void *handle) {
+    return handle ? ((JvtState *)handle)->cols : 0;
+}
+
+static int jvt_get_cursor_row(void *handle) {
+    JvtState *st = (JvtState *)handle;
+    if (!st) return 0;
+    VTermPos pos;
+    vterm_state_get_cursorpos(vterm_obtain_state(st->vt), &pos);
+    return pos.row;
+}
+
+static int jvt_get_cursor_col(void *handle) {
+    JvtState *st = (JvtState *)handle;
+    if (!st) return 0;
+    VTermPos pos;
+    vterm_state_get_cursorpos(vterm_obtain_state(st->vt), &pos);
+    return pos.col;
+}
+
+static int jvt_has_damage(void *handle) {
+    return handle ? ((JvtState *)handle)->any_damage : 0;
+}
+
+static int jvt_row_dirty(void *handle, int row) {
+    JvtState *st = (JvtState *)handle;
+    if (!st || row < 0 || row >= st->rows) return 0;
+    return st->dirty_rows[row];
+}
+
+static void jvt_clear_damage(void *handle) {
+    JvtState *st = (JvtState *)handle;
+    if (!st) return;
+    memset(st->dirty_rows, 0, st->rows);
+    st->any_damage = 0;
+}
+
+static void jvt_mark_all_dirty(void *handle) {
+    JvtState *st = (JvtState *)handle;
+    if (!st) return;
+    memset(st->dirty_rows, 1, st->rows);
+    st->any_damage = 1;
+}
+
+static int jvt_get_cell_fg(void *handle, int row, int col) {
+    JvtState *st = (JvtState *)handle;
+    if (!st || row < 0 || row >= st->rows || col < 0 || col >= st->cols) return -1;
+    VTermPos pos = { .row = row, .col = col };
+    VTermScreenCell cell;
+    vterm_screen_get_cell(st->screen, pos, &cell);
+    if (VTERM_COLOR_IS_DEFAULT_FG(&cell.fg)) return -1;
+    if (VTERM_COLOR_IS_INDEXED(&cell.fg))
+        vterm_screen_convert_color_to_rgb(st->screen, &cell.fg);
+    return (cell.fg.rgb.red << 16) | (cell.fg.rgb.green << 8) | cell.fg.rgb.blue;
+}
+
+static int jvt_get_cell_bg(void *handle, int row, int col) {
+    JvtState *st = (JvtState *)handle;
+    if (!st || row < 0 || row >= st->rows || col < 0 || col >= st->cols) return -1;
+    VTermPos pos = { .row = row, .col = col };
+    VTermScreenCell cell;
+    vterm_screen_get_cell(st->screen, pos, &cell);
+    if (VTERM_COLOR_IS_DEFAULT_BG(&cell.bg)) return -1;
+    if (VTERM_COLOR_IS_INDEXED(&cell.bg))
+        vterm_screen_convert_color_to_rgb(st->screen, &cell.bg);
+    return (cell.bg.rgb.red << 16) | (cell.bg.rgb.green << 8) | cell.bg.rgb.blue;
+}
+
+static int jvt_get_cell_attrs(void *handle, int row, int col) {
+    JvtState *st = (JvtState *)handle;
+    if (!st || row < 0 || row >= st->rows || col < 0 || col >= st->cols) return 0;
+    VTermPos pos = { .row = row, .col = col };
+    VTermScreenCell cell;
+    vterm_screen_get_cell(st->screen, pos, &cell);
+    int attrs = 0;
+    if (cell.attrs.bold)      attrs |= (1 << 0);
+    if (cell.attrs.underline) attrs |= (1 << 1);
+    if (cell.attrs.italic)    attrs |= (1 << 2);
+    if (cell.attrs.blink)     attrs |= (1 << 3);
+    if (cell.attrs.reverse)   attrs |= (1 << 4);
+    if (cell.attrs.strike)    attrs |= (1 << 5);
+    if (cell.attrs.conceal)   attrs |= (1 << 6);
+    return attrs;
+}
+
+static int jvt_scrollback_len(void *handle) {
+    return handle ? ((JvtState *)handle)->scrollback.count : 0;
+}
+
+static int jvt_scrollback_line(void *handle, int idx, char *buf, int buflen) {
+    JvtState *st = (JvtState *)handle;
+    if (!st || !buf || buflen <= 0) return -1;
+    JvtScrollLine *line = scrollback_get(&st->scrollback, idx);
+    if (!line || !line->text) { buf[0] = '\0'; return 0; }
+    int copy = line->text_len < buflen - 1 ? line->text_len : buflen - 1;
+    memcpy(buf, line->text, copy);
+    buf[copy] = '\0';
+    return copy;
+}
+
+static void jvt_scrollback_clear(void *handle) {
+    JvtState *st = (JvtState *)handle;
+    if (!st) return;
+    scrollback_free(&st->scrollback);
+    scrollback_init(&st->scrollback, JVT_DEFAULT_SCROLLBACK);
+}
+
+END-C
+  )
+
+  ;; Core lifecycle
+  (define-c-lambda ffi-jvt-new (int int) (pointer void)
+    "jvt_new")
+  (define-c-lambda ffi-jvt-free ((pointer void)) void
+    "jvt_free")
+  ;; Write: take u8vector body via scheme-object
+  (define-c-lambda ffi-jvt-write ((pointer void) scheme-object int) void
+    "jvt_write(___arg1, ___CAST(const char*, ___BODY(___arg2)), ___arg3);")
+  (define-c-lambda ffi-jvt-resize ((pointer void) int int) void
+    "jvt_resize")
+  ;; Text extraction: output into pre-allocated u8vector
+  (define-c-lambda ffi-jvt-get-row-text ((pointer void) int scheme-object int) int
+    "___return(jvt_get_row_text(___arg1, ___arg2, ___CAST(char*, ___BODY(___arg3)), ___arg4));")
+  (define-c-lambda ffi-jvt-get-text ((pointer void) scheme-object int int int) int
+    "___return(jvt_get_text(___arg1, ___CAST(char*, ___BODY(___arg2)), ___arg3, ___arg4, ___arg5));")
+  ;; State queries
+  (define-c-lambda ffi-jvt-is-altscreen ((pointer void)) int
+    "jvt_is_altscreen")
+  (define-c-lambda ffi-jvt-get-rows ((pointer void)) int
+    "jvt_get_rows")
+  (define-c-lambda ffi-jvt-get-cols ((pointer void)) int
+    "jvt_get_cols")
+  (define-c-lambda ffi-jvt-get-cursor-row ((pointer void)) int
+    "jvt_get_cursor_row")
+  (define-c-lambda ffi-jvt-get-cursor-col ((pointer void)) int
+    "jvt_get_cursor_col")
+  ;; Damage tracking
+  (define-c-lambda ffi-jvt-has-damage ((pointer void)) int
+    "jvt_has_damage")
+  (define-c-lambda ffi-jvt-row-dirty ((pointer void) int) int
+    "jvt_row_dirty")
+  (define-c-lambda ffi-jvt-clear-damage ((pointer void)) void
+    "jvt_clear_damage")
+  (define-c-lambda ffi-jvt-mark-all-dirty ((pointer void)) void
+    "jvt_mark_all_dirty")
+  ;; Per-cell colors
+  (define-c-lambda ffi-jvt-get-cell-fg ((pointer void) int int) int
+    "jvt_get_cell_fg")
+  (define-c-lambda ffi-jvt-get-cell-bg ((pointer void) int int) int
+    "jvt_get_cell_bg")
+  (define-c-lambda ffi-jvt-get-cell-attrs ((pointer void) int int) int
+    "jvt_get_cell_attrs")
+  ;; Scrollback
+  (define-c-lambda ffi-jvt-scrollback-len ((pointer void)) int
+    "jvt_scrollback_len")
+  (define-c-lambda ffi-jvt-scrollback-line ((pointer void) int scheme-object int) int
+    "___return(jvt_scrollback_line(___arg1, ___arg2, ___CAST(char*, ___BODY(___arg3)), ___arg4));")
+  (define-c-lambda ffi-jvt-scrollback-clear ((pointer void)) void
+    "jvt_scrollback_clear")
+)
+
+;;;============================================================================
+;;; Vtscreen wrapper — opaque handle
+;;;============================================================================
+
+;; The vtscreen is a box holding the void* handle from jvt_new.
+;; We use a defstruct so the handle can be set to #f after free.
 
 (defstruct vtscreen
-  (rows          ; int — number of rows
-   cols          ; int — number of columns
-   grid          ; vector of vectors of chars
-   cursor-row    ; int — 0-based
-   cursor-col    ; int — 0-based
-   saved-row     ; int — saved cursor row
-   saved-col     ; int — saved cursor col
-   scroll-top    ; int — top of scroll region (0-based)
-   scroll-bottom ; int — bottom of scroll region (0-based, inclusive)
-   wrap-pending  ; bool — deferred wrap at right margin (VT100 autowrap)
-   alt-screen?   ; bool — full-screen program detected (alt screen or clear+home)
-   last-char     ; char — last graphic char written (for REP/CSI b)
-   ;; Parsing state for escape sequences
-   parse-state   ; 'normal | 'esc | 'csi | 'osc | 'charset-skip | 'dcs | 'ss-skip
-   csi-params    ; string accumulator for CSI parameter bytes
-   osc-buf)      ; string accumulator for OSC
+  (handle)   ; (pointer void) — the JvtState pointer, or #f if freed
   transparent: #t)
 
 (def (new-vtscreen (rows 24) (cols 80))
-  "Create a new virtual terminal screen."
-  (let ((grid (make-vector rows #f)))
-    (let loop ((r 0))
-      (when (< r rows)
-        (vector-set! grid r (make-vector cols #\space))
-        (loop (+ r 1))))
-    (make-vtscreen rows cols grid 0 0 0 0 0 (- rows 1) #f #f #\space 'normal "" "")))
+  "Create a new virtual terminal screen backed by libvterm."
+  (let ((h (ffi-jvt-new rows cols)))
+    (if h
+      (make-vtscreen h)
+      (error "new-vtscreen: jvt_new failed"))))
 
-(def (vtscreen-resize! vt new-rows new-cols)
-  "Resize the virtual screen. Preserves content where possible."
-  (let* ((old-rows (vtscreen-rows vt))
-         (old-cols (vtscreen-cols vt))
-         (old-grid (vtscreen-grid vt))
-         (new-grid (make-vector new-rows #f)))
-    (let loop ((r 0))
-      (when (< r new-rows)
-        (let ((new-row (make-vector new-cols #\space)))
-          (when (< r old-rows)
-            (let ((old-row (vector-ref old-grid r)))
-              (let copy ((c 0))
-                (when (and (< c new-cols) (< c old-cols))
-                  (vector-set! new-row c (vector-ref old-row c))
-                  (copy (+ c 1))))))
-          (vector-set! new-grid r new-row))
-        (loop (+ r 1))))
-    (set! (vtscreen-grid vt) new-grid)
-    (set! (vtscreen-rows vt) new-rows)
-    (set! (vtscreen-cols vt) new-cols)
-    (set! (vtscreen-cursor-row vt)
-      (min (vtscreen-cursor-row vt) (- new-rows 1)))
-    (set! (vtscreen-cursor-col vt)
-      (min (vtscreen-cursor-col vt) (- new-cols 1)))
-    (set! (vtscreen-scroll-top vt) 0)
-    (set! (vtscreen-scroll-bottom vt) (- new-rows 1))
-    (set! (vtscreen-wrap-pending vt) #f)))
+(def (vtscreen-free! vt)
+  "Free the libvterm resources."
+  (let ((h (vtscreen-handle vt)))
+    (when h
+      (ffi-jvt-free h)
+      (set! (vtscreen-handle vt) #f))))
 
 ;;;============================================================================
-;;; Grid operations
+;;; Core API (backwards-compatible)
 ;;;============================================================================
 
-(def (grid-clear-row! grid row cols (start-col 0))
-  "Clear a row from start-col to end with spaces."
-  (let ((row-vec (vector-ref grid row)))
-    (let loop ((c start-col))
-      (when (< c cols)
-        (vector-set! row-vec c #\space)
-        (loop (+ c 1))))))
+(def (vtscreen-normalize-input data)
+  "Pre-process terminal data before feeding to libvterm (UTF-8 mode).
 
-(def (grid-clear-row-left! grid row end-col)
-  "Clear a row from column 0 to end-col (inclusive)."
-  (let ((row-vec (vector-ref grid row)))
-    (let loop ((c 0))
-      (when (<= c end-col)
-        (vector-set! row-vec c #\space)
-        (loop (+ c 1))))))
-
-(def (grid-clear-region! grid start-row end-row cols)
-  "Clear rows from start-row to end-row (inclusive)."
-  (let loop ((r start-row))
-    (when (<= r end-row)
-      (grid-clear-row! grid r cols)
-      (loop (+ r 1)))))
-
-(def (grid-scroll-up! grid top bottom cols (n 1))
-  "Scroll lines up within [top..bottom] region by n lines."
-  (let loop ((count 0))
-    (when (< count n)
-      ;; Shift rows up by one within the region
-      (let shift ((r top))
-        (when (< r bottom)
-          (vector-set! grid r (vector-ref grid (+ r 1)))
-          (shift (+ r 1))))
-      ;; Clear bottom row
-      (vector-set! grid bottom (make-vector cols #\space))
-      (loop (+ count 1)))))
-
-(def (grid-scroll-down! grid top bottom cols (n 1))
-  "Scroll lines down within [top..bottom] region by n lines."
-  (let loop ((count 0))
-    (when (< count n)
-      ;; Shift rows down by one within the region
-      (let shift ((r bottom))
-        (when (> r top)
-          (vector-set! grid r (vector-ref grid (- r 1)))
-          (shift (- r 1))))
-      ;; Clear top row
-      (vector-set! grid top (make-vector cols #\space))
-      (loop (+ count 1)))))
-
-;;;============================================================================
-;;; Feed data to the virtual screen
-;;;============================================================================
+   Two normalizations applied:
+   1. Bare LF (not preceded by CR) → CR+LF.
+      libvterm in UTF-8 mode treats \\n as pure linefeed (cursor col unchanged),
+      but apps like dmesg that lack a PTY rely on newline mode (LF implies CR).
+   2. C1 control characters (U+0080..U+009F) → 2-char ESC + letter.
+      libvterm disables C1 parsing when utf8=1 (it only recognises raw 0x9B etc.
+      in 8-bit mode).  Converting U+009B → ESC [ ensures 8-bit CSI sequences
+      generated by applications are dispatched correctly."
+  (let ((esc (integer->char 27))
+        (len (string-length data)))
+    (let loop ((i 0) (out '()))
+      (if (>= i len)
+        (list->string (reverse out))
+        (let* ((c  (string-ref data i))
+               (cp (char->integer c)))
+          (cond
+            ;; C1 control U+0080..U+009F → ESC + (cp - 0x40)
+            ((and (>= cp #x80) (<= cp #x9f))
+             (loop (+ i 1)
+                   (cons (integer->char (- cp #x40))
+                         (cons esc out))))
+            ;; Bare LF without preceding CR → insert CR
+            ((and (char=? c #\newline)
+                  (or (= i 0)
+                      (not (char=? (string-ref data (- i 1)) #\return))))
+             (loop (+ i 1) (cons c (cons #\return out))))
+            (else
+             (loop (+ i 1) (cons c out)))))))))
 
 (def (vtscreen-feed! vt data)
-  "Process a string of terminal output through the VT100 emulator.
-   Updates the screen grid in place."
-  (let ((len (string-length data)))
-    (let loop ((i 0))
-      (when (< i len)
-        (let ((ch (string-ref data i)))
-          (case (vtscreen-parse-state vt)
-            ((normal)
-             (let ((code (char->integer ch)))
-               (cond
-                 ;; ESC — start escape sequence
-                 ((= code 27)
-                  (set! (vtscreen-parse-state vt) 'esc))
-                 ;; 8-bit C1: CSI (0x9B)
-                 ((= code #x9B)
-                  (set! (vtscreen-parse-state vt) 'csi)
-                  (set! (vtscreen-csi-params vt) ""))
-                 ;; 8-bit C1: OSC (0x9D)
-                 ((= code #x9D)
-                  (set! (vtscreen-parse-state vt) 'osc)
-                  (set! (vtscreen-osc-buf vt) ""))
-                 ;; 8-bit C1: DCS (0x90)
-                 ((= code #x90)
-                  (set! (vtscreen-parse-state vt) 'dcs))
-                 ;; 8-bit C1: ST (0x9C) — string terminator (ignore if not in string)
-                 ((= code #x9C) (void))
-                 ;; Other 8-bit C1 controls (0x80-0x9F) — ignore
-                 ((and (>= code #x80) (<= code #x9F)) (void))
-                 ;; BEL — bell (ignore)
-                 ((= code 7) (void))
-                 ;; BS — backspace
-                 ((= code 8)
-                  (when (> (vtscreen-cursor-col vt) 0)
-                    (set! (vtscreen-cursor-col vt)
-                      (- (vtscreen-cursor-col vt) 1))))
-                 ;; TAB
-                 ((= code 9)
-                  (let ((col (vtscreen-cursor-col vt)))
-                    (set! (vtscreen-cursor-col vt)
-                      (min (- (vtscreen-cols vt) 1)
-                           (* (+ (quotient col 8) 1) 8)))))
-                 ;; LF, VT, FF — line feed (with implicit CR, as in newline mode)
-                 ((or (= code 10) (= code 11) (= code 12))
-                  (set! (vtscreen-wrap-pending vt) #f)
-                  (set! (vtscreen-cursor-col vt) 0)
-                  (vt-linefeed! vt))
-                 ;; CR — carriage return
-                 ((= code 13)
-                  (set! (vtscreen-wrap-pending vt) #f)
-                  (set! (vtscreen-cursor-col vt) 0))
-                 ;; SO/SI — shift out/in (charset switching, ignore)
-                 ((or (= code 14) (= code 15)) (void))
-                 ;; Other C0 controls — ignore
-                 ((< code 32) (void))
-                 ;; Printable character (>= 0x20)
-                 (else
-                  ;; If wrap is pending from previous char at right margin,
-                  ;; execute it now before writing the new character
-                  (when (vtscreen-wrap-pending vt)
-                    (set! (vtscreen-wrap-pending vt) #f)
-                    (set! (vtscreen-cursor-col vt) 0)
-                    (vt-linefeed! vt))
-                  (let ((row (vtscreen-cursor-row vt))
-                        (col (vtscreen-cursor-col vt))
-                        (cols (vtscreen-cols vt)))
-                    ;; Write character at cursor position
-                    (when (and (>= row 0) (< row (vtscreen-rows vt))
-                               (>= col 0) (< col cols))
-                      (vector-set! (vector-ref (vtscreen-grid vt) row) col ch))
-                    ;; Record for REP (CSI b)
-                    (set! (vtscreen-last-char vt) ch)
-                    ;; Advance cursor
-                    (if (< col (- cols 1))
-                      (set! (vtscreen-cursor-col vt) (+ col 1))
-                      ;; At right edge — set pending wrap (deferred)
-                      (set! (vtscreen-wrap-pending vt) #t)))))))
+  "Process terminal output through libvterm. data: string from PTY."
+  (let ((h (vtscreen-handle vt)))
+    (when h
+      (let ((bv (string->utf8 (vtscreen-normalize-input data))))
+        (ffi-jvt-write h bv (u8vector-length bv))))))
 
-            ((esc)
-             (cond
-               ;; CSI: ESC [
-               ((char=? ch #\[)
-                (set! (vtscreen-parse-state vt) 'csi)
-                (set! (vtscreen-csi-params vt) ""))
-               ;; OSC: ESC ]
-               ((char=? ch #\])
-                (set! (vtscreen-parse-state vt) 'osc)
-                (set! (vtscreen-osc-buf vt) ""))
-               ;; Save cursor: ESC 7
-               ((char=? ch #\7)
-                (set! (vtscreen-saved-row vt) (vtscreen-cursor-row vt))
-                (set! (vtscreen-saved-col vt) (vtscreen-cursor-col vt))
-                (set! (vtscreen-parse-state vt) 'normal))
-               ;; Restore cursor: ESC 8
-               ((char=? ch #\8)
-                (set! (vtscreen-cursor-row vt) (vtscreen-saved-row vt))
-                (set! (vtscreen-cursor-col vt) (vtscreen-saved-col vt))
-                (set! (vtscreen-parse-state vt) 'normal))
-               ;; Reverse index: ESC M
-               ((char=? ch #\M)
-                (vt-reverse-index! vt)
-                (set! (vtscreen-parse-state vt) 'normal))
-               ;; DCS: ESC P — Device Control String (VT220)
-               ((char=? ch #\P)
-                (set! (vtscreen-parse-state vt) 'dcs))
-               ;; SS2: ESC N — Single Shift G2 (VT220, skip next char)
-               ((char=? ch #\N)
-                (set! (vtscreen-parse-state vt) 'ss-skip))
-               ;; SS3: ESC O — Single Shift G3 (VT220, skip next char)
-               ((char=? ch #\O)
-                (set! (vtscreen-parse-state vt) 'ss-skip))
-               ;; ESC D — Index (move cursor down, scroll if needed)
-               ((char=? ch #\D)
-                (vt-linefeed! vt)
-                (set! (vtscreen-parse-state vt) 'normal))
-               ;; ESC E — Next Line (CR + LF)
-               ((char=? ch #\E)
-                (set! (vtscreen-cursor-col vt) 0)
-                (vt-linefeed! vt)
-                (set! (vtscreen-parse-state vt) 'normal))
-               ;; ESC c — Full Reset (RIS)
-               ((char=? ch #\c)
-                (let ((rows (vtscreen-rows vt))
-                      (cols (vtscreen-cols vt)))
-                  (grid-clear-region! (vtscreen-grid vt) 0 (- rows 1) cols)
-                  (set! (vtscreen-cursor-row vt) 0)
-                  (set! (vtscreen-cursor-col vt) 0)
-                  (set! (vtscreen-scroll-top vt) 0)
-                  (set! (vtscreen-scroll-bottom vt) (- rows 1))
-                  (set! (vtscreen-wrap-pending vt) #f)
-                  (set! (vtscreen-alt-screen? vt) #f)
-                  (set! (vtscreen-parse-state vt) 'normal)))
-               ;; Character set designation: ESC ( X, ESC ) X — skip next char
-               ((memv ch '(#\( #\) #\* #\+))
-                (set! (vtscreen-parse-state vt) 'charset-skip))
-               ;; Anything else: ignore and return to normal
-               (else
-                (set! (vtscreen-parse-state vt) 'normal))))
-
-            ((csi)
-             (cond
-               ;; Parameter/intermediate bytes: 0x20-0x3F
-               ((and (char>=? ch #\space) (char<=? ch #\?))
-                (set! (vtscreen-csi-params vt)
-                  (string-append (vtscreen-csi-params vt) (string ch))))
-               ;; Final byte: 0x40-0x7E — execute CSI command
-               ((and (char>=? ch #\@) (char<=? ch #\~))
-                (vt-csi-dispatch! vt ch (vtscreen-csi-params vt))
-                (set! (vtscreen-parse-state vt) 'normal))
-               ;; Unexpected: return to normal
-               (else
-                (set! (vtscreen-parse-state vt) 'normal))))
-
-            ((osc)
-             (cond
-               ;; BEL terminates OSC
-               ((char=? ch (integer->char 7))
-                (set! (vtscreen-parse-state vt) 'normal))
-               ;; ST (ESC \) terminates OSC — check for ESC
-               ((char=? ch (integer->char 27))
-                ;; Next char should be \, but we'll just end OSC
-                (set! (vtscreen-parse-state vt) 'normal))
-               ;; Accumulate (but don't use)
-               (else (void))))
-
-            ((charset-skip)
-             ;; Eat one character (the charset designator) and return to normal
-             (set! (vtscreen-parse-state vt) 'normal))
-
-            ((dcs)
-             ;; Device Control String (VT220): consume until ST
-             ;; ST = ESC \ or 8-bit ST (0x9C)
-             (cond
-               ((char=? ch (integer->char #x9C))
-                (set! (vtscreen-parse-state vt) 'normal))
-               ((char=? ch (integer->char 27))
-                ;; ESC starts the ST sequence; next char should be \
-                (set! (vtscreen-parse-state vt) 'dcs-esc))
-               ;; Accumulate silently
-               (else (void))))
-
-            ((dcs-esc)
-             ;; After ESC within DCS — expect \ for ST
-             (set! (vtscreen-parse-state vt) 'normal))
-
-            ((ss-skip)
-             ;; Single Shift (SS2/SS3): skip one character and return to normal
-             (set! (vtscreen-parse-state vt) 'normal))
-
-            (else
-             (set! (vtscreen-parse-state vt) 'normal))))
-        (loop (+ i 1))))))
-
-;;;============================================================================
-;;; Cursor movement helpers
-;;;============================================================================
-
-(def (vt-linefeed! vt)
-  "Handle LF: move cursor down, scroll if at bottom of scroll region."
-  (let ((row (vtscreen-cursor-row vt))
-        (bottom (vtscreen-scroll-bottom vt)))
-    (if (>= row bottom)
-      ;; At bottom of scroll region — scroll up
-      (grid-scroll-up! (vtscreen-grid vt)
-                        (vtscreen-scroll-top vt)
-                        bottom
-                        (vtscreen-cols vt))
-      ;; Not at bottom — just move down
-      (set! (vtscreen-cursor-row vt) (+ row 1)))))
-
-(def (vt-reverse-index! vt)
-  "Handle reverse index (ESC M): move cursor up, scroll down if at top."
-  (let ((row (vtscreen-cursor-row vt))
-        (top (vtscreen-scroll-top vt)))
-    (if (<= row top)
-      ;; At top of scroll region — scroll down
-      (grid-scroll-down! (vtscreen-grid vt)
-                          top
-                          (vtscreen-scroll-bottom vt)
-                          (vtscreen-cols vt))
-      ;; Not at top — just move up
-      (set! (vtscreen-cursor-row vt) (- row 1)))))
-
-;;;============================================================================
-;;; CSI command dispatch
-;;;============================================================================
-
-(def (parse-csi-params param-str)
-  "Parse CSI parameter string into a list of integers.
-   Semicolons separate parameters. Empty/missing = 0.
-   Leading '?' is stripped (DEC private mode prefix)."
-  (let ((s (if (and (> (string-length param-str) 0)
-                    (char=? (string-ref param-str 0) #\?))
-             (substring param-str 1 (string-length param-str))
-             param-str)))
-    (if (string=? s "")
-      []
-      (let loop ((i 0) (start 0) (acc []))
-        (cond
-          ((>= i (string-length s))
-           (reverse (cons (let ((sub (substring s start i)))
-                            (if (string=? sub "") 0
-                              (or (string->number sub) 0)))
-                          acc)))
-          ((char=? (string-ref s i) #\;)
-           (loop (+ i 1) (+ i 1)
-                 (cons (let ((sub (substring s start i)))
-                         (if (string=? sub "") 0
-                           (or (string->number sub) 0)))
-                       acc)))
-          (else (loop (+ i 1) start acc)))))))
-
-(def (csi-param params idx default)
-  "Get CSI parameter at index, or default if missing/zero."
-  (let ((v (if (< idx (length params)) (list-ref params idx) 0)))
-    (if (= v 0) default v)))
-
-(def (is-private-mode? param-str)
-  "Check if CSI parameter string starts with '?' (DEC private mode)."
-  (and (> (string-length param-str) 0)
-       (char=? (string-ref param-str 0) #\?)))
-
-(def (vt-csi-dispatch! vt final param-str)
-  "Dispatch a CSI sequence."
-  ;; Any CSI sequence cancels pending wrap
-  (set! (vtscreen-wrap-pending vt) #f)
-  (let ((params (parse-csi-params param-str))
-        (rows (vtscreen-rows vt))
-        (cols (vtscreen-cols vt))
-        (grid (vtscreen-grid vt)))
-    (case final
-      ;; H/f — Cursor position
-      ((#\H #\f)
-       (let ((row (- (csi-param params 0 1) 1))
-             (col (- (csi-param params 1 1) 1)))
-         (set! (vtscreen-cursor-row vt) (max 0 (min row (- rows 1))))
-         (set! (vtscreen-cursor-col vt) (max 0 (min col (- cols 1))))))
-
-      ;; A — Cursor up
-      ((#\A)
-       (let ((n (csi-param params 0 1)))
-         (set! (vtscreen-cursor-row vt)
-           (max (vtscreen-scroll-top vt)
-                (- (vtscreen-cursor-row vt) n)))))
-
-      ;; B — Cursor down
-      ((#\B)
-       (let ((n (csi-param params 0 1)))
-         (set! (vtscreen-cursor-row vt)
-           (min (vtscreen-scroll-bottom vt)
-                (+ (vtscreen-cursor-row vt) n)))))
-
-      ;; C — Cursor forward
-      ((#\C)
-       (let ((n (csi-param params 0 1)))
-         (set! (vtscreen-cursor-col vt)
-           (min (- cols 1) (+ (vtscreen-cursor-col vt) n)))))
-
-      ;; D — Cursor backward
-      ((#\D)
-       (let ((n (csi-param params 0 1)))
-         (set! (vtscreen-cursor-col vt)
-           (max 0 (- (vtscreen-cursor-col vt) n)))))
-
-      ;; E — Cursor Next Line (move down N, go to column 0)
-      ((#\E)
-       (let ((n (csi-param params 0 1)))
-         (set! (vtscreen-cursor-col vt) 0)
-         (set! (vtscreen-cursor-row vt)
-           (min (vtscreen-scroll-bottom vt)
-                (+ (vtscreen-cursor-row vt) n)))))
-
-      ;; F — Cursor Previous Line (move up N, go to column 0)
-      ((#\F)
-       (let ((n (csi-param params 0 1)))
-         (set! (vtscreen-cursor-col vt) 0)
-         (set! (vtscreen-cursor-row vt)
-           (max (vtscreen-scroll-top vt)
-                (- (vtscreen-cursor-row vt) n)))))
-
-      ;; G — Cursor horizontal absolute
-      ((#\G)
-       (let ((col (- (csi-param params 0 1) 1)))
-         (set! (vtscreen-cursor-col vt)
-           (max 0 (min col (- cols 1))))))
-
-      ;; d — Cursor vertical absolute
-      ((#\d)
-       (let ((row (- (csi-param params 0 1) 1)))
-         (set! (vtscreen-cursor-row vt)
-           (max 0 (min row (- rows 1))))))
-
-      ;; J — Erase in display
-      ((#\J)
-       (let ((mode (csi-param params 0 0))
-             (crow (vtscreen-cursor-row vt))
-             (ccol (vtscreen-cursor-col vt)))
-         (cond
-           ;; 0: Clear from cursor to end
-           ((= mode 0)
-            (grid-clear-row! grid crow cols ccol)
-            (grid-clear-region! grid (+ crow 1) (- rows 1) cols))
-           ;; 1: Clear from beginning to cursor
-           ((= mode 1)
-            (grid-clear-region! grid 0 (- crow 1) cols)
-            (grid-clear-row-left! grid crow ccol))
-           ;; 2 or 3: Clear entire screen — indicates full-screen program
-           ((or (= mode 2) (= mode 3))
-            (set! (vtscreen-alt-screen? vt) #t)
-            (grid-clear-region! grid 0 (- rows 1) cols)))))
-
-      ;; K — Erase in line
-      ((#\K)
-       (let ((mode (csi-param params 0 0))
-             (crow (vtscreen-cursor-row vt))
-             (ccol (vtscreen-cursor-col vt)))
-         (cond
-           ;; 0: Clear from cursor to end of line
-           ((= mode 0)
-            (grid-clear-row! grid crow cols ccol))
-           ;; 1: Clear from beginning of line to cursor
-           ((= mode 1)
-            (grid-clear-row-left! grid crow ccol))
-           ;; 2: Clear entire line
-           ((= mode 2)
-            (grid-clear-row! grid crow cols)))))
-
-      ;; r — Set scrolling region
-      ((#\r)
-       (let ((top (- (csi-param params 0 1) 1))
-             (bot (- (csi-param params 1 rows) 1)))
-         (set! (vtscreen-scroll-top vt) (max 0 (min top (- rows 1))))
-         (set! (vtscreen-scroll-bottom vt) (max 0 (min bot (- rows 1))))
-         ;; Cursor moves to home after setting scroll region
-         (set! (vtscreen-cursor-row vt) 0)
-         (set! (vtscreen-cursor-col vt) 0)))
-
-      ;; L — Insert lines
-      ((#\L)
-       (let ((n (csi-param params 0 1))
-             (crow (vtscreen-cursor-row vt))
-             (bottom (vtscreen-scroll-bottom vt)))
-         (when (<= crow bottom)
-           (grid-scroll-down! grid crow bottom cols n))))
-
-      ;; M — Delete lines
-      ((#\M)
-       (let ((n (csi-param params 0 1))
-             (crow (vtscreen-cursor-row vt))
-             (bottom (vtscreen-scroll-bottom vt)))
-         (when (<= crow bottom)
-           (grid-scroll-up! grid crow bottom cols n))))
-
-      ;; S — Scroll up
-      ((#\S)
-       (let ((n (csi-param params 0 1)))
-         (grid-scroll-up! grid
-                          (vtscreen-scroll-top vt)
-                          (vtscreen-scroll-bottom vt)
-                          cols n)))
-
-      ;; T — Scroll down
-      ((#\T)
-       (let ((n (csi-param params 0 1)))
-         (grid-scroll-down! grid
-                            (vtscreen-scroll-top vt)
-                            (vtscreen-scroll-bottom vt)
-                            cols n)))
-
-      ;; @ — Insert characters (shift right)
-      ((#\@)
-       (let* ((n (csi-param params 0 1))
-              (crow (vtscreen-cursor-row vt))
-              (ccol (vtscreen-cursor-col vt))
-              (row-vec (vector-ref grid crow)))
-         (let shift ((c (- cols 1)))
-           (when (>= c (+ ccol n))
-             (vector-set! row-vec c (vector-ref row-vec (- c n)))
-             (shift (- c 1))))
-         (let clear ((c ccol))
-           (when (< c (min (+ ccol n) cols))
-             (vector-set! row-vec c #\space)
-             (clear (+ c 1))))))
-
-      ;; P — Delete characters (shift left)
-      ((#\P)
-       (let* ((n (csi-param params 0 1))
-              (crow (vtscreen-cursor-row vt))
-              (ccol (vtscreen-cursor-col vt))
-              (row-vec (vector-ref grid crow)))
-         (let shift ((c ccol))
-           (when (< c (- cols n))
-             (vector-set! row-vec c (vector-ref row-vec (+ c n)))
-             (shift (+ c 1))))
-         (let clear ((c (max ccol (- cols n))))
-           (when (< c cols)
-             (vector-set! row-vec c #\space)
-             (clear (+ c 1))))))
-
-      ;; X — Erase characters
-      ((#\X)
-       (let* ((n (csi-param params 0 1))
-              (crow (vtscreen-cursor-row vt))
-              (ccol (vtscreen-cursor-col vt))
-              (row-vec (vector-ref grid crow)))
-         (let clear ((c ccol))
-           (when (and (< c (+ ccol n)) (< c cols))
-             (vector-set! row-vec c #\space)
-             (clear (+ c 1))))))
-
-      ;; s — Save cursor position
-      ((#\s)
-       (set! (vtscreen-saved-row vt) (vtscreen-cursor-row vt))
-       (set! (vtscreen-saved-col vt) (vtscreen-cursor-col vt)))
-
-      ;; u — Restore cursor position
-      ((#\u)
-       (set! (vtscreen-cursor-row vt) (vtscreen-saved-row vt))
-       (set! (vtscreen-cursor-col vt) (vtscreen-saved-col vt)))
-
-      ;; m — SGR (Select Graphic Rendition) — ignore for grid rendering
-      ((#\m) (void))
-
-      ;; h/l — Set/Reset mode (DEC private modes)
-      ((#\h #\l)
-       ;; Track alternate screen buffer activation
-       (when (is-private-mode? param-str)
-         (let ((ps (parse-csi-params param-str)))
-           (for-each (lambda (p)
-                       (when (or (= p 1049) (= p 1047))
-                         (set! (vtscreen-alt-screen? vt) (char=? final #\h))))
-                     ps))))
-
-      ;; b — REP: Repeat previous graphic character (VT220)
-      ((#\b)
-       (let ((n (csi-param params 0 1))
-             (ch (vtscreen-last-char vt)))
-         (let rep ((j 0))
-           (when (< j n)
-             (let ((row (vtscreen-cursor-row vt))
-                   (col (vtscreen-cursor-col vt)))
-               (when (and (>= row 0) (< row rows)
-                          (>= col 0) (< col cols))
-                 (vector-set! (vector-ref grid row) col ch))
-               (if (< col (- cols 1))
-                 (set! (vtscreen-cursor-col vt) (+ col 1))
-                 (begin
-                   (set! (vtscreen-cursor-col vt) 0)
-                   (vt-linefeed! vt))))
-             (rep (+ j 1))))))
-
-      ;; n — Device status report — ignore
-      ((#\n) (void))
-
-      ;; c — Device attributes report — ignore
-      ((#\c) (void))
-
-      ;; Anything else: ignore
-      (else (void)))))
-
-;;;============================================================================
-;;; Render the screen to a string
-;;;============================================================================
+(def *render-buf-size* 131072)  ;; 128KB — enough for 24×80 with Unicode
+(def *render-buf* (make-u8vector *render-buf-size* 0))
 
 (def (vtscreen-render vt)
-  "Render the virtual screen grid to a string.
-   Trailing spaces on each line are trimmed.
-   Trailing empty lines are trimmed."
-  (let* ((rows (vtscreen-rows vt))
-         (cols (vtscreen-cols vt))
-         (grid (vtscreen-grid vt)))
-    (let ((out (open-output-string)))
-      (let ((last-nonempty -1))
-        ;; Find last non-empty row
-        (let scan ((r (- rows 1)))
-          (when (>= r 0)
-            (if (row-empty? (vector-ref grid r) cols)
-              (scan (- r 1))
-              (set! last-nonempty r))))
-        ;; Render rows up to last non-empty
-        (let loop ((r 0))
-          (when (<= r last-nonempty)
-            (when (> r 0) (write-char #\newline out))
-            (let* ((row-vec (vector-ref grid r))
-                   ;; Find last non-space char in row
-                   (last-col (let scan ((c (- cols 1)))
-                               (if (and (>= c 0)
-                                        (char=? (vector-ref row-vec c) #\space))
-                                 (scan (- c 1))
-                                 c))))
-              (let col-loop ((c 0))
-                (when (<= c last-col)
-                  (write-char (vector-ref row-vec c) out)
-                  (col-loop (+ c 1)))))
-            (loop (+ r 1)))))
-      (get-output-string out))))
+  "Render the entire screen to a string (trailing blank rows trimmed).
+   Compatible with old vtscreen-render API."
+  (let ((h (vtscreen-handle vt)))
+    (if h
+      (let ((n (ffi-jvt-get-text h *render-buf* *render-buf-size* 0
+                                 (ffi-jvt-get-rows h))))
+        (if (> n 0)
+          (utf8->string (subu8vector *render-buf* 0 n))
+          ""))
+      "")))
 
-(def (row-empty? row-vec cols)
-  "Check if a row is all spaces."
-  (let loop ((c 0))
-    (if (>= c cols) #t
-      (if (char=? (vector-ref row-vec c) #\space)
-        (loop (+ c 1))
-        #f))))
+(def (vtscreen-resize! vt new-rows new-cols)
+  "Resize the virtual screen."
+  (let ((h (vtscreen-handle vt)))
+    (when h (ffi-jvt-resize h new-rows new-cols))))
+
+(def (vtscreen-rows vt)
+  (let ((h (vtscreen-handle vt)))
+    (if h (ffi-jvt-get-rows h) 0)))
+
+(def (vtscreen-cols vt)
+  (let ((h (vtscreen-handle vt)))
+    (if h (ffi-jvt-get-cols h) 0)))
+
+(def (vtscreen-cursor-row vt)
+  (let ((h (vtscreen-handle vt)))
+    (if h (ffi-jvt-get-cursor-row h) 0)))
+
+(def (vtscreen-cursor-col vt)
+  (let ((h (vtscreen-handle vt)))
+    (if h (ffi-jvt-get-cursor-col h) 0)))
+
+(def (vtscreen-alt-screen? vt)
+  "Check if alt screen buffer is active (e.g. top, vim, less)."
+  (let ((h (vtscreen-handle vt)))
+    (if h (not (= 0 (ffi-jvt-is-altscreen h))) #f)))
+
+;;;============================================================================
+;;; Row-level damage tracking
+;;;============================================================================
+
+(def (vtscreen-has-damage? vt)
+  "Check if any row has changed since last vtscreen-clear-damage!."
+  (let ((h (vtscreen-handle vt)))
+    (if h (not (= 0 (ffi-jvt-has-damage h))) #f)))
+
+(def (vtscreen-row-dirty? vt row)
+  "Check if a specific row has changed."
+  (let ((h (vtscreen-handle vt)))
+    (if h (not (= 0 (ffi-jvt-row-dirty h row))) #f)))
+
+(def (vtscreen-clear-damage! vt)
+  "Clear all damage flags."
+  (let ((h (vtscreen-handle vt)))
+    (when h (ffi-jvt-clear-damage h))))
+
+(def (vtscreen-mark-all-dirty! vt)
+  "Mark all rows as dirty (e.g. for initial render or after resize)."
+  (let ((h (vtscreen-handle vt)))
+    (when h (ffi-jvt-mark-all-dirty h))))
+
+;;;============================================================================
+;;; Per-row text extraction
+;;;============================================================================
+
+(def *row-buf-size* 4096)
+(def *row-buf* (make-u8vector *row-buf-size* 0))
+
+(def (vtscreen-get-row-text vt row)
+  "Get the text content of a single row as a string (trailing spaces trimmed)."
+  (let ((h (vtscreen-handle vt)))
+    (if h
+      (let ((n (ffi-jvt-get-row-text h row *row-buf* *row-buf-size*)))
+        (if (> n 0)
+          (utf8->string (subu8vector *row-buf* 0 n))
+          ""))
+      "")))
+
+;;;============================================================================
+;;; Scrollback access
+;;;============================================================================
+
+(def (vtscreen-scrollback-len vt)
+  "Get number of scrollback lines."
+  (let ((h (vtscreen-handle vt)))
+    (if h (ffi-jvt-scrollback-len h) 0)))
+
+(def *sb-buf-size* 4096)
+(def *sb-buf* (make-u8vector *sb-buf-size* 0))
+
+(def (vtscreen-scrollback-line vt idx)
+  "Get scrollback line by index (0 = most recent). Returns string."
+  (let ((h (vtscreen-handle vt)))
+    (if h
+      (let ((n (ffi-jvt-scrollback-line h idx *sb-buf* *sb-buf-size*)))
+        (if (> n 0)
+          (utf8->string (subu8vector *sb-buf* 0 n))
+          ""))
+      "")))
+
+(def (vtscreen-scrollback-clear! vt)
+  "Clear all scrollback lines."
+  (let ((h (vtscreen-handle vt)))
+    (when h (ffi-jvt-scrollback-clear h))))
+
+;;;============================================================================
+;;; Per-cell color and attribute queries
+;;;============================================================================
+
+(def (vtscreen-cell-fg vt row col)
+  "Get foreground color as packed 0x00RRGGBB. Returns -1 for default."
+  (let ((h (vtscreen-handle vt)))
+    (if h (ffi-jvt-get-cell-fg h row col) -1)))
+
+(def (vtscreen-cell-bg vt row col)
+  "Get background color as packed 0x00RRGGBB. Returns -1 for default."
+  (let ((h (vtscreen-handle vt)))
+    (if h (ffi-jvt-get-cell-bg h row col) -1)))
+
+(def (vtscreen-cell-attrs vt row col)
+  "Get cell attributes as packed bits (bold=0, underline=1, italic=2, etc.)."
+  (let ((h (vtscreen-handle vt)))
+    (if h (ffi-jvt-get-cell-attrs h row col) 0)))

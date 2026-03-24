@@ -115,12 +115,13 @@
       (let ((vt (new-vtscreen 24 80)))
         (check (vtscreen-alt-screen? vt) => #f)))
 
-    (test-case "vtscreen: CSI 2J sets alt-screen"
-      ;; Full-screen programs like top use ESC[2J (clear entire screen)
+    (test-case "vtscreen: CSI 2J clears screen but does not set alt-screen"
+      ;; With libvterm backend, alt-screen is only set by ?1049h (the proper DECSET).
+      ;; CSI 2J (erase display) is NOT alt-screen — it just clears the current buffer.
       (let ((vt (new-vtscreen 24 80))
             (esc (integer->char 27)))
         (feed-string! vt (string-append (string esc) "[2J"))
-        (check (vtscreen-alt-screen? vt) => #t)))
+        (check (vtscreen-alt-screen? vt) => #f)))
 
     (test-case "vtscreen: CSI ?1049h sets alt-screen"
       ;; Programs like vim use ESC[?1049h (switch to alt screen buffer)

@@ -28,7 +28,8 @@ RUN apk add --no-cache \
     zlib-static libxcb-static \
     fontconfig-static freetype-static harfbuzz-static \
     libpng-static bzip2-static expat-static brotli-static \
-    libx11-static graphite2-static libxkbcommon-static
+    libx11-static graphite2-static libxkbcommon-static \
+    libvterm-dev libvterm-static
 
 # Build static libXau (no Alpine -static package available)
 RUN apk add --no-cache libxau-dev && \
@@ -185,6 +186,7 @@ RUN cd /tmp && \
     cmake -B build -G Ninja \
       -DBUILD_SHARED_LIBS=OFF \
       -DCMAKE_INSTALL_PREFIX=/usr/local \
+      -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
       -DLITEHTML_BUILD_TESTING=OFF \
       -DEXTERNAL_GUMBO=ON && \
     cmake --build build && \
@@ -206,9 +208,14 @@ RUN gxpkg link gerbil-scintilla /deps/gerbil-scintilla && \
 RUN gxpkg install github.com/ober/gerbil-pcre2
 
 # Install gerbil-shell (lib-only: no exe, just modules for gemacs integration)
-RUN gxpkg install github.com/ober/gerbil-shell || \
-    (cd /root/.gerbil/pkg/github.com/ober/gerbil-shell && \
-     GSH_LIB_ONLY=1 gerbil build)
+# Clone via gxpkg (build will fail on HEAD), reset to clean commit 4341a14,
+# patch missing FFI symbols, then build lib-only.
+COPY scripts/patch-gerbil-shell.py /tmp/patch-gerbil-shell.py
+RUN gxpkg install github.com/ober/gerbil-shell; \
+    cd /root/.gerbil/pkg/github.com/ober/gerbil-shell && \
+    git reset --hard 4341a14 && \
+    PKG_BASE=/root/.gerbil/pkg/github.com/ober python3 /tmp/patch-gerbil-shell.py && \
+    GSH_LIB_ONLY=1 gerbil build
 
 # Build gerbil-qt
 COPY --from=qt-src . /deps/gerbil-qt
@@ -222,9 +229,14 @@ RUN gxpkg link gerbil-qt /deps/gerbil-qt && \
 COPY --from=lh-src . /deps/gerbil-litehtml
 RUN gxpkg link gerbil-litehtml /deps/gerbil-litehtml && \
     cd /deps/gerbil-litehtml && \
-    GEMACS_LH_STATIC=1 \
     GERBIL_LOADPATH=/root/.gerbil/lib \
-    gerbil build
+    gerbil build && \
+    # Build libhtml_shim.a (static archive) for use by gemacs static exe linker
+    cd /deps/gerbil-litehtml/vendor && \
+    g++ -c -fPIC -std=c++17 \
+        -I/usr/local/include \
+        html_shim.cpp -o html_shim_static.o && \
+    ar rcs libhtml_shim.a html_shim_static.o
 
 # Build static libqt_shim.a + qt_static_plugins.o (kept separate)
 # The plugins .o must NOT be in the .a archive — it contains Q_IMPORT_PLUGIN

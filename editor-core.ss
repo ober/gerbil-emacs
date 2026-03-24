@@ -86,14 +86,17 @@
 (def *clipboard-command* #f)  ; cached clipboard command, or 'none
 
 (def (find-clipboard-command!)
-  "Detect available clipboard command. Caches result."
+  "Detect available clipboard command. Caches result.
+   Only selects a tool if the corresponding display server is running."
   (unless *clipboard-command*
     (set! *clipboard-command*
-      (cond
-        ((file-exists? "/usr/bin/wl-copy") 'wl-copy)     ; Wayland
-        ((file-exists? "/usr/bin/xclip") 'xclip)         ; X11
-        ((file-exists? "/usr/bin/xsel") 'xsel)            ; X11 alt
-        (else 'none))))
+      (let ((wayland (getenv "WAYLAND_DISPLAY" #f))
+            (x11     (getenv "DISPLAY" #f)))
+        (cond
+          ((and wayland (file-exists? "/usr/bin/wl-copy")) 'wl-copy)
+          ((and x11 (file-exists? "/usr/bin/xclip"))       'xclip)
+          ((and x11 (file-exists? "/usr/bin/xsel"))        'xsel)
+          (else 'none)))))
   *clipboard-command*)
 
 (def (clipboard-set! text)

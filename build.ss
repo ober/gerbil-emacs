@@ -27,27 +27,19 @@
 (def (static-pkg-config-libs lib)
   (run-process ["pkg-config" "--static" "--libs" lib] coprocess: read-line))
 
-;; Resolve package source directory (linked or GitHub-installed)
-;; NOTE: GERBIL_PATH points to the project-local .gerbil during builds,
-;; but packages are installed/linked under $HOME/.gerbil/pkg/.
-(def user-gerbil-dir (path-expand ".gerbil" (getenv "HOME")))
+;; Resolve package source directory.
+;; GERBIL_PATH is set to the project-local .gerbil/ by the Makefile,
+;; so all packages are installed under .gerbil/pkg/github.com/ober/.
+(def project-gerbil-path (getenv "GERBIL_PATH" (path-expand ".gerbil" (getenv "HOME"))))
 (def here (path-directory (this-source-file)))
 
 (def (find-pkg-source name)
-  "Find package source dir via Gerbil package system."
-  (let ((local-linked      (path-expand (string-append ".gerbil/pkg/" name) here))
-        (local-github      (path-expand (string-append ".gerbil/pkg/github.com/ober/" name) here))
-        (linked            (path-expand (string-append "pkg/" name) user-gerbil-dir))
-        (github            (path-expand (string-append "pkg/github.com/ober/" name) user-gerbil-dir))
-        (mine              (path-expand (string-append "mine/" name) (getenv "HOME"))))
-    (cond
-      ((file-exists? local-linked) local-linked)
-      ((file-exists? local-github) local-github)
-      ((file-exists? linked) linked)
-      ((file-exists? github) github)
-      ((file-exists? mine) mine)
-      (else (error (string-append "Package not found: " name
-                                  "\nRun: gerbil pkg install github.com/ober/" name))))))
+  "Find package source dir under GERBIL_PATH (project-local .gerbil/)."
+  (let ((github (path-expand (string-append "pkg/github.com/ober/" name) project-gerbil-path)))
+    (if (file-exists? github)
+      github
+      (error (string-append "Package not found: " name
+                             "\nRun: make deps  (installs into project-local .gerbil/)")))))
 
 ;; gerbil-scintilla FFI paths (needed for TUI exe linking)
 (def sci-base (or (getenv "GEMACS_SCI_BASE" #f)
@@ -84,7 +76,7 @@
      (string-append "-L" homebrew-prefix "/lib -lhtml_shim -llitehtml -lgumbo ")
      "-lhtml_shim -llitehtml -lgumbo ")
    "-Wl,-rpath," lh-vendor-dir " "
-   "-lstdc++ -lpthread -lpcre2-8 -lutil"))
+   "-lstdc++ -lpthread -lpcre2-8 -lvterm -lutil"))
 
 ;; gerbil-shell (gsh) package path
 (def gsh-base (or (getenv "GEMACS_GSH_BASE" #f)
@@ -224,7 +216,7 @@
    (if (and static-build? (not macos?))
      "-Wl,--whole-archive -lpthread -Wl,--no-whole-archive"
      "-lpthread")
-   " -lpcre2-8 -lutil"))
+   " -lpcre2-8 -lvterm -lutil"))
 
 ;; For gxc: module compilation (no -static)
 (def qt-ld-opts qt-ld-opts-base)
@@ -262,8 +254,8 @@
     "gsh-eshell"
     ;; gsh-powered subprocess execution (replaces bash fork for M-!, grep, etc.)
     "gsh-subprocess"
-    ;; VT100 virtual terminal screen buffer (for full-screen programs)
-    "vtscreen"
+    ;; VT100 virtual terminal screen buffer (libvterm backend)
+    (gxc: "vtscreen" "-ld-options" "-lvterm")
     ;; Shell history (persistent command history)
     "shell-history"
     ;; Shell (external $SHELL subprocess)

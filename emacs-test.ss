@@ -2415,6 +2415,7 @@
       (check *electric-indent-mode* => #t)
       (set! *electric-indent-mode* #f)
       (check *electric-indent-mode* => #f)
+      (set! *electric-indent-mode* #t)  ;; restore for later tests
       (check *truncate-partial-width* => #f)
       (check *inhibit-startup-screen* => #f)
       (check *visible-cursor* => #t)

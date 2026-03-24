@@ -1,5 +1,22 @@
 # Gemacs Project — Claude Instructions
 
+## MANDATORY: Hermetic Build — ALWAYS Use `project/.gerbil`, NEVER `~/.gerbil`
+
+**CRITICAL: This project uses a hermetic build. ALL Gerbil operations MUST use the project-local `.gerbil/` directory. NEVER use `~/.gerbil/` for anything.**
+
+- `GERBIL_PATH` **MUST** be set to `$(CURDIR)/.gerbil` (the project root's `.gerbil/`) for all builds, tests, and gxi invocations.
+- `GERBIL_LOADPATH` **MUST** include only project-local paths (`.gerbil/lib`, `.gerbil/pkg/...`), never `~/.gerbil/lib`.
+- **NEVER** install packages with `gerbil pkg install` without `GERBIL_PATH` set — they will go to `~/.gerbil/` and pollute the global environment.
+- **NEVER** run `gerbil build` or `gxi` without the Makefile environment (which sets `GERBIL_PATH`). Always use `make build`, `make test`, etc.
+- Stale `~/.gerbil/lib/<pkg>/` artifacts **WILL cause SIGSEGV** — they shadow the project-local compiled `.o1` files. If you see exit 139, run `make clean-global-stale` or manually `rm -rf ~/.gerbil/lib/gemacs ~/.gerbil/lib/gsh ~/.gerbil/lib/gerbil-qt ~/.gerbil/lib/gerbil-scintilla ~/.gerbil/lib/gerbil-tui ~/.gerbil/lib/gerbil-termbox ~/.gerbil/lib/gerbil-litehtml ~/.gerbil/lib/gerbil-pcre`.
+- The `make deps` target installs all dependencies into `.gerbil/pkg/` — not `~/.gerbil/`.
+- All `make` targets in the Makefile already set the correct environment. Use them exclusively.
+
+**If you are running a Gerbil command manually (e.g., for debugging), always prefix with:**
+```bash
+GERBIL_PATH=$(pwd)/.gerbil GERBIL_LOADPATH=$(pwd)/.gerbil/lib:... gxi ...
+```
+
 ## Testing Policy: Dispatch-Level Tests Required
 
 When modifying any `cmd-*` function or dispatch path in this codebase, you **MUST** add or update a functional test in `functional-test.ss` (TUI) or `qt-functional-test.ss` (Qt) that exercises the change through the real dispatch chain.

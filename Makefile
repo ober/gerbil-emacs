@@ -1,4 +1,4 @@
-.PHONY: all help build binary clean test test-qt test-lsp test-lsp-protocol test-split-comprehensive test-org test-repl test-all install install-qt \
+.PHONY: all help deps build binary clean test test-qt test-lsp test-lsp-protocol test-split-comprehensive test-org test-repl test-all install install-qt \
         install-static install-static-qt \
         static static-qt clean-docker check-root build-static build-static-qt linux-static-docker linux-static-qt-docker \
         docker-deps build-gemacs-static build-gemacs-static-qt linux-static-docker-full linux-static-qt-docker-full
@@ -7,23 +7,25 @@ UNAME_S := $(shell uname -s)
 
 export GERBIL_BUILD_CORES := $(shell nproc 2>/dev/null || sysctl -n hw.ncpu)
 
+# Hermetically seal all Gerbil operations to the project-local .gerbil/
+# No ~/.gerbil references — packages are installed via `make deps`
+export GERBIL_PATH := $(CURDIR)/.gerbil
+
+PKG_BASE := $(CURDIR)/.gerbil/pkg/github.com/ober
+
 ifeq ($(UNAME_S),Darwin)
   HOMEBREW_PREFIX := $(shell brew --prefix 2>/dev/null || echo /opt/homebrew)
   OPENSSL_RPATH   = $(HOMEBREW_PREFIX)/opt/openssl@3/lib
-  LH_RPATH        = $(shell ls -d $(CURDIR)/.gerbil/pkg/github.com/ober/gerbil-litehtml/vendor 2>/dev/null || echo $(HOMEBREW_PREFIX)/lib)
-  QT_SHIM_RPATH   = $(HOME)/mine/gerbil-qt/vendor
-  SCI_RPATH       = $(HOME)/.gerbil/lib/gerbil-scintilla
-  # On macOS, packages live under ~/mine/ — include their compiled lib dirs
-  # Also include project-local .gerbil/pkg/*/gerbil/lib for packages installed via `gerbil pkg install`
-  LH_PKG_LIB     = $(CURDIR)/.gerbil/pkg/github.com/ober/gerbil-litehtml/.gerbil/lib
-  MACOS_PKG_PATHS = $(HOME)/mine/gerbil-shell/.gerbil/lib:$(HOME)/mine/gerbil-scintilla/.gerbil/lib:$(HOME)/mine/gerbil-qt/.gerbil/lib:$(LH_PKG_LIB):$(CURDIR)/.gerbil/lib
-  export GERBIL_LOADPATH := $(MACOS_PKG_PATHS):$(HOME)/.gerbil/lib
+  LH_RPATH        = $(PKG_BASE)/gerbil-litehtml/vendor
+  QT_SHIM_RPATH   = $(PKG_BASE)/gerbil-qt/vendor
+  SCI_RPATH       = $(CURDIR)/.gerbil/lib/gerbil-scintilla
+  export GERBIL_LOADPATH := $(CURDIR)/.gerbil/lib:$(PKG_BASE)/gerbil-shell/.gerbil/lib:$(PKG_BASE)/gerbil-scintilla/.gerbil/lib:$(PKG_BASE)/gerbil-qt/.gerbil/lib:$(PKG_BASE)/gerbil-litehtml/.gerbil/lib
 else
   OPENSSL_RPATH = /home/linuxbrew/.linuxbrew/opt/openssl@3/lib
-  SCI_RPATH = $(HOME)/.gerbil/lib/gerbil-scintilla
-  QT_SHIM_RPATH = $(shell readlink -f $(HOME)/.gerbil/pkg/gerbil-qt 2>/dev/null)/vendor
-  LH_RPATH = $(shell readlink -f $(HOME)/.gerbil/pkg/gerbil-litehtml 2>/dev/null)/vendor
-  export GERBIL_LOADPATH := $(HOME)/.gerbil/lib
+  SCI_RPATH     = $(CURDIR)/.gerbil/lib/gerbil-scintilla
+  QT_SHIM_RPATH = $(PKG_BASE)/gerbil-qt/vendor
+  LH_RPATH      = $(PKG_BASE)/gerbil-litehtml/vendor
+  export GERBIL_LOADPATH := $(CURDIR)/.gerbil/lib:$(PKG_BASE)/gerbil-shell/.gerbil/lib:$(PKG_BASE)/gerbil-scintilla/.gerbil/lib:$(PKG_BASE)/gerbil-qt/.gerbil/lib:$(PKG_BASE)/gerbil-litehtml/.gerbil/lib
 endif
 
 all: help
@@ -32,9 +34,10 @@ help:
 	@echo "Usage: make <target>"
 	@echo ""
 	@echo "Build targets:"
+	@echo "  deps                        Install all deps into project-local .gerbil/ (run once)"
 	@echo "  build                       Build TUI and Qt binaries (with patchelf on Linux)"
 	@echo "  binary                      Build binaries (macOS-native, no patchelf)"
-	@echo "  clean                       Clean local and global build artifacts"
+	@echo "  clean                       Clean build artifacts (project-local only)"
 	@echo ""
 	@echo "Test targets:"
 	@echo "  test                        Build + run TUI tests"
@@ -62,10 +65,44 @@ help:
 
 QT_TEST_TIMEOUT ?= 600
 ifeq ($(UNAME_S),Darwin)
-  QT_TEST_ENV = QT_QPA_PLATFORM=offscreen DYLD_LIBRARY_PATH=$(OPENSSL_RPATH):$(SCI_RPATH):$(QT_SHIM_RPATH):$(LH_RPATH)
+  QT_TEST_ENV = QT_QPA_PLATFORM=offscreen DYLD_LIBRARY_PATH=$(OPENSSL_RPATH):$(SCI_RPATH):$(QT_SHIM_RPATH):$(LH_RPATH) QT_IM_MODULE=none QT_ACCESSIBILITY=0
 else
-  QT_TEST_ENV = QT_QPA_PLATFORM=offscreen LD_LIBRARY_PATH=$(OPENSSL_RPATH):$(SCI_RPATH):$(QT_SHIM_RPATH):$(LH_RPATH)
+  QT_TEST_ENV = QT_QPA_PLATFORM=offscreen LD_LIBRARY_PATH=$(OPENSSL_RPATH):$(SCI_RPATH):$(QT_SHIM_RPATH):$(LH_RPATH) QT_IM_MODULE=none QT_ACCESSIBILITY=0
 endif
+
+# deps: install all dependencies into project-local .gerbil/ (hermetic, no ~/.gerbil)
+#
+# gerbil-scintilla: needs vendor Scintilla/Lexilla/termbox built before gerbil build.
+#   Strategy: clone via `gerbil pkg install` (build will fail), then `make vendor-deps`,
+#   then `gerbil build` directly.
+#
+# gerbil-shell: HEAD has uncommitted recording modules with missing dependencies.
+#   Strategy: reset to last clean commit (4341a14), apply patches for missing FFI
+#   symbols (ffi-fdread, ffi-clock-*), build with GSH_LIB_ONLY=1 (no exe needed).
+#
+deps:
+	@echo "Installing dependencies into $(CURDIR)/.gerbil/ ..."
+	gerbil pkg install github.com/ober/gerbil-pcre2
+	@# gerbil-scintilla: clone (build fails without vendor), then build vendor, then gerbil-build
+	-gerbil pkg install github.com/ober/gerbil-scintilla
+	$(MAKE) -C $(PKG_BASE)/gerbil-scintilla vendor-deps
+	cd $(PKG_BASE)/gerbil-scintilla && gerbil build
+	@# gerbil-shell: reset to clean commit, apply missing FFI patches, lib-only build
+	-gerbil pkg install github.com/ober/gerbil-shell
+	cd $(PKG_BASE)/gerbil-shell && git reset --hard 4341a14
+	@# Patch: add missing ffi-fdread, ffi-clock-* to ffi.ss (absent in this commit)
+	$(MAKE) -C $(CURDIR) _patch-gerbil-shell
+	cd $(PKG_BASE)/gerbil-shell && GSH_LIB_ONLY=1 gerbil build
+	gerbil pkg install github.com/ober/gerbil-litehtml
+	gerbil pkg install github.com/ober/gerbil-qt
+	gerbil pkg install github.com/ober/gerbil-termbox
+	gerbil pkg install github.com/ober/gerbil-tui
+	@echo "Dependencies installed."
+
+# Apply patches to gerbil-shell's ffi.ss and recorder.ss (missing symbols in pinned commit).
+# Uses scripts/patch-gerbil-shell.py which is idempotent (checks before modifying).
+_patch-gerbil-shell:
+	PKG_BASE=$(PKG_BASE) python3 $(CURDIR)/scripts/patch-gerbil-shell.py
 
 # binary: macOS-native build (no patchelf, uses dylib rpaths embedded at link time)
 binary:
@@ -96,17 +133,17 @@ clean:
 	@-pkill -f 'gxi.*/home/jafourni/mine/gerbil-emacs/build.ss' 2>/dev/null; true
 	-gerbil clean
 	rm -f .gerbil/lib/static/*.lock 2>/dev/null; true
-	rm -rf .gerbil
-	@# Remove stale global static artifacts that can shadow local builds
-	rm -f $(HOME)/.gerbil/lib/static/gemacs__*.scm
-	rm -f $(HOME)/.gerbil/lib/static/gemacs__*.c
-	rm -f $(HOME)/.gerbil/lib/static/gemacs__*.o
+	rm -rf .gerbil/bin .gerbil/lib
 
 test: build
 	@# Exit 139 (SIGSEGV) = Gambit cleanup crash after all tests pass (pre-existing
 	@# Qt FFI module finalization issue in interpreter mode). Only the success path
 	@# reaches Gambit cleanup; failures exit 42 cleanly via gerbil test's (exit 42).
-	gerbil test; EC=$$?; [ $$EC -eq 139 ] && exit 0 || exit $$EC
+	@# LD_PRELOAD libvterm.so: vtscreen~0.o2 links -lvterm without NEEDED (shared
+	@# lib linker doesn't record as-needed deps), so symbols must be pre-loaded.
+	@# Unset WAYLAND_DISPLAY/DISPLAY: prevents clipboard tools (wl-copy/xclip)
+	@# from hanging in headless test environments with no compositor running.
+	LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libvterm.so.0 WAYLAND_DISPLAY= DISPLAY= gerbil test; EC=$$?; [ $$EC -eq 139 ] && exit 0 || exit $$EC
 
 test-qt: build
 	$(QT_TEST_ENV) timeout $(QT_TEST_TIMEOUT) .gerbil/bin/qt-highlight-test; \
@@ -153,10 +190,6 @@ install:
 	  echo "No existing binaries found, building..."; \
 	  $(MAKE) build; \
 	fi
-	@# Remove stale global static artifacts before install
-	rm -f $(HOME)/.gerbil/lib/static/gemacs__*.scm
-	rm -f $(HOME)/.gerbil/lib/static/gemacs__*.c
-	rm -f $(HOME)/.gerbil/lib/static/gemacs__*.o
 	mkdir -p $(PREFIX)/bin
 	cp -f .gerbil/bin/gemacs $(PREFIX)/bin/
 	cp -f .gerbil/bin/gemacs-qt $(PREFIX)/bin/
@@ -167,9 +200,6 @@ install-qt:
 	  echo "No existing binary found, building..."; \
 	  $(MAKE) build; \
 	fi
-	rm -f $(HOME)/.gerbil/lib/static/gemacs__*.scm
-	rm -f $(HOME)/.gerbil/lib/static/gemacs__*.c
-	rm -f $(HOME)/.gerbil/lib/static/gemacs__*.o
 	mkdir -p $(PREFIX)/bin
 	cp -f .gerbil/bin/gemacs-qt $(PREFIX)/bin/
 
@@ -198,11 +228,10 @@ DOCKER_IMAGE := gerbil/gerbil:$(ARCH)-master
 UID := $(shell id -u)
 GID := $(shell id -g)
 
-# Package source dirs for dependencies (linked or installed via gerbil pkg)
-GERBIL_PATH ?= $(HOME)/.gerbil
-SCI_SRC ?= $(shell readlink -f $(GERBIL_PATH)/pkg/gerbil-scintilla 2>/dev/null || echo $(GERBIL_PATH)/pkg/github.com/ober/gerbil-scintilla)
-QT_SRC  ?= $(shell readlink -f $(GERBIL_PATH)/pkg/gerbil-qt 2>/dev/null || echo $(GERBIL_PATH)/pkg/github.com/ober/gerbil-qt)
-LH_SRC  ?= $(shell readlink -f $(GERBIL_PATH)/pkg/gerbil-litehtml 2>/dev/null || echo $(GERBIL_PATH)/pkg/github.com/ober/gerbil-litehtml)
+# Package source dirs for dependencies (installed via `make deps`)
+SCI_SRC ?= $(PKG_BASE)/gerbil-scintilla
+QT_SRC  ?= $(PKG_BASE)/gerbil-qt
+LH_SRC  ?= $(PKG_BASE)/gerbil-litehtml
 
 DEPS_IMAGE := gemacs-deps:$(ARCH)
 
