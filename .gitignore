@@ -2,3 +2,7 @@
 .gerbil-lsp-cache
 \#*\#
 qscintilla2*
+
+# libvterm source downloaded for investigation
+libvterm-*/
+libvterm_*
