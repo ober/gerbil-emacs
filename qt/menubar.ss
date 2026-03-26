@@ -7,6 +7,10 @@
         :gemacs/qt/sci-shim
         :gemacs/core)
 
+;; Re-entrancy guard: prevents menu actions from firing while a command
+;; is already running (e.g. narrowing minibuffer calling process-events).
+(def *menu-command-running?* #f)
+
 ;;;============================================================================
 ;;; Menu bar setup
 ;;;============================================================================
@@ -98,7 +102,16 @@
          (action (qt-action-create display-label parent: win)))
     ;; Do NOT call qt-action-set-shortcut! — it conflicts with the custom keymap.
     (qt-on-triggered! action
-      (lambda () (execute-command! app command-name)))
+      (lambda ()
+        (unless *menu-command-running?*
+          (set! *menu-command-running?* #t)
+          (with-catch
+            (lambda (e)
+              (set! *menu-command-running?* #f)
+              (raise e))
+            (lambda ()
+              (execute-command! app command-name)
+              (set! *menu-command-running?* #f))))))
     (qt-menu-add-action! menu action)
     action))
 
@@ -106,6 +119,15 @@
   "Add a toolbar action that executes a named command."
   (let ((action (qt-action-create label parent: win)))
     (qt-on-triggered! action
-      (lambda () (execute-command! app command-name)))
+      (lambda ()
+        (unless *menu-command-running?*
+          (set! *menu-command-running?* #t)
+          (with-catch
+            (lambda (e)
+              (set! *menu-command-running?* #f)
+              (raise e))
+            (lambda ()
+              (execute-command! app command-name)
+              (set! *menu-command-running?* #f))))))
     (qt-toolbar-add-action! toolbar action)
     action))

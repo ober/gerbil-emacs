@@ -14,6 +14,7 @@
         qt-clear-search-highlights!
         qt-enable-code-folding!
         detect-language
+        restore-margin-colors!
         *search-highlight-active*
         *qt-show-paren-enabled*
         *qt-delete-selection-enabled*)
@@ -277,6 +278,29 @@
 ;;; Apply base dark theme and reset styles
 ;;;============================================================================
 
+(def (restore-margin-colors! ed)
+  "Restore line number margin and default face colors.
+   Use after operations that may corrupt margin colors (e.g. SCI_STYLECLEARALL,
+   setting font on all styles, or re-creating a QsciLexer via setLexer)."
+  ;; Default face fg/bg
+  (let-values (((fg-r fg-g fg-b) (face-fg-rgb 'default)))
+    (sci-send ed SCI_STYLESETFORE STYLE_DEFAULT (rgb->sci fg-r fg-g fg-b)))
+  (let ((default-face (face-get 'default)))
+    (when (and default-face (face-bg default-face))
+      (let-values (((bg-r bg-g bg-b) (parse-hex-color (face-bg default-face))))
+        (sci-send ed SCI_STYLESETBACK STYLE_DEFAULT (rgb->sci bg-r bg-g bg-b)))))
+  ;; Line number margin: both STYLE_LINENUMBER (text bg) and SCI_SETMARGINBACKN (margin area bg)
+  (let ((ln-face (face-get 'line-number)))
+    (when ln-face
+      (when (face-fg ln-face)
+        (let-values (((r g b) (parse-hex-color (face-fg ln-face))))
+          (sci-send ed SCI_STYLESETFORE STYLE_LINENUMBER (rgb->sci r g b))))
+      (when (face-bg ln-face)
+        (let-values (((r g b) (parse-hex-color (face-bg ln-face))))
+          (sci-send ed SCI_STYLESETBACK STYLE_LINENUMBER (rgb->sci r g b))
+          ;; SCI_SETMARGINBACKN (2260) — sets the margin gutter background itself
+          (sci-send ed 2260 0 (rgb->sci r g b)))))))
+
 (def (apply-base-theme! ed)
   "Reset all styles to theme defaults from face system."
   ;; Get colors from default and line-number faces
@@ -289,13 +313,8 @@
         (sci-send ed SCI_STYLESETBACK STYLE_DEFAULT (rgb->sci bg-r bg-g bg-b)))))
   ;; Apply to all styles
   (sci-send ed SCI_STYLECLEARALL)
-  ;; Restore line number margin style (STYLECLEARALL resets it)
-  (let-values (((ln-r ln-g ln-b) (face-fg-rgb 'line-number)))
-    (sci-send ed SCI_STYLESETFORE STYLE_LINENUMBER (rgb->sci ln-r ln-g ln-b)))
-  (let ((ln-face (face-get 'line-number)))
-    (when (and ln-face (face-bg ln-face))
-      (let-values (((bg-r bg-g bg-b) (parse-hex-color (face-bg ln-face))))
-        (sci-send ed SCI_STYLESETBACK STYLE_LINENUMBER (rgb->sci bg-r bg-g bg-b))))))
+  ;; Restore margin and default colors (STYLECLEARALL resets them)
+  (restore-margin-colors! ed))
 
 ;;;============================================================================
 ;;; Lexer-specific style setup

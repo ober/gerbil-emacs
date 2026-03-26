@@ -363,12 +363,22 @@ Returns #t if changed, #f if not or if no record exists."
 
 (def (find-dir-locals-file dir)
   "Search DIR and parent directories for .gemacs-config file."
-  (let loop ((d dir))
-    (let ((config-path (path-expand ".gemacs-config" d)))
-      (cond
-        ((file-exists? config-path) config-path)
-        ((string=? d "/") #f)
-        (else (loop (path-directory (string-append d "/"))))))))
+  (let loop ((d dir) (depth 0))
+    (cond
+      ((> depth 50) #f)
+      ((or (not d) (string=? d "") (string=? d "/")) #f)
+      (else
+        (let ((config-path (path-expand ".gemacs-config" d)))
+          (if (file-exists? config-path)
+            config-path
+            (let* ((stripped (if (and (> (string-length d) 1)
+                                      (char=? (string-ref d (- (string-length d) 1)) #\/))
+                               (substring d 0 (- (string-length d) 1))
+                               d))
+                   (parent (path-directory stripped)))
+              (if (string=? parent stripped)
+                #f
+                (loop parent (+ depth 1))))))))))
 
 (def (read-dir-locals file)
   "Read directory-local settings from FILE. Returns alist or #f."

@@ -283,14 +283,13 @@
    Sources ~/.gshrc for PS1, aliases, etc."
   (let ((env (gsh-init! #t)))  ; interactive? = #t for alias expansion
     (env-set! env "SHELL" "gsh")
+    ;; Set default PS1 BEFORE sourcing startup files so ~/.gshrc can override it
+    (env-set! env "PS1" "\\u@\\h:\\w\\$ ")
     (with-catch
       (lambda (e)
         (gemacs-log! "terminal: startup file error: "
           (with-output-to-string "" (lambda () (display-exception e (current-output-port))))))
       (lambda () (load-startup-files! env #f #t)))
-    ;; Set PS1 AFTER sourcing startup files so it can't be overridden
-    ;; by .bashrc/.profile with bash-specific syntax (\[, \], etc.)
-    (env-set! env "PS1" "\\u@\\h:\\w\\$ ")
     (make-terminal-state env 0 -1 #f #f #f #f #f #f #f)))
 
 (def (make-cmd-exec-fn env)

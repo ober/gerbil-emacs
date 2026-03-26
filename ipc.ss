@@ -5,7 +5,18 @@
 
 (export start-ipc-server! ipc-poll-files! stop-ipc-server! *ipc-server-file*)
 
-(import :std/sugar)
+(import :std/sugar
+        :std/srfi/13
+        :std/foreign)
+
+;;;============================================================================
+;;; FFI
+;;;============================================================================
+
+(begin-ffi (ffi-chmod)
+  (c-declare "#include <sys/stat.h>")
+  (define-c-lambda ffi-chmod (UTF-8-string unsigned-int) int
+    "___return(chmod(___arg1, ___arg2));"))
 
 ;;;============================================================================
 ;;; State
@@ -22,15 +33,31 @@
 (def *ipc-server-port* #f)
 
 ;;;============================================================================
+;;; Path validation
+;;;============================================================================
+
+(def (ipc-path-safe? path)
+  "Validate an IPC file path — reject directory traversal and null bytes."
+  (and (> (string-length path) 0)
+       ;; No null bytes (could truncate C paths)
+       (not (string-contains path "\x0;"))
+       ;; No directory traversal components
+       (not (string-contains path "/../"))
+       (not (string-prefix? "../" path))
+       (not (string-suffix? "/.." path))
+       (not (string=? ".." path))))
+
+;;;============================================================================
 ;;; Queue operations (thread-safe)
 ;;;============================================================================
 
 (def (ipc-queue-push! path)
-  "Push a file path onto the IPC queue (called from server threads)."
-  (mutex-lock! *ipc-mutex*)
-  (unwind-protect
-    (set! *ipc-queue* (append *ipc-queue* [path]))
-    (mutex-unlock! *ipc-mutex*)))
+  "Push a file path onto the IPC queue if it passes validation."
+  (when (ipc-path-safe? path)
+    (mutex-lock! *ipc-mutex*)
+    (unwind-protect
+      (set! *ipc-queue* (append *ipc-queue* [path]))
+      (mutex-unlock! *ipc-mutex*))))
 
 (def (ipc-poll-files!)
   "Drain the IPC queue and return a list of file paths.
@@ -103,6 +130,8 @@
         (display "127.0.0.1:" p)
         (display actual-port p)
         (newline p)))
+    ;; Restrict to owner-only (mode 600) — contains IPC port info
+    (ffi-chmod *ipc-server-file* #o600)
     ;; Accept loop in background thread
     (thread-start!
       (make-thread

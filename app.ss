@@ -4,6 +4,7 @@
 (export app-init! app-run! main tui-session-save!)
 
 (import :std/sugar
+        :std/foreign
         :gerbil-scintilla/constants
         :gerbil-scintilla/scintilla
         :gerbil-scintilla/style
@@ -904,8 +905,16 @@
 ;;; Main entry point
 ;;;============================================================================
 
+(begin-ffi (ffi-umask)
+  (c-declare "#include <sys/stat.h>")
+  (define-c-lambda ffi-umask (unsigned-int) unsigned-int
+    "___return(umask(___arg1));"))
+
 (def main
   (lambda args
+    ;; Restrict file permissions: new files are owner-only by default.
+    ;; Prevents session data (history, scratch, desktop) from being world-readable.
+    (ffi-umask #o077)
     (let ((app (app-init! args)))
       (try
         (app-run! app)

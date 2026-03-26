@@ -5,6 +5,7 @@
 
 (import :std/sugar
         :std/misc/string
+        :std/foreign
         :gemacs/qt/sci-shim
         :gemacs/core
         :gemacs/async
@@ -511,7 +512,9 @@
                       (vtscreen-clear-damage! vt)
                       (vterm-apply-colors! ed vt ts)
                       (qt-plain-text-edit-move-cursor! ed QT_CURSOR_END)
-                      (qt-plain-text-edit-ensure-cursor-visible! ed))
+                      (qt-plain-text-edit-ensure-cursor-visible! ed)
+                      ;; Reset horizontal scroll — terminal never needs h-scroll
+                      (sci-send ed SCI_SETXOFFSET 0))
                     ;; Subsequent renders: row-diff update
                     (when (vtscreen-has-damage? vt)
                       (when (vtscreen-alt-screen? vt)
@@ -534,12 +537,15 @@
                             ;; Normal mode: scroll to bottom to follow output
                             (begin
                               (qt-plain-text-edit-move-cursor! ed QT_CURSOR_END)
-                              (qt-plain-text-edit-ensure-cursor-visible! ed)))))))
+                              (qt-plain-text-edit-ensure-cursor-visible! ed)
+                              ;; Reset horizontal scroll — terminal never needs h-scroll
+                              (sci-send ed SCI_SETXOFFSET 0)))))))
                   (vterm-mark-rendered! ts)))
               (begin
                 (qt-plain-text-edit-move-cursor! ed QT_CURSOR_END)
                 (qt-plain-text-edit-insert-text! ed (strip-ansi-codes data))
-                (qt-plain-text-edit-ensure-cursor-visible! ed))))
+                (qt-plain-text-edit-ensure-cursor-visible! ed)
+                (sci-send ed SCI_SETXOFFSET 0))))
           (loop (cdr wins)))))))
 
 (def (qt-poll-terminal-pty-msg! fr buf ts msg)
@@ -579,7 +585,9 @@
                    (qt-plain-text-edit-insert-text! ed prompt)
                    (set! (terminal-state-prompt-pos ts)
                      (string-length (qt-plain-text-edit-text ed)))
-                   (qt-plain-text-edit-ensure-cursor-visible! ed)))
+                   (qt-plain-text-edit-ensure-cursor-visible! ed)
+                   ;; Reset horizontal scroll — terminal never needs h-scroll
+                   (sci-send ed SCI_SETXOFFSET 0)))
                (loop (cdr wins))))))))))
 
 (def (qt-do-init! qt-app args)
@@ -990,7 +998,6 @@
                   (cond
                     ;; Case 1: A chord is pending and a new key arrived
                     (*chord-pending-char*
-                     (qt-timer-stop! *chord-timer*)
                      (let* ((ch1 *chord-pending-char*)
                             (saved-code *chord-pending-code*)
                             (saved-mods *chord-pending-mods*)
@@ -1000,24 +1007,32 @@
                                       (> (char->integer (string-ref text 0)) 31)
                                       (zero? (bitwise-and mods QT_MOD_CTRL))
                                       (zero? (bitwise-and mods QT_MOD_ALT))
-                                      (string-ref text 0)))
-                            (chord-cmd (and ch2 (chord-lookup ch1 ch2))))
-                       (set! *chord-pending-char* #f)
-                       (if chord-cmd
-                         ;; Chord matched — execute the chord command
-                         (begin
-                           (execute-command! app chord-cmd)
-                           (qt-update-visual-decorations!
-                             (qt-current-editor (app-state-frame app)))
-                           (qt-update-mark-selection! app)
-                           (qt-modeline-update! app)
-                           (qt-tabbar-update! app)
-                           (qt-update-frame-title! app)
-                           (qt-echo-draw! (app-state-echo app) echo-label))
-                         ;; No chord — replay saved key then process current key
-                         (begin
-                           (do-normal-key! saved-code saved-mods saved-text)
-                           (do-normal-key! code mods text)))))
+                                      (string-ref text 0))))
+                       ;; Auto-repeat filter: when same char + same code arrives,
+                       ;; check if it's a valid same-char chord (e.g. EE→eshell).
+                       ;; If not a valid chord, it's auto-repeat — ignore and keep waiting.
+                       (if (and ch2 (char=? ch1 ch2) (= code saved-code)
+                                (not (chord-lookup ch1 ch2)))
+                         (void)  ;; ignore auto-repeat, timer keeps running
+                         ;; Real second key — resolve the chord
+                         (let ((chord-cmd (and ch2 (chord-lookup ch1 ch2))))
+                           (qt-timer-stop! *chord-timer*)
+                           (set! *chord-pending-char* #f)
+                           (if chord-cmd
+                             ;; Chord matched — execute the chord command
+                             (begin
+                               (execute-command! app chord-cmd)
+                               (qt-update-visual-decorations!
+                                 (qt-current-editor (app-state-frame app)))
+                               (qt-update-mark-selection! app)
+                               (qt-modeline-update! app)
+                               (qt-tabbar-update! app)
+                               (qt-update-frame-title! app)
+                               (qt-echo-draw! (app-state-echo app) echo-label))
+                             ;; No chord — replay saved key then process current key
+                             (begin
+                               (do-normal-key! saved-code saved-mods saved-text)
+                               (do-normal-key! code mods text)))))))
 
                     ;; Case 2: Printable key that could start a chord — save and wait
                     ((and (= (string-length text) 1)
@@ -1438,7 +1453,15 @@
 
       )) ;; end of qt-do-init! let* and function body
 
+(begin-ffi (ffi-umask)
+  (c-declare "#include <sys/stat.h>")
+  (define-c-lambda ffi-umask (unsigned-int) unsigned-int
+    "___return(umask(___arg1));"))
+
 (def (qt-main . args)
+  ;; Restrict file permissions: new files are owner-only by default.
+  ;; Prevents session data (history, scratch, desktop) from being world-readable.
+  (ffi-umask #o077)
   ;; Pin the primordial thread to processor 0 (the main OS thread).
   ;; This is the most critical pinning: the primordial thread runs all
   ;; command dispatch, key handling, minibuffer poll loops, and Qt init.

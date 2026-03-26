@@ -63,9 +63,18 @@
   (let ((fr (app-state-frame app)))
     (for-each
       (lambda (win)
-        (let ((ed (qt-edit-window-editor win)))
-          (sci-send ed SCI_STYLESETSIZE STYLE_DEFAULT *default-font-size*)
-          (sci-send ed SCI_STYLECLEARALL)))
+        (let* ((ed (qt-edit-window-editor win))
+               (buf (qt-edit-window-buffer win)))
+          ;; Re-apply highlighting first (restores syntax colors)
+          (when buf
+            (qt-setup-highlighting! app buf))
+          ;; Set size on all styles individually — SCI_STYLECLEARALL wipes syntax colors
+          (let loop ((i 0))
+            (when (<= i 127)
+              (sci-send ed SCI_STYLESETSIZE i *default-font-size*)
+              (loop (+ i 1))))
+          ;; Restore margin colors
+          (restore-margin-colors! ed)))
       (qt-frame-windows fr)))
   ;; Update Qt stylesheet so chrome widgets match
   (when *qt-app-ptr*

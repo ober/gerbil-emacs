@@ -2150,10 +2150,10 @@
 ;;; Key-chord system
 ;;;============================================================================
 
-;; Chord map: "AB" → command-symbol (always uppercase keys)
+;; Chord map: "AB" → command-symbol (case-sensitive, matches actual keystrokes)
 (def *chord-map* (make-hash-table))
 
-;; Set of characters that can start a chord (uppercase)
+;; Set of characters that can start a chord (case-sensitive)
 (def *chord-first-chars* (make-hash-table))
 
 ;; Time window in milliseconds for second key of chord
@@ -2170,19 +2170,28 @@
 
 (def (key-chord-define-global two-char-str cmd)
   "Bind a 2-character chord to a command symbol.
-   The string is uppercased for matching."
-  (let ((upper (string-upcase two-char-str)))
-    (hash-put! *chord-map* upper cmd)
-    (hash-put! *chord-first-chars* (string-ref upper 0) #t)))
+   Case-sensitive: 'MT' only matches Shift+M then Shift+T, not lowercase.
+   Like Emacs key-chord.el, registers BOTH orderings so the chord fires
+   regardless of which key arrives first (e.g. 'MT' matches M→T and T→M)."
+  (let ((c1 (string-ref two-char-str 0))
+        (c2 (string-ref two-char-str 1)))
+    ;; Register both orderings
+    (hash-put! *chord-map* (string c1 c2) cmd)
+    (when (not (char=? c1 c2))
+      (hash-put! *chord-map* (string c2 c1) cmd))
+    ;; Both characters can start a chord
+    (hash-put! *chord-first-chars* c1 #t)
+    (hash-put! *chord-first-chars* c2 #t)))
 
 (def (chord-lookup ch1 ch2)
-  "Look up a chord by two characters. Returns command symbol or #f."
-  (hash-get *chord-map* (string (char-upcase ch1) (char-upcase ch2))))
+  "Look up a chord by two characters. Case-sensitive match."
+  (hash-get *chord-map* (string ch1 ch2)))
 
 (def (chord-start-char? ch)
-  "Can this character start a chord? Only when chord-mode is on."
+  "Can this character start a chord? Only when chord-mode is on.
+   Case-sensitive: uppercase chord starters only match uppercase input."
   (and *chord-mode*
-       (hash-get *chord-first-chars* (char-upcase ch))))
+       (hash-get *chord-first-chars* ch)))
 
 ;;;============================================================================
 ;;; Repeat-mode (Emacs 28+ transient repeat maps)

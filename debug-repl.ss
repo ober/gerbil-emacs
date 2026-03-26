@@ -8,7 +8,13 @@
 (import :std/sugar
         :std/misc/threads
         :std/srfi/13
+        :std/foreign
         :gemacs/core)
+
+(begin-ffi (ffi-chmod)
+  (c-declare "#include <sys/stat.h>")
+  (define-c-lambda ffi-chmod (UTF-8-string unsigned-int) int
+    "___return(chmod(___arg1, ___arg2));"))
 
 ;;;============================================================================
 ;;; State
@@ -28,7 +34,9 @@
   (call-with-output-file *debug-repl-port-file*
     (lambda (p)
       (display "PORT=" p) (display port-num p) (newline p)
-      (display "PID=" p)  (display (##os-getpid) p) (newline p))))
+      (display "PID=" p)  (display (##os-getpid) p) (newline p)))
+  ;; Restrict to owner-only (mode 600) — contains REPL port info
+  (ffi-chmod *debug-repl-port-file* #o600))
 
 (def (delete-repl-port-file!)
   (when (file-exists? *debug-repl-port-file*)

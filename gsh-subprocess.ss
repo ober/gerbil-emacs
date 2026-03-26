@@ -12,6 +12,7 @@
 
 (import :std/sugar
         :std/format
+        :std/srfi/13
         :gsh/lib
         :gsh/environment
         :gemacs/core)
@@ -26,6 +27,21 @@
   "Kill the currently tracked gsh subprocess, if any."
   ;; gsh manages its own child processes; we just clear our flag
   (set! *gsh-active-process* #f))
+
+;;;============================================================================
+;;; Heredoc delimiter safety
+;;;============================================================================
+
+(def (make-safe-heredoc-delimiter text)
+  "Generate a heredoc delimiter that does not appear in TEXT.
+   Avoids injection when TEXT contains the delimiter string."
+  (let loop ((suffix 0))
+    (let ((delim (if (= suffix 0)
+                   "__GSH_STDIN__"
+                   (string-append "__GSH_STDIN_" (number->string suffix) "__"))))
+      (if (string-contains text delim)
+        (loop (+ suffix 1))
+        delim))))
 
 ;;;============================================================================
 ;;; Shared gsh environment for one-shot commands
@@ -65,13 +81,14 @@
     (dynamic-wind
       (lambda () (set! *gsh-active-process* #t))
       (lambda ()
-        ;; Handle stdin-text by prepending heredoc
+        ;; Handle stdin-text by prepending heredoc.
+        ;; Use a safe delimiter that doesn't appear in stdin-text.
         (let ((effective-cmd
                (if stdin-text
-                 ;; Pipe stdin-text into the command via heredoc
-                 (string-append "cat <<'__GSH_STDIN__'\n"
-                                stdin-text
-                                "\n__GSH_STDIN__\n | " cmd)
+                 (let ((delim (make-safe-heredoc-delimiter stdin-text)))
+                   (string-append "cat <<'" delim "'\n"
+                                  stdin-text
+                                  "\n" delim "\n | " cmd))
                  cmd)))
           (let-values (((output status) (gsh-capture effective-cmd env)))
             (values (or output "") (or status 0)))))
@@ -104,9 +121,10 @@
       (lambda ()
         (let ((effective-cmd
                (if stdin-text
-                 (string-append "cat <<'__GSH_STDIN__'\n"
-                                stdin-text
-                                "\n__GSH_STDIN__\n | " cmd)
+                 (let ((delim (make-safe-heredoc-delimiter stdin-text)))
+                   (string-append "cat <<'" delim "'\n"
+                                  stdin-text
+                                  "\n" delim "\n | " cmd))
                  cmd)))
           (let-values (((output status) (gsh-capture effective-cmd env)))
             (values (or output "") (or status 0)))))
