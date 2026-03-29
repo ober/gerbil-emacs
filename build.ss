@@ -292,6 +292,7 @@
     "editor-extra-org"
     "editor-extra-web"
     "editor-extra-vcs"
+    "editor-extra-vcs2"
     "editor-extra-editing"
     "editor-extra-editing2"
     "editor-extra-tools"
@@ -299,6 +300,7 @@
     "editor-extra-media"
     "editor-extra-media2"
     "editor-extra-modes"
+    "editor-extra-notes"
     "editor-extra-final"
     "editor-extra-regs"
     "editor-extra-ai"
@@ -386,6 +388,7 @@
           (gxc: "qt/commands-parity3b" "-cc-options" ,qt-cc-opts "-ld-options" ,qt-ld-opts)
           (gxc: "qt/commands-parity4" "-cc-options" ,qt-cc-opts "-ld-options" ,qt-ld-opts)
           (gxc: "qt/commands-parity5" "-cc-options" ,qt-cc-opts "-ld-options" ,qt-ld-opts)
+          (gxc: "qt/commands-parity6" "-cc-options" ,qt-cc-opts "-ld-options" ,qt-ld-opts)
           (gxc: "qt/commands-aliases" "-cc-options" ,qt-cc-opts "-ld-options" ,qt-ld-opts)
           (gxc: "qt/commands-aliases2" "-cc-options" ,qt-cc-opts "-ld-options" ,qt-ld-opts)
           (gxc: "qt/helm-commands" "-cc-options" ,qt-cc-opts "-ld-options" ,qt-ld-opts)

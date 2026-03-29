@@ -1642,43 +1642,7 @@
               (string-append "Added: " var ": " val))))))))
 
 ;; org-set-tags already in commands-parity.ss
-
-(def (cmd-org-roam-node-find app)
-  "Find org-roam node — searches note files in ~/notes/."
-  (let* ((fr (app-state-frame app))
-         (win (qt-current-window fr))
-         (ed (qt-edit-window-editor win))
-         (echo (app-state-echo app))
-         (query (qt-echo-read-string app "Find node: ")))
-    (when (and query (not (string-empty? query)))
-      (let ((notes-dir (string-append (getenv "HOME") "/notes/")))
-        (with-exception-catcher
-          (lambda (e) (echo-error! echo "Notes directory not found — create ~/notes/"))
-          (lambda ()
-            (let* ((proc (open-process
-                           (list path: "grep"
-                                 arguments: (list "-rl" query notes-dir)
-                                 stdin-redirection: #f stdout-redirection: #t stderr-redirection: #f)))
-                   (out (read-line proc #f)))
-              ;; Omit process-status (Qt SIGCHLD race)
-              (if (and out (> (string-length out) 0))
-                (let ((buf (qt-buffer-create! "*Org-roam*" ed #f)))
-                  (qt-buffer-attach! ed buf)
-                  (set! (qt-edit-window-buffer win) buf)
-                  (qt-plain-text-edit-set-text! ed out)
-                  (sci-send ed SCI_SETREADONLY 1))
-                (echo-message! echo "No matching nodes found")))))))))
-
-(def (cmd-org-roam-node-insert app)
-  "Insert org-roam node link at point."
-  (let* ((fr (app-state-frame app))
-         (win (qt-current-window fr))
-         (ed (qt-edit-window-editor win))
-         (echo (app-state-echo app))
-         (target (qt-echo-read-string app "Insert node link: ")))
-    (when (and target (not (string-empty? target)))
-      (let ((pos (sci-send ed SCI_GETCURRENTPOS)))
-        (sci-send/string ed SCI_INSERTTEXT pos (string-append "[[roam:" target "]]"))))))
+;; org-roam commands moved to commands-parity6.ss
 
 ;; Perspective / workspace management
 (def *qt-perspectives* (make-hash-table))  ; name -> list of buffer names
@@ -2041,9 +2005,7 @@
       (cons 'complete-word-from-buffer cmd-complete-word-from-buffer)
       (cons 'add-dir-local-variable cmd-add-dir-local-variable)
       (cons 'add-file-local-variable cmd-add-file-local-variable)
-      (cons 'org-roam-node-find cmd-org-roam-node-find)
-      (cons 'org-roam-node-insert cmd-org-roam-node-insert)
-      (cons 'org-roam-buffer-toggle cmd-org-roam-node-find)
+      ;; org-roam commands moved to commands-parity6.ss
       (cons 'persp-switch cmd-persp-switch)
       (cons 'persp-add-buffer cmd-persp-add-buffer)
       (cons 'persp-remove-buffer cmd-persp-remove-buffer)

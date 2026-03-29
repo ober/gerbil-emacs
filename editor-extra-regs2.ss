@@ -41,7 +41,9 @@
         :gemacs/editor-extra-modes
         :gemacs/editor-extra-final
         :gemacs/editor-extra-regs
-        :gemacs/editor-extra-ai)
+        :gemacs/editor-extra-ai
+        :gemacs/editor-extra-vcs2
+        :gemacs/editor-extra-notes)
 
 (def (register-extra-commands-2!)
   ;; batch 53
@@ -1382,4 +1384,130 @@
   (register-command! 'project-query-replace-regexp cmd-project-query-replace)
   (register-command! 'insert-uuid cmd-insert-uuid)
   (register-command! 'uuidgen cmd-insert-uuid)
+  ;; Batch 24: git-timemachine
+  (register-command! 'git-timemachine cmd-git-timemachine)
+  (register-command! 'git-timemachine-next cmd-git-timemachine-next)
+  (register-command! 'git-timemachine-prev cmd-git-timemachine-prev)
+  (register-command! 'git-timemachine-goto cmd-git-timemachine-goto)
+  (register-command! 'git-timemachine-copy-hash cmd-git-timemachine-copy-hash)
+  (register-command! 'git-timemachine-show-diff cmd-git-timemachine-show-diff)
+  (register-command! 'git-timemachine-quit cmd-git-timemachine-quit)
+  (register-command! 'git-timemachine-blame cmd-git-timemachine-blame)
+  ;; Batch 25: bug-reference-mode
+  (register-command! 'bug-reference-mode cmd-bug-reference-mode)
+  (register-command! 'bug-reference-set-project cmd-bug-reference-set-project)
+  (register-command! 'bug-reference-set-url-format cmd-bug-reference-set-url-format)
+  (register-command! 'bug-reference-goto cmd-bug-reference-goto)
+  (register-command! 'bug-reference-list cmd-bug-reference-list)
+  ;; Batch 26: transpose-frame, flip/flop
+  (register-command! 'transpose-frame cmd-transpose-frame)
+  (register-command! 'flip-frame cmd-flip-frame)
+  (register-command! 'flop-frame cmd-flop-frame)
+  ;; Batch 27: git worktree/submodule/bisect/reflog
+  (register-command! 'git-worktree-list cmd-git-worktree-list)
+  (register-command! 'git-worktree-add cmd-git-worktree-add)
+  (register-command! 'git-worktree-remove cmd-git-worktree-remove)
+  (register-command! 'git-submodule-status cmd-git-submodule-status)
+  (register-command! 'git-submodule-update cmd-git-submodule-update)
+  (register-command! 'git-bisect-start cmd-git-bisect-start)
+  (register-command! 'git-bisect-good cmd-git-bisect-good)
+  (register-command! 'git-bisect-bad cmd-git-bisect-bad)
+  (register-command! 'git-bisect-reset cmd-git-bisect-reset)
+  (register-command! 'git-bisect-log cmd-git-bisect-log)
+  (register-command! 'git-shortlog cmd-git-shortlog)
+  (register-command! 'git-reflog cmd-git-reflog)
+  (register-command! 'git-diff-stat cmd-git-diff-stat)
+  (register-command! 'git-diff-buffer cmd-git-diff-buffer)
+  ;; Documentation for new commands
+  (register-command-doc! 'git-timemachine "Browse file history through git commits (n/p to navigate).")
+  (register-command-doc! 'bug-reference-mode "Toggle highlighting of #123 issue references.")
+  (register-command-doc! 'transpose-frame "Transpose window layout — rotate buffer arrangement.")
+  (register-command-doc! 'git-bisect-start "Start git bisect to find a regression.")
+  (register-command-doc! 'git-reflog "Show git reflog in a buffer.")
+  (register-command-doc! 'git-worktree-list "List all git worktrees.")
+  (register-command-doc! 'git-shortlog "Show contributor statistics.")
+  ;; Batch 28: org-roam (real backlinks)
+  (register-command! 'org-roam-node-find cmd-org-roam-node-find)
+  (register-command! 'org-roam-node-insert cmd-org-roam-node-insert)
+  (register-command! 'org-roam-buffer-toggle cmd-org-roam-buffer-toggle)
+  (register-command! 'org-roam-capture cmd-org-roam-capture)
+  (register-command! 'org-roam-graph cmd-org-roam-graph)
+  (register-command! 'org-roam-set-directory cmd-org-roam-set-directory)
+  (register-command! 'org-roam-db-sync cmd-org-roam-db-sync)
+  (register-command! 'org-roam-find-file cmd-org-roam-find-file)
+  (register-command! 'org-roam-dailies-today cmd-org-roam-dailies-today)
+  ;; Batch 29: artist-mode (real drawing)
+  (register-command! 'artist-mode cmd-artist-mode)
+  (register-command! 'artist-select-tool cmd-artist-select-tool)
+  (register-command! 'artist-set-char cmd-artist-set-char)
+  (register-command! 'artist-draw-line cmd-artist-draw-line)
+  (register-command! 'artist-draw-rectangle cmd-artist-draw-rectangle)
+  (register-command! 'artist-draw-text cmd-artist-draw-text)
+  (register-command! 'artist-erase-rect cmd-artist-erase-rect)
+  (register-command! 'artist-draw-arrow cmd-artist-draw-arrow)
+  (register-command! 'artist-draw-ellipse cmd-artist-draw-ellipse)
+  ;; Batch 30: calc-embedded (in-buffer evaluation)
+  (register-command! 'calc-embedded cmd-calc-embedded)
+  (register-command! 'calc-eval-line cmd-calc-eval-line)
+  (register-command! 'calc-eval-region cmd-calc-embedded-eval-region)
+  (register-command! 'calc-grab-region cmd-calc-grab-region)
+  (register-command! 'calc-sum-region cmd-calc-sum-region)
+  ;; Documentation for new features
+  (register-command-doc! 'org-roam-node-find "Find org-roam node with completion and backlink-aware search.")
+  (register-command-doc! 'org-roam-buffer-toggle "Show backlinks for current file from org-roam database.")
+  (register-command-doc! 'org-roam-capture "Create a new org-roam note.")
+  (register-command-doc! 'org-roam-dailies-today "Open or create today's daily note.")
+  (register-command-doc! 'org-roam-graph "Show text graph of org-roam node connections.")
+  (register-command-doc! 'artist-mode "Toggle artist mode for ASCII art drawing (line/rect/ellipse/arrow).")
+  (register-command-doc! 'artist-draw-rectangle "Draw an ASCII rectangle at point.")
+  (register-command-doc! 'calc-embedded "Evaluate math expression at point or in region using bc.")
+  (register-command-doc! 'calc-sum-region "Sum all numbers in selected region.")
+
+  ;;--- Batch 31: hl-todo highlighting (real indicators) ---
+  (register-command! 'hl-todo-highlight cmd-hl-todo-highlight)
+  (register-command! 'hl-todo-refresh cmd-hl-todo-refresh)
+  (register-command! 'hl-todo-occur cmd-hl-todo-occur)
+
+  ;;--- Batch 32: auto-revert (real file watching) ---
+  (register-command! 'auto-revert-mode cmd-auto-revert-mode)
+  (register-command! 'revert-buffer cmd-revert-buffer)
+
+  ;;--- Batch 33: writeroom / olivetti (distraction-free) ---
+  (register-command! 'writeroom-mode-real cmd-writeroom-mode-real)
+  (register-command! 'olivetti-mode-real cmd-olivetti-mode-real)
+
+  ;;--- Batch 34: rainbow-mode (real color highlighting) ---
+  (register-command! 'rainbow-mode-real cmd-rainbow-mode-real)
+  (register-command! 'rainbow-refresh cmd-rainbow-refresh)
+
+  ;; Documentation for new features
+  (register-command-doc! 'hl-todo-highlight "Toggle real TODO/FIXME/HACK keyword highlighting with colored indicators.")
+  (register-command-doc! 'hl-todo-occur "List all TODO keywords in a buffer.")
+  (register-command-doc! 'auto-revert-mode "Toggle auto-revert: reload files changed on disk.")
+  (register-command-doc! 'revert-buffer "Reload current file from disk.")
+  (register-command-doc! 'writeroom-mode-real "Distraction-free writing with wide margins and no line numbers.")
+  (register-command-doc! 'rainbow-mode-real "Highlight #RRGGBB color codes with their actual color.")
+
+  ;; editorconfig-apply already registered in editor-extra-final.ss
+
+  ;;--- Batch 35: save-place (real position persistence) ---
+  (register-command! 'save-place-mode-real cmd-save-place-mode-real)
+
+  ;;--- Batch 36: envrc (real .envrc loading) ---
+  (register-command! 'envrc-mode-real cmd-envrc-mode-real)
+
+  ;; Documentation for batch 35-36
+  (register-command-doc! 'save-place-mode-real "Remember and restore cursor positions across sessions.")
+  (register-command-doc! 'envrc-mode-real "Load environment variables from .envrc (direnv-compatible).")
+
+  ;;--- Batch 37: focus-mode (real dimming) ---
+  (register-command! 'focus-mode-real cmd-focus-mode-real)
+  (register-command! 'focus-refresh cmd-focus-refresh)
+  (register-command! 'focus-set-range cmd-focus-set-range)
+
+  ;;--- Batch 38: golden-ratio (real window resizing) ---
+  (register-command! 'golden-ratio-mode-real cmd-golden-ratio-mode-real)
+
+  (register-command-doc! 'focus-mode-real "Dim lines far from cursor for focused reading/editing.")
+  (register-command-doc! 'golden-ratio-mode-real "Auto-resize active window to golden ratio proportion.")
 )

@@ -1992,41 +1992,7 @@
         (editor-insert-text ed pos (string-append "[[denote:" target "]]"))
         (echo-message! (app-state-echo app) (string-append "Linked to: " target))))))
 
-;; Org-roam — knowledge base / zettelkasten
-(def (cmd-org-roam-node-find app)
-  "Find org-roam node — searches note files."
-  (let ((query (app-read-string app "Find node: ")))
-    (when (and query (not (string-empty? query)))
-      (let ((notes-dir (string-append (getenv "HOME") "/notes/")))
-        (with-exception-catcher
-          (lambda (e) (echo-error! (app-state-echo app) "Notes directory not found"))
-          (lambda ()
-            (let* ((proc (open-process
-                           (list path: "grep"
-                                 arguments: (list "-rl" query notes-dir)
-                                 stdin-redirection: #f stdout-redirection: #t stderr-redirection: #f)))
-                   (out (read-line proc #f)))
-              (process-status proc)
-              (if (and out (> (string-length out) 0))
-                (open-output-buffer app "*Org-roam*" out)
-                (echo-message! (app-state-echo app) "No matching nodes found")))))))))
-
-(def (cmd-org-roam-node-insert app)
-  "Insert org-roam node link."
-  (let ((target (app-read-string app "Insert node link: ")))
-    (when (and target (not (string-empty? target)))
-      (let* ((fr (app-state-frame app))
-             (win (current-window fr))
-             (ed (edit-window-editor win))
-             (pos (editor-get-current-pos ed)))
-        (editor-insert-text ed pos (string-append "[[roam:" target "]]"))))))
-
-(def (cmd-org-roam-buffer-toggle app)
-  "Toggle org-roam buffer — shows backlinks."
-  (let* ((buf (current-buffer-from-app app))
-         (name (and buf (buffer-name buf))))
-    (echo-message! (app-state-echo app)
-      (string-append "Backlinks for " (or name "?") ": (none found)"))))
+;; Org-roam — moved to editor-extra-notes.ss (real backlink scanning)
 
 ;; Dirvish — enhanced dired
 (def (cmd-dirvish app)

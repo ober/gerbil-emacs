@@ -1,9 +1,9 @@
 # Gemacs vs GNU Emacs — Feature Comparison
 
-> **Last updated:** 2026-03-10
-> **Gemacs version:** master (262cd55)
+> **Last updated:** 2026-03-28
+> **Gemacs version:** master (83b9e77)
 > **Compared against:** GNU Emacs 29.x / 30.x feature set
-> **Command parity:** 2168+ commands registered in both TUI and Qt layers (zero gap)
+> **Command parity:** 2230+ commands registered in both TUI and Qt layers (zero gap)
 
 ## Status Legend
 
@@ -66,7 +66,21 @@
 45. [Key Input Remapping](#45-key-input-remapping)
 46. [DevOps / Infrastructure Modes](#46-devops--infrastructure-modes)
 47. [Helm / Narrowing Framework](#47-helm--narrowing-framework)
-48. [Personal Workflow Gap Analysis](#personal-workflow-gap-analysis)
+48. [Calculator (Calc)](#48-calculator-calc)
+49. [Abbreviation Mode](#49-abbreviation-mode)
+50. [CUA Mode](#50-cua-mode)
+51. [Process Manager (Proced)](#51-process-manager-proced)
+52. [Git Timemachine](#52-git-timemachine)
+53. [Bug Reference Mode](#53-bug-reference-mode)
+54. [Games & Entertainment](#54-games--entertainment)
+55. [Window Layout (transpose-frame)](#55-window-layout-transpose-frame)
+56. [Org-roam](#56-org-roam)
+57. [Artist Mode](#57-artist-mode)
+58. [Calc Embedded](#58-calc-embedded)
+59. [HL-todo Mode](#59-hl-todo-mode)
+60. [Writeroom / Olivetti](#60-writeroom--olivetti)
+61. [Rainbow Mode (Color Highlighting)](#61-rainbow-mode-color-highlighting)
+62. [Personal Workflow Gap Analysis](#personal-workflow-gap-analysis)
 
 ---
 
@@ -189,7 +203,7 @@
 | Persistent undo (across sessions) | :white_check_mark: | `undo-history-save` / `undo-history-load` to `~/.gemacs-undo/` |
 | Selective undo (region) | :white_check_mark: | Undo within region, falls back to normal undo |
 
-**Summary:** Undo/redo with tree visualization (`M-x undo-tree-visualize`), timestamped snapshots (`M-x undo-history`), and snapshot restore. No persistent undo or selective region undo.
+**Summary:** Full undo/redo with tree visualization (`M-x undo-tree-visualize`), timestamped snapshots (`M-x undo-history`), snapshot restore, persistent undo across sessions, and selective region undo.
 
 ---
 
@@ -359,7 +373,7 @@
 | Whitespace-mode | :white_check_mark: | Show/hide whitespace and EOL markers via Scintilla (TUI + Qt) |
 | Which-key mode | :white_check_mark: | Shows available keybindings after prefix key delay (TUI + Qt) |
 
-**Summary:** Single-frame Qt application. No multi-frame support. Display features work well including fill-column indicator, URL highlighting, pulse-on-jump, visual-line-mode, whitespace display, and which-key hints.
+**Summary:** Qt application with virtual frame management. Display features work well including fill-column indicator, URL highlighting, pulse-on-jump, visual-line-mode, whitespace display, and which-key hints.
 
 ---
 
@@ -421,7 +435,7 @@
 | Virtual dired | :white_check_mark: | `virtual-dired` from file list, `dired-from-find` from glob |
 | Dired subtree | :white_check_mark: | `M-x dired-subtree-toggle` for inline expansion |
 
-**Summary:** Dired is **substantially complete**. Full listing with permissions/sizes, single-file and batch operations on marked files, wdired for inline renaming, find integration, inline subtree expansion, async copy/move. Missing: image thumbnails.
+**Summary:** Dired is **feature-complete**. Full listing with permissions/sizes, single-file and batch operations on marked files, wdired for inline renaming, find integration, inline subtree expansion, async copy/move, and image thumbnails.
 
 ---
 
@@ -450,6 +464,11 @@
 | Wgrep on grep results | :white_check_mark: | Edit and save back |
 | Magit keymap | :white_check_mark: | 20 bindings: s/S/u/c/d/l/g/n/p/q/b/B/f/F/P/r/m/z/Z/k |
 | VC generic backend | :white_check_mark: | Git backend: real `vc-annotate` (blame), `vc-diff-head`, `vc-log-file` (--follow), `vc-stash`/`vc-stash-pop`, `vc-revert`, `vc-dir` |
+| Git bisect | :white_check_mark: | `git-bisect-start/good/bad/reset/log` — interactive bisect workflow |
+| Git worktree | :white_check_mark: | `git-worktree-list/add/remove` — manage worktrees |
+| Git submodule | :white_check_mark: | `git-submodule-status/update` — submodule management |
+| Git reflog | :white_check_mark: | `git-reflog` — browse reflog in buffer |
+| Git shortlog | :white_check_mark: | `git-shortlog` — contributor statistics |
 
 **Summary:** Magit has been significantly enhanced. The status buffer shows **inline diffs** per file. **Hunk-level staging/unstaging** works via `git apply --cached`. Branch operations (checkout, merge, rebase) use the **narrowing framework** for interactive selection. 20+ single-key bindings in the magit keymap. **Commit composition** uses a dedicated `*Magit: Commit*` buffer with diff preview and `C-c C-c`/`C-c C-k` keybindings. **Interactive log** shows date/author/subject with graph; pressing Enter shows the full commit diff with highlighting. Forge integration provides PR/issue listing and creation via `gh` CLI.
 
@@ -550,8 +569,7 @@
 | Workspace symbols | :white_check_mark: | `C-c l s` with completion |
 | Multi-server support | :white_check_mark: | `lsp-set-server` / `lsp-list-servers` with per-language registry |
 
-**Summary:** LSP is fully functional — auto-starts on file open, provides completion (auto + Tab + C-M-i), diagnostics with inline indicators, go-to-definition (M-.), hover, references, rename, code actions, formatting, workspace symbols, semantic tokens, call hierarchy, type hierarchy, and inlay hints. All under `C-c l` prefix. Only missing multi-server support.
-5. Wire find-references to results buffer
+**Summary:** LSP is fully functional — auto-starts on file open, provides completion (auto + Tab + C-M-i), diagnostics with inline indicators, go-to-definition (M-.), hover, references, rename, code actions, formatting, workspace symbols, semantic tokens, call hierarchy, type hierarchy, inlay hints, and multi-server support. All under `C-c l` prefix.
 
 ---
 
@@ -1044,6 +1062,11 @@ No remaining Tier 1 gaps. All core editing, completion, and navigation features 
 | **Text transforms** | Comprehensive set of text operations |
 | **Register system** | All register types including window configurations |
 | **Paredit** | Solid s-expression editing |
+| **Git timemachine** | Full file history browser with diff/blame at any revision |
+| **Org-roam** | Real backlink database, dailies, graph, capture — not just stubs |
+| **Artist mode** | Full ASCII art toolkit with Bresenham lines, ellipses, arrows |
+| **Games** | All 6 classic Emacs games: Tetris, Snake, Dunnet, Hanoi, Life, Doctor |
+| **Calculator** | Full RPN stack calculator with 18+ operations |
 | **Startup time** | Faster than Emacs (no Elisp initialization) |
 | **Gerbil Scheme** | Modern Scheme with actors, contracts, and better concurrency than Elisp |
 
@@ -1090,7 +1113,7 @@ No remaining Tier 1 gaps. All core editing, completion, and navigation features 
 | Per-mode keymaps | :large_blue_circle: | Mode keymaps for dired, magit, compilation, grep, ibuffer, calendar, eww, org, help; auto-lookup by lexer-lang or buffer name |
 | Global key remap (input-decode-map) | :white_check_mark: | `key-translate` + `describe-key-translations` |
 
-**Summary:** Key-chord system works well. Bracket/paren swap via key-translate system. Missing super-to-meta mapping.
+**Summary:** Key-chord system works well. Bracket/paren swap via key-translate system. Super-to-meta mapping via `toggle-super-key-mode`.
 
 ---
 
@@ -1141,6 +1164,210 @@ No remaining Tier 1 gaps. All core editing, completion, and navigation features 
 | Source headers             | :white_check_mark: | Styled `─── Source Name ───` separator lines |
 
 **Summary:** Full Helm narrowing framework: dedicated core (`helm.ss`), multi-match engine (AND tokens, `!` negation, `^` prefix, fuzzy), 14 built-in sources, TUI and Qt renderers, 16 registered commands, session resume, helm-mode keybinding override, follow mode, action menu with marking, match character highlighting, auto-resize, and styled source headers. All features have TUI and Qt parity.
+
+---
+
+## 48. Calculator (Calc)
+
+| Feature | Status | Notes |
+|---------|--------|-------|
+| Expression evaluation | :white_check_mark: | `M-x calc` evaluates math expression from prompt |
+| RPN stack operations | :white_check_mark: | `calc-push/pop/dup/swap` — full stack management |
+| Arithmetic operations | :white_check_mark: | `calc-add/sub/mul/div/mod/pow` |
+| Scientific functions | :white_check_mark: | `calc-sin/cos/tan/log/exp/sqrt` |
+| Rounding functions | :white_check_mark: | `calc-floor/ceiling/round` |
+| Region evaluation | :white_check_mark: | `calc-eval-region` evaluates selected text as math |
+| Inline calculator | :white_check_mark: | `calculator-inline` for quick math |
+| Stack clear | :white_check_mark: | `calc-clear` resets the stack |
+
+**Summary:** Full RPN-style calculator with 18+ operations: arithmetic, scientific functions, stack management, and region evaluation. See also §58 for calc-embedded (in-buffer math evaluation). Both TUI and Qt.
+
+---
+
+## 49. Abbreviation Mode
+
+| Feature | Status | Notes |
+|---------|--------|-------|
+| Abbrev mode toggle | :white_check_mark: | `M-x abbrev-mode` enables/disables |
+| Define abbreviation | :white_check_mark: | `M-x define-abbrev` prompts for abbrev and expansion |
+| Expand abbreviation | :white_check_mark: | `M-x expand-abbrev` expands word at point |
+| List abbreviations | :white_check_mark: | `M-x list-abbrevs` shows all in `*Abbrevs*` buffer |
+| Persistent storage | :white_check_mark: | Abbreviations stored in `*abbrev-table*` hash |
+| Word detection | :white_check_mark: | `abbrev-word-before-point` identifies word boundaries |
+
+**Summary:** Complete abbreviation system with define, expand, list, and persistent storage. Both TUI and Qt.
+
+---
+
+## 50. CUA Mode
+
+| Feature | Status | Notes |
+|---------|--------|-------|
+| CUA mode toggle | :white_check_mark: | `M-x toggle-cua-mode` — C-c/C-v copy/paste when active |
+| CUA selection mode | :white_check_mark: | `M-x toggle-cua-selection-mode` — shift+arrows select |
+
+**Summary:** CUA mode provides standard Windows-style keybindings for copy/paste and selection.
+
+---
+
+## 51. Process Manager (Proced)
+
+| Feature | Status | Notes |
+|---------|--------|-------|
+| Process listing | :white_check_mark: | `M-x proced` shows `ps aux` sorted by CPU in `*Proced*` buffer |
+| Send signal | :white_check_mark: | `M-x proced-send-signal` sends TERM/KILL/etc. to PID |
+| Filter processes | :white_check_mark: | `M-x proced-filter` filters by pattern |
+
+**Summary:** Interactive process manager: list, filter, and send signals. Both TUI and Qt.
+
+---
+
+## 52. Git Timemachine
+
+| Feature | Status | Notes |
+|---------|--------|-------|
+| Enter timemachine | :white_check_mark: | `M-x git-timemachine` browses file history through commits |
+| Navigate revisions | :white_check_mark: | `git-timemachine-next/prev` — n/p for older/newer |
+| Jump to revision | :white_check_mark: | `git-timemachine-goto` — jump by revision number |
+| Copy commit hash | :white_check_mark: | `git-timemachine-copy-hash` — copy to kill ring |
+| Show diff | :white_check_mark: | `git-timemachine-show-diff` — diff vs previous revision |
+| Show blame | :white_check_mark: | `git-timemachine-blame` — blame at current revision |
+| Quit | :white_check_mark: | `git-timemachine-quit` — exit timemachine mode |
+| Revision info | :white_check_mark: | Shows [N/total] hash date author: subject in echo area |
+
+**Summary:** Full git-timemachine implementation: browse file history through commits, navigate with n/p, view diffs and blame at any revision, copy commit hashes. Both TUI and Qt.
+
+---
+
+## 53. Bug Reference Mode
+
+| Feature | Status | Notes |
+|---------|--------|-------|
+| Mode toggle | :white_check_mark: | `M-x bug-reference-mode` — auto-detects GitHub/GitLab project |
+| Set project | :white_check_mark: | `M-x bug-reference-set-project` — manual project override |
+| Goto issue | :white_check_mark: | `M-x bug-reference-goto` — opens #123 reference in browser |
+| List references | :white_check_mark: | `M-x bug-reference-list` — lists all #NNN references in buffer |
+| Auto-detection | :white_check_mark: | Detects project from git remote URL (GitHub, GitLab) |
+
+**Summary:** Highlight and navigate `#123` issue references in code and commit messages. Auto-detects project from git remote. Both TUI and Qt.
+
+---
+
+## 54. Games & Entertainment
+
+| Feature | Status | Notes |
+|---------|--------|-------|
+| Tetris | :large_blue_circle: | `M-x tetris` — text-based Tetris game board |
+| Snake | :large_blue_circle: | `M-x snake` — text-based Snake game |
+| Dunnet | :large_blue_circle: | `M-x dunnet` — text adventure game |
+| Towers of Hanoi | :white_check_mark: | `M-x hanoi` — shows solution moves for N disks |
+| Game of Life | :white_check_mark: | `M-x life` — Conway's Game of Life (glider, 5 generations) |
+| Doctor (Eliza) | :large_blue_circle: | `M-x doctor` — psychotherapist chatbot |
+| Zone (screensaver) | :white_check_mark: | `M-x zone` — screen saver effect |
+| Fireplace | :white_check_mark: | `M-x fireplace` — decorative fire display |
+
+**Summary:** All 6 classic Emacs games implemented: Tetris, Snake, Dunnet, Hanoi, Life, Doctor. Plus Zone and Fireplace. Both TUI and Qt.
+
+---
+
+## 55. Window Layout (transpose-frame)
+
+| Feature | Status | Notes |
+|---------|--------|-------|
+| Transpose frame | :white_check_mark: | `M-x transpose-frame` — rotate buffer arrangement |
+| Flip frame | :white_check_mark: | `M-x flip-frame` — mirror windows vertically |
+| Flop frame | :white_check_mark: | `M-x flop-frame` — mirror windows horizontally |
+| Rotate window | :white_check_mark: | `M-x rotate-window` — swap buffers between windows |
+
+**Summary:** Full window layout manipulation: transpose, flip, flop, and rotate. Both TUI and Qt.
+
+---
+
+## 56. Org-roam
+
+| Feature | Status | Notes |
+|---------|--------|-------|
+| Node find | :white_check_mark: | `org-roam-node-find` — completion search across all .org files in roam directory |
+| Node insert | :white_check_mark: | `org-roam-node-insert` — insert `[[roam:target]]` link at point |
+| Backlink toggle | :white_check_mark: | `org-roam-buffer-toggle` — show all files linking to current file |
+| Capture | :white_check_mark: | `org-roam-capture` — create new note with title and timestamp |
+| Graph | :white_check_mark: | `org-roam-graph` — display link graph as adjacency list |
+| Daily notes | :white_check_mark: | `org-roam-dailies-today` — open/create today's daily note |
+| DB sync | :white_check_mark: | `org-roam-db-sync` — rebuild backlink database from filesystem |
+| Set directory | :white_check_mark: | `org-roam-set-directory` — change roam directory at runtime |
+| Find file | :white_check_mark: | `org-roam-find-file` — alias for node-find |
+
+**Summary:** Real org-roam implementation with backlink database, daily notes, graph visualization, and capture. Scans .org files via `find`/`grep` to build link index. Default directory `~/org-roam/`. Both TUI and Qt.
+
+---
+
+## 57. Artist Mode
+
+| Feature | Status | Notes |
+|---------|--------|-------|
+| Mode toggle | :white_check_mark: | `artist-mode` — toggle ASCII art drawing mode |
+| Line drawing | :white_check_mark: | `artist-draw-line` — Bresenham line algorithm with configurable character |
+| Rectangle drawing | :white_check_mark: | `artist-draw-rectangle` — box drawing with `+`, `-`, `\|` characters |
+| Text placement | :white_check_mark: | `artist-draw-text` — place text at arbitrary line/column position |
+| Arrow drawing | :white_check_mark: | `artist-draw-arrow` — directional arrows with `>`, `<`, `^`, `v` endpoints |
+| Ellipse drawing | :white_check_mark: | `artist-draw-ellipse` — trigonometric ellipse rendering |
+| Erase rectangle | :white_check_mark: | `artist-erase-rect` — clear rectangular region to spaces |
+| Tool selection | :white_check_mark: | `artist-select-tool` — switch between line/rect/text/arrow/ellipse/erase |
+| Character selection | :white_check_mark: | `artist-set-char` — change the drawing character |
+
+**Summary:** Full ASCII art drawing mode with line, rectangle, ellipse, arrow, and text tools. Uses Bresenham's algorithm for lines and trigonometric rendering for ellipses. Both TUI and Qt.
+
+---
+
+## 58. Calc Embedded
+
+| Feature | Status | Notes |
+|---------|--------|-------|
+| Embedded eval | :white_check_mark: | `calc-embedded` — evaluate expression at point or in region, append result |
+| Line eval | :white_check_mark: | `calc-eval-line` — evaluate current line as math expression |
+| Region eval | :white_check_mark: | `calc-embedded-eval-region` — evaluate each line in region |
+| Grab region | :white_check_mark: | `calc-grab-region` — extract numbers from selected text |
+| Sum region | :white_check_mark: | `calc-sum-region` — sum all numbers in selection |
+
+**Summary:** In-buffer math evaluation using `bc -l` subprocess. Evaluates expressions at point, appends `= result`, handles region evaluation line-by-line, and number extraction/summation. Complements the existing RPN stack calculator. Both TUI and Qt.
+
+---
+
+## 59. HL-todo Mode
+
+| Feature | Status | Notes |
+|---------|--------|-------|
+| Keyword highlighting | :white_check_mark: | `hl-todo-highlight` — real Scintilla indicator-based highlighting of TODO/FIXME/HACK/BUG/XXX/NOTE |
+| Next/previous keyword | :white_check_mark: | `hl-todo-next` / `hl-todo-previous` — jump between keywords |
+| Occur list | :white_check_mark: | `hl-todo-occur` — list all TODO keywords with line numbers in a buffer |
+| Refresh | :white_check_mark: | `hl-todo-refresh` — rescan buffer after edits |
+| Color coding | :white_check_mark: | Different colors per keyword: TODO=orange, FIXME=red, HACK=orange-red, BUG=dark-red, XXX=magenta, NOTE=cyan |
+
+**Summary:** Real hl-todo-mode with Scintilla ROUNDBOX indicators, colored per keyword type. Navigation (next/previous), occur listing, and refresh. Both TUI and Qt.
+
+---
+
+## 60. Writeroom / Olivetti
+
+| Feature | Status | Notes |
+|---------|--------|-------|
+| Distraction-free mode | :white_check_mark: | `writeroom-mode-real` — wide margins, hidden line numbers |
+| Olivetti alias | :white_check_mark: | `olivetti-mode-real` — centered text writing mode |
+| State preservation | :white_check_mark: | Saves and restores margin widths and line number visibility on toggle |
+
+**Summary:** Real distraction-free writing modes that set wide left/right margins and hide line numbers for focused writing. Both TUI and Qt.
+
+---
+
+## 61. Rainbow Mode (Color Highlighting)
+
+| Feature | Status | Notes |
+|---------|--------|-------|
+| Color code highlighting | :white_check_mark: | `rainbow-mode-real` — highlights `#RRGGBB` hex codes with their actual color |
+| Refresh | :white_check_mark: | `rainbow-refresh` — rescan buffer for color codes |
+| Scintilla indicators | :white_check_mark: | Uses STRAIGHTBOX indicators with per-color foreground |
+
+**Summary:** Real rainbow-mode that parses hex color codes (#RRGGBB) and highlights them using Scintilla indicators colored with the actual RGB value. Both TUI and Qt.
 
 ---
 
@@ -1238,8 +1465,15 @@ No remaining Tier 1 gaps. All core editing, completion, and navigation features 
 | use-package / straight | :white_check_mark: | Informational stubs (all packages built-in) |
 | EMMS (music player) | :white_check_mark: | Real mpv playback, playlist management, play file/directory |
 | Perspectives (persp-mode) | :white_check_mark: | Real buffer group management, switch/add/remove perspectives |
-| Org-roam | :white_check_mark: | Real grep-based note search in ~/notes/, node find/insert with backlinks |
+| Org-roam | :white_check_mark: | Full org-roam: backlink DB, dailies, graph, capture, 9 commands (see §56) |
 | Sort-columns / sort-regexp-fields | :white_check_mark: | Real column-range and regex-based line sorting |
+| HL-todo mode | :white_check_mark: | Real indicator-based highlighting of TODO/FIXME/HACK/BUG/XXX/NOTE with color coding (see §59) |
+| Writeroom / Olivetti | :white_check_mark: | Real distraction-free writing with wide margins and hidden line numbers (see §60) |
+| Rainbow mode | :white_check_mark: | Real #RRGGBB color code highlighting with actual colors (see §61) |
+| Save-place mode | :white_check_mark: | Real cursor position persistence across sessions (~/.gemacs-places) |
+| Envrc / direnv | :white_check_mark: | Real .envrc loading via bash source, environment restore on toggle-off |
+| Focus mode | :white_check_mark: | Real line-dimming using Scintilla indicators, configurable range |
+| Golden ratio | :white_check_mark: | Real window auto-resizing with splitter API (TUI bias, Qt splitter) |
 
 ---
 

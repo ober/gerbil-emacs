@@ -1125,6 +1125,7 @@
   (qt-register-copilot-commands!)
   (qt-register-parity5-enriched-commands!)
   (qt-register-frame-commands!)
+  (qt-register-vcs2-commands!)
   ;; Functional commands
   (for-each
     (lambda (pair)
@@ -1737,3 +1738,423 @@
     (list
       (cons 'find-file-other-frame cmd-find-file-other-frame)
       (cons 'switch-to-buffer-other-frame cmd-switch-to-buffer-other-frame))))
+
+;;;============================================================================
+;;; Git Timemachine (Qt parity)
+;;;============================================================================
+
+(def *qt-git-timemachine-revisions* '())
+(def *qt-git-timemachine-index* 0)
+(def *qt-git-timemachine-file* #f)
+(def *qt-git-timemachine-active* #f)
+
+(def (qt-git-run-output args)
+  (with-catch (lambda (e) #f)
+    (lambda ()
+      (let ((p (open-process
+                 (list path: "git" arguments: args
+                       stdin-redirection: #f stdout-redirection: #t
+                       stderr-redirection: #t))))
+        (let ((out (read-line p #f))) (process-status p) out)))))
+
+(def (qt-git-run-lines args)
+  (let ((out (qt-git-run-output args)))
+    (if (and out (not (string=? (string-trim out) "")))
+      (string-split out #\newline) '())))
+
+(def (qt-git-timemachine-get-revisions file)
+  (let ((lines (qt-git-run-lines
+                 (list "log" "--pretty=format:%H|%s|%ai|%an" "--follow" file))))
+    (filter-map
+      (lambda (line)
+        (let ((parts (string-split line #\|)))
+          (if (>= (length parts) 4)
+            (list (car parts) (cadr parts) (caddr parts) (cadddr parts))
+            #f)))
+      lines)))
+
+(def (qt-open-output-buffer app name text)
+  "Create or reuse a named buffer and display text in it (Qt)."
+  (let* ((ed (current-qt-editor app))
+         (fr (app-state-frame app))
+         (buf (or (buffer-by-name name)
+                  (qt-buffer-create! name ed #f))))
+    (qt-buffer-attach! ed buf)
+    (set! (qt-edit-window-buffer (qt-current-window fr)) buf)
+    (sci-send ed SCI_SETREADONLY 0)
+    (qt-plain-text-edit-set-text! ed text)
+    (sci-send ed SCI_GOTOPOS 0 0)
+    (sci-send ed SCI_SETREADONLY 1)))
+
+(def (qt-git-timemachine-show-revision app idx)
+  (when (and (>= idx 0) (< idx (length *qt-git-timemachine-revisions*)))
+    (let* ((rev (list-ref *qt-git-timemachine-revisions* idx))
+           (hash (car rev)) (subject (cadr rev))
+           (date (caddr rev)) (author (cadddr rev))
+           (content (qt-git-run-output
+                      (list "show" (string-append hash ":" *qt-git-timemachine-file*)))))
+      (when content
+        (let* ((total (length *qt-git-timemachine-revisions*))
+               (buf-name (string-append "*timemachine: "
+                           (path-strip-directory *qt-git-timemachine-file*) "*")))
+          (qt-open-output-buffer app buf-name content)
+          (set! *qt-git-timemachine-index* idx)
+          (echo-message! (app-state-echo app)
+            (string-append "[" (number->string (+ idx 1)) "/"
+                           (number->string total) "] "
+                           (substring hash 0 (min 8 (string-length hash))) " "
+                           date " " author ": " subject)))))))
+
+(def (cmd-git-timemachine app)
+  "Enter git-timemachine: browse file history through commits."
+  (let* ((buf (current-qt-buffer app))
+         (file (and buf (buffer-file-path buf))))
+    (if (not file)
+      (echo-error! (app-state-echo app) "Buffer has no file")
+      (let ((rel-file (let ((root (qt-git-run-output '("rev-parse" "--show-toplevel"))))
+                        (if root
+                          (let ((rt (string-trim root)))
+                            (if (string-prefix? rt file)
+                              (substring file (+ (string-length rt) 1) (string-length file))
+                              file))
+                          file))))
+        (let ((revisions (qt-git-timemachine-get-revisions file)))
+          (if (null? revisions)
+            (echo-message! (app-state-echo app) "No git history for this file")
+            (begin
+              (set! *qt-git-timemachine-revisions* revisions)
+              (set! *qt-git-timemachine-file* rel-file)
+              (set! *qt-git-timemachine-active* #t)
+              (qt-git-timemachine-show-revision app 0)
+              (echo-message! (app-state-echo app)
+                (string-append "Git timemachine: "
+                  (number->string (length revisions)) " revisions. n=next p=prev q=quit")))))))))
+
+(def (cmd-git-timemachine-next app)
+  (if (not *qt-git-timemachine-active*)
+    (echo-message! (app-state-echo app) "Not in timemachine mode")
+    (if (>= (+ *qt-git-timemachine-index* 1) (length *qt-git-timemachine-revisions*))
+      (echo-message! (app-state-echo app) "Already at oldest revision")
+      (qt-git-timemachine-show-revision app (+ *qt-git-timemachine-index* 1)))))
+
+(def (cmd-git-timemachine-prev app)
+  (if (not *qt-git-timemachine-active*)
+    (echo-message! (app-state-echo app) "Not in timemachine mode")
+    (if (< (- *qt-git-timemachine-index* 1) 0)
+      (echo-message! (app-state-echo app) "Already at newest revision")
+      (qt-git-timemachine-show-revision app (- *qt-git-timemachine-index* 1)))))
+
+(def (cmd-git-timemachine-goto app)
+  (if (not *qt-git-timemachine-active*)
+    (echo-message! (app-state-echo app) "Not in timemachine mode")
+    (let ((input (qt-echo-read-string app
+                   (string-append "Revision (1-"
+                     (number->string (length *qt-git-timemachine-revisions*)) "): "))))
+      (when (and input (not (string=? input "")))
+        (let ((n (string->number input)))
+          (if (and n (>= n 1) (<= n (length *qt-git-timemachine-revisions*)))
+            (qt-git-timemachine-show-revision app (- n 1))
+            (echo-error! (app-state-echo app) "Invalid revision number")))))))
+
+(def (cmd-git-timemachine-copy-hash app)
+  (if (not *qt-git-timemachine-active*)
+    (echo-message! (app-state-echo app) "Not in timemachine mode")
+    (let* ((rev (list-ref *qt-git-timemachine-revisions* *qt-git-timemachine-index*))
+           (hash (car rev)))
+      (qt-kill-ring-push! app hash)
+      (echo-message! (app-state-echo app) (string-append "Copied: " hash)))))
+
+(def (cmd-git-timemachine-show-diff app)
+  (if (not *qt-git-timemachine-active*)
+    (echo-message! (app-state-echo app) "Not in timemachine mode")
+    (let* ((rev (list-ref *qt-git-timemachine-revisions* *qt-git-timemachine-index*))
+           (hash (car rev))
+           (diff (qt-git-run-output
+                   (list "diff" (string-append hash "~1") hash "--"
+                         *qt-git-timemachine-file*))))
+      (if (not diff)
+        (echo-message! (app-state-echo app) "No diff available")
+        (qt-open-output-buffer app "*timemachine-diff*" diff)))))
+
+(def (cmd-git-timemachine-quit app)
+  (set! *qt-git-timemachine-active* #f)
+  (set! *qt-git-timemachine-revisions* '())
+  (set! *qt-git-timemachine-file* #f)
+  (echo-message! (app-state-echo app) "Git timemachine exited"))
+
+(def (cmd-git-timemachine-blame app)
+  (if (not *qt-git-timemachine-active*)
+    (echo-message! (app-state-echo app) "Not in timemachine mode")
+    (let* ((rev (list-ref *qt-git-timemachine-revisions* *qt-git-timemachine-index*))
+           (hash (car rev))
+           (blame (qt-git-run-output
+                    (list "blame" hash "--" *qt-git-timemachine-file*))))
+      (if (not blame)
+        (echo-message! (app-state-echo app) "Blame not available")
+        (qt-open-output-buffer app "*timemachine-blame*" blame)))))
+
+;;;============================================================================
+;;; Bug-reference mode (Qt parity)
+;;;============================================================================
+
+(def *qt-bug-reference-mode* #f)
+(def *qt-bug-reference-project* #f)
+
+(def (cmd-bug-reference-mode app)
+  (set! *qt-bug-reference-mode* (not *qt-bug-reference-mode*))
+  (when *qt-bug-reference-mode*
+    (let ((remote (qt-git-run-output '("remote" "get-url" "origin"))))
+      (when (and remote (string-contains (string-trim remote) "github.com"))
+        (let* ((trimmed (string-trim remote))
+               (idx (string-contains trimmed "github.com/")))
+          (when idx
+            (let* ((path (substring trimmed (+ idx 11) (string-length trimmed)))
+                   (cleaned (if (string-suffix? ".git" path)
+                              (substring path 0 (- (string-length path) 4))
+                              path)))
+              (set! *qt-bug-reference-project* cleaned)))))))
+  (echo-message! (app-state-echo app)
+    (if *qt-bug-reference-mode*
+      (if *qt-bug-reference-project*
+        (string-append "Bug-reference mode ON (project: " *qt-bug-reference-project* ")")
+        "Bug-reference mode ON (no project detected)")
+      "Bug-reference mode OFF")))
+
+(def (cmd-bug-reference-set-project app)
+  (let ((proj (qt-echo-read-string app "Project (user/repo): ")))
+    (when (and proj (not (string=? proj "")))
+      (set! *qt-bug-reference-project* proj)
+      (echo-message! (app-state-echo app)
+        (string-append "Bug-reference project: " proj)))))
+
+(def (cmd-bug-reference-goto app)
+  (if (not *qt-bug-reference-mode*)
+    (echo-message! (app-state-echo app) "Bug-reference mode not enabled")
+    (let* ((ed (current-qt-editor app))
+           (pos (sci-send ed SCI_GETCURRENTPOS 0))
+           (text (qt-plain-text-edit-text ed))
+           (len (string-length text))
+           (num (let loop ((i pos))
+                  (cond
+                    ((< i 0) #f)
+                    ((and (char=? (string-ref text i) #\#)
+                          (< (+ i 1) len)
+                          (char-numeric? (string-ref text (+ i 1))))
+                     (let nloop ((j (+ i 1)) (ds '()))
+                       (if (and (< j len) (char-numeric? (string-ref text j)))
+                         (nloop (+ j 1) (cons (string-ref text j) ds))
+                         (if (null? ds) #f (list->string (reverse ds))))))
+                    ((> (- pos i) 10) #f)
+                    (else (loop (- i 1)))))))
+      (if (not num)
+        (echo-message! (app-state-echo app) "No bug reference at point")
+        (if (not *qt-bug-reference-project*)
+          (echo-error! (app-state-echo app) "No project set")
+          (let ((url (string-append "https://github.com/"
+                       *qt-bug-reference-project* "/issues/" num)))
+            (with-catch
+              (lambda (e) (echo-error! (app-state-echo app) "Failed to open URL"))
+              (lambda ()
+                (open-process (list path: "xdg-open" arguments: (list url)
+                                    stdout-redirection: #f stderr-redirection: #f))
+                (echo-message! (app-state-echo app)
+                  (string-append "Opening: " url))))))))))
+
+(def (cmd-bug-reference-list app)
+  (let* ((ed (current-qt-editor app))
+         (text (qt-plain-text-edit-text ed))
+         (len (string-length text))
+         (refs '()))
+    (let loop ((i 0))
+      (when (< i (- len 1))
+        (when (and (char=? (string-ref text i) #\#)
+                   (char-numeric? (string-ref text (+ i 1))))
+          (let nloop ((j (+ i 1)) (ds '()))
+            (if (and (< j len) (char-numeric? (string-ref text j)))
+              (nloop (+ j 1) (cons (string-ref text j) ds))
+              (when (not (null? ds))
+                (set! refs (cons (cons (list->string (reverse ds))
+                                       (+ 1 (sci-send ed SCI_LINEFROMPOSITION i 0)))
+                                 refs))))))
+        (loop (+ i 1))))
+    (if (null? refs)
+      (echo-message! (app-state-echo app) "No bug references found")
+      (let* ((sorted (sort (lambda (a b) (< (cdr a) (cdr b))) refs))
+             (lines (map (lambda (r)
+                           (string-append "  #" (car r) " (line " (number->string (cdr r)) ")"))
+                         sorted))
+             (out-text (string-append "Bug references:\n\n" (string-join lines "\n") "\n")))
+        (qt-open-output-buffer app "*Bug References*" out-text)))))
+
+;;;============================================================================
+;;; Transpose/Flip/Flop frame (Qt parity)
+;;;============================================================================
+
+(def (cmd-transpose-frame app)
+  (let* ((fr (app-state-frame app))
+         (wins (qt-frame-windows fr)))
+    (if (< (length wins) 2)
+      (echo-message! (app-state-echo app) "Only one window")
+      (let* ((bufs (map qt-edit-window-buffer wins))
+             (rotated (append (cdr bufs) (list (car bufs)))))
+        (for-each
+          (lambda (win buf)
+            (qt-buffer-attach! (qt-edit-window-editor win) buf)
+            (set! (qt-edit-window-buffer win) buf))
+          wins rotated)
+        (echo-message! (app-state-echo app)
+          (string-append "Transposed " (number->string (length wins)) " windows"))))))
+
+(def (cmd-flip-frame app)
+  (let* ((fr (app-state-frame app))
+         (wins (qt-frame-windows fr)))
+    (if (< (length wins) 2)
+      (echo-message! (app-state-echo app) "Only one window")
+      (let* ((bufs (map qt-edit-window-buffer wins))
+             (reversed (reverse bufs)))
+        (for-each
+          (lambda (win buf)
+            (qt-buffer-attach! (qt-edit-window-editor win) buf)
+            (set! (qt-edit-window-buffer win) buf))
+          wins reversed)
+        (echo-message! (app-state-echo app) "Frame flipped")))))
+
+(def (cmd-flop-frame app) (cmd-flip-frame app))
+
+;;;============================================================================
+;;; Git worktree/submodule/bisect/reflog (Qt parity)
+;;;============================================================================
+
+(def (cmd-git-worktree-list app)
+  (let ((out (qt-git-run-output '("worktree" "list"))))
+    (if (not out) (echo-error! (app-state-echo app) "Not a git repository")
+      (qt-open-output-buffer app "*Git Worktrees*"
+        (string-append "Git Worktrees:\n\n" out "\n")))))
+
+(def (cmd-git-worktree-add app)
+  (let ((path (qt-echo-read-string app "Worktree path: ")))
+    (when (and path (not (string=? path "")))
+      (let ((branch (qt-echo-read-string app "Branch (empty for new): ")))
+        (let ((args (if (and branch (not (string=? branch "")))
+                      (list "worktree" "add" path branch)
+                      (list "worktree" "add" path))))
+          (qt-git-run-output args)
+          (echo-message! (app-state-echo app) (string-append "Created worktree: " path)))))))
+
+(def (cmd-git-worktree-remove app)
+  (let ((path (qt-echo-read-string app "Worktree to remove: ")))
+    (when (and path (not (string=? path "")))
+      (qt-git-run-output (list "worktree" "remove" path))
+      (echo-message! (app-state-echo app) (string-append "Removed worktree: " path)))))
+
+(def (cmd-git-submodule-status app)
+  (let ((out (qt-git-run-output '("submodule" "status"))))
+    (if (or (not out) (string=? (string-trim out) ""))
+      (echo-message! (app-state-echo app) "No submodules")
+      (qt-open-output-buffer app "*Git Submodules*"
+        (string-append "Submodule Status:\n\n" out "\n")))))
+
+(def (cmd-git-submodule-update app)
+  (let ((out (qt-git-run-output '("submodule" "update" "--init" "--recursive"))))
+    (echo-message! (app-state-echo app) (if out "Submodules updated" "Update failed"))))
+
+(def *qt-git-bisect-active* #f)
+
+(def (cmd-git-bisect-start app)
+  (let ((bad (qt-echo-read-string app "Bad commit (default HEAD): "))
+        (good (qt-echo-read-string app "Good commit: ")))
+    (when (and good (not (string=? good "")))
+      (let* ((bad-ref (if (or (not bad) (string=? bad "")) "HEAD" bad))
+             (result (qt-git-run-output (list "bisect" "start" bad-ref good))))
+        (set! *qt-git-bisect-active* #t)
+        (echo-message! (app-state-echo app) (or result "Bisect started"))))))
+
+(def (cmd-git-bisect-good app)
+  (if (not *qt-git-bisect-active*)
+    (echo-message! (app-state-echo app) "No bisect in progress")
+    (let ((out (qt-git-run-output '("bisect" "good"))))
+      (echo-message! (app-state-echo app) (or out "Bisect: good")))))
+
+(def (cmd-git-bisect-bad app)
+  (if (not *qt-git-bisect-active*)
+    (echo-message! (app-state-echo app) "No bisect in progress")
+    (let ((out (qt-git-run-output '("bisect" "bad"))))
+      (echo-message! (app-state-echo app) (or out "Bisect: bad")))))
+
+(def (cmd-git-bisect-reset app)
+  (qt-git-run-output '("bisect" "reset"))
+  (set! *qt-git-bisect-active* #f)
+  (echo-message! (app-state-echo app) "Bisect reset"))
+
+(def (cmd-git-bisect-log app)
+  (if (not *qt-git-bisect-active*)
+    (echo-message! (app-state-echo app) "No bisect in progress")
+    (let ((out (qt-git-run-output '("bisect" "log"))))
+      (if out (qt-open-output-buffer app "*Bisect Log*" out)
+        (echo-message! (app-state-echo app) "No bisect log")))))
+
+(def (cmd-git-shortlog app)
+  (let ((out (qt-git-run-output '("shortlog" "-sn" "--all"))))
+    (if (not out) (echo-error! (app-state-echo app) "Not a git repository")
+      (qt-open-output-buffer app "*Git Contributors*"
+        (string-append "Contributors:\n\n" out "\n")))))
+
+(def (cmd-git-reflog app)
+  (let ((out (qt-git-run-output '("reflog" "--oneline" "-30"))))
+    (if (not out) (echo-error! (app-state-echo app) "Not a git repository")
+      (qt-open-output-buffer app "*Git Reflog*"
+        (string-append "Recent Reflog:\n\n" out "\n")))))
+
+(def (cmd-git-diff-stat app)
+  (let* ((buf (current-qt-buffer app))
+         (file (and buf (buffer-file-path buf))))
+    (if (not file) (echo-error! (app-state-echo app) "Buffer has no file")
+      (let ((stat (qt-git-run-output (list "diff" "--stat" file))))
+        (if (and stat (not (string=? (string-trim stat) "")))
+          (echo-message! (app-state-echo app) (string-trim stat))
+          (echo-message! (app-state-echo app) "No changes"))))))
+
+(def (cmd-git-diff-buffer app)
+  (let* ((buf (current-qt-buffer app))
+         (file (and buf (buffer-file-path buf))))
+    (if (not file) (echo-error! (app-state-echo app) "Buffer has no file")
+      (let ((diff (qt-git-run-output (list "diff" file))))
+        (if (and diff (not (string=? (string-trim diff) "")))
+          (qt-open-output-buffer app
+            (string-append "*Diff: " (path-strip-directory file) "*") diff)
+          (echo-message! (app-state-echo app) "No changes"))))))
+
+(def (qt-register-vcs2-commands!)
+  "Register git-timemachine, bug-reference, transpose-frame, and VCS commands."
+  (for-each
+    (lambda (pair) (register-command! (car pair) (cdr pair)))
+    (list
+      (cons 'git-timemachine cmd-git-timemachine)
+      (cons 'git-timemachine-next cmd-git-timemachine-next)
+      (cons 'git-timemachine-prev cmd-git-timemachine-prev)
+      (cons 'git-timemachine-goto cmd-git-timemachine-goto)
+      (cons 'git-timemachine-copy-hash cmd-git-timemachine-copy-hash)
+      (cons 'git-timemachine-show-diff cmd-git-timemachine-show-diff)
+      (cons 'git-timemachine-quit cmd-git-timemachine-quit)
+      (cons 'git-timemachine-blame cmd-git-timemachine-blame)
+      (cons 'bug-reference-mode cmd-bug-reference-mode)
+      (cons 'bug-reference-set-project cmd-bug-reference-set-project)
+      (cons 'bug-reference-goto cmd-bug-reference-goto)
+      (cons 'bug-reference-list cmd-bug-reference-list)
+      (cons 'transpose-frame cmd-transpose-frame)
+      (cons 'flip-frame cmd-flip-frame)
+      (cons 'flop-frame cmd-flop-frame)
+      (cons 'git-worktree-list cmd-git-worktree-list)
+      (cons 'git-worktree-add cmd-git-worktree-add)
+      (cons 'git-worktree-remove cmd-git-worktree-remove)
+      (cons 'git-submodule-status cmd-git-submodule-status)
+      (cons 'git-submodule-update cmd-git-submodule-update)
+      (cons 'git-bisect-start cmd-git-bisect-start)
+      (cons 'git-bisect-good cmd-git-bisect-good)
+      (cons 'git-bisect-bad cmd-git-bisect-bad)
+      (cons 'git-bisect-reset cmd-git-bisect-reset)
+      (cons 'git-bisect-log cmd-git-bisect-log)
+      (cons 'git-shortlog cmd-git-shortlog)
+      (cons 'git-reflog cmd-git-reflog)
+      (cons 'git-diff-stat cmd-git-diff-stat)
+      (cons 'git-diff-buffer cmd-git-diff-buffer))))

@@ -38,6 +38,7 @@
         :gemacs/editor-extra-media
         :gemacs/editor-extra-media2
         :gemacs/editor-extra-modes
+        :gemacs/editor-extra-notes
         :gemacs/editor-extra-final
         :gemacs/editor-extra-regs
         :gemacs/editor-extra-ai
@@ -164,8 +165,7 @@
   (register-command! 'diff-apply-hunk cmd-diff-apply-hunk)
   (register-command! 'diff-revert-hunk cmd-diff-revert-hunk)
   (register-command! 'diff-goto-source cmd-diff-goto-source)
-  ;; Artist mode
-  (register-command! 'artist-mode cmd-artist-mode)
+  ;; Artist mode — registered in editor-extra-regs2.ss (batch 29)
   ;; Tramp
   (register-command! 'tramp-cleanup-all-connections cmd-tramp-cleanup-all-connections)
   ;; Process
@@ -720,9 +720,7 @@
   ;; Notes
   (register-command! 'denote cmd-denote)
   (register-command! 'denote-link cmd-denote-link)
-  (register-command! 'org-roam-node-find cmd-org-roam-node-find)
-  (register-command! 'org-roam-node-insert cmd-org-roam-node-insert)
-  (register-command! 'org-roam-buffer-toggle cmd-org-roam-buffer-toggle)
+  ;; org-roam — registered in editor-extra-regs2.ss (batch 28)
   ;; Dirvish
   (register-command! 'dirvish cmd-dirvish)
   ;; Jinx

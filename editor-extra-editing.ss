@@ -20,12 +20,7 @@
         :gemacs/highlight
         :gemacs/editor-extra-helpers)
 
-;; Artist mode — simple ASCII drawing
-(def (cmd-artist-mode app)
-  "Toggle artist mode for ASCII drawing. In artist mode, arrow keys draw lines."
-  (let ((on (toggle-mode! 'artist-mode)))
-    (echo-message! (app-state-echo app)
-      (if on "Artist mode enabled (use arrows to draw)" "Artist mode disabled"))))
+;; Artist mode — moved to editor-extra-notes.ss (real ASCII drawing)
 
 ;; TRAMP — remote file access via SSH
 (def *tramp-connections* '()) ; list of active SSH processes
