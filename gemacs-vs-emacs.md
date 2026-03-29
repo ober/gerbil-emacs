@@ -1,7 +1,7 @@
 # Gemacs vs GNU Emacs — Feature Comparison
 
 > **Last updated:** 2026-03-28
-> **Gemacs version:** master (83b9e77)
+> **Gemacs version:** master (ebaefbf)
 > **Compared against:** GNU Emacs 29.x / 30.x feature set
 > **Command parity:** 2230+ commands registered in both TUI and Qt layers (zero gap)
 
@@ -289,7 +289,7 @@
 | Minibuffer history | :white_check_mark: | `M-p` / `M-n` in minibuffer |
 | Recursive minibuffer | :white_check_mark: | `toggle-enable-recursive-minibuffers` flag |
 | Vertico / Selectrum | :white_check_mark: | Mode toggles, uses narrowing framework for vertical completion |
-| Orderless matching | :large_blue_circle: | Multi-match engine: space-separated AND tokens, `!` negation, `^` prefix |
+| Orderless matching | :white_check_mark: | Real orderless-mode: space-separated AND tokens, `!` negation, `^` prefix, `$` suffix matching |
 | Marginalia (annotations) | :white_check_mark: | Annotator registry with `marginalia-annotate!`, command/buffer/file categories |
 | Embark (actions on candidates) | :white_check_mark: | Action registry with `embark-define-action!`, describe/execute/find-file actions |
 | Consult (enhanced commands) | :large_blue_circle: | `consult-ripgrep` (M-s r, narrowing), `consult-line`, `consult-buffer`, `consult-bookmark` |
@@ -614,7 +614,7 @@
 | Hippie-expand | :large_blue_circle: | Delegates to dabbrev-expand (buffer word completion), `M-/` keybinding |
 | Complete at point | :white_check_mark: | `C-M-i` — Scintilla native autocomplete popup with buffer-local word candidates |
 | Company mode | :large_blue_circle: | Scintilla autocomplete popup with buffer words + LSP merged |
-| Corfu mode | :large_blue_circle: | Scintilla autocomplete popup (500ms idle trigger) |
+| Corfu mode | :white_check_mark: | Real in-buffer completion popup with buffer words + language-aware keywords (Scheme/Python/JS/C/Rust), 500ms idle trigger |
 | Cape (completion extensions) | :white_check_mark: | `cape-dabbrev`, `cape-file`, `cape-history`, `cape-keyword` |
 | File path completion | :white_check_mark: | In minibuffer |
 | Symbol completion | :white_check_mark: | Buffer words + LSP merged on Tab |
@@ -1017,7 +1017,7 @@ No remaining Tier 1 gaps. All core editing, completion, and navigation features 
 
 | Gap | Impact | Effort |
 |-----|--------|--------|
-| **Modern completion (Vertico/Orderless)** | Vertico/Selectrum modes, Cape backends, fuzzy matching — Done | Low |
+| ~~Modern completion (Vertico/Orderless)~~ | ~~Vertico/Selectrum modes, Cape backends, fuzzy matching~~ Done: orderless-mode with space-separated matching, `!` negation, `^` prefix, `$` suffix | ~~Low~~ Done |
 | ~~Multiple cursors / iedit~~ | ~~Can't edit multiple occurrences simultaneously~~ Implemented: iedit-mode with highlight + edit all | ~~Medium~~ Done |
 | ~~Snippet system (YASnippet)~~ | ~~No template expansion~~ Implemented: 100+ snippets, tabstops | ~~Medium~~ Done |
 | ~~Ediff / Smerge~~ | ~~Can't resolve merge conflicts~~ Implemented: smerge-mode with keep-mine/other/both | ~~Medium~~ Done |
@@ -1474,6 +1474,12 @@ No remaining Tier 1 gaps. All core editing, completion, and navigation features 
 | Envrc / direnv | :white_check_mark: | Real .envrc loading via bash source, environment restore on toggle-off |
 | Focus mode | :white_check_mark: | Real line-dimming using Scintilla indicators, configurable range |
 | Golden ratio | :white_check_mark: | Real window auto-resizing with splitter API (TUI bias, Qt splitter) |
+| Minimap mode | :white_check_mark: | Zoomed-out code overview sidebar using second Scintilla window |
+| Pixel-scroll-precision-mode | :white_check_mark: | Smooth scrolling via SCI_SETYCARETPOLICY (SLOP+STRICT+EVEN) |
+| Context menu | :white_check_mark: | Simulated right-click context menu with cut/copy/paste/undo/select-all |
+| Nano theme | :white_check_mark: | Minimalist N A N O-inspired appearance theme |
+| Page-break-lines | :white_check_mark: | Display ^L (form feed) as horizontal rule using Scintilla indicator 5 |
+| Doom modeline | :white_check_mark: | Enhanced mode line with file status icons, git branch, line/col info |
 
 ---
 
@@ -1482,7 +1488,7 @@ No remaining Tier 1 gaps. All core editing, completion, and navigation features 
 > *Reprioritized based on the user's actual Emacs workflow*
 
 ### Phase 1: Core Interaction (Make Gemacs Feel Right)
-1. **Completion popup (Corfu equivalent)** — Inline completion overlay at point. The user uses Corfu in Emacs. Without this, code editing is painful.
+1. ~~Completion popup (Corfu equivalent)~~ — ~~Inline completion overlay at point.~~ Done: Real in-buffer completion popup with buffer words + language-aware keywords (Scheme/Python/JS/C/Rust), 500ms idle trigger, both TUI and Qt.
 2. **LSP UI wiring** — Connect the existing LSP transport to: completion (popup), hover (echo area), goto-definition, find-references, diagnostics display. The user has eglot working in Emacs for Gerbil.
 3. ~~Narrowing framework (Helm-like)~~ — ~~A candidate selection UI for M-x, switch-buffer, find-file, grep results.~~ Done: Full Helm framework with 14 commands, multi-match engine (AND tokens, `!` negation, `^` prefix), 10 built-in sources, TUI+Qt renderers, session resume, helm-mode toggle.
 

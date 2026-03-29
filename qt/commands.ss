@@ -162,6 +162,7 @@
         :gemacs/qt/commands-parity4
         :gemacs/qt/commands-parity5
         :gemacs/qt/commands-parity6
+        :gemacs/qt/commands-parity7
         :gemacs/qt/commands-aliases
         :gemacs/qt/commands-aliases2
         :gemacs/qt/helm-commands)
@@ -1863,6 +1864,8 @@
   (qt-register-parity5-commands!)
   ;; Parity6: org-roam, artist-mode, calc-embedded
   (qt-register-parity6-commands!)
+  ;; Parity7: corfu, multiple-cursors, tab-bar, minimap, orderless, marginalia
+  (qt-register-parity7-commands!)
   ;; Wire modeline providers
   (set-box! *modeline-overwrite-provider* (lambda () *overwrite-mode*))
   (set-box! *modeline-narrow-provider*

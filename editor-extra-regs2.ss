@@ -43,7 +43,8 @@
         :gemacs/editor-extra-regs
         :gemacs/editor-extra-ai
         :gemacs/editor-extra-vcs2
-        :gemacs/editor-extra-notes)
+        :gemacs/editor-extra-notes
+        :gemacs/editor-extra-notes2)
 
 (def (register-extra-commands-2!)
   ;; batch 53
@@ -1510,4 +1511,42 @@
 
   (register-command-doc! 'focus-mode-real "Dim lines far from cursor for focused reading/editing.")
   (register-command-doc! 'golden-ratio-mode-real "Auto-resize active window to golden ratio proportion.")
+
+  ;;--- Batch 39: corfu-mode (real completion popup) ---
+  (register-command! 'corfu-complete cmd-corfu-complete)
+  (register-command! 'corfu-mode-real cmd-corfu-mode-real)
+
+  ;;--- Batch 40: minimap-mode (zoomed-out overview) ---
+  (register-command! 'minimap-mode-real cmd-minimap-mode-real)
+
+  ;;--- Batch 41: orderless (flexible matching) ---
+  (register-command! 'orderless-mode-real cmd-orderless-mode-real)
+  (register-command! 'orderless-filter-demo cmd-orderless-filter-demo)
+
+  ;;--- Batch 42: marginalia (completion annotations) ---
+  (register-command! 'marginalia-mode-real cmd-marginalia-mode-real)
+  (register-command! 'marginalia-describe-commands cmd-marginalia-describe-commands)
+
+  ;;--- Batch 43: smooth scroll, context menu, ligature, nano-theme, etc. ---
+  (register-command! 'pixel-scroll-precision-mode-real cmd-pixel-scroll-precision-mode-real)
+  (register-command! 'context-menu cmd-context-menu)
+  (register-command! 'context-menu-mode-real cmd-context-menu-mode-real)
+  (register-command! 'ligature-mode-real cmd-ligature-mode-real)
+  (register-command! 'nano-theme-real cmd-nano-theme-real)
+  (register-command! 'page-break-lines-real cmd-page-break-lines-real)
+  (register-command! 'doom-modeline-real cmd-doom-modeline-real)
+
+  ;; Documentation for batches 39-43
+  (register-command-doc! 'corfu-complete "In-buffer completion popup with buffer words + language keywords.")
+  (register-command-doc! 'corfu-mode-real "Toggle corfu-mode: language-aware completion-at-point.")
+  (register-command-doc! 'minimap-mode-real "Toggle zoomed-out code overview in split window.")
+  (register-command-doc! 'orderless-mode-real "Space-separated tokens match in any order (! negates, ^ prefix).")
+  (register-command-doc! 'marginalia-mode-real "Show annotations (keybinding, doc) in completion candidates.")
+  (register-command-doc! 'marginalia-describe-commands "Show all commands with keybinding and doc annotations.")
+  (register-command-doc! 'pixel-scroll-precision-mode-real "Toggle smooth scrolling with scroll margin.")
+  (register-command-doc! 'context-menu "Show right-click style context menu with common actions.")
+  (register-command-doc! 'ligature-mode-real "Toggle font ligature display mode.")
+  (register-command-doc! 'nano-theme-real "Minimalist appearance: no line numbers, wide margins, subtle caret.")
+  (register-command-doc! 'page-break-lines-real "Display ^L (page break) characters as horizontal rules.")
+  (register-command-doc! 'doom-modeline-real "Enhanced mode line with line:col, percentage, language, cursors.")
 )

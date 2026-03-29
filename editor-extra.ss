@@ -39,6 +39,7 @@
         :gemacs/editor-extra-media2
         :gemacs/editor-extra-modes
         :gemacs/editor-extra-notes
+        :gemacs/editor-extra-notes2
         :gemacs/editor-extra-final
         :gemacs/editor-extra-regs
         :gemacs/editor-extra-ai
