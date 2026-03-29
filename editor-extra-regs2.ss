@@ -45,7 +45,8 @@
         :gemacs/editor-extra-vcs2
         :gemacs/editor-extra-notes
         :gemacs/editor-extra-notes2
-        :gemacs/editor-extra-notes3)
+        :gemacs/editor-extra-notes3
+        :gemacs/editor-extra-notes4)
 
 (def (register-extra-commands-2!)
   ;; batch 53
@@ -1590,6 +1591,55 @@
   (register-command! 'persistent-scratch-save cmd-persistent-scratch-save)
   (register-command! 'persistent-scratch-restore cmd-persistent-scratch-restore)
 
+  ;;--- Batch 53: deft ---
+  (register-command! 'deft cmd-deft)
+  (register-command! 'deft-new cmd-deft-new)
+  (register-command! 'deft-search cmd-deft-search)
+
+  ;;--- Batch 54: dictionary ---
+  (register-command! 'dictionary cmd-dictionary)
+  (register-command! 'dictionary-at-point cmd-dictionary-at-point)
+
+  ;;--- Batch 55: speed-type ---
+  (register-command! 'speed-type cmd-speed-type)
+  (register-command! 'speed-type-results cmd-speed-type-results)
+
+  ;;--- Batch 56: pomodoro ---
+  (register-command! 'pomodoro-start cmd-pomodoro-start)
+  (register-command! 'pomodoro-break cmd-pomodoro-break)
+  (register-command! 'pomodoro-status cmd-pomodoro-status)
+  (register-command! 'pomodoro-reset cmd-pomodoro-reset)
+
+  ;;--- Batch 57: doctor (Eliza) ---
+  (register-command! 'doctor cmd-doctor-real)
+  (register-command! 'doctor-submit cmd-doctor-submit)
+
+  ;;--- Batch 58: figlet ---
+  (register-command! 'figlet cmd-figlet)
+  (register-command! 'figlet-comment cmd-figlet-comment)
+
+  ;;--- Batch 59: dice roller ---
+  (register-command! 'dice-roll cmd-dice-roll)
+  (register-command! 'dice-roll-insert cmd-dice-roll-insert)
+
+  ;;--- Batch 60: morse code ---
+  (register-command! 'morse-encode cmd-morse-encode)
+  (register-command! 'morse-decode cmd-morse-decode)
+
+  ;;--- Batch 61: gomoku ---
+  (register-command! 'gomoku cmd-gomoku)
+  (register-command! 'gomoku-up cmd-gomoku-up)
+  (register-command! 'gomoku-down cmd-gomoku-down)
+  (register-command! 'gomoku-left cmd-gomoku-left)
+  (register-command! 'gomoku-right cmd-gomoku-right)
+  (register-command! 'gomoku-place cmd-gomoku-place)
+
+  ;;--- Batch 62: chronometer ---
+  (register-command! 'chronometer-start cmd-chronometer-start)
+  (register-command! 'chronometer-stop cmd-chronometer-stop)
+  (register-command! 'chronometer-lap cmd-chronometer-lap)
+  (register-command! 'chronometer-status cmd-chronometer-status)
+
   ;; Documentation for batches 44-52
   (register-command-doc! 'surround-add "Add surrounding delimiters around region (e.g., parentheses, quotes).")
   (register-command-doc! 'surround-delete "Delete surrounding delimiters at point.")
@@ -1611,4 +1661,31 @@
   (register-command-doc! 'persistent-scratch-mode "Toggle auto-persistence of *scratch* buffer.")
   (register-command-doc! 'persistent-scratch-save "Save *scratch* buffer contents to disk.")
   (register-command-doc! 'persistent-scratch-restore "Restore *scratch* buffer from disk.")
+
+  ;; Documentation for batches 53-62
+  (register-command-doc! 'deft "Browse and search notes in ~/notes/ directory.")
+  (register-command-doc! 'deft-new "Create a new note file in the Deft directory.")
+  (register-command-doc! 'deft-search "Search note files by content.")
+  (register-command-doc! 'dictionary "Look up a word definition using dict command.")
+  (register-command-doc! 'dictionary-at-point "Look up the word under cursor in the dictionary.")
+  (register-command-doc! 'speed-type "Start a typing speed test with sample text.")
+  (register-command-doc! 'speed-type-results "Calculate and display typing speed (WPM) and accuracy.")
+  (register-command-doc! 'pomodoro-start "Start a 25-minute Pomodoro work session.")
+  (register-command-doc! 'pomodoro-break "Start a 5-minute Pomodoro break.")
+  (register-command-doc! 'pomodoro-status "Show remaining time in current Pomodoro session.")
+  (register-command-doc! 'pomodoro-reset "Reset the Pomodoro timer and session count.")
+  (register-command-doc! 'doctor "Start the Eliza psychotherapist with pattern matching.")
+  (register-command-doc! 'doctor-submit "Send your message to the Eliza psychotherapist.")
+  (register-command-doc! 'figlet "Generate ASCII art text banner (uses figlet if installed).")
+  (register-command-doc! 'figlet-comment "Insert a comment-style ASCII banner at point.")
+  (register-command-doc! 'dice-roll "Roll dice using D&D notation (e.g., 2d6+3, d20).")
+  (register-command-doc! 'dice-roll-insert "Roll dice and insert the numeric result at point.")
+  (register-command-doc! 'morse-encode "Encode text or selection to Morse code.")
+  (register-command-doc! 'morse-decode "Decode Morse code from selection or prompt.")
+  (register-command-doc! 'gomoku "Start a game of Gomoku (Five in a Row) vs computer.")
+  (register-command-doc! 'gomoku-place "Place your stone at the cursor position in Gomoku.")
+  (register-command-doc! 'chronometer-start "Start a stopwatch/chronometer.")
+  (register-command-doc! 'chronometer-stop "Stop the chronometer and show elapsed time.")
+  (register-command-doc! 'chronometer-lap "Record a lap time on the running chronometer.")
+  (register-command-doc! 'chronometer-status "Show chronometer status with all lap times.")
 )

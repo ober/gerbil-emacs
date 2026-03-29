@@ -1490,6 +1490,16 @@ No remaining Tier 1 gaps. All core editing, completion, and navigation features 
 | Outline-minor-mode | :white_check_mark: | Real Scintilla fold margin with box markers for all file types |
 | String-edit-at-point | :white_check_mark: | Edit string literals in a separate buffer |
 | Persistent scratch | :white_check_mark: | Auto-save *scratch* buffer to ~/.gemacs-scratch across sessions |
+| Deft (note search) | :white_check_mark: | Quick note browser: scan ~/notes/, search by content, create new notes |
+| Dictionary | :white_check_mark: | Word definition lookup via `dict` command, dictionary-at-point |
+| Speed-type | :white_check_mark: | Typing speed test with WPM and accuracy measurement |
+| Pomodoro timer | :white_check_mark: | 25/5 work/break timer with session counting and status display |
+| Doctor (Eliza) | :white_check_mark: | Real pattern-matching psychotherapist with 25+ rule categories |
+| Figlet | :white_check_mark: | ASCII art text banners (uses figlet if installed, built-in fallback) |
+| Dice roller | :white_check_mark: | D&D dice notation parser (2d6+3, d20, etc.) with insert support |
+| Morse code | :white_check_mark: | Encode/decode text to/from Morse code, works on selections |
+| Gomoku | :white_check_mark: | Five-in-a-row board game with AI opponent |
+| Chronometer | :white_check_mark: | Stopwatch with lap timing, start/stop/lap/status commands |
 
 ---
 

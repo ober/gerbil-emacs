@@ -164,6 +164,7 @@
         :gemacs/qt/commands-parity6
         :gemacs/qt/commands-parity7
         :gemacs/qt/commands-parity8
+        :gemacs/qt/commands-parity9
         :gemacs/qt/commands-aliases
         :gemacs/qt/commands-aliases2
         :gemacs/qt/helm-commands)
@@ -1869,6 +1870,8 @@
   (qt-register-parity7-commands!)
   ;; Parity8: surround, goto-last-change, crosshair, quickrun, eros, auto-dim, rainbow-id, outline, string-edit, persistent-scratch
   (qt-register-parity8-commands!)
+  ;; Parity9: deft, dictionary, speed-type, pomodoro, doctor, figlet, dice, morse, gomoku, chronometer
+  (qt-register-parity9-commands!)
   ;; Wire modeline providers
   (set-box! *modeline-overwrite-provider* (lambda () *overwrite-mode*))
   (set-box! *modeline-narrow-provider*

@@ -41,6 +41,7 @@
         :gemacs/editor-extra-notes
         :gemacs/editor-extra-notes2
         :gemacs/editor-extra-notes3
+        :gemacs/editor-extra-notes4
         :gemacs/editor-extra-final
         :gemacs/editor-extra-regs
         :gemacs/editor-extra-ai
