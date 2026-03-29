@@ -1480,6 +1480,16 @@ No remaining Tier 1 gaps. All core editing, completion, and navigation features 
 | Nano theme | :white_check_mark: | Minimalist N A N O-inspired appearance theme |
 | Page-break-lines | :white_check_mark: | Display ^L (form feed) as horizontal rule using Scintilla indicator 5 |
 | Doom modeline | :white_check_mark: | Enhanced mode line with file status icons, git branch, line/col info |
+| Surround (embrace) | :white_check_mark: | Add/change/delete surrounding delimiters (parens, brackets, quotes) |
+| Goto-last-change | :white_check_mark: | Real edit position ring buffer with forward/backward navigation |
+| Crosshair mode | :white_check_mark: | Highlight current line AND column simultaneously |
+| Quickrun | :white_check_mark: | Execute buffer with language-appropriate interpreter (20+ languages) |
+| Eros (eval overlays) | :white_check_mark: | Show Scheme eval results inline as Scintilla annotations |
+| Auto-dim-other-buffers | :white_check_mark: | Dim non-focused windows for visual focus |
+| Rainbow identifiers | :white_check_mark: | Color each identifier uniquely by name hash (16 colors) |
+| Outline-minor-mode | :white_check_mark: | Real Scintilla fold margin with box markers for all file types |
+| String-edit-at-point | :white_check_mark: | Edit string literals in a separate buffer |
+| Persistent scratch | :white_check_mark: | Auto-save *scratch* buffer to ~/.gemacs-scratch across sessions |
 
 ---
 

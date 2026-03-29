@@ -44,7 +44,8 @@
         :gemacs/editor-extra-ai
         :gemacs/editor-extra-vcs2
         :gemacs/editor-extra-notes
-        :gemacs/editor-extra-notes2)
+        :gemacs/editor-extra-notes2
+        :gemacs/editor-extra-notes3)
 
 (def (register-extra-commands-2!)
   ;; batch 53
@@ -1549,4 +1550,65 @@
   (register-command-doc! 'nano-theme-real "Minimalist appearance: no line numbers, wide margins, subtle caret.")
   (register-command-doc! 'page-break-lines-real "Display ^L (page break) characters as horizontal rules.")
   (register-command-doc! 'doom-modeline-real "Enhanced mode line with line:col, percentage, language, cursors.")
+
+  ;;--- Batch 44: surround-mode (add/change/delete delimiters) ---
+  (register-command! 'surround-add cmd-surround-add)
+  (register-command! 'surround-delete cmd-surround-delete)
+  (register-command! 'surround-change cmd-surround-change)
+
+  ;;--- Batch 45: goto-last-change (edit position ring) ---
+  (register-command! 'goto-last-change cmd-goto-last-change-real)
+  (register-command! 'goto-last-change-reverse cmd-goto-last-change-reverse-real)
+
+  ;;--- Batch 46: crosshair-mode (line + column highlight) ---
+  (register-command! 'crosshair-mode cmd-crosshair-mode)
+
+  ;;--- Batch 47: quickrun (execute buffer) ---
+  (register-command! 'quickrun cmd-quickrun)
+  (register-command! 'quickrun-with cmd-quickrun-with)
+
+  ;;--- Batch 48: eros-mode (eval result overlays) ---
+  (register-command! 'eros-mode cmd-eros-mode)
+  (register-command! 'eros-eval-last-sexp cmd-eros-eval-last-sexp)
+
+  ;;--- Batch 49: auto-dim, rainbow-identifiers ---
+  (register-command! 'auto-dim-other-buffers cmd-auto-dim-other-buffers)
+  (register-command! 'rainbow-identifiers-mode cmd-rainbow-identifiers-mode)
+
+  ;;--- Batch 50: outline-minor-mode (code folding) ---
+  (register-command! 'outline-minor-mode cmd-outline-minor-mode)
+  (register-command! 'outline-toggle-children cmd-outline-toggle-children)
+  (register-command! 'outline-fold-all cmd-outline-fold-all)
+  (register-command! 'outline-unfold-all cmd-outline-unfold-all)
+
+  ;;--- Batch 51: string-edit-at-point ---
+  (register-command! 'string-edit-at-point cmd-string-edit-at-point-real)
+  (register-command! 'string-edit-commit cmd-string-edit-commit)
+
+  ;;--- Batch 52: persistent-scratch ---
+  (register-command! 'persistent-scratch-mode cmd-persistent-scratch-mode)
+  (register-command! 'persistent-scratch-save cmd-persistent-scratch-save)
+  (register-command! 'persistent-scratch-restore cmd-persistent-scratch-restore)
+
+  ;; Documentation for batches 44-52
+  (register-command-doc! 'surround-add "Add surrounding delimiters around region (e.g., parentheses, quotes).")
+  (register-command-doc! 'surround-delete "Delete surrounding delimiters at point.")
+  (register-command-doc! 'surround-change "Change surrounding delimiters (e.g., ( → [).")
+  (register-command-doc! 'goto-last-change "Jump to previous edit location in buffer.")
+  (register-command-doc! 'goto-last-change-reverse "Jump forward in edit location history.")
+  (register-command-doc! 'crosshair-mode "Toggle crosshair: highlight current line and column.")
+  (register-command-doc! 'quickrun "Execute current buffer with appropriate language interpreter.")
+  (register-command-doc! 'quickrun-with "Execute current buffer with user-specified command.")
+  (register-command-doc! 'eros-mode "Toggle inline eval result display (Evaluation Result OverlayS).")
+  (register-command-doc! 'eros-eval-last-sexp "Evaluate sexp before point and show result inline.")
+  (register-command-doc! 'auto-dim-other-buffers "Toggle dimming of non-focused windows.")
+  (register-command-doc! 'rainbow-identifiers-mode "Color each identifier uniquely by hash.")
+  (register-command-doc! 'outline-minor-mode "Toggle code folding margin for all file types.")
+  (register-command-doc! 'outline-toggle-children "Toggle fold at current line.")
+  (register-command-doc! 'outline-fold-all "Collapse all foldable regions.")
+  (register-command-doc! 'outline-unfold-all "Expand all folded regions.")
+  (register-command-doc! 'string-edit-at-point "Edit string literal at point in a separate buffer.")
+  (register-command-doc! 'persistent-scratch-mode "Toggle auto-persistence of *scratch* buffer.")
+  (register-command-doc! 'persistent-scratch-save "Save *scratch* buffer contents to disk.")
+  (register-command-doc! 'persistent-scratch-restore "Restore *scratch* buffer from disk.")
 )
