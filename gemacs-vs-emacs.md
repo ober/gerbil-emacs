@@ -1257,16 +1257,23 @@ No remaining Tier 1 gaps. All core editing, completion, and navigation features 
 
 | Feature | Status | Notes |
 |---------|--------|-------|
-| Tetris | :large_blue_circle: | `M-x tetris` — text-based Tetris game board |
-| Snake | :large_blue_circle: | `M-x snake` — text-based Snake game |
-| Dunnet | :large_blue_circle: | `M-x dunnet` — text adventure game |
+| Tetris | :white_check_mark: | `M-x tetris` — real Tetris with 7 piece types, rotation, collision, line clearing, scoring |
+| Snake | :white_check_mark: | `M-x snake` — real Snake with movement, food, wall/self collision, scoring |
+| Dunnet | :white_check_mark: | `M-x dunnet` — real text adventure with 9 rooms, items, inventory, command parser |
 | Towers of Hanoi | :white_check_mark: | `M-x hanoi` — shows solution moves for N disks |
 | Game of Life | :white_check_mark: | `M-x life` — Conway's Game of Life (glider, 5 generations) |
-| Doctor (Eliza) | :large_blue_circle: | `M-x doctor` — psychotherapist chatbot |
+| Doctor (Eliza) | :white_check_mark: | `M-x doctor` — real Eliza chatbot with 25+ pattern rules, pronoun swapping |
 | Zone (screensaver) | :white_check_mark: | `M-x zone` — screen saver effect |
 | Fireplace | :white_check_mark: | `M-x fireplace` — decorative fire display |
+| 2048 | :white_check_mark: | `M-x 2048-game` — 4x4 sliding puzzle with merge logic, win detection |
+| Solitaire | :white_check_mark: | `M-x solitaire` — English cross peg solitaire with cursor + jump controls |
+| Blackbox | :white_check_mark: | `M-x blackbox` — ray-tracing puzzle (hit/reflect/deflect), 4 hidden balls |
+| Animate | :white_check_mark: | `M-x animate-birthday` — ASCII art birthday greeting with animation |
+| Type-break | :white_check_mark: | `M-x type-break-mode` — RSI timer with configurable interval, status, reset |
+| Highlight-changes | :white_check_mark: | `M-x highlight-changes-mode` — Scintilla indicator for changed regions |
+| Glasses-mode | :white_check_mark: | `M-x glasses-mode` — CamelCase to underscore_separated transform |
 
-**Summary:** All 6 classic Emacs games implemented: Tetris, Snake, Dunnet, Hanoi, Life, Doctor. Plus Zone and Fireplace. Both TUI and Qt.
+**Summary:** 15 games & entertainment features: all classic Emacs games (Tetris, Snake, Dunnet, Hanoi, Life, Doctor) now with real implementations, plus 2048, Solitaire, Blackbox, Animate, Zone, Fireplace. Type-break and highlight-changes for productivity. Both TUI and Qt.
 
 ---
 

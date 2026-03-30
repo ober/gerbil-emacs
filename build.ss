@@ -304,6 +304,7 @@
     "editor-extra-notes2"
     "editor-extra-notes3"
     "editor-extra-notes4"
+    "editor-extra-notes5"
     "editor-extra-final"
     "editor-extra-regs"
     "editor-extra-ai"
@@ -395,6 +396,7 @@
           (gxc: "qt/commands-parity7" "-cc-options" ,qt-cc-opts "-ld-options" ,qt-ld-opts)
           (gxc: "qt/commands-parity8" "-cc-options" ,qt-cc-opts "-ld-options" ,qt-ld-opts)
           (gxc: "qt/commands-parity9" "-cc-options" ,qt-cc-opts "-ld-options" ,qt-ld-opts)
+          (gxc: "qt/commands-parity10" "-cc-options" ,qt-cc-opts "-ld-options" ,qt-ld-opts)
           (gxc: "qt/commands-aliases" "-cc-options" ,qt-cc-opts "-ld-options" ,qt-ld-opts)
           (gxc: "qt/commands-aliases2" "-cc-options" ,qt-cc-opts "-ld-options" ,qt-ld-opts)
           (gxc: "qt/helm-commands" "-cc-options" ,qt-cc-opts "-ld-options" ,qt-ld-opts)

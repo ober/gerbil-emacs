@@ -5,7 +5,10 @@
 
 UNAME_S := $(shell uname -s)
 
-export GERBIL_BUILD_CORES := $(shell nproc 2>/dev/null || sysctl -n hw.ncpu)
+# Use sequential build (CORES=1) to avoid a race condition where compile-exe
+# reads static .scm files before parallel gxc: jobs finish writing them.
+# See CLAUDE.md "Build Verification" section.
+export GERBIL_BUILD_CORES := 1
 
 # Hermetically seal all Gerbil operations to the project-local .gerbil/
 # No ~/.gerbil references — packages are installed via `make deps`
