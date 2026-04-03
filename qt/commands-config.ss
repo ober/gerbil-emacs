@@ -774,10 +774,16 @@ modified so the next save uses the new encoding."
                         ""))
                ;; Compute actual terminal dimensions from editor widget
                (rows (max 2 (sci-send ed 2370 0))) ; SCI_LINESONSCREEN
-               ;; Use SCI_GETCOLUMN on the last position of a long line to
-               ;; estimate visible columns, or fall back to widget width / 8.
+               ;; Measure actual character width via SCI_TEXTWIDTH (2276)
+               ;; with STYLE_DEFAULT (32), then divide usable text area by it.
+               ;; Subtract line-number margin and scrollbar so terminal output
+               ;; never exceeds the visible area (prevents horizontal bounce).
                (widget-w (qt-widget-width ed))
-               (cols (max 20 (quotient widget-w 8))))
+               (margin-w (sci-send ed SCI_GETMARGINWIDTHN 0)) ; line number margin
+               (text-w (- widget-w margin-w 16)) ; 16px for vertical scrollbar
+               (char-w (let ((w (sci-send/string ed 2276 "M" STYLE_DEFAULT)))
+                          (if (> w 0) w 8)))
+               (cols (max 20 (quotient text-w char-w))))
           ;; Append newline after user input
           (qt-plain-text-edit-move-cursor! ed QT_CURSOR_END)
           (qt-plain-text-edit-insert-text! ed "\n")

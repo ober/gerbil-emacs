@@ -37,13 +37,31 @@
         split-tree-flatten
         split-tree-find-parent
         split-tree-find-leaf
-        split-tree-collect-sub-splitters)
+        split-tree-collect-sub-splitters
+        ;; App pointer for process-events during splits
+        qt-window-set-app-ptr!)
 
 (import :std/sugar
         :gemacs/qt/sci-shim
         :gemacs/core
         :gemacs/face
         :gemacs/qt/buffer)
+
+;;;============================================================================
+;;; App pointer for process-events during splits
+;;;============================================================================
+
+;; Set by qt/app.ss at startup so splits can process Qt events
+(def *qt-app-for-events* #f)
+
+(def (qt-window-set-app-ptr! app)
+  (set! *qt-app-for-events* app))
+
+(def (qt-window-process-events!)
+  "Process pending Qt events if app pointer is available."
+  (let ((app *qt-app-for-events*))
+    (when app
+      (qt-app-process-events! app))))
 
 ;;;============================================================================
 ;;; Structures
@@ -230,9 +248,24 @@
   "Configure QScintilla editor: theme, margins, caret, save-point signals."
   ;; Apply theme colors from face system
   (qt-apply-editor-theme! ed)
-  ;; Line number margin
+  ;; Line number margin (margin 0) — scale width with font size
   (sci-send ed SCI_SETMARGINTYPEN 0 SC_MARGIN_NUMBER)
-  (sci-send ed SCI_SETMARGINWIDTHN 0 50)
+  (sci-send ed SCI_SETMARGINWIDTHN 0
+    (max 30 (* *default-font-size* 3)))
+  ;; Disable other margins (symbol, fold) to avoid white gutters
+  (sci-send ed SCI_SETMARGINWIDTHN 1 0)  ; symbol margin
+  (sci-send ed SCI_SETMARGINWIDTHN 2 0)  ; fold margin
+  (sci-send ed SCI_SETMARGINWIDTHN 3 0)  ; margin 3
+  (sci-send ed SCI_SETMARGINWIDTHN 4 0)  ; margin 4
+  ;; Set fold margin colors to match editor background (SCI_SETFOLDMARGINCOLOUR=2290, SCI_SETFOLDMARGINHICOLOUR=2291)
+  ;; This prevents any white bleed from the fold margin even at 0 width
+  (let ((bg (let ((f (face-get 'default)))
+              (if (and f (face-bg f))
+                (let-values (((r g b) (parse-hex-color (face-bg f))))
+                  (rgb->sci r g b))
+                (rgb->sci #x1e #x1e #x2e)))))
+    (sci-send ed 2290 1 bg)   ; SCI_SETFOLDMARGINCOLOUR
+    (sci-send ed 2291 1 bg))  ; SCI_SETFOLDMARGINHICOLOUR
   ;; Caret line highlight
   (sci-send ed SCI_SETCARETLINEVISIBLE 1)
   ;; Tab settings
@@ -243,6 +276,16 @@
   (sci-send ed 2565 1)  ; SCI_SETADDITIONALSELECTIONTYPING
   (sci-send ed 2608 1)  ; SCI_SETADDITIONALCARETSVISIBLE
   (sci-send ed 2567 1)  ; SCI_SETADDITIONALCARETSBLINK
+  ;; Scintilla internal double-buffering — reduces flicker during rapid
+  ;; style changes and text updates (on top of Qt's own double-buffering).
+  (sci-send ed 2035 1)  ; SCI_SETBUFFEREDDRAW = on
+  ;; Two-phase drawing: background painted first, then text on top.
+  ;; Smoother than single-phase for syntax-highlighted text.
+  (sci-send ed 2284 1)  ; SCI_SETTWOPHASEDRAW = on
+  ;; WA_OpaquePaintEvent (4): tell Qt not to clear the widget background
+  ;; before painting. Prevents "white flash" when widgets are created,
+  ;; resized, or switch documents.
+  (qt-widget-set-attribute! ed 4 #t)
   ;; Save-point signals for modified state tracking
   (qt-on-scintilla-save-point-reached! ed
     (lambda ()
@@ -264,6 +307,23 @@
          (new-win (make-qt-edit-window new-ed container buf lna #f #f)))
     (qt-scintilla-setup-editor! new-ed)
     (qt-buffer-attach! new-ed buf)
+    ;; Force font family+size on all styles (0-127).
+    ;; QsciLexer's setLexer() overrides style fonts, so we must re-apply
+    ;; after highlighting is set up by qt-buffer-attach!'s hook.
+    (let loop ((i 0))
+      (when (<= i 127)
+        (sci-send/string new-ed SCI_STYLESETFONT *default-font-family* i)
+        (sci-send new-ed SCI_STYLESETSIZE i *default-font-size*)
+        (loop (+ i 1))))
+    ;; Restore margin colors (font loop may corrupt line-number style)
+    (let ((ln-face (face-get 'line-number)))
+      (when (and ln-face (face-bg ln-face))
+        (let-values (((r g b) (parse-hex-color (face-bg ln-face))))
+          (sci-send new-ed SCI_STYLESETBACK STYLE_LINENUMBER (rgb->sci r g b))
+          (sci-send new-ed 2260 0 (rgb->sci r g b))))
+      (when (and ln-face (face-fg ln-face))
+        (let-values (((r g b) (parse-hex-color (face-fg ln-face))))
+          (sci-send new-ed SCI_STYLESETFORE STYLE_LINENUMBER (rgb->sci r g b)))))
     (qt-stacked-widget-add-widget! container new-ed)
     (qt-splitter-add-widget! container-parent container)
     (hash-put! *editor-window-map* new-ed new-win)
@@ -336,7 +396,9 @@
            (let ((new-idx (list-index (lambda (w) (eq? w new-win)) (qt-frame-windows fr))))
              (set! (qt-frame-current-idx fr) (or new-idx 0)))
            ;; Equalize all children in the splitter for even sizing
-           (with-catch void
+           ;; Process events first so Qt layout is computed before we set sizes
+           (qt-window-process-events!)
+           (with-catch (lambda (_e) (void))
              (lambda ()
                (let ((n (length (split-node-children parent))))
                  (qt-splitter-set-sizes! parent-spl
@@ -357,8 +419,9 @@
            ;; Find new window's index in the rebuilt list
            (let ((new-idx (list-index (lambda (w) (eq? w new-win)) (qt-frame-windows fr))))
              (set! (qt-frame-current-idx fr) (or new-idx 0)))
-           ;; 50/50 split
-           (with-catch void (lambda () (qt-splitter-set-sizes! root-spl (list 500 500))))
+           ;; 50/50 split — process events so Qt layout is computed first
+           (qt-window-process-events!)
+           (with-catch (lambda (_e) (void)) (lambda () (qt-splitter-set-sizes! root-spl (list 500 500))))
            (qt-edit-window-editor new-win)))
 
         ;; ── Case C: no parent or different orientation — nest with new splitter ─
@@ -392,10 +455,11 @@
            ;; Find new window's index in the rebuilt list
            (let ((new-idx (list-index (lambda (w) (eq? w new-win)) (qt-frame-windows fr))))
              (set! (qt-frame-current-idx fr) (or new-idx 0)))
-           ;; 50/50 split in nested splitter
-           (with-catch void (lambda () (qt-splitter-set-sizes! new-spl (list 500 500))))
+           ;; 50/50 split in nested splitter — process events first
+           (qt-window-process-events!)
+           (with-catch (lambda (_e) (void)) (lambda () (qt-splitter-set-sizes! new-spl (list 500 500))))
            ;; Re-equalize parent splitter so all children get equal space
-           (with-catch void
+           (with-catch (lambda (_e) (void))
              (lambda ()
                (let* ((n (qt-splitter-count parent-spl))
                       (sizes (let loop ((i 0) (acc '()))
@@ -486,6 +550,9 @@
       (set! (qt-frame-windows fr) (list-remove-idx (qt-frame-windows fr) idx))
       (when (>= (qt-frame-current-idx fr) (length (qt-frame-windows fr)))
         (set! (qt-frame-current-idx fr) (- (length (qt-frame-windows fr)) 1))))
+      ;; Restore focus to the new current editor (destroying widgets may lose it)
+      (let ((new-win (list-ref (qt-frame-windows fr) (qt-frame-current-idx fr))))
+        (qt-widget-set-focus! (qt-edit-window-editor new-win)))
       ;; Update visual indicators
       (qt-frame-update-visual-indicators! fr)))
 
@@ -512,7 +579,9 @@
     (set! (qt-frame-root fr) (make-split-leaf cur))
     (set! (qt-frame-windows fr) (list cur))
     (set! (qt-frame-current-idx fr) 0)
-    ;; 5. Update visual indicators
+    ;; 5. Restore focus to the surviving editor (reparenting may lose it)
+    (qt-widget-set-focus! (qt-edit-window-editor cur))
+    ;; 6. Update visual indicators
     (qt-frame-update-visual-indicators! fr)))
 
 ;;;============================================================================

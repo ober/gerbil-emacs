@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "jerboa": {
+      "type": "stdio",
+      "command": "node",
+      "args": [
+        "/home/jafourni/mine/gerbil-mcp/dist/index.js"
+      ],
+      "env": {}
+    }
+  }
+}
